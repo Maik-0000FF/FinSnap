@@ -12,6 +12,8 @@
 
 Printing a part tilted by 45 degrees puts the layer lines diagonal to the load and gives every side the same surface finish, with no bottom face and no top face. A part standing on an edge has almost no grip on the bed, though. FinSnap adds thin fins next to it that hold it upright. The fins touch the part only with small horizontal tines, so they snap off without leaving marks.
 
+![FinSnap in FreeCAD: a tilted 40 mm cube with a fin and the task panel](docs/assets/screenshot.png)
+
 **Features:**
 - Fins generated automatically under a selected face that leans over the bed
 - Two connection modes:
@@ -31,6 +33,8 @@ Printing a part tilted by 45 degrees puts the layer lines diagonal to the load a
 
 The fin's inner edge runs parallel to the supported face at a set gap. Horizontal tines bridge the gap and end exactly on the face. In the separate mode the slicer prints the fin and the part as two objects: the tine lies against the part and sticks to it, without an extrusion path crossing over.
 
+![Fin with foot and tines under a tilted part](docs/assets/fin_detail.png)
+
 ## Installation
 
 ### Addon Manager
@@ -46,6 +50,20 @@ git clone https://github.com/Maik-0000FF/FinSnap.git ~/.local/share/FreeCAD/Mod/
 ```
 
 The folder differs by system and version; FreeCAD shows it under **Tools → Addon manager → Settings** and in the Python console with `App.getUserAppDataDir()`.
+
+## Commands
+
+The workbench adds one toolbar and a **FinSnap** menu with these commands, in the order they are usually used:
+
+| | Command | What it does | How to use it |
+|---|---|---|---|
+| <img src="freecad/finsnap/icons/tilt.svg" width="32" alt=""> | **Stand on edge** | Turns a part lying on the bed about one of its bottom edges by the tilt angle and sets it back onto the bed, standing on that edge. Inside a Body, the whole Body is turned. | Select one bottom edge of the part, click the button and enter the angle (45 degrees by default). |
+| <img src="freecad/finsnap/icons/add_fins.svg" width="32" alt=""> | **Add fins** | Creates the fins under a face that leans over the bed and opens the task panel with automatic values. | Select the leaning face, click the button, adjust the values in the panel, click **Preview** to see them, **OK** to keep them. Select a second face on the opposite side as well to get a counter fin straight away. Double-click the fins in the tree to open the panel again. |
+| <img src="freecad/finsnap/icons/counter_fin.svg" width="32" alt=""> | **Add counter fin** | Adds a fin on the opposite side of existing fins, against tipping away, as large as the main fin. Fewer counter tines in the panel make it smaller. | Select the fins and click the button: the face leaning the other way is found automatically. To choose it yourself, select a face of the part as well. To remove the counter fin, clear its face in the property view. |
+| <img src="freecad/finsnap/icons/mesh_to_solid.svg" width="32" alt=""> | **Mesh to solid** | Turns an imported STL mesh into a solid with planar faces, so fins can be added to it. | Import the STL, select the mesh object and click the button. The mesh is hidden, the solid appears next to it. |
+| <img src="freecad/finsnap/icons/export_3mf.svg" width="32" alt=""> | **Export 3MF** | Writes a 3MF file for the slicer, every body as its own object, see [What the 3MF file contains](#what-the-3mf-file-contains). | Click the button with nothing selected to export all fins with their parts, or select what to export. Selecting the fins alone brings their part along. Set the mesh fineness, then choose the file. |
+
+Every button shows a tooltip with these explanations when the pointer rests on it.
 
 ## Usage
 
