@@ -17,6 +17,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import FreeCAD as App  # noqa: E402
 import FreeCADGui as Gui  # noqa: E402
 import Part  # noqa: E402
+from pivy import coin  # noqa: E402
 from PySide import QtWidgets  # noqa: E402
 from support import expect, lower_left_face, run, tilted_cube  # noqa: E402
 
@@ -24,6 +25,7 @@ WORKBENCH = "FinSnapWorkbench"
 COMMANDS = ("FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCounterFin", "FinSnap_MeshToSolid",
             "FinSnap_Export3MF")
 DIALOG_ACCEPTED = 1
+FLAT_TILT = 30.0  # flatter than the overhang limit
 
 
 def load_workbench():
@@ -117,6 +119,30 @@ def main():
     doc.recompute()
     expect(box.Placement.isIdentity(), "deleting the last fins lays the box flat again")
 
+    # Overhangs: tilted flatter than the limit, the bottom face is selected and
+    # reported; fins under the other face leave it marked in red.
+    QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (FLAT_TILT, True))
+    select(box, "Edge%d" % bottom)
+    Gui.runCommand("FinSnap_Tilt")
+    doc.recompute()
+    selected = Gui.Selection.getSelectionEx()
+    hanging = [n for s in selected for n in s.SubElementNames]
+    expect(len(hanging) == 1, "after a flat tilt the overhanging face is selected: %s" % hanging)
+    steep = [i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).z < -d.TOLERANCE
+             and "Face%d" % i not in hanging]
+    marked = feature.create(box, "Face%d" % steep[0])
+    commands.ViewProviderFinSnap(marked.ViewObject)
+    doc.recompute()
+    expect(marked.Overhangs == hanging, "the fins list the face that still overhangs")
+    marks = marked.ViewObject.Proxy.marks
+    expect(marks.getNumChildren() == 1 and marks.whichChild.getValue() == coin.SO_SWITCH_ALL,
+           "the overhanging face is marked in the 3D view")
+    marked.ViewObject.Visibility = False
+    expect(marks.whichChild.getValue() == coin.SO_SWITCH_NONE, "hiding the fins hides the marks")
+    marked.ViewObject.Proxy.onDelete(marked.ViewObject, [])
+    doc.removeObject(marked.Name)
+    QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (d.TILT_ANGLE, True))
+
     # Add fins: selecting a leaning face creates the object and opens the panel.
     cube = doc.addObject("Part::Feature", "Cube")
     cube.Shape = tilted_cube()
@@ -157,6 +183,35 @@ def main():
     expect(fins.TineCount == 2 and fins.ResultHeight.Value < 11.2, "preview applies a changed value")
     panel.widgets["TineCount"].setValue(0)
     panel.apply()
+
+    # Fields without effect are greyed out, and a change starts the preview by itself.
+    expect(not panel.widgets["FinCount"].isEnabled() and not panel.widgets["CounterTineCount"].isEnabled(),
+           "fin count and counter tines are greyed out with automatic placement and no counter fin")
+    placement = panel.widgets["FinPlacement"]
+    placement.setCurrentIndex(placement.findData(d.PLACEMENT_DISTRIBUTED))
+    expect(panel.widgets["FinCount"].isEnabled() and not panel.widgets["FaceLengthPerFin"].isEnabled(),
+           "distributed placement enables the fin count and greys out the face length per fin")
+    expect(panel.timer.isActive(), "a change starts the automatic preview")
+    panel.timer.timeout.emit()
+    expect(fins.FinPlacement == d.PLACEMENT_DISTRIBUTED and not panel.timer.isActive(),
+           "the automatic preview applies the change")
+    foot = panel.widgets["FootShape"]
+    foot.setCurrentIndex(foot.findData(d.FOOT_NONE))
+    expect(not panel.widgets["FootThickness"].isEnabled()
+           and App.Qt.translate("FinSnap", feature.NOTE_NO_FOOT) in panel.widgets["FootThickness"].toolTip(),
+           "without a foot its fields are greyed out and the tooltip says why")
+    placement.setCurrentIndex(placement.findData(d.PLACEMENT_AUTO))
+    foot.setCurrentIndex(foot.findData(d.FOOT_SHAPE))
+    panel.preview()
+
+    # A face the fins cannot stand under: the panel says why instead of keeping the old result.
+    upward = [i for i, f in enumerate(cube.Shape.Faces, 1) if f.normalAt(0, 0).z > 1 - d.TOLERANCE][0]
+    wrong = feature.create(cube, "Face%d" % upward)
+    wrong_panel = FinSnapTaskPanel(wrong, created=True)
+    expect(App.Qt.translate("FinSnap", "the selected face does not lean over the bed") in wrong_panel.status.text(),
+           "the panel shows why no fins can be built: %s" % wrong_panel.status.text())
+    expect(not wrong_panel.accept(), "OK is refused while no fins can be built")
+    wrong_panel.reject()
 
     # Export: the file is written, gets its extension and holds two objects.
     select(cube)

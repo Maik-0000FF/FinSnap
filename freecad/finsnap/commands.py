@@ -5,6 +5,7 @@ import os
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
+from pivy import coin
 from PySide import QtWidgets
 
 from . import defaults as d
@@ -12,6 +13,7 @@ from . import export_3mf
 from . import feature
 from . import mesh_input
 from . import orient
+from . import overhang
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .shapes import global_shape, outermost
 from .taskpanel import LENGTH_SUFFIX, FinSnapTaskPanel
@@ -39,6 +41,13 @@ MESH_LINEAR_DECIMALS = 3
 MESH_ANGULAR_DECIMALS = 1
 SOLID_SUFFIX = "_solid"
 FINS_SUFFIX = "_fins"
+# Marks on faces that overhang without fins: red, half see-through, drawn
+# slightly in front of the part's own faces, which lie in the same place.
+OVERHANG_COLOR = (0.9, 0.1, 0.1)
+OVERHANG_TRANSPARENCY = 0.4
+OVERHANG_OFFSET = -1.0
+OVERHANG_MESH = 0.1  # largest deviation of the marks from the face (mm)
+STATUS_TIMEOUT_MS = 10000
 
 
 class ViewProviderFinSnap:
@@ -50,6 +59,56 @@ class ViewProviderFinSnap:
 
     def attach(self, vobj):
         self.Object = vobj.Object
+        self.marks = coin.SoSwitch()
+        vobj.RootNode.addChild(self.marks)
+        self.mark(vobj.Object)
+
+    def updateData(self, obj, prop):  # noqa: N802 - FreeCAD API
+        if prop == feature.OVERHANGS:
+            self.mark(obj)
+
+    def onChanged(self, vobj, prop):  # noqa: N802 - FreeCAD API
+        if prop == "Visibility" and hasattr(self, "marks"):
+            self.show_marks(vobj.Visibility)
+
+    def show_marks(self, visible):
+        self.marks.whichChild.setValue(coin.SO_SWITCH_ALL if visible else coin.SO_SWITCH_NONE)
+
+    def mark(self, obj):
+        """Cover the faces that overhang without fins with red marks."""
+        if not hasattr(self, "marks"):
+            return
+        self.marks.removeAllChildren()
+        names = getattr(obj, feature.OVERHANGS, [])
+        if not names or not obj.Base:
+            return
+        try:
+            shape = global_shape(obj.Base[0])
+        except ValueError:
+            return
+        points, index = [], []
+        for name in names:
+            vertices, triangles = shape.getElement(name).tessellate(OVERHANG_MESH)
+            first = len(points)
+            points += [(v.x, v.y, v.z) for v in vertices]
+            for triangle in triangles:
+                index += [first + corner for corner in triangle] + [-1]
+
+        material = coin.SoMaterial()
+        material.diffuseColor.setValue(*OVERHANG_COLOR)
+        material.transparency.setValue(OVERHANG_TRANSPARENCY)
+        offset = coin.SoPolygonOffset()
+        offset.factor.setValue(OVERHANG_OFFSET)
+        offset.units.setValue(OVERHANG_OFFSET)
+        coordinates = coin.SoCoordinate3()
+        coordinates.point.setValues(0, len(points), points)
+        faces = coin.SoIndexedFaceSet()
+        faces.coordIndex.setValues(0, len(index), index)
+        group = coin.SoSeparator()
+        for node in (material, offset, coordinates, faces):
+            group.addChild(node)
+        self.marks.addChild(group)
+        self.show_marks(obj.ViewObject.Visibility)
 
     def setEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API
         Gui.Control.showDialog(FinSnapTaskPanel(vobj.Object))
@@ -71,6 +130,8 @@ class ViewProviderFinSnap:
                       if o is not obj and _is_fins(o) and o.Base and outermost(o.Base[0]) is owner]
             if not others:
                 orient.lay_back(owner)
+            for other in others:
+                other.touch()
         return True
 
     def dumps(self):
@@ -137,6 +198,21 @@ class TiltOntoEdge:
         owner.Placement = change.multiply(owner.Placement)
         doc.commitTransaction()
         doc.recompute()
+        _report_overhangs(obj)
+
+
+def _report_overhangs(obj):
+    """Select the faces that overhang after the tilt and say so in the status bar."""
+    numbers = overhang.overhangs(global_shape(obj))
+    if not numbers:
+        return
+    names = ["%s%d" % (FACE_PREFIX, number) for number in numbers]
+    Gui.Selection.clearSelection()
+    Gui.Selection.addSelection(obj, names)
+    text = translate("FinSnap", "%d faces overhang flatter than %.0f degrees and are selected: they need "
+                                "fins or support.") % (len(names), d.OVERHANG_ANGLE)
+    Gui.getMainWindow().statusBar().showMessage(text, STATUS_TIMEOUT_MS)
+    App.Console.PrintWarning("FinSnap: %s %s\n" % (text, ", ".join(names)))
 
 
 def _owners(objects):

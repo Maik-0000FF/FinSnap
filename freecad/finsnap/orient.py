@@ -11,6 +11,7 @@ can be laid flat again, also after several tilts.
 INPUTS this has to withstand (tilt()):
   straight, horizontal edge on the bed  ->  placement standing on that edge
   curved edge                           ->  OrientError
+  straight B-spline edge (loft side)    ->  as a straight edge
   edge not horizontal                   ->  OrientError
   edge above the lowest point           ->  OrientError: it is not a bottom edge
   angle <= 0 or >= 90                   ->  OrientError
@@ -21,7 +22,8 @@ INPUTS this has to withstand (stand()):
     the bed                             ->  face laid down, then as tilt()
   face already on the bed               ->  same result as tilt() alone
   face facing up (normal +Z)            ->  part turned over, then as tilt()
-  face not planar                       ->  OrientError
+  face curved (cone, cylinder)          ->  OrientError
+  flat B-spline face (loft side)        ->  as a planar face
   edge not an edge of the face          ->  OrientError
   face the part cannot rest on (other
     geometry reaches below it)          ->  OrientError
@@ -35,10 +37,9 @@ INPUTS this has to withstand (remember_flat(), lay_back()):
 """
 
 import FreeCAD as App
-import Part
 
 from . import defaults as d
-from .i18n import QT_TRANSLATE_NOOP
+from .i18n import QT_TRANSLATE_NOOP, translate
 
 V = App.Vector
 DOWN = V(0, 0, -1)
@@ -65,15 +66,17 @@ def _moved(shape, change):
 def tilt(shape, edge, angle_deg):
     """The placement change that stands `shape` on `edge`, tilted by angle_deg."""
     if not 0 < angle_deg < 90:
-        raise OrientError("the tilt angle must lie between 0 and 90 degrees")
-    if not isinstance(edge.Curve, Part.Line):
-        raise OrientError("select a straight edge")
+        raise OrientError(translate("FinSnap", "the tilt angle must lie between 0 and 90 degrees"))
     start, end = edge.Vertexes[0].Point, edge.Vertexes[-1].Point
     axis = end - start
+    # Measured instead of asking for a line: the side edges of a loft are
+    # straight B-splines.
+    if abs(edge.Length - axis.Length) > d.TOLERANCE:
+        raise OrientError(translate("FinSnap", "the edge is curved; select a straight edge"))
     if abs(axis.z) > d.TOLERANCE * axis.Length:
-        raise OrientError("the edge is not horizontal")
+        raise OrientError(translate("FinSnap", "the edge is not horizontal"))
     if start.z > shape.BoundBox.ZMin + d.TOLERANCE:
-        raise OrientError("the edge does not lie on the bed")
+        raise OrientError(translate("FinSnap", "the edge does not lie on the bed"))
 
     # Of the two directions, the right one lifts the part over the edge
     # instead of pushing it through the bed.
@@ -83,19 +86,19 @@ def tilt(shape, edge, angle_deg):
         if turned.BoundBox.ZMin >= start.z - d.TOLERANCE:
             lift = App.Placement(V(0, 0, start.z - turned.BoundBox.ZMin), App.Rotation())
             return lift.multiply(turn)
-    raise OrientError("the part cannot stand on this edge")
+    raise OrientError(translate("FinSnap", "the part cannot stand on this edge"))
 
 
 def lay_flat(shape, face):
     """The placement change that lays `face` onto the bed, at the bed level of `shape`."""
     if face.findPlane() is None:
-        raise OrientError("select a planar face")
+        raise OrientError(translate("FinSnap", "the face that is to lie on the bed is curved; select a flat face"))
     u0, u1, v0, v1 = face.ParameterRange
     normal = face.normalAt((u0 + u1) / 2, (v0 + v1) / 2)
     turn = App.Placement(V(0, 0, 0), App.Rotation(normal, DOWN), face.CenterOfMass)
     turned = _moved(shape, turn)
     if _moved(face, turn).BoundBox.ZMax > turned.BoundBox.ZMin + d.TOLERANCE:
-        raise OrientError("the part cannot rest on this face")
+        raise OrientError(translate("FinSnap", "the part cannot rest on this face"))
     lift = App.Placement(V(0, 0, shape.BoundBox.ZMin - turned.BoundBox.ZMin), App.Rotation())
     return lift.multiply(turn)
 
@@ -105,7 +108,7 @@ def stand(shape, edge, angle_deg, face=None):
     if face is None:
         return tilt(shape, edge, angle_deg)
     if not any(edge.isSame(candidate) for candidate in face.Edges):
-        raise OrientError("the edge is not an edge of the selected face")
+        raise OrientError(translate("FinSnap", "the edge is not an edge of the selected face"))
     flat = lay_flat(shape, face)
     return tilt(_moved(shape, flat), _moved(edge, flat), angle_deg).multiply(flat)
 

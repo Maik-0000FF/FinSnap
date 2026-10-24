@@ -11,6 +11,20 @@ All notable changes to FinSnap are listed here. The format follows
 - Stand on edge takes any edge together with the face that is to lie on the bed
 - Lay flat again command; deleting the last fins of a part lays it flat as well
 - Corner placement: two fins centred on the face ends, so the tine marks merge with the edges
+- Overhang check: faces flatter than 45 degrees without fins are marked red, listed as a warning and selected after Stand on edge
+
+### Changed
+
+- The task panel shows every change right away instead of on Preview, and greys out fields that have no effect with the current choices
+
+- Error messages and warnings follow the language of FreeCAD
+
+### Fixed
+
+- The task panel showed the last result instead of the reason when no fins could be built
+- Stand on edge refused the straight side edges of lofts and tapered Pads as curved
+- Corner tines stuck out past the face at a sharp edge
+- Fins under a face that narrows, like the side of a frustum, failed because the lowest tines missed the face; such tines are now left out with a warning
 
 ## [0.1.0] - 2026-10-24
 

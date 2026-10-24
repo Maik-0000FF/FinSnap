@@ -13,11 +13,15 @@ import Part
 
 from . import defaults as d
 from . import geometry
-from .i18n import QT_TRANSLATE_NOOP
+from . import overhang
+from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
 from .shapes import global_shape, outermost
 
 TYPE_NAME = "FinSnap"
+# Result property listing the faces that overhang without fins; the view
+# provider marks them.
+OVERHANGS = "Overhangs"
 
 GROUP_SLICER = QT_TRANSLATE_NOOP("App::Property", "Slicer")
 GROUP_CONNECTION = QT_TRANSLATE_NOOP("App::Property", "Connection")
@@ -139,17 +143,22 @@ PROPERTIES = (
          "fin_thickness", None),
     Prop("FinHeight", LENGTH, GROUP_FIN,
          QT_TRANSLATE_NOOP("FinSnap", "Fin height"),
-         QT_TRANSLATE_NOOP("App::Property", "Height of the fins, 0 = top of the highest tine"),
+         QT_TRANSLATE_NOOP("App::Property",
+                           "Height of the fins, 0 = top of the highest tine. A lower value leaves out the "
+                           "tines above it; the fins reach at most to just below the top of the face."),
          "fin_height", None),
     Prop("FinPlateau", LENGTH, GROUP_FIN,
-         QT_TRANSLATE_NOOP("FinSnap", "Fin plateau"),
+         QT_TRANSLATE_NOOP("FinSnap", "Top width"),
          QT_TRANSLATE_NOOP("App::Property", "Width of the flat top of a fin"),
          "fin_plateau", None),
     Prop("FinPlacement", CHOICE, GROUP_PLACEMENT,
          QT_TRANSLATE_NOOP("FinSnap", "Fin placement"),
          QT_TRANSLATE_NOOP("App::Property",
                            "auto: by face length; center: one fin; ends: two fins; corners: two fins "
-                           "centred on the face ends, so the tine marks merge with the edges; "
+                           "centred on the face ends, so the tine marks merge with the edges. Each tine "
+                           "sits centred on the edge: half of it touches the face, the other half the "
+                           "chamfer or rounding behind it, or nothing at a sharp edge, where the tine holds "
+                           "with half its width; "
                            "distributed: FinCount fins"),
          "placement", d.PLACEMENTS),
     Prop("FinCount", INTEGER, GROUP_PLACEMENT,
@@ -192,6 +201,34 @@ PROPERTIES = (
          "counter_tine_count", None),
 )
 
+# Fields that only take effect while another field holds one of `values`. The
+# task panel greys them out otherwise and says why in the tooltip. `control`
+# may also name a link that is no panel field; then it counts as set or not.
+Depends = namedtuple("Depends", "name control values note")
+FOOT_SHAPES_WITH_FOOT = tuple(s for s in d.FOOT_SHAPES if s != d.FOOT_NONE)
+NOTE_NO_FOOT = QT_TRANSLATE_NOOP("FinSnap", "Not used without a foot.")
+DEPENDS = (
+    Depends("FinCount", "FinPlacement", (d.PLACEMENT_DISTRIBUTED,),
+            QT_TRANSLATE_NOOP("FinSnap", "Only used with distributed placement.")),
+    Depends("FaceLengthPerFin", "FinPlacement", (d.PLACEMENT_AUTO,),
+            QT_TRANSLATE_NOOP("FinSnap", "Only used with automatic placement.")),
+    Depends("EndInset", "FinPlacement", (d.PLACEMENT_AUTO, d.PLACEMENT_ENDS, d.PLACEMENT_DISTRIBUTED),
+            QT_TRANSLATE_NOOP("FinSnap", "Not used with one fin in the centre or fins on the corners.")),
+    Depends("FootThickness", "FootShape", FOOT_SHAPES_WITH_FOOT, NOTE_NO_FOOT),
+    Depends("FootOverhang", "FootShape", FOOT_SHAPES_WITH_FOOT, NOTE_NO_FOOT),
+    Depends("FootWidthRatio", "FootShape", FOOT_SHAPES_WITH_FOOT, NOTE_NO_FOOT),
+    Depends("FootHalfWidth", "FootShape", FOOT_SHAPES_WITH_FOOT, NOTE_NO_FOOT),
+    Depends("FootWidthRatio", "FootHalfWidth", (0,),
+            QT_TRANSLATE_NOOP("FinSnap", "Only used while Foot half width is 0.")),
+    Depends("CounterTineCount", "CounterFace", (True,),
+            QT_TRANSLATE_NOOP("FinSnap", "Only used with a counter fin.")),
+)
+
+
+def unused_notes(name, current):
+    """Why field `name` has no effect, empty if it has one. current(name) gives a field's value."""
+    return [dep.note for dep in DEPENDS if dep.name == name and current(dep.control) not in dep.values]
+
 
 def value_of(obj, name):
     value = getattr(obj, name)
@@ -220,6 +257,13 @@ def add_properties(obj):
     for name, kind in results:
         obj.addProperty(kind, name, GROUP_RESULT, "", 1)
     obj.addProperty("App::PropertyStringList", "Warnings", GROUP_RESULT, "", 1)
+    add_overhangs(obj)
+
+
+def add_overhangs(obj):
+    obj.addProperty("App::PropertyStringList", OVERHANGS, GROUP_RESULT,
+                    QT_TRANSLATE_NOOP("App::Property",
+                                      "Faces of the part that overhang too flatly and carry no fins"), 1)
 
 
 def params_of(obj):
@@ -232,6 +276,25 @@ def _face(link):
         raise geometry.FinError("no face selected on %s" % part.Label)
     shape = global_shape(part)
     return shape, shape.getElement(subs[0])
+
+
+def _supported(part_obj, document):
+    """Faces of `part_obj` that carry fins of any FinSnap object in `document`."""
+    shape = global_shape(part_obj)
+    faces = []
+    for other in document.Objects:
+        if not isinstance(getattr(other, "Proxy", None), FinSnapFeature):
+            continue
+        for link in (other.Base, other.CounterFace):
+            if link and link[0] is part_obj and link[1]:
+                faces.append(shape.getElement(link[1][0]))
+    return shape, faces
+
+
+def overhangs_of(part_obj, document):
+    """Names of the faces of `part_obj` that overhang without fins."""
+    shape, supported = _supported(part_obj, document)
+    return ["Face%d" % number for number in overhang.overhangs(shape, supported)]
 
 
 class FinSnapFeature:
@@ -253,6 +316,10 @@ class FinSnapFeature:
                                      tine_count=p.counter_tine_count or None)
             shapes.append(counter.fins)
             warnings += counter.warnings
+        overhanging = overhangs_of(obj.Base[0], obj.Document)
+        if overhanging:
+            warnings.append(translate("FinSnap", "%d faces of %s overhang flatter than %.0f degrees without fins: %s")
+                            % (len(overhanging), obj.Base[0].Label, d.OVERHANG_ANGLE, ", ".join(overhanging)))
 
         if p.connection == d.CONNECTION_MERGED:
             obj.Shape = geometry.merged(part, *shapes)
@@ -262,11 +329,14 @@ class FinSnapFeature:
         obj.ResultThickness = result.thickness
         obj.ResultFinCount = len(result.positions)
         obj.Warnings = warnings
+        setattr(obj, OVERHANGS, overhanging)
         for warning in warnings:
             App.Console.PrintWarning("FinSnap: %s\n" % warning)
 
     def onDocumentRestored(self, obj):  # noqa: N802 - FreeCAD API
         obj.Proxy = self
+        if OVERHANGS not in obj.PropertiesList:
+            add_overhangs(obj)
         # A file saved by an older version knows fewer choices; offer the
         # current ones and keep the value.
         for prop in PROPERTIES:
@@ -316,4 +386,9 @@ def create(base, face_name, counter=None):
         obj.Container = outermost(base)
     if counter:
         obj.CounterFace = (counter[0], [counter[1]])
+    # Fins already on this part now see one more carried face.
+    for other in doc.Objects:
+        if other is not obj and isinstance(getattr(other, "Proxy", None), FinSnapFeature) \
+                and other.Base and other.Base[0] is base:
+            other.touch()
     return obj

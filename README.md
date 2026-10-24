@@ -59,7 +59,7 @@ The workbench adds one toolbar and a **FinSnap** menu with these commands, in th
 |---|---|---|---|
 | <img src="freecad/finsnap/icons/tilt.svg" width="32" alt=""> | **Stand on edge** | Lays one face of the part onto the bed, turns the part about an edge of that face by the tilt angle and sets it back onto the bed, standing on that edge. Inside a Body, the whole Body is turned. | Select the edge and the face of that edge that is to lie on the bed, click the button and enter the angle (45 degrees by default). For an edge already on the bed, the edge alone is enough. |
 | <img src="freecad/finsnap/icons/lay_flat.svg" width="32" alt=""> | **Lay flat again** | Puts a part stood on an edge back as it lay before. Deleting the last fins of a part does the same. | Select the part or its fins and click the button. |
-| <img src="freecad/finsnap/icons/add_fins.svg" width="32" alt=""> | **Add fins** | Creates the fins under a face that leans over the bed and opens the task panel with automatic values. | Select the leaning face, click the button, adjust the values in the panel, click **Preview** to see them, **OK** to keep them. Select a second face on the opposite side as well to get a counter fin straight away. Double-click the fins in the tree to open the panel again. |
+| <img src="freecad/finsnap/icons/add_fins.svg" width="32" alt=""> | **Add fins** | Creates the fins under a face that leans over the bed and opens the task panel with automatic values. | Select the leaning face, click the button, adjust the values in the panel, which shows every change right away, and click **OK** to keep them. Select a second face on the opposite side as well to get a counter fin straight away. Double-click the fins in the tree to open the panel again. |
 | <img src="freecad/finsnap/icons/counter_fin.svg" width="32" alt=""> | **Add counter fin** | Adds a fin on the opposite side of existing fins, against tipping away, as large as the main fin. Fewer counter tines in the panel make it smaller. | Select the fins and click the button: the face leaning the other way is found automatically. To choose it yourself, select a face of the part as well. To remove the counter fin, clear its face in the property view. |
 | <img src="freecad/finsnap/icons/mesh_to_solid.svg" width="32" alt=""> | **Mesh to solid** | Turns an imported STL mesh into a solid with planar faces, so fins can be added to it. | Import the STL, select the mesh object and click the button. The mesh is hidden, the solid appears next to it. |
 | <img src="freecad/finsnap/icons/export_3mf.svg" width="32" alt=""> | **Export 3MF** | Writes a 3MF file for the slicer, every body as its own object, see [What the 3MF file contains](#what-the-3mf-file-contains). | Click the button with nothing selected to export all fins with their parts, or select what to export. Selecting the fins alone brings their part along. Set the mesh fineness, then choose the file. |
@@ -73,9 +73,10 @@ Every button shows a tooltip with these explanations when the pointer rests on i
 3. Select the face that leans over the bed.
 4. Click **Add fins**. The task panel opens with automatic values.
 5. Enter the slicer settings of your print profile: nozzle diameter, bead width, layer height, first layer height.
-6. Adjust any value, click **Preview**, and confirm with **OK**. The letters next to the fields point to the side view and top view drawn in the panel.
-7. For a counter fin against tipping away, select the fins and click **Add counter fin**. The face leaning the other way is found automatically; select a face of the part as well to choose it yourself.
-8. Click **Export 3MF**. With nothing selected, all fins of the document are exported together with their parts; otherwise the selection is exported. Selecting the fins alone also brings their part along.
+6. Adjust any value and confirm with **OK**. Every change shows in the 3D view right away. Fields that have no effect with the current choices are greyed out, and their tooltip says why. The letters next to the fields point to the side view and top view drawn in the panel.
+7. Check the overhangs: faces that lie flatter than 45 degrees over the bed and carry no fins are marked red and listed under the warnings of the fins. Add fins or a counter fin there, or plan support in the slicer. Stand on edge already selects such faces after the tilt.
+8. For a counter fin against tipping away, select the fins and click **Add counter fin**. The face leaning the other way is found automatically; select a face of the part as well to choose it yourself.
+9. Click **Export 3MF**. With nothing selected, all fins of the document are exported together with their parts; otherwise the selection is exported. Selecting the fins alone also brings their part along.
 
 An STL file is imported first, then turned into a solid with **Mesh to solid**. Fins can be added to its planar faces.
 
@@ -118,9 +119,9 @@ The file is a ZIP archive; the content above sits in `3D/3dmodel.model`. A slice
 | | Tine width beads | 1 | Tine width in beads |
 | | Tine count | 0 = as many as fit | Tines per fin |
 | Fin | Fin thickness | 0 = from height, at least 3 beads | Wall thickness |
-| | Fin height | 0 = top of the highest tine | Height of the fin |
-| | Fin plateau | 2 mm | Flat top instead of a tip |
-| Placement | Fin placement | auto | auto, centre, ends, corners, distributed. Corners centres a fin on each end of the face, so the tine marks merge with the edges |
+| | Fin height | 0 = top of the highest tine | Height of the fin. A lower value leaves out the tines above it; at most just below the top of the face |
+| | Top width | 2 mm | Width of the flat top of the fin, instead of a tip |
+| Placement | Fin placement | auto | auto, centre, ends, corners, distributed. Corners centres a fin on each end of the face, so the tine marks merge with the edges. Each tine sits centred on the edge: half of it touches the face, the other half the chamfer or rounding behind the edge. At a sharp edge that half reaches into the air, and the tine holds with half its width |
 | | Fin count | 3 | Fins for distributed placement |
 | | End inset | 0.5 mm | Distance of the outer fins from the face ends |
 | | Face length per fin | 50 mm | Automatic placement adds one fin per this length |

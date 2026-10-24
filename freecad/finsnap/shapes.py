@@ -16,11 +16,13 @@ INPUTS this has to withstand:
 
 import Part
 
+from .i18n import translate
+
 
 def global_shape(obj):
     shape = Part.getShape(obj, "", needSubElement=False, transform=False)
     if shape.isNull():
-        raise ValueError("%s has no shape" % obj.Label)
+        raise ValueError(translate("FinSnap", "%s has no shape") % obj.Label)
     shape = shape.copy()
     shape.Placement = obj.getGlobalPlacement()
     return shape
