@@ -60,7 +60,10 @@ PLACEMENT_AUTO = "auto"
 PLACEMENT_CENTER = "center"
 PLACEMENT_ENDS = "ends"
 PLACEMENT_DISTRIBUTED = "distributed"
-PLACEMENTS = (PLACEMENT_AUTO, PLACEMENT_CENTER, PLACEMENT_ENDS, PLACEMENT_DISTRIBUTED)
+# Two fins centred on the ends of the face: each tine touches the part across
+# the edge where the face ends, so its mark merges with that edge.
+PLACEMENT_CORNERS = "corners"
+PLACEMENTS = (PLACEMENT_AUTO, PLACEMENT_CENTER, PLACEMENT_ENDS, PLACEMENT_CORNERS, PLACEMENT_DISTRIBUTED)
 PLACEMENT = PLACEMENT_AUTO
 FIN_COUNT = 3               # used by "distributed"
 END_INSET = 0.5             # distance of the outer fins from the face ends

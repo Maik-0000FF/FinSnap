@@ -54,6 +54,76 @@ def shape_regression(cube, face):
            "the foot is %.0f %% as wide as long (%.2f x %.2f mm)" % (d.FOOT_WIDTH_RATIO * 100, length, width))
 
 
+def check_stand():
+    """Any edge with one of its faces: the face is laid down first, then the part stands on the edge."""
+    box = Part.makeBox(30, 10, 10)
+    top = [e for e in box.Edges if e.BoundBox.ZMin > 10 - d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
+    front = [f for f in box.Faces if f.BoundBox.YMax < d.TOLERANCE][0]
+    upper = [f for f in box.Faces if f.BoundBox.ZMin > 10 - d.TOLERANCE][0]
+    try:
+        orient.stand(box, top, d.TILT_ANGLE)
+    except orient.OrientError:
+        pass
+    else:
+        raise AssertionError("a top edge without a face was accepted")
+
+    for face, name in ((front, "the side face"), (upper, "the upper face")):
+        stood = box.copy()
+        stood.Placement = orient.stand(box, top, d.TILT_ANGLE, face).multiply(stood.Placement)
+        expect(abs(stood.BoundBox.ZMin) < d.TOLERANCE, "with %s the part rests on the bed" % name)
+        moved_top = [e for e in stood.Edges if abs(e.Length - 30) < d.TOLERANCE
+                     and e.BoundBox.ZMax < d.TOLERANCE]
+        expect(len(moved_top) == 1, "with %s the part stands on the chosen edge" % name)
+        leaning = [f for f in stood.Faces if abs(f.normalAt(0, 0).z + math.sqrt(0.5)) < 1e-6]
+        expect(len(leaning) == 2, "with %s two faces lean over the bed at 45 degrees" % name)
+
+    bottom = [f for f in box.Faces if f.BoundBox.ZMax < d.TOLERANCE][0]
+    on_bed = [e for e in bottom.Edges if e.BoundBox.YMax < d.TOLERANCE][0]
+    alone = orient.stand(box, on_bed, d.TILT_ANGLE)
+    with_face = orient.stand(box, on_bed, d.TILT_ANGLE, bottom)
+    expect(alone.isSame(with_face, d.TOLERANCE), "a face already on the bed changes nothing")
+
+    side = [f for f in box.Faces if f.BoundBox.XMax < d.TOLERANCE][0]
+    try:
+        orient.stand(box, top, d.TILT_ANGLE, side)
+    except orient.OrientError as error:
+        expect("not an edge" in str(error), "an edge of another face is refused: %s" % error)
+    else:
+        raise AssertionError("an edge of another face was accepted")
+
+    # An L profile cannot rest on the inner face of its notch.
+    notched = box.cut(Part.makeBox(20, 10, 5, App.Vector(10, 0, 5)))
+    inner = [f for f in notched.Faces if abs(f.BoundBox.ZMin - 5) < d.TOLERANCE
+             and f.BoundBox.ZLength < d.TOLERANCE][0]
+    try:
+        orient.lay_flat(notched, inner)
+    except orient.OrientError as error:
+        expect("cannot rest" in str(error), "a face the part cannot rest on is refused: %s" % error)
+    else:
+        raise AssertionError("a face inside a notch was laid onto the bed")
+
+
+def check_corners(cube, face):
+    """Two fins centred on the face ends: each tine touches the face up to its edge."""
+    result = geometry.build(cube, face, FinParams(placement=d.PLACEMENT_CORNERS))
+    expect(len(result.fins.Solids) == 2, "corner placement gives two fins")
+    frame = geometry.frame_of(cube, face)
+    centres = sorted(t + result.thickness / 2 for t in result.positions)
+    expect(abs(centres[0] - frame.along_min) < d.TOLERANCE and abs(centres[1] - frame.along_max) < d.TOLERANCE,
+           "the corner fins are centred on the face ends")
+    for tine in result.tines:
+        ts = [v.Point.dot(frame.along) for v in tine.Vertexes
+              if cube.isInside(v.Point, d.TOLERANCE, True)]
+        expect(any(min(ts) < end < max(ts) for end in (frame.along_min, frame.along_max)),
+               "a corner tine touches the part across the end of the face")
+    try:
+        geometry.build(cube, face, FinParams(placement=d.PLACEMENT_CORNERS, fin_thickness=30.0))
+    except geometry.FinError as error:
+        expect("too short" in str(error), "corner fins that would collide are refused: %s" % error)
+    else:
+        raise AssertionError("colliding corner fins were accepted")
+
+
 def main():
     cube = tilted_cube()
     face = lower_left_face(cube)
@@ -96,6 +166,7 @@ def main():
     expect(box.BoundBox.ZMax > 10 + d.TOLERANCE, "tilted part stands up over the edge")
     leaning = [f for f in box.Faces if abs(f.normalAt(0, 0).z + math.sqrt(0.5)) < 1e-6]
     expect(leaning, "a face leans over the bed at 45 degrees")
+    check_stand()
 
     steep = geometry.build(cube, face, FinParams())
     expect(not any("inclined" in w for w in steep.warnings), "45 degrees gives no angle warning")
@@ -113,6 +184,7 @@ def main():
                "with a %.0f mm foot the lowest tine sits on it and is attached" % foot)
     low = geometry.build(cube, face, FinParams(foot_thickness=3.0, tine_first=1.0))
     expect(len(low.fins.Solids) == 1, "a tine set below the top of the foot still reaches into the fin")
+    check_corners(cube, face)
     print("all checks passed", file=sys.__stdout__)
 
 

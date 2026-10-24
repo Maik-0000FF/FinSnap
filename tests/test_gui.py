@@ -21,7 +21,7 @@ from PySide import QtWidgets  # noqa: E402
 from support import expect, lower_left_face, run, tilted_cube  # noqa: E402
 
 WORKBENCH = "FinSnapWorkbench"
-COMMANDS = ("FinSnap_Tilt", "FinSnap_AddFins", "FinSnap_AddCounterFin", "FinSnap_MeshToSolid",
+COMMANDS = ("FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCounterFin", "FinSnap_MeshToSolid",
             "FinSnap_Export3MF")
 DIALOG_ACCEPTED = 1
 
@@ -84,6 +84,38 @@ def main():
     Gui.runCommand("FinSnap_Tilt")
     doc.recompute()
     expect(not messages and box.Shape.BoundBox.ZMax > 20 + d.TOLERANCE, "Stand on edge tilts the box")
+    select(box)
+    Gui.runCommand("FinSnap_LayFlat")
+    doc.recompute()
+    expect(not messages and box.Placement.isIdentity(), "Lay flat again puts the box back")
+
+    # Any edge with one of its faces: the face goes onto the bed first.
+    top = [i for i, e in enumerate(box.Shape.Edges, 1)
+           if e.BoundBox.ZMin > 20 - d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
+    front = [i for i, f in enumerate(box.Shape.Faces, 1) if f.BoundBox.YMax < d.TOLERANCE][0]
+    select(box, "Edge%d" % top)
+    Gui.runCommand("FinSnap_Tilt")
+    expect(len(messages) == 1 and box.Placement.isIdentity(), "a top edge alone is refused with a message")
+    del messages[:]
+    select(box, "Edge%d" % top, "Face%d" % front)
+    Gui.runCommand("FinSnap_Tilt")
+    doc.recompute()
+    expect(not messages and abs(box.Shape.BoundBox.ZMin) < d.TOLERANCE
+           and box.Shape.BoundBox.ZMax > 20 + d.TOLERANCE, "Stand on edge takes a top edge with its face")
+
+    # Deleting the last fins of the box lays it flat again; other fins keep it standing.
+    leaning = [i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).z < -d.TOLERANCE]
+    first = feature.create(box, "Face%d" % leaning[0])
+    second = feature.create(box, "Face%d" % leaning[1])
+    for fins in (first, second):
+        commands.ViewProviderFinSnap(fins.ViewObject)
+    first.ViewObject.Proxy.onDelete(first.ViewObject, [])
+    doc.removeObject(first.Name)
+    expect(not box.Placement.isIdentity(), "deleting fins while others remain keeps the box standing")
+    second.ViewObject.Proxy.onDelete(second.ViewObject, [])
+    doc.removeObject(second.Name)
+    doc.recompute()
+    expect(box.Placement.isIdentity(), "deleting the last fins lays the box flat again")
 
     # Add fins: selecting a leaning face creates the object and opens the panel.
     cube = doc.addObject("Part::Feature", "Cube")

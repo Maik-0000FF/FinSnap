@@ -78,6 +78,7 @@ CHOICE_LABELS = {
     d.PLACEMENT_AUTO: QT_TRANSLATE_NOOP("FinSnap", "automatic"),
     d.PLACEMENT_CENTER: QT_TRANSLATE_NOOP("FinSnap", "one in the centre"),
     d.PLACEMENT_ENDS: QT_TRANSLATE_NOOP("FinSnap", "two at the ends"),
+    d.PLACEMENT_CORNERS: QT_TRANSLATE_NOOP("FinSnap", "two on the corners"),
     d.PLACEMENT_DISTRIBUTED: QT_TRANSLATE_NOOP("FinSnap", "distributed"),
     d.FOOT_ELLIPSE: QT_TRANSLATE_NOOP("FinSnap", "oval"),
     d.FOOT_RECTANGLE: QT_TRANSLATE_NOOP("FinSnap", "rectangle"),
@@ -147,7 +148,8 @@ PROPERTIES = (
     Prop("FinPlacement", CHOICE, GROUP_PLACEMENT,
          QT_TRANSLATE_NOOP("FinSnap", "Fin placement"),
          QT_TRANSLATE_NOOP("App::Property",
-                           "auto: by face length; center: one fin; ends: two fins; "
+                           "auto: by face length; center: one fin; ends: two fins; corners: two fins "
+                           "centred on the face ends, so the tine marks merge with the edges; "
                            "distributed: FinCount fins"),
          "placement", d.PLACEMENTS),
     Prop("FinCount", INTEGER, GROUP_PLACEMENT,
@@ -265,6 +267,13 @@ class FinSnapFeature:
 
     def onDocumentRestored(self, obj):  # noqa: N802 - FreeCAD API
         obj.Proxy = self
+        # A file saved by an older version knows fewer choices; offer the
+        # current ones and keep the value.
+        for prop in PROPERTIES:
+            if prop.choices and list(prop.choices) != obj.getEnumerationsOfProperty(prop.name):
+                value = getattr(obj, prop.name)
+                setattr(obj, prop.name, list(prop.choices))
+                setattr(obj, prop.name, value)
 
     def dumps(self):
         return None

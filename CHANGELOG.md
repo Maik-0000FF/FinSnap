@@ -6,6 +6,12 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Stand on edge takes any edge together with the face that is to lie on the bed
+- Lay flat again command; deleting the last fins of a part lays it flat as well
+- Corner placement: two fins centred on the face ends, so the tine marks merge with the edges
+
 ## [0.1.0] - 2026-10-24
 
 ### Added

@@ -22,6 +22,10 @@ INPUTS this has to withstand (build()):
   face leaning upward (normal up)       ->  FinError: it is not an overhang
   face shorter along its edge than one
     fin plus both insets                ->  FinError
+  corners: face shorter than a fin plus
+    FOOT_CLEARANCE                      ->  FinError
+  corners: fins centred on the face
+    ends, half of each tine on the face ->  FinResult
   no tine fits below the top of the face ->  FinError
   manual fin_height below the first tine ->  FinError
   fins standing closer than they are
@@ -143,6 +147,12 @@ def thickness_for(p, height):
 
 def positions_for(p, frame, thickness):
     """Start of each fin along the face."""
+    if p.placement == d.PLACEMENT_CORNERS:
+        positions = [frame.along_min - thickness / 2, frame.along_max - thickness / 2]
+        if positions[1] - positions[0] < thickness + d.FOOT_CLEARANCE:
+            raise FinError("the face is too short for a fin on each corner")
+        return positions
+
     lo = frame.along_min + p.end_inset
     hi = frame.along_max - p.end_inset - thickness
     if hi < lo - d.TOLERANCE:

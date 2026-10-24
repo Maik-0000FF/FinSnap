@@ -21,7 +21,7 @@ Printing a part tilted by 45 degrees puts the layer lines diagonal to the load a
   - **merged**: fins and part become one body, the tines are printed as one path with the part
 - Tine height and width in layers and beads, so the design follows the print profile
 - Fin height set by the highest tine, thickness grows with the height
-- One fin centred, two at the ends, or several distributed along the face
+- One fin centred, two at the ends, two on the corners, or several distributed along the face
 - Oval, rectangular or no foot, narrowed automatically so neighbouring feet never touch
 - Counter fin on the opposite face, added with the fins or afterwards; the opposite face is found automatically
 - Every automatic value can be overridden by hand
@@ -57,7 +57,8 @@ The workbench adds one toolbar and a **FinSnap** menu with these commands, in th
 
 | | Command | What it does | How to use it |
 |---|---|---|---|
-| <img src="freecad/finsnap/icons/tilt.svg" width="32" alt=""> | **Stand on edge** | Turns a part lying on the bed about one of its bottom edges by the tilt angle and sets it back onto the bed, standing on that edge. Inside a Body, the whole Body is turned. | Select one bottom edge of the part, click the button and enter the angle (45 degrees by default). |
+| <img src="freecad/finsnap/icons/tilt.svg" width="32" alt=""> | **Stand on edge** | Lays one face of the part onto the bed, turns the part about an edge of that face by the tilt angle and sets it back onto the bed, standing on that edge. Inside a Body, the whole Body is turned. | Select the edge and the face of that edge that is to lie on the bed, click the button and enter the angle (45 degrees by default). For an edge already on the bed, the edge alone is enough. |
+| <img src="freecad/finsnap/icons/lay_flat.svg" width="32" alt=""> | **Lay flat again** | Puts a part stood on an edge back as it lay before. Deleting the last fins of a part does the same. | Select the part or its fins and click the button. |
 | <img src="freecad/finsnap/icons/add_fins.svg" width="32" alt=""> | **Add fins** | Creates the fins under a face that leans over the bed and opens the task panel with automatic values. | Select the leaning face, click the button, adjust the values in the panel, click **Preview** to see them, **OK** to keep them. Select a second face on the opposite side as well to get a counter fin straight away. Double-click the fins in the tree to open the panel again. |
 | <img src="freecad/finsnap/icons/counter_fin.svg" width="32" alt=""> | **Add counter fin** | Adds a fin on the opposite side of existing fins, against tipping away, as large as the main fin. Fewer counter tines in the panel make it smaller. | Select the fins and click the button: the face leaning the other way is found automatically. To choose it yourself, select a face of the part as well. To remove the counter fin, clear its face in the property view. |
 | <img src="freecad/finsnap/icons/mesh_to_solid.svg" width="32" alt=""> | **Mesh to solid** | Turns an imported STL mesh into a solid with planar faces, so fins can be added to it. | Import the STL, select the mesh object and click the button. The mesh is hidden, the solid appears next to it. |
@@ -67,7 +68,7 @@ Every button shows a tooltip with these explanations when the pointer rests on i
 
 ## Usage
 
-1. Stand the part on an edge: select a bottom edge of the part lying on the bed and click **Stand on edge** (45 degrees by default), or orient it yourself.
+1. Stand the part on an edge: select an edge of the part and the face of that edge that is to lie on the bed, then click **Stand on edge** (45 degrees by default), or orient it yourself.
 2. Switch to the **FinSnap** workbench.
 3. Select the face that leans over the bed.
 4. Click **Add fins**. The task panel opens with automatic values.
@@ -119,7 +120,7 @@ The file is a ZIP archive; the content above sits in `3D/3dmodel.model`. A slice
 | Fin | Fin thickness | 0 = from height, at least 3 beads | Wall thickness |
 | | Fin height | 0 = top of the highest tine | Height of the fin |
 | | Fin plateau | 2 mm | Flat top instead of a tip |
-| Placement | Fin placement | auto | auto, centre, ends, distributed |
+| Placement | Fin placement | auto | auto, centre, ends, corners, distributed. Corners centres a fin on each end of the face, so the tine marks merge with the edges |
 | | Fin count | 3 | Fins for distributed placement |
 | | End inset | 0.5 mm | Distance of the outer fins from the face ends |
 | | Face length per fin | 50 mm | Automatic placement adds one fin per this length |

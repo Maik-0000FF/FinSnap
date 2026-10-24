@@ -22,6 +22,7 @@ ICON_ADD = os.path.join(ICONS, "add_fins.svg")
 ICON_MESH = os.path.join(ICONS, "mesh_to_solid.svg")
 ICON_EXPORT = os.path.join(ICONS, "export_3mf.svg")
 ICON_TILT = os.path.join(ICONS, "tilt.svg")
+ICON_LAY_FLAT = os.path.join(ICONS, "lay_flat.svg")
 ICON_COUNTER = os.path.join(ICONS, "counter_fin.svg")
 EDGE_PREFIX = "Edge"
 TILT_DECIMALS = 1
@@ -61,6 +62,17 @@ class ViewProviderFinSnap:
     def claimChildren(self):  # noqa: N802 - FreeCAD API
         return []
 
+    def onDelete(self, vobj, subelements):  # noqa: N802 - FreeCAD API
+        """Deleting the last fins of a part stood on an edge lays the part flat again."""
+        obj = vobj.Object
+        if obj.Base:
+            owner = outermost(obj.Base[0])
+            others = [o for o in obj.Document.Objects
+                      if o is not obj and _is_fins(o) and o.Base and outermost(o.Base[0]) is owner]
+            if not others:
+                orient.lay_back(owner)
+        return True
+
     def dumps(self):
         return None
 
@@ -88,19 +100,24 @@ class TiltOntoEdge:
                 "MenuText": QT_TRANSLATE_NOOP("FinSnap_Tilt", "Stand on edge"),
                 "ToolTip": QT_TRANSLATE_NOOP(
                     "FinSnap_Tilt",
-                    "Select a bottom edge of a part lying on the bed. The part is turned about "
-                    "that edge by the tilt angle and set back onto the bed, standing on the edge.")}
+                    "Select an edge of the part and the face of that edge that is to lie on the bed. "
+                    "The face is laid onto the bed, the part is turned about the edge by the tilt angle "
+                    "and set back onto the bed, standing on the edge. For an edge already on the bed, "
+                    "the edge alone is enough.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
         return App.ActiveDocument is not None
 
     def Activated(self):  # noqa: N802 - FreeCAD API
         picked = [(sel.Object, name) for sel in Gui.Selection.getSelectionEx()
-                  for name in sel.SubElementNames if name.startswith(EDGE_PREFIX)]
-        if len(picked) != 1:
-            _message(translate("FinSnap", "Select exactly one bottom edge of the part."))
+                  for name in sel.SubElementNames if name.startswith((EDGE_PREFIX, FACE_PREFIX))]
+        edges = [(o, n) for o, n in picked if n.startswith(EDGE_PREFIX)]
+        faces = [(o, n) for o, n in picked if n.startswith(FACE_PREFIX)]
+        if len(edges) != 1 or len(faces) > 1 or any(o is not edges[0][0] for o, _ in faces):
+            _message(translate("FinSnap", "Select one edge of the part, and the face of that edge that is "
+                                          "to lie on the bed."))
             return
-        obj, edge_name = picked[0]
+        obj, edge_name = edges[0]
         angle, ok = QtWidgets.QInputDialog.getDouble(
             Gui.getMainWindow(), translate("FinSnap", "Stand on edge"), translate("FinSnap", "Tilt angle (degrees):"),
             d.TILT_ANGLE, 1.0, 89.0, TILT_DECIMALS)
@@ -108,15 +125,51 @@ class TiltOntoEdge:
             return
         try:
             shape = global_shape(obj)
-            change = orient.tilt(shape, shape.getElement(edge_name), angle)
+            face = shape.getElement(faces[0][1]) if faces else None
+            change = orient.stand(shape, shape.getElement(edge_name), angle, face)
         except orient.OrientError as error:
             _message(str(error))
             return
         doc = App.ActiveDocument
         doc.openTransaction(translate("FinSnap", "Stand on edge"))
         owner = outermost(obj)
+        orient.remember_flat(owner)
         owner.Placement = change.multiply(owner.Placement)
         doc.commitTransaction()
+        doc.recompute()
+
+
+def _owners(objects):
+    """The moved containers of the selected parts; for fins, of the part they support."""
+    owners = []
+    for obj in objects:
+        part = obj.Base[0] if _is_fins(obj) and obj.Base else obj
+        owner = outermost(part)
+        if owner not in owners:
+            owners.append(owner)
+    return owners
+
+
+class LayFlat:
+    def GetResources(self):  # noqa: N802 - FreeCAD API
+        return {"Pixmap": ICON_LAY_FLAT,
+                "MenuText": QT_TRANSLATE_NOOP("FinSnap_LayFlat", "Lay flat again"),
+                "ToolTip": QT_TRANSLATE_NOOP(
+                    "FinSnap_LayFlat",
+                    "Puts a part stood on an edge back as it lay before. Select the part or its fins. "
+                    "Deleting the last fins of a part does the same.")}
+
+    def IsActive(self):  # noqa: N802 - FreeCAD API
+        return bool(Gui.Selection.getSelection())
+
+    def Activated(self):  # noqa: N802 - FreeCAD API
+        doc = App.ActiveDocument
+        doc.openTransaction(translate("FinSnap", "Lay flat again"))
+        laid = [owner for owner in _owners(Gui.Selection.getSelection()) if orient.lay_back(owner)]
+        doc.commitTransaction()
+        if not laid:
+            _message(translate("FinSnap", "The selection was not stood on an edge with Stand on edge."))
+            return
         doc.recompute()
 
 
@@ -310,6 +363,7 @@ class Export3MF:
 
 
 COMMANDS = (("FinSnap_Tilt", TiltOntoEdge()),
+            ("FinSnap_LayFlat", LayFlat()),
             ("FinSnap_AddFins", AddFins()),
             ("FinSnap_AddCounterFin", AddCounterFin()),
             ("FinSnap_MeshToSolid", MeshToSolid()),
