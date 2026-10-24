@@ -14,6 +14,16 @@ Printing a part tilted by 45 degrees puts the layer lines diagonal to the load a
 
 ![FinSnap in FreeCAD: a tilted 40 mm cube with a fin and the task panel](docs/assets/screenshot.png)
 
+## Why print standing on an edge
+
+A part printed flat is weakest straight across its layers, and two of its faces differ from all the others. Standing on an edge at 45 degrees changes that:
+
+- **Strength:** the layer boundaries run diagonally through the part. A load along one of its main axes no longer pulls a single layer seam apart; it is shared between layers and extrusion paths.
+- **Surface:** every side shows the same layer pattern. There is no smooth bottom next to a top skin with a pattern of its own, and no first-layer imprint on a visible face.
+- **Accuracy:** no face rests on the bed, only the edge the part stands on, so no outline is widened by the squashed first layer (elephant's foot).
+
+How much each effect matters depends on the material, the printer and the part.
+
 **Features:**
 - Fins generated automatically under a selected face that leans over the bed
 - Two connection modes:
@@ -73,7 +83,7 @@ Every button shows a tooltip with these explanations when the pointer rests on i
 3. Select the face that leans over the bed.
 4. Click **Add fins**. The task panel opens with automatic values.
 5. Enter the slicer settings of your print profile: nozzle diameter, bead width, layer height, first layer height.
-6. Adjust any value and confirm with **OK**. Every change shows in the 3D view right away. Fields that have no effect with the current choices are greyed out, and their tooltip says why. The letters next to the fields point to the side view and top view drawn in the panel.
+6. Adjust any value and confirm with **OK**. Every change shows in the 3D view right away. Fields that have no effect with the current choices are greyed out, and their tooltip says why. A field that differs from the standard for new fins is marked in orange, and the button beside it puts the standard back. **Save as standard** makes the current values the start of every new fin; **Factory settings** goes back to the built-in values. The letters next to the fields point to the side view and top view drawn in the panel.
 7. Check the overhangs: faces that lie flatter than 45 degrees over the bed and carry no fins are marked red and listed under the warnings of the fins. Add fins or a counter fin there, or plan support in the slicer. Stand on edge already selects such faces after the tilt.
 8. For a counter fin against tipping away, select the fins and click **Add counter fin**. The face leaning the other way is found automatically; select a face of the part as well to choose it yourself.
 9. Click **Export 3MF**. With nothing selected, all fins of the document are exported together with their parts; otherwise the selection is exported. Selecting the fins alone also brings their part along.
@@ -113,7 +123,7 @@ The file is a ZIP archive; the content above sits in `3D/3dmodel.model`. A slice
 | Slicer | Nozzle diameter, bead width, layer height, first layer height | | Values of the print profile |
 | Connection | Connection | separate | separate or merged |
 | | Gap | 0.25 mm | Clearance between fin and face, along the face normal |
-| Tines | Tine spacing | 5 mm | Vertical distance between tines |
+| Tines | Tine spacing | 5 mm | Vertical distance between tines, at least the tine height plus one layer |
 | | Tine first | 0 = on the top of the foot | Height of the lowest tine |
 | | Tine layers | 1 | Tine height in layers |
 | | Tine width beads | 1 | Tine width in beads |

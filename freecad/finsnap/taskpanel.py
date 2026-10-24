@@ -4,14 +4,19 @@ The form is generated from feature.PROPERTIES, one group box per property
 group, so it never falls out of step with the object.
 """
 
+import functools
+import html
 import os
 
 import FreeCAD as App
 import FreeCADGui as Gui
 from PySide import QtCore, QtGui, QtWidgets
 
+from . import defaults as d
 from . import feature
+from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
+from .params import FinParams
 from .version import application
 
 # Upper limits of the input fields; generous, the geometry rejects nonsense.
@@ -24,6 +29,17 @@ LENGTH_SUFFIX = " mm"
 # Pause after the last change before the preview is rebuilt, so typing a
 # number does not rebuild the fins at every keystroke.
 PREVIEW_DELAY_MS = 400
+# Notes below the result: warnings in amber, a refusal in red, each in a framed
+# box with a sign, so they stand out from the result line above.
+WARNING_COLOR = "#e0a000"
+ERROR_COLOR = "#d03030"
+NOTE_STYLE = "QLabel { border: 2px solid %s; border-radius: 4px; padding: 6px; }"
+WARNING_SIGN = "⚠"
+# A field whose value differs from the standard for new fins: its label in
+# this colour, and a button beside it that puts the standard value back.
+MODIFIED_COLOR = "#e07000"
+MODIFIED_STYLE = "QLabel { color: %s; font-weight: bold; }" % MODIFIED_COLOR
+RESET_SIGN = "↺"
 IMAGES = os.path.join(os.path.dirname(__file__), "images")
 DRAWINGS = (
     (os.path.join(IMAGES, "side_view.svg"), QT_TRANSLATE_NOOP("FinSnap", "Side view")),
@@ -36,23 +52,42 @@ def _widget(prop, value):
         box = QtWidgets.QComboBox()
         for choice in prop.choices:
             box.addItem(translate("FinSnap", feature.CHOICE_LABELS[choice]), choice)
-        box.setCurrentIndex(prop.choices.index(value))
-        return box
-    if prop.kind == feature.INTEGER:
+    elif prop.kind == feature.INTEGER:
         box = QtWidgets.QSpinBox()
         box.setRange(0, MAX_INTEGER)
-        box.setValue(value)
-        return box
-    box = QtWidgets.QDoubleSpinBox()
-    if prop.kind == feature.LENGTH:
-        box.setRange(0, MAX_LENGTH)
-        box.setDecimals(LENGTH_DECIMALS)
-        box.setSuffix(LENGTH_SUFFIX)
     else:
-        box.setRange(0, MAX_RATIO)
-        box.setDecimals(RATIO_DECIMALS)
-    box.setValue(value)
+        box = QtWidgets.QDoubleSpinBox()
+        if prop.kind == feature.LENGTH:
+            box.setRange(0, MAX_LENGTH)
+            box.setDecimals(LENGTH_DECIMALS)
+            box.setSuffix(LENGTH_SUFFIX)
+        else:
+            box.setRange(0, MAX_RATIO)
+            box.setDecimals(RATIO_DECIMALS)
+    _write(prop, box, value)
     return box
+
+
+def _write(prop, widget, value):
+    if prop.kind == feature.CHOICE:
+        widget.setCurrentIndex(prop.choices.index(value))
+    else:
+        widget.setValue(value)
+
+
+def _same(prop, first, second):
+    if prop.kind == feature.CHOICE:
+        return first == second
+    return abs(first - second) < d.TOLERANCE
+
+
+def _shown(prop, value):
+    """A value as the panel shows it, for a tooltip."""
+    if prop.kind == feature.CHOICE:
+        return translate("FinSnap", feature.CHOICE_LABELS[value])
+    if prop.kind == feature.LENGTH:
+        return "%g%s" % (value, LENGTH_SUFFIX)
+    return "%g" % value
 
 
 def _changed_signal(widget):
@@ -73,6 +108,8 @@ class FinSnapTaskPanel:
         self.created = created
         self.widgets = {}
         self.labels = {}
+        self.resets = {}
+        self.standard = presets.standard()
         # Every change is written to the object at once; Cancel puts these back.
         self.original = {prop.name: feature.value_of(obj, prop.name) for prop in feature.PROPERTIES}
 
@@ -115,14 +152,42 @@ class FinSnapTaskPanel:
             if prop.name in feature.MARKS:
                 label = "%s (%s)" % (label, feature.MARKS[prop.name])
             self.labels[prop.name] = QtWidgets.QLabel(label)
-            groups[prop.group].addRow(self.labels[prop.name], widget)
+            reset = QtWidgets.QToolButton()
+            reset.setText(RESET_SIGN)
+            reset.clicked.connect(functools.partial(self.back_to_standard, prop))
+            row = QtWidgets.QWidget()
+            row_layout = QtWidgets.QHBoxLayout(row)
+            row_layout.setContentsMargins(0, 0, 0, 0)
+            row_layout.addWidget(widget, 1)
+            row_layout.addWidget(reset)
+            groups[prop.group].addRow(self.labels[prop.name], row)
             self.widgets[prop.name] = widget
+            self.resets[prop.name] = reset
             _changed_signal(widget).connect(self.changed)
+
+        standard_buttons = QtWidgets.QHBoxLayout()
+        save = QtWidgets.QPushButton(translate("FinSnap", "Save as standard"))
+        save.setToolTip(translate("FinSnap", "New fins start with these values. Fields that differ from the "
+                                             "standard are marked, and their button puts the standard back."))
+        save.clicked.connect(self.save_standard)
+        factory = QtWidgets.QPushButton(translate("FinSnap", "Factory settings"))
+        factory.setToolTip(translate("FinSnap", "Forget the saved standard and set every field to the "
+                                                "built-in value."))
+        factory.clicked.connect(self.factory_settings)
+        standard_buttons.addWidget(save)
+        standard_buttons.addWidget(factory)
+        layout.addLayout(standard_buttons)
 
         self.status = QtWidgets.QLabel()
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
+        self.notes = QtWidgets.QLabel()
+        self.notes.setWordWrap(True)
+        self.notes.setTextFormat(QtCore.Qt.RichText)
+        self.notes.hide()
+        layout.addWidget(self.notes)
         self.update_enabled()
+        self.update_marks()
         self.preview()
 
     def current(self, name):
@@ -142,8 +207,43 @@ class FinSnapTaskPanel:
             self.widgets[prop.name].setToolTip(tip)
             self.labels[prop.name].setEnabled(not notes)
 
+    def update_marks(self):
+        """Mark every field whose value differs from the standard for new fins."""
+        for prop in feature.PROPERTIES:
+            value = getattr(self.standard, prop.field)
+            modified = not _same(prop, _read(prop, self.widgets[prop.name]), value)
+            self.labels[prop.name].setStyleSheet(MODIFIED_STYLE if modified else "")
+            self.resets[prop.name].setVisible(modified)
+            self.resets[prop.name].setToolTip(translate("FinSnap", "Back to the standard: %s") % _shown(prop, value))
+
+    def back_to_standard(self, prop):
+        _write(prop, self.widgets[prop.name], getattr(self.standard, prop.field))
+
+    def save_standard(self):
+        values = {prop.field: _read(prop, self.widgets[prop.name]) for prop in feature.PROPERTIES}
+        try:
+            presets.save(FinParams(**values))
+        except ValueError as error:
+            self.refuse(error)
+            return
+        self.standard = presets.standard()
+        self.update_marks()
+
+    def factory_settings(self):
+        answer = QtWidgets.QMessageBox.question(
+            self.form, translate("FinSnap", "Factory settings"),
+            translate("FinSnap", "Forget the saved standard and set every field to the built-in value?"))
+        if answer != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        presets.reset()
+        self.standard = presets.standard()
+        for prop in feature.PROPERTIES:
+            self.back_to_standard(prop)
+        self.update_marks()
+
     def changed(self):
         self.update_enabled()
+        self.update_marks()
         self.timer.start()
 
     def apply(self):
@@ -154,25 +254,38 @@ class FinSnapTaskPanel:
         if not self.obj.recompute():
             raise ValueError(self.obj.getStatusString())
 
+    def show_notes(self, title, lines, color):
+        """A framed box with a sign and a title, one line per note; hidden without notes."""
+        if not lines:
+            self.notes.hide()
+            return
+        items = "".join("<li>%s</li>" % html.escape(line) for line in lines)
+        self.notes.setText("<b>%s %s</b><ul style='margin: 0'>%s</ul>" % (WARNING_SIGN, html.escape(title), items))
+        self.notes.setStyleSheet(NOTE_STYLE % color)
+        self.notes.show()
+
+    def refuse(self, error):
+        self.status.setText("")
+        self.show_notes(translate("FinSnap", "Not possible"), [str(error)], ERROR_COLOR)
+
     def preview(self):
         self.timer.stop()
         try:
             self.apply()
         except ValueError as error:
-            self.status.setText(translate("FinSnap", "Not possible: %s") % error)
+            self.refuse(error)
             return
-        lines = [translate("FinSnap", "%d fin(s), %.2f mm high, %.2f mm thick")
-                 % (self.obj.ResultFinCount, self.obj.ResultHeight.Value,
-                    self.obj.ResultThickness.Value)]
-        lines += list(self.obj.Warnings)
-        self.status.setText("\n".join(lines))
+        self.status.setText(translate("FinSnap", "%d fin(s), %.2f mm high, %.2f mm thick")
+                            % (self.obj.ResultFinCount, self.obj.ResultHeight.Value,
+                               self.obj.ResultThickness.Value))
+        self.show_notes(translate("FinSnap", "Notes"), list(self.obj.Warnings), WARNING_COLOR)
 
     def accept(self):
         self.timer.stop()
         try:
             self.apply()
         except ValueError as error:
-            self.status.setText(translate("FinSnap", "Not possible: %s") % error)
+            self.refuse(error)
             return False
         Gui.Control.closeDialog()
         App.ActiveDocument.recompute()

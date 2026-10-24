@@ -3,7 +3,7 @@
 
   <name>FinSnap</name>
 
-  <description>Breakaway fins for parts printed standing on an edge. The fins hold the tilted part on the bed and touch it only with small horizontal tines, as a separate object or merged with the part.</description>
+  <description>Breakaway fins for parts printed standing on an edge. The fins hold the tilted part on the bed and touch it only with small horizontal tines, as a separate object or merged with the part. Printing on an edge puts the layers diagonal to the load and gives every side the same finish.</description>
 
   <version>0.2.0</version>
 

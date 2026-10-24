@@ -7,6 +7,9 @@ INPUTS this has to withstand (validate()):
   bead_width < nozzle_diameter / 2      ->  ParamError: not a printable bead
   layer_height > nozzle_diameter        ->  ParamError: not printable
   tine_layers or tine_width_beads < 1   ->  ParamError
+  tine_spacing < tine height plus one
+    layer (tines would merge, or round
+    onto the same layer)                ->  ParamError naming the least spacing
   foot_width_ratio <= 0                 ->  ParamError
   tine_count < 0                        ->  ParamError; 0 means automatic
   fin_thickness, fin_height, tine_first,
@@ -93,6 +96,9 @@ class FinParams:
             raise ParamError(translate("FinSnap", "tine_layers must be at least 1"))
         if self.tine_width_beads < 1:
             raise ParamError(translate("FinSnap", "tine_width_beads must be at least 1"))
+        if self.tine_spacing < self.least_tine_spacing - d.TOLERANCE:
+            raise ParamError(translate("FinSnap", "tine_spacing %.2f mm leaves no free layer between the tines; "
+                                       "it needs at least %.2f mm") % (self.tine_spacing, self.least_tine_spacing))
 
         choices = (("connection", d.CONNECTIONS), ("placement", d.PLACEMENTS),
                    ("foot_shape", d.FOOT_SHAPES))
@@ -114,6 +120,12 @@ class FinParams:
     @property
     def tine_height(self):
         return self.tine_layers * self.layer_height
+
+    @property
+    def least_tine_spacing(self):
+        """At least one free layer between two tines: closer, they merge into
+        one block, or round onto the same layer and lie on top of each other."""
+        return self.tine_height + self.layer_height
 
     @property
     def foot_height(self):

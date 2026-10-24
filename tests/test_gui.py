@@ -20,7 +20,7 @@ import FreeCADGui as Gui  # noqa: E402
 import Part  # noqa: E402
 from pivy import coin  # noqa: E402
 from PySide import QtWidgets  # noqa: E402
-from support import expect, lower_left_face, run, tilted_cube  # noqa: E402
+from support import STANDARD_THICKNESS, expect, lower_left_face, run, tilted_cube  # noqa: E402
 
 WORKBENCH = "FinSnapWorkbench"
 COMMANDS = ("FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCounterFin", "FinSnap_MeshToSolid",
@@ -164,6 +164,12 @@ def main():
     commands.ViewProviderFinSnap(marked.ViewObject)
     doc.recompute()
     expect(marked.Overhangs == hanging, "the fins list the face that still overhangs")
+    from freecad.finsnap import taskpanel
+    noted = FinSnapTaskPanel(marked)
+    expect(not noted.notes.isHidden()
+           and taskpanel.WARNING_COLOR in noted.notes.styleSheet() and marked.Warnings[0] in noted.notes.text(),
+           "the panel shows the warnings in a framed box of their own")
+    noted.reject()
     marks = marked.ViewObject.Proxy.marks
     expect(marks.getNumChildren() == 1 and marks.whichChild.getValue() == coin.SO_SWITCH_ALL,
            "the overhanging face is marked in the 3D view")
@@ -210,6 +216,16 @@ def main():
     doc.recompute()
     expect(not messages and fins.CounterFace and len(fins.Shape.Solids) == 2,
            "Add counter fin finds the opposite face and adds a fin there")
+    other = doc.addObject("Part::Feature", "OtherPart")
+    other.Shape = tilted_cube()
+    counter_before = fins.CounterFace
+    select(fins)
+    Gui.Selection.addSelection(other, face_name(other, lower_left_face(other.Shape)))
+    Gui.runCommand("FinSnap_AddCounterFin")
+    expect(len(messages) == 1 and fins.CounterFace == counter_before,
+           "a counter fin on a face of another part is refused with a message")
+    del messages[:]
+    doc.removeObject(other.Name)
     heights = sorted(round(s.BoundBox.ZLength, 3) for s in fins.Shape.Solids)
     expect(heights[0] == heights[1], "the counter fin is as large as the main fin: %s" % heights)
     fins.CounterTineCount = 1
@@ -245,6 +261,7 @@ def main():
     expect(fins.FinPlacement == d.PLACEMENT_DISTRIBUTED and not panel.timer.isActive(),
            "the automatic preview applies the change")
     expect(panel.timer.parent() is panel.form, "the preview timer goes with the panel")
+    expect(panel.notes.isHidden() == (not fins.Warnings), "the notes box shows only when there are warnings")
     foot = panel.widgets["FootShape"]
     foot.setCurrentIndex(foot.findData(d.FOOT_NONE))
     expect(not panel.widgets["FootThickness"].isEnabled()
@@ -263,12 +280,38 @@ def main():
     reopened.reject()
     expect(fins.TineCount == before and fins.isValid(), "Cancel puts back the values the fins had")
 
+    # Fields that differ from the standard are marked; their button puts the standard back.
+    from freecad.finsnap import presets
+    from freecad.finsnap.params import FinParams
+    built_in = FinParams().fin_thickness
+    marking = FinSnapTaskPanel(fins)
+    thickness, reset = marking.widgets["FinThickness"], marking.resets["FinThickness"]
+    label = marking.labels["FinThickness"]
+    expect(reset.isHidden() and not label.styleSheet(), "a field at its standard value is not marked")
+    thickness.setValue(STANDARD_THICKNESS)
+    expect(not reset.isHidden() and label.styleSheet() == taskpanel.MODIFIED_STYLE,
+           "a changed field is marked and gets a button back to the standard")
+    reset.click()
+    expect(abs(thickness.value() - built_in) < d.TOLERANCE and reset.isHidden(),
+           "the button puts the standard value back and clears the mark")
+    thickness.setValue(STANDARD_THICKNESS)
+    marking.save_standard()
+    expect(abs(presets.standard().fin_thickness - STANDARD_THICKNESS) < d.TOLERANCE and reset.isHidden(),
+           "Save as standard makes the value the standard for new fins and clears the mark")
+    QtWidgets.QMessageBox.question = staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.Yes)
+    marking.factory_settings()
+    expect(presets.standard() == FinParams() and abs(thickness.value() - built_in) < d.TOLERANCE
+           and reset.isHidden(), "Factory settings forget the saved standard and reset the fields")
+    marking.reject()
+
     # A face the fins cannot stand under: the panel says why instead of keeping the old result.
     upward = [i for i, f in enumerate(cube.Shape.Faces, 1) if f.normalAt(0, 0).z > 1 - d.TOLERANCE][0]
     wrong = feature.create(cube, "Face%d" % upward)
     wrong_panel = FinSnapTaskPanel(wrong, created=True)
-    expect(App.Qt.translate("FinSnap", "the selected face does not lean over the bed") in wrong_panel.status.text(),
-           "the panel shows why no fins can be built: %s" % wrong_panel.status.text())
+    reason = App.Qt.translate("FinSnap", "the selected face does not lean over the bed")
+    expect(reason in wrong_panel.notes.text() and not wrong_panel.notes.isHidden()
+           and taskpanel.ERROR_COLOR in wrong_panel.notes.styleSheet(),
+           "the panel shows in a red box why no fins can be built: %s" % wrong_panel.notes.text())
     expect(not wrong_panel.accept(), "OK is refused while no fins can be built")
     wrong_panel.reject()
 
@@ -291,6 +334,12 @@ def main():
     with zipfile.ZipFile(whole) as archive:
         model = archive.read("3D/3dmodel.model").decode()
     expect(model.count("<object ") == 2, "export without a selection takes all fins with their parts")
+    empty = doc.addObject("Part::Feature", "Empty")
+    select(empty)
+    Gui.runCommand("FinSnap_Export3MF")
+    expect(len(messages) == 1, "exporting an object without a shape shows a message: %s" % messages)
+    del messages[:]
+    doc.removeObject(empty.Name)
 
     # Mesh to solid: a mesh of the cube becomes a solid with planar faces.
     import Mesh

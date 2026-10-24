@@ -107,6 +107,10 @@ OVERHANG_SAMPLES = 8
 # A tine shorter than this share of a bead is not printed to its end. Measured
 # with a 0.45 mm bead: a 0.28 mm tine fell short, a 0.35 mm tine reached.
 TINE_MIN_LENGTH_BEADS = 0.75
+# Share of the end of a tine that has to lie on the face: all of it. A tine
+# partly over a recess or a hole would hang free there and print unevenly, so
+# it is left out.
+TINE_MIN_CONTACT = 1.0
 
 # --- Checks -------------------------------------------------------------------
 TOLERANCE = 1e-4

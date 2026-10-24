@@ -14,10 +14,11 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import FreeCAD as App  # noqa: E402
 import Part  # noqa: E402
-from support import expect, lower_left_face, run, tilted_cube  # noqa: E402
+from support import STANDARD_THICKNESS, expect, lower_left_face, run, tilted_cube  # noqa: E402
 from freecad.finsnap import defaults as d  # noqa: E402
 from freecad.finsnap import export_3mf, feature, geometry, orient  # noqa: E402
-from freecad.finsnap.params import FinParams  # noqa: E402
+from freecad.finsnap import presets  # noqa: E402
+from freecad.finsnap.params import FinParams, ParamError  # noqa: E402
 from freecad.finsnap.shapes import global_shape, outermost  # noqa: E402
 
 V = App.Vector
@@ -146,7 +147,7 @@ def tapered_pad(doc):
     doc.recompute()
 
     shape = global_shape(pad)
-    failures, left_out = [], 0
+    failures, left_out, fixed_checked = [], 0, False
     for face in shape.Faces:
         for edge in face.Edges:
             stood = shape.copy()
@@ -159,9 +160,64 @@ def tapered_pad(doc):
                 except geometry.FinError as error:
                     failures.append(str(error))
                 else:
-                    left_out += any("left out" in w for w in result.warnings)
+                    narrow = any("narrower" in w for w in result.warnings)
+                    left_out += narrow
+                    if narrow and not fixed_checked:
+                        # The same face with every tine asked for by number: still built, with the warning.
+                        frame = geometry.frame_of(stood, leaning)
+                        asked = len(geometry.tine_heights(FinParams(), frame, 0)[0])
+                        fixed = geometry.build(stood, leaning, FinParams(tine_count=asked))
+                        fixed_checked = any("narrower" in w for w in fixed.warnings)
     expect(not failures, "a tapered Pad takes fins under every leaning face, on any edge: %s" % failures[:3])
     expect(left_out, "tines under the narrow end of a face are left out with a warning")
+    expect(fixed_checked, "with a fixed tine count the narrow face is built as well, with the warning")
+
+
+def lost_face(doc):
+    """Fins whose face the part has lost do not stop the other fins of that part."""
+    part = doc.addObject("Part::Feature", "LostFacePart")
+    part.Shape = tilted_cube()
+    name = face_name(part.Shape, lower_left_face(part.Shape))
+    kept = feature.create(part, name)
+    lost = feature.create(part, name)
+    lost.Base = (part, ["Face%d" % (len(part.Shape.Faces) + 1)])
+    doc.recompute()
+    expect(kept.isValid() and kept.Shape.Solids and not lost.isValid(),
+           "fins on a face the part no longer has fail alone, the others are still built")
+    for obj in (lost, kept, part):
+        doc.removeObject(obj.Name)
+
+
+def saved_standard(doc):
+    """The standard for new fins: saved values, built-in ones, and what does not fit."""
+    expect(presets.standard() == FinParams(), "without a saved standard new fins start with the built-in values")
+    thin = FinParams(fin_thickness=STANDARD_THICKNESS, placement=d.PLACEMENT_CORNERS)
+    presets.save(thin)
+    expect(presets.standard() == thin, "a saved standard comes back as it was saved")
+    box = doc.addObject("Part::Feature", "StandardBox")
+    box.Shape = tilted_cube()
+    fins = feature.create(box, face_name(box.Shape, lower_left_face(box.Shape)))
+    expect(abs(fins.FinThickness.Value - STANDARD_THICKNESS) < d.TOLERANCE
+           and fins.FinPlacement == d.PLACEMENT_CORNERS, "new fins start with the saved standard")
+    doc.removeObject(fins.Name)
+    doc.removeObject(box.Name)
+
+    group = App.ParamGet("%s/%s" % (presets.PREFERENCES, presets.STANDARD_GROUP))
+    group.RemFloat("fin_thickness")
+    group.SetString("fin_thickness", "thin")
+    expect(presets.standard().fin_thickness == FinParams().fin_thickness
+           and presets.standard().placement == d.PLACEMENT_CORNERS,
+           "a field saved with another type falls back to its built-in value, the rest stays")
+    group.SetString("placement", "nowhere")
+    expect(presets.standard() == FinParams(), "saved values that do not validate give the built-in standard")
+    try:
+        presets.save(FinParams(gap=0.0))
+    except ParamError:
+        pass
+    else:
+        raise AssertionError("an invalid standard was saved")
+    presets.reset()
+    expect(presets.standard() == FinParams(), "factory settings bring back the built-in standard")
 
 
 def main():
@@ -195,6 +251,8 @@ def main():
     expect('<metadata name="CreationDate">' in model, "the 3MF carries its creation date")
     padded_box_in_body(doc)
     t_profile_in_part(doc)
+    saved_standard(doc)
+    lost_face(doc)
     tapered_pad(doc)
     print("all checks passed", file=sys.__stdout__)
 
