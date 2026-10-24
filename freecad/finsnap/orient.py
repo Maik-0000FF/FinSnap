@@ -4,6 +4,7 @@ The part lies flat on the bed. It is turned about a selected edge until the
 bottom face is lifted by the tilt angle, then lowered back onto the bed, so it
 stands on that edge. An edge that is not on the bed comes with one of its
 faces: that face is laid onto the bed first, which makes the edge a bottom edge.
+A face alone, a chamfer or a fillet, is laid onto the bed and carries the part.
 
 The placement before the first tilt is kept on the moved object, so the part
 can be laid flat again, also after several tilts.
@@ -22,12 +23,24 @@ INPUTS this has to withstand (stand()):
     the bed                             ->  face laid down, then as tilt()
   face already on the bed               ->  same result as tilt() alone
   face facing up (normal +Z)            ->  part turned over, then as tilt()
-  face curved (cone, cylinder)          ->  OrientError
+  face rounded and convex (fillet, cone
+    mantle)                             ->  touches the bed along its middle
+  face rounded and concave (inner
+    fillet)                             ->  OrientError: cannot rest on it
   flat B-spline face (loft side)        ->  as a planar face
   edge not an edge of the face          ->  OrientError
   face the part cannot rest on (other
     geometry reaches below it)          ->  OrientError
   concave edge                          ->  OrientError from tilt()
+
+INPUTS this has to withstand (rest_between()):
+  two faces at a sharp edge             ->  part stands on the edge, both faces
+                                            equally steep
+  two faces with a chamfer or fillet
+    between them                        ->  part stands on the chamfer or fillet
+  two faces pointing opposite ways      ->  OrientError
+  two faces of an inner corner, or
+    other geometry reaching lower       ->  OrientError: cannot rest between them
 
 INPUTS this has to withstand (remember_flat(), lay_back()):
   first tilt                            ->  placement kept
@@ -90,16 +103,60 @@ def tilt(shape, edge, angle_deg):
 
 
 def lay_flat(shape, face):
-    """The placement change that lays `face` onto the bed, at the bed level of `shape`."""
-    if face.findPlane() is None:
-        raise OrientError(translate("FinSnap", "the face that is to lie on the bed is curved; select a flat face"))
+    """The placement change that lays `face` onto the bed, at the bed level of `shape`.
+
+    The face is turned until its normal in the middle of it points straight
+    down. A flat face, such as a chamfer, then lies on the bed; a rounded one,
+    such as a fillet, touches it along a line through its middle, so a fillet
+    of 90 degrees stands the part at 45.
+    """
     u0, u1, v0, v1 = face.ParameterRange
-    normal = face.normalAt((u0 + u1) / 2, (v0 + v1) / 2)
-    turn = App.Placement(V(0, 0, 0), App.Rotation(normal, DOWN), face.CenterOfMass)
+    middle = (u0 + u1) / 2, (v0 + v1) / 2
+    normal = face.normalAt(*middle)
+    contact = face.valueAt(*middle)
+    turn = App.Placement(V(0, 0, 0), App.Rotation(normal, DOWN), contact)
     turned = _moved(shape, turn)
-    if _moved(face, turn).BoundBox.ZMax > turned.BoundBox.ZMin + d.TOLERANCE:
+    # The part rests on the face only if nothing reaches below that point.
+    if contact.z > turned.BoundBox.ZMin + d.TOLERANCE:
         raise OrientError(translate("FinSnap", "the part cannot rest on this face"))
     lift = App.Placement(V(0, 0, shape.BoundBox.ZMin - turned.BoundBox.ZMin), App.Rotation())
+    return lift.multiply(turn)
+
+
+def _middle_normal(face):
+    u0, u1, v0, v1 = face.ParameterRange
+    return face.normalAt((u0 + u1) / 2, (v0 + v1) / 2)
+
+
+def rest_between(shape, first, second):
+    """The placement change that stands `shape` on what lies between two faces,
+    both leaning equally steeply over the bed.
+
+    Whatever joins the faces carries the part: a sharp edge, a chamfer or a
+    fillet. Two faces at a right angle each end up at 45 degrees.
+    """
+    middle = _middle_normal(first) + _middle_normal(second)
+    if middle.Length < d.TOLERANCE:
+        raise OrientError(translate("FinSnap", "the two faces point in opposite directions"))
+    middle.normalize()
+    turn = App.Placement(V(0, 0, 0), App.Rotation(middle, DOWN), first.CenterOfMass)
+    turned = _moved(shape, turn)
+    bed_z = turned.BoundBox.ZMin
+    # Only the two faces and what joins them may touch the bed. A copy keeps
+    # the order of the faces but not their identity, so they are compared by
+    # number, and neighbours are found on the original shape.
+    faces = shape.Faces
+    chosen = [next(i for i, face in enumerate(faces) if face.isSame(side)) for side in (first, second)]
+
+    def joins(i, j):
+        return any(edge.isSame(other) for edge in faces[i].Edges for other in faces[j].Edges)
+
+    for i, face in enumerate(turned.Faces):
+        if face.BoundBox.ZMin > bed_z + d.TOLERANCE or i in chosen:
+            continue
+        if not all(joins(i, j) for j in chosen):
+            raise OrientError(translate("FinSnap", "the part cannot rest between these faces"))
+    lift = App.Placement(V(0, 0, shape.BoundBox.ZMin - bed_z), App.Rotation())
     return lift.multiply(turn)
 
 

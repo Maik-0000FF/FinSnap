@@ -155,10 +155,8 @@ PROPERTIES = (
          QT_TRANSLATE_NOOP("FinSnap", "Fin placement"),
          QT_TRANSLATE_NOOP("App::Property",
                            "auto: by face length; center: one fin; ends: two fins; corners: two fins "
-                           "centred on the face ends, so the tine marks merge with the edges. Each tine "
-                           "sits centred on the edge: half of it touches the face, the other half the "
-                           "chamfer or rounding behind it, or nothing at a sharp edge, where the tine holds "
-                           "with half its width; "
+                           "on the face ends, each tine whole on the face and flush with its end, so the "
+                           "tine marks merge with the edges; the fin reaches a little past the end; "
                            "distributed: FinCount fins"),
          "placement", d.PLACEMENTS),
     Prop("FinCount", INTEGER, GROUP_PLACEMENT,

@@ -156,6 +156,21 @@ def _message(text):
 
 
 class TiltOntoEdge:
+    """Stand a part on an edge, or lay one of its faces onto the bed.
+
+    SELECTIONS this has to withstand:
+      one edge on the bed                   ->  turned about it by the asked angle
+      one edge and one of its faces         ->  face laid down, then turned about the edge
+      one face alone (a chamfer)            ->  face laid onto the bed, no angle asked
+      two faces (beside a fillet)           ->  part stands on what joins them, both
+                                                faces equally steep, no angle asked
+      two faces and an edge                 ->  message, nothing changed
+      nothing, two edges, two faces, or
+        edge and face of different parts    ->  message, nothing changed
+      cancelled angle                       ->  nothing changed
+      edge or face the part cannot stand on ->  message naming why, nothing changed
+    """
+
     def GetResources(self):  # noqa: N802 - FreeCAD API
         return {"Pixmap": ICON_TILT,
                 "MenuText": QT_TRANSLATE_NOOP("FinSnap_Tilt", "Stand on edge"),
@@ -164,7 +179,10 @@ class TiltOntoEdge:
                     "Select an edge of the part and the face of that edge that is to lie on the bed. "
                     "The face is laid onto the bed, the part is turned about the edge by the tilt angle "
                     "and set back onto the bed, standing on the edge. For an edge already on the bed, "
-                    "the edge alone is enough.")}
+                    "the edge alone is enough. A face alone, a chamfer or a fillet, is laid onto the bed "
+                    "and carries the part: a chamfer lies flat on it, a fillet touches it along its "
+                    "middle. Two faces alone, such as the two beside a fillet, stand the part on what "
+                    "joins them, both equally steep.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
         return App.ActiveDocument is not None
@@ -174,20 +192,29 @@ class TiltOntoEdge:
                   for name in sel.SubElementNames if name.startswith((EDGE_PREFIX, FACE_PREFIX))]
         edges = [(o, n) for o, n in picked if n.startswith(EDGE_PREFIX)]
         faces = [(o, n) for o, n in picked if n.startswith(FACE_PREFIX)]
-        if len(edges) != 1 or len(faces) > 1 or any(o is not edges[0][0] for o, _ in faces):
+        valid = (picked and len({id(o) for o, _ in picked}) == 1
+                 and ((len(edges) == 1 and len(faces) <= 1) or (not edges and len(faces) <= 2)))
+        if not valid:
             _message(translate("FinSnap", "Select one edge of the part, and the face of that edge that is "
-                                          "to lie on the bed."))
+                                          "to lie on the bed; or a face alone, a chamfer or a fillet; "
+                                          "or the two faces beside it."))
             return
-        obj, edge_name = edges[0]
-        angle, ok = QtWidgets.QInputDialog.getDouble(
-            Gui.getMainWindow(), translate("FinSnap", "Stand on edge"), translate("FinSnap", "Tilt angle (degrees):"),
-            d.TILT_ANGLE, 1.0, 89.0, TILT_DECIMALS)
-        if not ok:
-            return
+        obj = picked[0][0]
         try:
             shape = global_shape(obj)
-            face = shape.getElement(faces[0][1]) if faces else None
-            change = orient.stand(shape, shape.getElement(edge_name), angle, face)
+            chosen = [shape.getElement(name) for _, name in faces]
+            face = chosen[0] if chosen else None
+            if len(chosen) == 2:
+                change = orient.rest_between(shape, *chosen)
+            elif edges:
+                angle, ok = QtWidgets.QInputDialog.getDouble(
+                    Gui.getMainWindow(), translate("FinSnap", "Stand on edge"),
+                    translate("FinSnap", "Tilt angle (degrees):"), d.TILT_ANGLE, 1.0, 89.0, TILT_DECIMALS)
+                if not ok:
+                    return
+                change = orient.stand(shape, shape.getElement(edges[0][1]), angle, face)
+            else:
+                change = orient.lay_flat(shape, face)
         except orient.OrientError as error:
             _message(str(error))
             return

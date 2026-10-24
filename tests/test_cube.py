@@ -26,6 +26,8 @@ PYRAMID_BASE = 20.0
 PYRAMID_STEEP = 20.0   # sides at 63 degrees against the base
 PYRAMID_FLAT = 5.0     # sides at 27 degrees, flatter than the overhang limit
 PYRAMID_TILT = 30.0    # flatter than the overhang limit
+BOX_SIDE = 20.0
+EDGE_ROUND = 3.0       # size of the chamfer or radius of the fillet on a box edge
 FRUSTUM_BASE = 40.0
 FRUSTUM_TOP = 20.0
 FRUSTUM_HEIGHT = 15.0  # sides at 56 degrees against the base
@@ -118,30 +120,44 @@ def reach_behind(result, frame):
     return max(frame.s_face(v.Point.z) - v.Point.dot(frame.out) for t in result.tines for v in t.Vertexes)
 
 
-def check_corners(cube, face):
-    """Two fins centred on the face ends: each tine touches the face up to its edge."""
-    result = geometry.build(cube, face, FinParams(placement=d.PLACEMENT_CORNERS))
-    expect(len(result.fins.Solids) == 2, "corner placement gives two fins")
-    frame = geometry.frame_of(cube, face)
-    centres = sorted(t + result.thickness / 2 for t in result.positions)
-    expect(abs(centres[0] - frame.along_min) < d.TOLERANCE and abs(centres[1] - frame.along_max) < d.TOLERANCE,
-           "the corner fins are centred on the face ends")
+def tine_lengths(result, frame):
+    """Length of each tine across the gap, measured horizontally."""
+    lengths = []
     for tine in result.tines:
-        ts = [v.Point.dot(frame.along) for v in tine.Vertexes
-              if cube.isInside(v.Point, d.TOLERANCE, True)]
-        expect(any(min(ts) < end < max(ts) for end in (frame.along_min, frame.along_max)),
-               "a corner tine touches the part across the end of the face")
-    reach = reach_behind(result, frame)
-    half = FinParams().tine_width / 2
-    expect(d.TOLERANCE < reach < half + d.TOLERANCE,
-           "over a chamfer the corner tines reach on to touch it, at most half a tine width (%.3f mm)" % reach)
+        ss = [v.Point.dot(frame.out) for v in tine.Vertexes]
+        lengths.append(max(ss) - min(ss))
+    return lengths
+
+
+def check_corner_tines(part, face, name):
+    """Corner tines lie whole on the face, end on it and are all equally long."""
+    result = geometry.build(part, face, FinParams(placement=d.PLACEMENT_CORNERS))
+    frame = geometry.frame_of(part, face)
+    expect(reach_behind(result, frame) < d.TOLERANCE, "%s: no corner tine reaches past the face" % name)
+    lengths = tine_lengths(result, frame)
+    expect(max(lengths) - min(lengths) < d.TOLERANCE,
+           "%s: all corner tines are equally long (%.3f to %.3f mm)" % (name, min(lengths), max(lengths)))
+    return result, frame
+
+
+def check_corners(cube, face):
+    """Two fins on the face ends: each tine lies whole on the face and ends flush with its end."""
+    result, frame = check_corner_tines(cube, face, "chamfered cube")
+    expect(len(result.fins.Solids) == 2, "corner placement gives two fins")
+    ts = [v.Point.dot(frame.along) for tine in result.tines for v in tine.Vertexes]
+    expect(abs(min(ts) - frame.along_min) < d.TOLERANCE and abs(max(ts) - frame.along_max) < d.TOLERANCE,
+           "the outer tines end flush with both ends of the face")
+    reach = (result.thickness - FinParams().tine_width) / 2
+    ends = sorted(result.positions)
+    expect(abs(ends[0] - (frame.along_min - reach)) < d.TOLERANCE,
+           "the corner fin reaches %.2f mm past the end of the face" % reach)
+
     sharp = Part.makeBox(30, 20, 20)
     edge = [e for e in sharp.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
     sharp.Placement = orient.tilt(sharp, edge, d.TILT_ANGLE).multiply(sharp.Placement)
     leaning = [f for f in sharp.Faces if f.normalAt(0, 0).z < -d.TOLERANCE][0]
-    at_corners = geometry.build(sharp, leaning, FinParams(placement=d.PLACEMENT_CORNERS))
-    expect(reach_behind(at_corners, geometry.frame_of(sharp, leaning)) < d.TOLERANCE,
-           "at a sharp edge the corner tines end in the plane of the face")
+    check_corner_tines(sharp, leaning, "sharp box")
+
     try:
         geometry.build(cube, face, FinParams(placement=d.PLACEMENT_CORNERS, fin_thickness=30.0))
     except geometry.FinError as error:
@@ -184,12 +200,8 @@ def check_frustum():
     built = [geometry.build(shape, f, FinParams()) for f in leaning]
     expect(len(built) == 2 and all(r.fins.Solids for r in built),
            "the tilted frustum gets fins under both faces leaning over the bed")
-    half = FinParams().tine_width / 2
     for f in leaning:
-        corners = geometry.build(shape, f, FinParams(placement=d.PLACEMENT_CORNERS))
-        reach = reach_behind(corners, geometry.frame_of(shape, f))
-        expect(reach < half + d.TOLERANCE,
-               "beside sloping faces the corner tines reach at most half a tine width behind (%.3f mm)" % reach)
+        check_corner_tines(shape, f, "frustum")
     for f in upward:
         try:
             geometry.build(shape, f, FinParams())
@@ -217,12 +229,82 @@ def check_loft():
 
     cone = Part.makeCone(t, b, FRUSTUM_HEIGHT)
     mantle = [f for f in cone.Faces if f.findPlane() is None][0]
+    lying = moved(cone, orient.lay_flat(cone, mantle))
+    on_bed = [f for f in lying.Faces if f.findPlane() is None][0]
+    expect(abs(lying.BoundBox.ZMin) < d.TOLERANCE and abs(on_bed.BoundBox.ZMin) < d.TOLERANCE,
+           "a cone frustum lies on its mantle")
+
+
+def moved(shape, change):
+    result = shape.copy()
+    result.Placement = change.multiply(result.Placement)
+    return result
+
+
+def leaning_at(shape, degrees):
+    """Faces that lean over the bed at `degrees` against it."""
+    wanted = -math.cos(math.radians(degrees))
+    return [f for f in shape.Faces if f.findPlane() is not None and abs(f.normalAt(0, 0).z - wanted) < 1e-6]
+
+
+def check_chamfer_and_fillet():
+    """A chamfer or a fillet chosen alone is laid onto the bed and carries the part."""
+    box = Part.makeBox(BOX_SIDE, BOX_SIDE, BOX_SIDE)
+    edge = [e for e in box.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
+
+    chamfered = box.makeChamfer(EDGE_ROUND, [edge])
+    chamfer = [f for f in chamfered.Faces if abs(abs(f.normalAt(0, 0).z) - math.sqrt(0.5)) < 1e-6][0]
+    on_chamfer = moved(chamfered, orient.lay_flat(chamfered, chamfer))
+    expect(abs(on_chamfer.BoundBox.ZMin) < d.TOLERANCE and len(leaning_at(on_chamfer, 45)) == 2,
+           "a box stands at 45 degrees on its chamfer")
+
+    filleted = box.makeFillet(EDGE_ROUND, [edge])
+    fillet = [f for f in filleted.Faces if f.findPlane() is None][0]
+    on_fillet = moved(filleted, orient.lay_flat(filleted, fillet))
+    expect(abs(on_fillet.BoundBox.ZMin) < d.TOLERANCE and len(leaning_at(on_fillet, 45)) == 2,
+           "a box stands at 45 degrees on its fillet")
+
+    # The two faces beside the fillet, or beside a sharp edge: both end up equally steep.
+    sides = [f for f in filleted.Faces if f.findPlane() is not None
+             and any(e.isSame(other) for e in f.Edges for other in fillet.Edges)
+             and abs(f.normalAt(0, 0).dot(edge.Curve.Direction)) < d.TOLERANCE]
+    beside = moved(filleted, orient.rest_between(filleted, *sides))
+    expect(abs(beside.BoundBox.ZMin) < d.TOLERANCE and len(leaning_at(beside, 45)) == 2
+           and abs(beside.BoundBox.ZMax - on_fillet.BoundBox.ZMax) < d.TOLERANCE,
+           "the two faces beside a fillet stand the box on it, as the fillet alone does")
+    sharp = [f for f in box.Faces if any(e.isSame(edge) for e in f.Edges)]
+    on_edge = moved(box, orient.rest_between(box, *sharp))
+    expect(abs(on_edge.BoundBox.ZMin) < d.TOLERANCE and len(leaning_at(on_edge, 45)) == 2,
+           "the two faces of a sharp edge stand the box on that edge")
+    opposite = [f for f in box.Faces if f.BoundBox.ZLength < d.TOLERANCE]
     try:
-        orient.lay_flat(cone, mantle)
+        orient.rest_between(box, *opposite)
     except orient.OrientError as error:
-        expect("curved" in str(error), "the mantle of a cone cannot lie on the bed: %s" % error)
+        expect("opposite" in str(error), "two faces pointing opposite ways are refused: %s" % error)
     else:
-        raise AssertionError("the mantle of a cone was laid onto the bed")
+        raise AssertionError("two opposite faces were accepted")
+
+    # An L profile rounded in its inner corner: the part cannot rest on a hollow.
+    notched = box.cut(Part.makeBox(BOX_SIDE / 2, BOX_SIDE, BOX_SIDE / 2, V(BOX_SIDE / 2, 0, BOX_SIDE / 2)))
+    inner = [e for e in notched.Edges if abs(e.BoundBox.ZMin - BOX_SIDE / 2) < d.TOLERANCE
+             and abs(e.BoundBox.XMin - BOX_SIDE / 2) < d.TOLERANCE and e.BoundBox.YLength > d.TOLERANCE][0]
+    hollow = notched.makeFillet(EDGE_ROUND, [inner])
+    concave = [f for f in hollow.Faces if f.findPlane() is None][0]
+    try:
+        orient.lay_flat(hollow, concave)
+    except orient.OrientError as error:
+        expect("cannot rest" in str(error), "an inner fillet cannot carry the part: %s" % error)
+    else:
+        raise AssertionError("a part was laid onto an inner fillet")
+    inner_sides = [f for f in hollow.Faces if f.findPlane() is not None
+                   and any(e.isSame(other) for e in f.Edges for other in concave.Edges)
+                   and f.BoundBox.ZMin > d.TOLERANCE and f.BoundBox.XMin > d.TOLERANCE]
+    try:
+        orient.rest_between(hollow, *inner_sides[:2])
+    except orient.OrientError as error:
+        expect("cannot rest" in str(error), "the faces of an inner corner cannot carry the part: %s" % error)
+    else:
+        raise AssertionError("a part was stood between the faces of an inner corner")
 
 
 def check_overhangs(cube, face):
@@ -334,6 +416,7 @@ def main():
     check_overhangs(cube, face)
     check_frustum()
     check_loft()
+    check_chamfer_and_fillet()
     print("all checks passed", file=sys.__stdout__)
 
 

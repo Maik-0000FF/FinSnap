@@ -7,6 +7,7 @@ Dialogs that would wait for a click are replaced by fixed answers; everything
 else, from the selection to the written file, runs as in FreeCAD.
 """
 
+import math
 import os
 import sys
 import tempfile
@@ -26,6 +27,7 @@ COMMANDS = ("FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCo
             "FinSnap_Export3MF")
 DIALOG_ACCEPTED = 1
 FLAT_TILT = 30.0  # flatter than the overhang limit
+CHAMFER = 3.0
 
 
 def load_workbench():
@@ -104,6 +106,34 @@ def main():
     doc.recompute()
     expect(not messages and abs(box.Shape.BoundBox.ZMin) < d.TOLERANCE
            and box.Shape.BoundBox.ZMax > 20 + d.TOLERANCE, "Stand on edge takes a top edge with its face")
+
+    # A chamfer alone: laid onto the bed without asking for an angle.
+    chamfered = doc.addObject("Part::Feature", "Chamfered")
+    plain = Part.makeBox(20, 20, 20)
+    chamfered.Shape = plain.makeChamfer(CHAMFER, [e for e in plain.Edges if e.BoundBox.ZMax < d.TOLERANCE
+                                                  and e.BoundBox.YMax < d.TOLERANCE])
+    slope = [i for i, f in enumerate(chamfered.Shape.Faces, 1)
+             if abs(abs(f.normalAt(0, 0).z) - math.sqrt(0.5)) < d.TOLERANCE][0]
+    QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("a face alone must not ask for an angle")))
+    select(chamfered, "Face%d" % slope)
+    Gui.runCommand("FinSnap_Tilt")
+    doc.recompute()
+    expect(not messages and chamfered.Shape.Faces[slope - 1].normalAt(0, 0).z < -1 + d.TOLERANCE,
+           "Stand on edge lays a chamfer chosen alone onto the bed")
+    select(chamfered)
+    Gui.runCommand("FinSnap_LayFlat")
+    doc.recompute()
+    beside = [i for i, f in enumerate(chamfered.Shape.Faces, 1) if f.findPlane() is not None
+              and any(e.isSame(o) for e in f.Edges for o in chamfered.Shape.Faces[slope - 1].Edges)
+              and abs(f.normalAt(0, 0).x) < d.TOLERANCE and i != slope]
+    select(chamfered, *["Face%d" % i for i in beside])
+    Gui.runCommand("FinSnap_Tilt")
+    doc.recompute()
+    expect(not messages and chamfered.Shape.Faces[slope - 1].normalAt(0, 0).z < -1 + d.TOLERANCE,
+           "Stand on edge with the two faces beside a chamfer stands the part on it")
+    QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (d.TILT_ANGLE, True))
+    doc.removeObject(chamfered.Name)
 
     # Deleting the last fins of the box lays it flat again; other fins keep it standing.
     leaning = [i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).z < -d.TOLERANCE]

@@ -41,12 +41,6 @@ TINE_WIDTH_BEADS = 1        # tine width across the fin, in beads
 TINE_COUNT_AUTO = 0         # 0: as many as fit below the top of the face
 # How far a tine reaches into the fin body before it is fused with it.
 TINE_INTO_FIN = 1.0
-# How far a tine is drawn into the part before it is trimmed by it. Only has
-# to be safely larger than the gap; the excess is cut away.
-TINE_INTO_PART = 1.0
-# Step by which a piece of tine behind the face is pushed further in, to see
-# whether it goes on to touch the part (mm).
-TINE_PROBE = 0.01
 
 # --- Fin body -----------------------------------------------------------------
 FIN_PLATEAU = 2.0           # flat top instead of a sharp tip
@@ -65,8 +59,8 @@ PLACEMENT_AUTO = "auto"
 PLACEMENT_CENTER = "center"
 PLACEMENT_ENDS = "ends"
 PLACEMENT_DISTRIBUTED = "distributed"
-# Two fins centred on the ends of the face: each tine touches the part across
-# the edge where the face ends, so its mark merges with that edge.
+# Two fins on the ends of the face: each tine lies whole on the face and ends
+# flush with its end, so its mark merges with that edge.
 PLACEMENT_CORNERS = "corners"
 PLACEMENTS = (PLACEMENT_AUTO, PLACEMENT_CENTER, PLACEMENT_ENDS, PLACEMENT_CORNERS, PLACEMENT_DISTRIBUTED)
 PLACEMENT = PLACEMENT_AUTO
