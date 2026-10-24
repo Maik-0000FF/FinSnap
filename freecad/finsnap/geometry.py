@@ -367,7 +367,7 @@ def build(part, face, p, tine_count=None):
     tine_z, low, high = tines_on_face(face, frame, all_z, p, room_for_one_fin(p, thickness))
     # Also with a fixed tine count: tines the narrow face cannot take are left
     # out and named, as over a recess, rather than refusing the whole fin.
-    narrow_heights = sorted(set(all_z) - set(tine_z))
+    narrow_heights = set(all_z) - set(tine_z)
     if narrow_heights:
         # Fewer tines make a lower and so a thinner fin; it still fits where the thicker one did.
         height = p.fin_height if p.fin_height > 0 else tine_z[-1] + p.tine_height
