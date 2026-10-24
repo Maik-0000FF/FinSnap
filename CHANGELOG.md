@@ -6,6 +6,8 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-24
+
 ### Added
 
 - Stand on edge takes any edge together with the face that is to lie on the bed, or a chamfer or fillet alone, which then carries the part, or the two faces beside it
@@ -40,5 +42,6 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.1.0
