@@ -14,6 +14,16 @@ Printing a part tilted by 45 degrees puts the layer lines diagonal to the load a
 
 ![FinSnap in FreeCAD: a tilted 40 mm cube with a fin and the task panel](docs/assets/screenshot.png)
 
+## Why print standing on an edge
+
+A part printed flat is weakest straight across its layers, and two of its faces differ from all the others. Standing on an edge at 45 degrees changes that:
+
+- **Strength:** the layer boundaries run diagonally through the part. A load along one of its main axes no longer pulls a single layer seam apart; it is shared between layers and extrusion paths.
+- **Surface:** every side shows the same layer pattern. There is no smooth bottom next to a top skin with a pattern of its own, and no first-layer imprint on a visible face.
+- **Accuracy:** no edge rests on the bed, so none is widened by the squashed first layer (elephant's foot).
+
+How much each effect matters depends on the material, the printer and the part.
+
 **Features:**
 - Fins generated automatically under a selected face that leans over the bed
 - Two connection modes:
