@@ -17,6 +17,10 @@ import freecad  # noqa: E402
 freecad.__path__.insert(0, os.path.join(ROOT, "freecad"))
 
 EDGE = 20.0
+# Group of FreeCAD's user parameters that stands in for the saved standard of new fins.
+TEST_STANDARD_GROUP = "StandardUnderTest"
+# A thin fin, as a saved standard for new fins might ask for.
+STANDARD_THICKNESS = 0.9
 CHAMFER = 1.0
 TILT = 45.0
 V = App.Vector
@@ -49,7 +53,14 @@ def expect(condition, message):
 def run(main, gui=False):
     """Run a test and leave FreeCAD with its result. FreeCAD swallows tracebacks
     and drops buffered output on sys.exit, so both are handled here. With the
-    GUI running, sys.exit only ends the script, so the process is ended directly."""
+    GUI running, sys.exit only ends the script, so the process is ended directly.
+
+    The saved standard for new fins is pointed at a group of its own while the
+    test runs, and removed afterwards, so a test never reads or changes the
+    standard of the person running it."""
+    from freecad.finsnap import presets
+    presets.STANDARD_GROUP = TEST_STANDARD_GROUP
+    presets.reset()
     try:
         main()
         result = 0
@@ -58,6 +69,7 @@ def run(main, gui=False):
         traceback.print_exc(file=sys.__stdout__)
         print("FAILED:", error, file=sys.__stdout__)
         result = 1
+    App.ParamGet(presets.PREFERENCES).RemGroup(TEST_STANDARD_GROUP)
     sys.__stdout__.flush()
     if gui:
         os._exit(result)

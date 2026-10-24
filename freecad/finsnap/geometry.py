@@ -27,18 +27,25 @@ INPUTS this has to withstand (build()):
   corners: each tine whole on the face,
     its outer side flush with the end   ->  FinResult, fins reach past the ends
   no tine fits below the top of the face ->  FinError
+  hand-set first tine half a layer off
+    the grid, rounding two tines closer
+    than a free layer                   ->  the upper one moves up a layer
   face narrower than the fin at some
     tines (side of a frustum)           ->  those tines left out, warning
   face narrower than the fin at every
     tine                                ->  FinError
-  fixed tine count, some tines miss     ->  FinError
+  fixed tine count, some tines miss the
+    face (narrow face or recess)        ->  those tines left out, warning
   face ending above the bed             ->  no tines below it
   manual fin_height below the first tine ->  FinError
   fins standing closer than they are
     thick plus FOOT_CLEARANCE           ->  FinError: they would collide
   fin collides with other geometry of
     the part (closer than the gap)      ->  FinError naming the distance
-  tine does not reach the face          ->  FinError
+  tine wholly or partly over a recess
+    or hole in the face                 ->  tine left out, warning
+  every tine of a fin over a recess     ->  fin left out, warning
+  every tine of every fin over a recess ->  FinError
   fin overlaps the part (separate mode) ->  FinError
   tine shorter than TINE_MIN_LENGTH_BEADS
     beads                               ->  warning in FinResult, no error
@@ -58,6 +65,7 @@ from .shapes import middle_normal
 
 V = App.Vector
 UP = V(0, 0, 1)
+
 
 class FinError(ValueError):
     """The fin cannot be built on this face."""
@@ -140,6 +148,11 @@ def tine_heights(p, frame, tine_count):
     while tine_count == 0 or len(zs) < tine_count:
         z = p.snap_to_layer(p.first_tine + k * p.tine_spacing)
         k += 1
+        # Rounding to the layer grid can bring a tine closer to the one below
+        # than the spacing allows (a hand-set first tine half a layer off the
+        # grid); it moves up to keep a free layer between them.
+        if zs and z < zs[-1] + p.least_tine_spacing - d.TOLERANCE:
+            z = p.snap_to_layer(zs[-1] + p.least_tine_spacing)
         if z + p.tine_height > limit + d.TOLERANCE:
             break
         if z >= floor - d.TOLERANCE:
@@ -277,6 +290,26 @@ def foot(p, frame, t0, thickness, s_from, s_to, half_width):
     return Part.Face(Part.Wire(ellipse.toShape())).extrude(UP * height)
 
 
+def _mm_list(values):
+    """Lengths for a message, smallest first: "1.0, 6.0"."""
+    return ", ".join("%.1f" % value for value in sorted(values))
+
+
+def tine_start(p, t0, thickness):
+    """Where the tines of the fin starting at t0 begin along the face: in the middle of the fin."""
+    return t0 + (thickness - p.tine_width) / 2
+
+
+def contact_share(frame, face, t, p, z):
+    """Share of the end of the tine at t and height z that lies on the face:
+    1 on the whole face, 0 over a recess or a hole in it."""
+    bottom, top = frame.bed_z + z, frame.bed_z + z + p.tine_height
+    ring = [frame.point(t, frame.s_face(bottom), bottom), frame.point(t + p.tine_width, frame.s_face(bottom), bottom),
+            frame.point(t + p.tine_width, frame.s_face(top), top), frame.point(t, frame.s_face(top), top)]
+    end = Part.Face(Part.makePolygon(ring + ring[:1]))
+    return end.common(face).Area / end.Area
+
+
 def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
     """A fin without tines, and its tines, which end on the face."""
     zb = frame.bed_z
@@ -297,7 +330,7 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
         body = body.fuse(foot(p, frame, t0, thickness, s_from, s_to, half_foot))
 
     tines = []
-    t_tine = t0 + (thickness - p.tine_width) / 2
+    t_tine = tine_start(p, t0, thickness)
     for z in tine_z:
         bottom = zb + z
         top = bottom + p.tine_height
@@ -315,18 +348,13 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
     return body, tines
 
 
-def check(p, part, fins, bodies, tines):
+def check(p, part, fins, bodies):
+    """Fins clear of the part. That every tine reaches the face is settled when
+    the tines are chosen, by contact_share()."""
     if p.connection == d.CONNECTION_SEPARATE:
         overlap = fins.common(part).Volume
         if overlap > d.TOLERANCE:
             raise FinError(translate("FinSnap", "the fins overlap the part by %.4f mm3") % overlap)
-
-    # distToShape fails on bodies that share a face, so the tines are checked
-    # by their corners lying on the surface of the part.
-    for number, tine in enumerate(tines, 1):
-        on_surface = [v for v in tine.Vertexes if part.isInside(v.Point, d.TOLERANCE, True)]
-        if len(on_surface) < 3:
-            raise FinError(translate("FinSnap", "tine %d does not reach the face") % number)
 
     for body in bodies:
         distance = body.distToShape(part)[0]
@@ -346,13 +374,15 @@ def build(part, face, p, tine_count=None):
         raise FinError(translate("FinSnap", "tines (%.2f mm) are wider than the fin (%.2f mm)")
                        % (p.tine_width, thickness))
     tine_z, low, high = tines_on_face(face, frame, all_z, p, room_for_one_fin(p, thickness))
-    left_out = len(all_z) - len(tine_z)
-    if left_out and count:
-        raise FinError(translate("FinSnap", "only %d of %d tines meet the face") % (len(tine_z), count))
-    if left_out:
+    # Also with a fixed tine count: tines the narrow face cannot take are left
+    # out and named, as over a recess, rather than refusing the whole fin.
+    narrow_heights = set(all_z) - set(tine_z)
+    if narrow_heights:
         # Fewer tines make a lower and so a thinner fin; it still fits where the thicker one did.
         height = p.fin_height if p.fin_height > 0 else tine_z[-1] + p.tine_height
         thickness = thickness_for(p, height)
+    # Fins left out are named by their distance from this end of the face.
+    face_start = frame.along_min
     frame = replace(frame, along_min=low, along_max=high)
     positions = positions_for(p, frame, thickness)
 
@@ -362,22 +392,43 @@ def build(part, face, p, tine_count=None):
     bodies = []
     all_tines = []
     pieces = []
+    built = []
+    gap_heights = set()
+    fins_left_out = []
     for t0 in positions:
         body, tines = one_fin(p, frame, t0, height, thickness, half_foot, tine_z)
+        start = tine_start(p, t0, thickness)
+        # A tine wholly or partly over a recess or a hole in the face would hang
+        # free there; it is left out, and a fin without any tine left with it.
+        on_face = [contact_share(frame, face, start, p, z) >= d.TINE_MIN_CONTACT - d.TOLERANCE for z in tine_z]
+        kept = [tine for tine, whole in zip(tines, on_face) if whole]
+        if not kept:
+            fins_left_out.append(t0 + thickness / 2 - face_start)
+            continue
+        gap_heights.update(z for z, whole in zip(tine_z, on_face) if not whole)
+        built.append(t0)
         bodies.append(body)
-        all_tines.extend(tines)
+        all_tines.extend(kept)
         # One general fuse instead of one tine after the other: the lowest tine
         # sits on the top of the foot, where foot, flank and tine share an edge,
         # and fusing them pairwise fails on that edge.
-        pieces.append(body.multiFuse(tines).removeSplitter())
+        pieces.append(body.multiFuse(kept).removeSplitter())
+    if not built:
+        raise FinError(translate("FinSnap", "no tine finds the face; it has a recess or hole at every tine"))
 
     fins = Part.makeCompound(pieces)
-    check(p, part, fins, bodies, all_tines)
+    check(p, part, fins, bodies)
 
     warnings = []
-    if left_out:
-        warnings.append(translate("FinSnap", "%d tines left out where the face is narrower than the fin")
-                        % left_out)
+    if gap_heights:
+        warnings.append(translate("FinSnap", "tines at %s mm above the bed left out: a recess or hole in the "
+                                  "face lies under them") % _mm_list(gap_heights))
+    if fins_left_out:
+        warnings.append(translate("FinSnap", "fins at %s mm from the end of the face left out: none of their "
+                                  "tines lies wholly on the face") % _mm_list(fins_left_out))
+    if narrow_heights:
+        warnings.append(translate("FinSnap", "tines at %s mm above the bed left out: the face is narrower "
+                                  "there than the fin") % _mm_list(narrow_heights))
     angle = math.degrees(math.acos(min(1.0, -frame.n_z)))
     if not d.FACE_ANGLE_MIN <= angle <= d.FACE_ANGLE_MAX:
         warnings.append(translate("FinSnap", "the face is inclined %.0f degrees against the bed, outside "
@@ -388,7 +439,7 @@ def build(part, face, p, tine_count=None):
                                   "may not print them to the face") % (tine_length, d.TINE_MIN_LENGTH_BEADS))
 
     return FinResult(fins=fins, bodies=bodies, tines=all_tines, height=height,
-                     thickness=thickness, tine_z=tine_z, positions=positions,
+                     thickness=thickness, tine_z=tine_z, positions=built,
                      foot_half_width=half_foot, warnings=warnings)
 
 

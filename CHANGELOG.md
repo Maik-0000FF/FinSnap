@@ -6,6 +6,27 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-10-24
+
+### Added
+
+- Save as standard and Factory settings in the task panel: new fins start with the saved values
+- Fields that differ from the standard are marked, with a button beside each that puts the standard back
+
+### Changed
+
+- Warnings and refusals in the task panel stand out in a framed box with a sign, apart from the result line
+- With a fixed tine count, tines a narrowing face cannot take are left out and named in a warning instead of refusing the fin
+- Tine spacing must now be at least the tine height plus one layer, as closer tines merged or lay on top of each other; files with a smaller spacing show a message with the least value instead of building the fins
+
+### Fixed
+
+- A tine over a recess or hole in the face stopped the whole fin; tines that do not lie wholly on the face are now left out with a warning, and a fin with no tine left is left out as well
+- A first tine set by hand half a layer off the grid could round two tines so close that they touched; the upper one now moves up to keep a free layer
+- Fins on a face the part had lost stopped all other fins of that part
+- Exporting an object without a shape raised an error instead of a message
+- Add counter fin accepted a face of another part
+
 ## [0.2.0] - 2026-10-24
 
 ### Added
@@ -42,6 +63,7 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.2.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.3.0...HEAD
+[0.3.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.1.0
