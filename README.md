@@ -20,7 +20,7 @@ A part printed flat is weakest straight across its layers, and two of its faces 
 
 - **Strength:** the layer boundaries run diagonally through the part. A load along one of its main axes no longer pulls a single layer seam apart; it is shared between layers and extrusion paths.
 - **Surface:** every side shows the same layer pattern. There is no smooth bottom next to a top skin with a pattern of its own, and no first-layer imprint on a visible face.
-- **Accuracy:** no edge rests on the bed, so none is widened by the squashed first layer (elephant's foot).
+- **Accuracy:** no face rests on the bed, only the edge the part stands on, so no outline is widened by the squashed first layer (elephant's foot).
 
 How much each effect matters depends on the material, the printer and the part.
 
@@ -123,7 +123,7 @@ The file is a ZIP archive; the content above sits in `3D/3dmodel.model`. A slice
 | Slicer | Nozzle diameter, bead width, layer height, first layer height | | Values of the print profile |
 | Connection | Connection | separate | separate or merged |
 | | Gap | 0.25 mm | Clearance between fin and face, along the face normal |
-| Tines | Tine spacing | 5 mm | Vertical distance between tines |
+| Tines | Tine spacing | 5 mm | Vertical distance between tines, at least the tine height plus one layer |
 | | Tine first | 0 = on the top of the foot | Height of the lowest tine |
 | | Tine layers | 1 | Tine height in layers |
 | | Tine width beads | 1 | Tine width in beads |

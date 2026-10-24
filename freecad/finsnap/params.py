@@ -96,12 +96,9 @@ class FinParams:
             raise ParamError(translate("FinSnap", "tine_layers must be at least 1"))
         if self.tine_width_beads < 1:
             raise ParamError(translate("FinSnap", "tine_width_beads must be at least 1"))
-        # At least one free layer between two tines: closer, they merge into
-        # one block, or round onto the same layer and lie on top of each other.
-        least_spacing = self.tine_height + self.layer_height
-        if self.tine_spacing < least_spacing - d.TOLERANCE:
+        if self.tine_spacing < self.least_tine_spacing - d.TOLERANCE:
             raise ParamError(translate("FinSnap", "tine_spacing %.2f mm leaves no free layer between the tines; "
-                                       "it needs at least %.2f mm") % (self.tine_spacing, least_spacing))
+                                       "it needs at least %.2f mm") % (self.tine_spacing, self.least_tine_spacing))
 
         choices = (("connection", d.CONNECTIONS), ("placement", d.PLACEMENTS),
                    ("foot_shape", d.FOOT_SHAPES))
@@ -123,6 +120,12 @@ class FinParams:
     @property
     def tine_height(self):
         return self.tine_layers * self.layer_height
+
+    @property
+    def least_tine_spacing(self):
+        """At least one free layer between two tines: closer, they merge into
+        one block, or round onto the same layer and lie on top of each other."""
+        return self.tine_height + self.layer_height
 
     @property
     def foot_height(self):

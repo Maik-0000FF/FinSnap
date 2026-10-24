@@ -20,6 +20,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 - A tine over a recess or hole in the face stopped the whole fin; tines that do not lie wholly on the face are now left out with a warning, and a fin with no tine left is left out as well
 - A tine spacing below the tine height plus one layer was accepted and made tines merge or lie on top of each other; it is now refused
+- A first tine set by hand half a layer off the grid could round two tines so close that they touched; the upper one now moves up to keep a free layer
 - Fins on a face the part had lost stopped all other fins of that part
 - Exporting an object without a shape raised an error instead of a message
 - Add counter fin accepted a face of another part

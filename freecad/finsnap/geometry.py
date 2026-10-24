@@ -27,6 +27,9 @@ INPUTS this has to withstand (build()):
   corners: each tine whole on the face,
     its outer side flush with the end   ->  FinResult, fins reach past the ends
   no tine fits below the top of the face ->  FinError
+  hand-set first tine half a layer off
+    the grid, rounding two tines closer
+    than a free layer                   ->  the upper one moves up a layer
   face narrower than the fin at some
     tines (side of a frustum)           ->  those tines left out, warning
   face narrower than the fin at every
@@ -145,6 +148,11 @@ def tine_heights(p, frame, tine_count):
     while tine_count == 0 or len(zs) < tine_count:
         z = p.snap_to_layer(p.first_tine + k * p.tine_spacing)
         k += 1
+        # Rounding to the layer grid can bring a tine closer to the one below
+        # than the spacing allows (a hand-set first tine half a layer off the
+        # grid); it moves up to keep a free layer between them.
+        if zs and z < zs[-1] + p.least_tine_spacing - d.TOLERANCE:
+            z = p.snap_to_layer(zs[-1] + p.least_tine_spacing)
         if z + p.tine_height > limit + d.TOLERANCE:
             break
         if z >= floor - d.TOLERANCE:

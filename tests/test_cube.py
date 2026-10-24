@@ -26,6 +26,8 @@ PYRAMID_BASE = 20.0
 PYRAMID_STEEP = 20.0   # sides at 63 degrees against the base
 PYRAMID_FLAT = 5.0     # sides at 27 degrees, flatter than the overhang limit
 PYRAMID_TILT = 30.0    # flatter than the overhang limit
+# First tines half a layer (0.1 mm) off the grid of 0.2 mm layers.
+HALF_LAYER_STARTS = (1.1, 1.3, 1.5, 1.7)
 RECESS_RADIUS = 1.5    # wider than a tine, so a tine above it touches nothing
 GROOVE_TOP_GAP = 1.0   # face left above a groove, so the groove does not split the face
 UP = V(0, 0, 1)
@@ -456,6 +458,17 @@ def main():
         raise AssertionError("tines on top of each other were accepted")
     FinParams(tine_spacing=least).validate()
     expect(True, "tines one free layer apart are accepted")
+
+    # A first tine set by hand half a layer off the grid: rounding must not
+    # bring two tines closer than a free layer.
+    frame = geometry.frame_of(cube, face)
+    for offset in HALF_LAYER_STARTS:
+        tall = FinParams(tine_layers=2, tine_first=offset)
+        tall = FinParams(tine_layers=2, tine_first=offset, tine_spacing=tall.least_tine_spacing)
+        zs = geometry.tine_heights(tall, frame, 0)[0]
+        gap = min(b - a for a, b in zip(zs, zs[1:]))
+        expect(gap > tall.least_tine_spacing - d.TOLERANCE,
+               "first tine at %.1f mm: rounding keeps a free layer between tines (%.2f mm)" % (offset, gap))
 
     box = Part.makeBox(30, 10, 10)
     bottom = [e for e in box.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.Length == 10][0]
