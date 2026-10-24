@@ -70,7 +70,7 @@ jobs:
       # character. Correct German or English text never has that.
       - name: Check that no text is encoded twice
         run: |
-          if LC_ALL=C git grep -nP '\xC3[\x82\x83][\xC2-\xF4]' -- freecad '*.md' tests tools; then
+          if LC_ALL=C git grep -nIP '\xC3[\x82\x83][\xC2-\xF4]' -- freecad '*.md' tests tools; then
             echo "doubly encoded UTF-8, umlauts would show as Ã¤ and the like"
             exit 1
           fi
