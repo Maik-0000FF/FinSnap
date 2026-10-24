@@ -73,12 +73,16 @@ class FinSnapTaskPanel:
         self.created = created
         self.widgets = {}
         self.labels = {}
-        self.timer = QtCore.QTimer()
+        # Every change is written to the object at once; Cancel puts these back.
+        self.original = {prop.name: feature.value_of(obj, prop.name) for prop in feature.PROPERTIES}
+
+        self.form = QtWidgets.QWidget()
+        # A child of the form, so it goes with the panel and never fires on a
+        # closed document.
+        self.timer = QtCore.QTimer(self.form)
         self.timer.setSingleShot(True)
         self.timer.setInterval(PREVIEW_DELAY_MS)
         self.timer.timeout.connect(self.preview)
-
-        self.form = QtWidgets.QWidget()
         self.form.setWindowTitle("%s (%s)" % (translate("FinSnap", "FinSnap parameters"), application()))
         layout = QtWidgets.QVBoxLayout(self.form)
         intro = QtWidgets.QLabel(translate(
@@ -179,4 +183,8 @@ class FinSnapTaskPanel:
         Gui.Control.closeDialog()
         if self.created:
             App.ActiveDocument.removeObject(self.obj.Name)
+        else:
+            for name, value in self.original.items():
+                setattr(self.obj, name, value)
+            self.obj.recompute()
         return True

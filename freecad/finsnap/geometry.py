@@ -54,6 +54,7 @@ import Part
 
 from . import defaults as d
 from .i18n import translate
+from .shapes import middle_normal
 
 V = App.Vector
 UP = V(0, 0, 1)
@@ -107,8 +108,7 @@ class FinResult:
 def frame_of(part, face):
     if face.findPlane() is None:
         raise FinError(translate("FinSnap", "the selected face is not planar"))
-    u0, u1, v0, v1 = face.ParameterRange
-    n = face.normalAt((u0 + u1) / 2, (v0 + v1) / 2)
+    n = middle_normal(face)
     horizontal = V(n.x, n.y, 0)
     if n.z > -d.MIN_NORMAL_COMPONENT:
         raise FinError(translate("FinSnap", "the selected face does not lean over the bed"))

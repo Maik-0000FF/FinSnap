@@ -24,13 +24,13 @@ INPUTS this has to withstand (overhangs()):
 import math
 
 from . import defaults as d
+from .shapes import middle_normal
 
 
 def _normals_above(face, bed_z):
     """Outward normals of `face` at points above the bed."""
     if face.findPlane() is not None:
-        u0, u1, v0, v1 = face.ParameterRange
-        return [face.normalAt((u0 + u1) / 2, (v0 + v1) / 2)]
+        return [middle_normal(face)]
     u0, u1, v0, v1 = face.ParameterRange
     # Centres of a grid of cells: the edges of the parameter range are seams
     # and the line on the bed, where the normal tells nothing.

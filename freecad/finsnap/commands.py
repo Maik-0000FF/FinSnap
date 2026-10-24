@@ -13,9 +13,8 @@ from . import export_3mf
 from . import feature
 from . import mesh_input
 from . import orient
-from . import overhang
 from .i18n import QT_TRANSLATE_NOOP, translate
-from .shapes import global_shape, outermost
+from .shapes import FACE_PREFIX, global_shape, outermost
 from .taskpanel import LENGTH_SUFFIX, FinSnapTaskPanel
 
 ICONS = os.path.join(os.path.dirname(__file__), "icons")
@@ -29,7 +28,6 @@ ICON_COUNTER = os.path.join(ICONS, "counter_fin.svg")
 EDGE_PREFIX = "Edge"
 TILT_DECIMALS = 1
 
-FACE_PREFIX = "Face"
 FILE_FILTER = QT_TRANSLATE_NOOP("FinSnap", "3MF files (*.3mf)")
 FILE_EXTENSION = ".3mf"
 PREFERENCES = "User parameter:BaseApp/Preferences/Mod/FinSnap"
@@ -229,11 +227,11 @@ class TiltOntoEdge:
 
 
 def _report_overhangs(obj):
-    """Select the faces that overhang after the tilt and say so in the status bar."""
-    numbers = overhang.overhangs(global_shape(obj))
-    if not numbers:
+    """Select the faces that overhang after the tilt and say so in the status bar.
+    Faces that already carry fins are left out."""
+    names = feature.overhangs_of(obj, obj.Document)
+    if not names:
         return
-    names = ["%s%d" % (FACE_PREFIX, number) for number in numbers]
     Gui.Selection.clearSelection()
     Gui.Selection.addSelection(obj, names)
     text = translate("FinSnap", "%d faces overhang flatter than %.0f degrees and are selected: they need "

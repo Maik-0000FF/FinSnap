@@ -23,10 +23,9 @@ INPUTS this has to withstand (stand()):
     the bed                             ->  face laid down, then as tilt()
   face already on the bed               ->  same result as tilt() alone
   face facing up (normal +Z)            ->  part turned over, then as tilt()
-  face rounded and convex (fillet, cone
-    mantle)                             ->  touches the bed along its middle
-  face rounded and concave (inner
-    fillet)                             ->  OrientError: cannot rest on it
+  face rounded (fillet, cone mantle)    ->  OrientError: it touches the bed only
+                                            along its middle, never with the edge;
+                                            choose it alone or the faces beside it
   flat B-spline face (loft side)        ->  as a planar face
   edge not an edge of the face          ->  OrientError
   face the part cannot rest on (other
@@ -42,6 +41,13 @@ INPUTS this has to withstand (rest_between()):
   two faces of an inner corner, or
     other geometry reaching lower       ->  OrientError: cannot rest between them
 
+INPUTS this has to withstand (lay_flat()):
+  flat face (chamfer)                   ->  lies flat on the bed
+  face rounded and convex (fillet, cone
+    mantle)                             ->  touches the bed along its middle
+  face rounded and concave (inner
+    fillet)                             ->  OrientError: cannot rest on it
+
 INPUTS this has to withstand (remember_flat(), lay_back()):
   first tilt                            ->  placement kept
   second tilt                           ->  first placement stays kept
@@ -53,6 +59,7 @@ import FreeCAD as App
 
 from . import defaults as d
 from .i18n import QT_TRANSLATE_NOOP, translate
+from .shapes import middle_normal, middle_of
 
 V = App.Vector
 DOWN = V(0, 0, -1)
@@ -110,8 +117,7 @@ def lay_flat(shape, face):
     such as a fillet, touches it along a line through its middle, so a fillet
     of 90 degrees stands the part at 45.
     """
-    u0, u1, v0, v1 = face.ParameterRange
-    middle = (u0 + u1) / 2, (v0 + v1) / 2
+    middle = middle_of(face)
     normal = face.normalAt(*middle)
     contact = face.valueAt(*middle)
     turn = App.Placement(V(0, 0, 0), App.Rotation(normal, DOWN), contact)
@@ -123,11 +129,6 @@ def lay_flat(shape, face):
     return lift.multiply(turn)
 
 
-def _middle_normal(face):
-    u0, u1, v0, v1 = face.ParameterRange
-    return face.normalAt((u0 + u1) / 2, (v0 + v1) / 2)
-
-
 def rest_between(shape, first, second):
     """The placement change that stands `shape` on what lies between two faces,
     both leaning equally steeply over the bed.
@@ -135,7 +136,7 @@ def rest_between(shape, first, second):
     Whatever joins the faces carries the part: a sharp edge, a chamfer or a
     fillet. Two faces at a right angle each end up at 45 degrees.
     """
-    middle = _middle_normal(first) + _middle_normal(second)
+    middle = middle_normal(first) + middle_normal(second)
     if middle.Length < d.TOLERANCE:
         raise OrientError(translate("FinSnap", "the two faces point in opposite directions"))
     middle.normalize()
@@ -166,6 +167,9 @@ def stand(shape, edge, angle_deg, face=None):
         return tilt(shape, edge, angle_deg)
     if not any(edge.isSame(candidate) for candidate in face.Edges):
         raise OrientError(translate("FinSnap", "the edge is not an edge of the selected face"))
+    if face.findPlane() is None:
+        raise OrientError(translate("FinSnap", "a rounded face does not lie on the bed with its edge; select "
+                                               "it alone, or the two faces beside it"))
     flat = lay_flat(shape, face)
     return tilt(_moved(shape, flat), _moved(edge, flat), angle_deg).multiply(flat)
 

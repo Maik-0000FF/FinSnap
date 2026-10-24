@@ -24,6 +24,7 @@ All notable changes to FinSnap are listed here. The format follows
 - Stand on edge refused the straight side edges of lofts and tapered Pads as curved
 - Tines were drawn into the part and cut back by it; beside a face sloping away a rest stuck out. Tines now end in the plane of the face and are all equally long
 - Fins under a face that narrows, like the side of a frustum, failed because the lowest tines missed the face; such tines are now left out with a warning
+- Cancel in the task panel kept the changes made to existing fins
 
 ## [0.1.0] - 2026-10-24
 

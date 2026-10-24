@@ -263,6 +263,12 @@ def check_chamfer_and_fillet():
     on_fillet = moved(filleted, orient.lay_flat(filleted, fillet))
     expect(abs(on_fillet.BoundBox.ZMin) < d.TOLERANCE and len(leaning_at(on_fillet, 45)) == 2,
            "a box stands at 45 degrees on its fillet")
+    try:
+        orient.stand(filleted, fillet.Edges[0], d.TILT_ANGLE, fillet)
+    except orient.OrientError as error:
+        expect("rounded" in str(error), "an edge with a fillet is refused with a clear reason: %s" % error)
+    else:
+        raise AssertionError("a part was stood on an edge of a fillet")
 
     # The two faces beside the fillet, or beside a sharp edge: both end up equally steep.
     sides = [f for f in filleted.Faces if f.findPlane() is not None

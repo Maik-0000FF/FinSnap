@@ -16,7 +16,7 @@ from . import geometry
 from . import overhang
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
-from .shapes import global_shape, outermost
+from .shapes import face_name, global_shape, outermost
 
 TYPE_NAME = "FinSnap"
 # Result property listing the faces that overhang without fins; the view
@@ -292,7 +292,7 @@ def _supported(part_obj, document):
 def overhangs_of(part_obj, document):
     """Names of the faces of `part_obj` that overhang without fins."""
     shape, supported = _supported(part_obj, document)
-    return ["Face%d" % number for number in overhang.overhangs(shape, supported)]
+    return [face_name(number) for number in overhang.overhangs(shape, supported)]
 
 
 class FinSnapFeature:
@@ -303,6 +303,10 @@ class FinSnapFeature:
     def execute(self, obj):
         if not obj.Base:
             return
+        # The overhangs depend on the part alone; set first, so the marks
+        # follow the part even when the fins below cannot be built.
+        overhanging = overhangs_of(obj.Base[0], obj.Document)
+        setattr(obj, OVERHANGS, overhanging)
         p = params_of(obj)
         part, face = _face(obj.Base)
         result = geometry.build(part, face, p)
@@ -314,7 +318,6 @@ class FinSnapFeature:
                                      tine_count=p.counter_tine_count or None)
             shapes.append(counter.fins)
             warnings += counter.warnings
-        overhanging = overhangs_of(obj.Base[0], obj.Document)
         if overhanging:
             warnings.append(translate("FinSnap", "%d faces of %s overhang flatter than %.0f degrees without fins: %s")
                             % (len(overhanging), obj.Base[0].Label, d.OVERHANG_ANGLE, ", ".join(overhanging)))
@@ -327,7 +330,6 @@ class FinSnapFeature:
         obj.ResultThickness = result.thickness
         obj.ResultFinCount = len(result.positions)
         obj.Warnings = warnings
-        setattr(obj, OVERHANGS, overhanging)
         for warning in warnings:
             App.Console.PrintWarning("FinSnap: %s\n" % warning)
 
@@ -353,7 +355,7 @@ class FinSnapFeature:
 def face_name_of(shape, face):
     for number, candidate in enumerate(shape.Faces, 1):
         if candidate.isSame(face):
-            return "Face%d" % number
+            return face_name(number)
     return None
 
 

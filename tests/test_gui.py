@@ -169,6 +169,25 @@ def main():
            "the overhanging face is marked in the 3D view")
     marked.ViewObject.Visibility = False
     expect(marks.whichChild.getValue() == coin.SO_SWITCH_NONE, "hiding the fins hides the marks")
+    marked.ViewObject.Visibility = True
+
+    # Fins under the overhanging face as well: the report after a tilt leaves it out.
+    carried = feature.create(box, hanging[0])
+    commands.ViewProviderFinSnap(carried.ViewObject)
+    doc.recompute()
+    Gui.Selection.clearSelection()
+    commands._report_overhangs(box)
+    expect(not Gui.Selection.getSelectionEx(), "faces that carry fins are not reported as overhangs")
+    carried.ViewObject.Proxy.onDelete(carried.ViewObject, [])
+    doc.removeObject(carried.Name)
+    doc.recompute()
+
+    # Laid flat, the fins cannot be built any more; the marks follow the part all the same.
+    select(box)
+    Gui.runCommand("FinSnap_LayFlat")
+    doc.recompute()
+    expect(not marked.isValid() and marked.Overhangs == [] and marks.getNumChildren() == 0,
+           "when the fins fail, the marks still follow the part")
     marked.ViewObject.Proxy.onDelete(marked.ViewObject, [])
     doc.removeObject(marked.Name)
     QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (d.TILT_ANGLE, True))
@@ -225,6 +244,7 @@ def main():
     panel.timer.timeout.emit()
     expect(fins.FinPlacement == d.PLACEMENT_DISTRIBUTED and not panel.timer.isActive(),
            "the automatic preview applies the change")
+    expect(panel.timer.parent() is panel.form, "the preview timer goes with the panel")
     foot = panel.widgets["FootShape"]
     foot.setCurrentIndex(foot.findData(d.FOOT_NONE))
     expect(not panel.widgets["FootThickness"].isEnabled()
@@ -233,6 +253,15 @@ def main():
     placement.setCurrentIndex(placement.findData(d.PLACEMENT_AUTO))
     foot.setCurrentIndex(foot.findData(d.FOOT_SHAPE))
     panel.preview()
+
+    # Cancel on fins that already existed puts back what they had before the panel opened.
+    reopened = FinSnapTaskPanel(fins)
+    before = fins.TineCount
+    reopened.widgets["TineCount"].setValue(before + 1)
+    reopened.timer.timeout.emit()
+    expect(fins.TineCount == before + 1, "the reopened panel writes a change at once")
+    reopened.reject()
+    expect(fins.TineCount == before and fins.isValid(), "Cancel puts back the values the fins had")
 
     # A face the fins cannot stand under: the panel says why instead of keeping the old result.
     upward = [i for i, f in enumerate(cube.Shape.Faces, 1) if f.normalAt(0, 0).z > 1 - d.TOLERANCE][0]

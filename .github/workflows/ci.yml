@@ -65,11 +65,12 @@ jobs:
             echo "untranslated or stale texts, run tools/update_translations.sh"
             exit 1
           fi
-      # UTF-8 read as Latin-1 and written again turns "ä" into "Ã¤": the bytes
-      # C3 83 C2 followed by a continuation byte. Correct text never has them.
+      # UTF-8 read as Latin-1 or cp1252 and written again turns "ä" into "Ã¤" and
+      # "ß" into "ÃŸ": "Ã" or "Â" (C3 83, C3 82) followed by another non-ASCII
+      # character. Correct German or English text never has that.
       - name: Check that no text is encoded twice
         run: |
-          if LC_ALL=C git grep -nP '\xC3\x83\xC2[\x80-\xBF]' -- freecad '*.md' tests tools; then
+          if LC_ALL=C git grep -nP '\xC3[\x82\x83][\xC2-\xF4]' -- freecad '*.md' tests tools; then
             echo "doubly encoded UTF-8, umlauts would show as Ã¤ and the like"
             exit 1
           fi
