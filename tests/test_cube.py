@@ -113,6 +113,11 @@ def check_stand():
         raise AssertionError("a face inside a notch was laid onto the bed")
 
 
+def reach_behind(result, frame):
+    """How far the tines reach behind the plane of the face."""
+    return max(frame.s_face(v.Point.z) - v.Point.dot(frame.out) for t in result.tines for v in t.Vertexes)
+
+
 def check_corners(cube, face):
     """Two fins centred on the face ends: each tine touches the face up to its edge."""
     result = geometry.build(cube, face, FinParams(placement=d.PLACEMENT_CORNERS))
@@ -126,12 +131,10 @@ def check_corners(cube, face):
               if cube.isInside(v.Point, d.TOLERANCE, True)]
         expect(any(min(ts) < end < max(ts) for end in (frame.along_min, frame.along_max)),
                "a corner tine touches the part across the end of the face")
-
-    def reach_behind(result, frame):
-        """How far the tines reach behind the plane of the face."""
-        return max(frame.s_face(v.Point.z) - v.Point.dot(frame.out) for t in result.tines for v in t.Vertexes)
-
-    expect(reach_behind(result, frame) > d.TOLERANCE, "over a chamfer the corner tines reach on to touch it")
+    reach = reach_behind(result, frame)
+    half = FinParams().tine_width / 2
+    expect(d.TOLERANCE < reach < half + d.TOLERANCE,
+           "over a chamfer the corner tines reach on to touch it, at most half a tine width (%.3f mm)" % reach)
     sharp = Part.makeBox(30, 20, 20)
     edge = [e for e in sharp.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
     sharp.Placement = orient.tilt(sharp, edge, d.TILT_ANGLE).multiply(sharp.Placement)
@@ -142,7 +145,8 @@ def check_corners(cube, face):
     try:
         geometry.build(cube, face, FinParams(placement=d.PLACEMENT_CORNERS, fin_thickness=30.0))
     except geometry.FinError as error:
-        expect("too short" in str(error) or "narrower" in str(error), "corner fins that would collide are refused: %s" % error)
+        expect("too short" in str(error) or "narrower" in str(error),
+               "corner fins that would collide are refused: %s" % error)
     else:
         raise AssertionError("colliding corner fins were accepted")
 
@@ -180,6 +184,12 @@ def check_frustum():
     built = [geometry.build(shape, f, FinParams()) for f in leaning]
     expect(len(built) == 2 and all(r.fins.Solids for r in built),
            "the tilted frustum gets fins under both faces leaning over the bed")
+    half = FinParams().tine_width / 2
+    for f in leaning:
+        corners = geometry.build(shape, f, FinParams(placement=d.PLACEMENT_CORNERS))
+        reach = reach_behind(corners, geometry.frame_of(shape, f))
+        expect(reach < half + d.TOLERANCE,
+               "beside sloping faces the corner tines reach at most half a tine width behind (%.3f mm)" % reach)
     for f in upward:
         try:
             geometry.build(shape, f, FinParams())

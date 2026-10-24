@@ -27,7 +27,9 @@ INPUTS this has to withstand (build()):
   corners: fins centred on the face
     ends, half of each tine on the face ->  FinResult
   corners at a sharp edge               ->  tines end in the plane of the face
-  corners at a chamfer                  ->  tines also touch the chamfer
+  corners at a chamfer                  ->  tines also touch the chamfer, at
+                                            most half a tine width behind the face
+  corners beside a face sloping away    ->  at most half a tine width behind
   no tine fits below the top of the face ->  FinError
   face narrower than the fin at some
     tines (side of a frustum)           ->  those tines left out, warning
@@ -313,34 +315,37 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
     return body, tines
 
 
-def _behind_face(frame, tine):
-    """The space behind the plane of the face, around `tine`."""
+def _behind_face(frame, tine, depth):
+    """The space behind the plane of the face, `depth` deep, around `tine`."""
     ts = [v.Point.dot(frame.along) for v in tine.Vertexes]
-    ss = [v.Point.dot(frame.out) for v in tine.Vertexes]
     zs = [v.Point.z for v in tine.Vertexes]
     low, high = min(zs), max(zs)
-    far = min(ss) - d.TINE_INTO_PART
-    return frame.section(min(ts) - d.TINE_INTO_PART,
-                         [(far, low), (frame.s_face(low), low), (frame.s_face(high), high), (far, high)],
-                         max(ts) - min(ts) + 2 * d.TINE_INTO_PART)
+    margin = d.TINE_INTO_PART
+    return frame.section(min(ts) - margin,
+                         [(frame.s_face(low) - depth, low), (frame.s_face(low), low),
+                          (frame.s_face(high), high), (frame.s_face(high) - depth, high)],
+                         max(ts) - min(ts) + 2 * margin)
 
 
-def trim_tine(tine, part, frame):
-    """The tine cut back to the part, and behind the plane of the face only
-    where it goes on to touch the part.
+def trim_tine(tine, part, frame, reach):
+    """The tine cut back to the part. Behind the plane of the face it keeps at
+    most `reach`, and only pieces that touch the part there.
 
     A tine is drawn into the part and trimmed by it. Where the face ends below
-    the tine, at a corner, nothing trims it: there it would stick out past the
-    face into the air. A piece behind the plane stays only if moving it a
-    little further in touches the part, as over a chamfer.
+    the tine, at a corner, nothing trims it, and it would stick out past the
+    face into the air. Over a chamfer the kept piece rests on it; past a sharp
+    edge, or beside a face that slopes away, the tine ends in the plane of the
+    face or no more than `reach` behind it.
     """
+    ss = [v.Point.dot(frame.out) for v in tine.Vertexes]
+    zs = [v.Point.z for v in tine.Vertexes]
+    deepest = max(frame.s_face(z) for z in zs) - min(ss) + d.TINE_INTO_PART
     cut = tine.cut(part)
-    behind = _behind_face(frame, tine)
-    front = cut.cut(behind)
+    front = cut.cut(_behind_face(frame, tine, deepest))
     probe = frame.out * -d.TINE_PROBE
-    reaching = [piece for piece in cut.common(behind).Solids
-                if piece.translated(probe).common(part).Volume > d.TINE_PROBE * d.TOLERANCE]
-    return front.multiFuse(reaching).removeSplitter() if reaching else front
+    resting = [piece for piece in cut.common(_behind_face(frame, tine, reach)).Solids
+               if piece.translated(probe).common(part).Volume > d.TINE_PROBE * d.TOLERANCE]
+    return front.multiFuse(resting).removeSplitter() if resting else front
 
 
 def check(p, part, fins, bodies, tines):
@@ -392,7 +397,9 @@ def build(part, face, p, tine_count=None):
     pieces = []
     for t0 in positions:
         body, tines = one_fin(p, frame, t0, height, thickness, half_foot, tine_z)
-        trimmed = [trim_tine(tine, part, frame) for tine in tines]
+        # Behind the face a tine reaches at most as far as it overhangs the edge of
+        # the face, half its width when it sits centred on a corner.
+        trimmed = [trim_tine(tine, part, frame, p.tine_width / 2) for tine in tines]
         bodies.append(body)
         all_tines.extend(trimmed)
         # One general fuse instead of one tine after the other: the lowest tine
