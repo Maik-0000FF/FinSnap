@@ -31,7 +31,8 @@ INPUTS this has to withstand (build()):
     tines (side of a frustum)           ->  those tines left out, warning
   face narrower than the fin at every
     tine                                ->  FinError
-  fixed tine count, some tines miss     ->  FinError
+  fixed tine count, some tines miss the
+    face (narrow face or recess)        ->  those tines left out, warning
   face ending above the bed             ->  no tines below it
   manual fin_height below the first tine ->  FinError
   fins standing closer than they are
@@ -364,10 +365,10 @@ def build(part, face, p, tine_count=None):
         raise FinError(translate("FinSnap", "tines (%.2f mm) are wider than the fin (%.2f mm)")
                        % (p.tine_width, thickness))
     tine_z, low, high = tines_on_face(face, frame, all_z, p, room_for_one_fin(p, thickness))
-    left_out = len(all_z) - len(tine_z)
-    if left_out and count:
-        raise FinError(translate("FinSnap", "only %d of %d tines meet the face") % (len(tine_z), count))
-    if left_out:
+    # Also with a fixed tine count: tines the narrow face cannot take are left
+    # out and named, as over a recess, rather than refusing the whole fin.
+    narrow_heights = sorted(set(all_z) - set(tine_z))
+    if narrow_heights:
         # Fewer tines make a lower and so a thinner fin; it still fits where the thicker one did.
         height = p.fin_height if p.fin_height > 0 else tine_z[-1] + p.tine_height
         thickness = thickness_for(p, height)
@@ -416,9 +417,9 @@ def build(part, face, p, tine_count=None):
     if fins_left_out:
         warnings.append(translate("FinSnap", "fins at %s mm from the end of the face left out: none of their "
                                   "tines lies wholly on the face") % _mm_list(fins_left_out))
-    if left_out:
-        warnings.append(translate("FinSnap", "%d tines left out where the face is narrower than the fin")
-                        % left_out)
+    if narrow_heights:
+        warnings.append(translate("FinSnap", "tines at %s mm above the bed left out: the face is narrower "
+                                  "there than the fin") % _mm_list(narrow_heights))
     angle = math.degrees(math.acos(min(1.0, -frame.n_z)))
     if not d.FACE_ANGLE_MIN <= angle <= d.FACE_ANGLE_MAX:
         warnings.append(translate("FinSnap", "the face is inclined %.0f degrees against the bed, outside "

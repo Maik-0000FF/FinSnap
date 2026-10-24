@@ -19,6 +19,8 @@ freecad.__path__.insert(0, os.path.join(ROOT, "freecad"))
 EDGE = 20.0
 # Group of FreeCAD's user parameters that stands in for the saved standard of new fins.
 TEST_STANDARD_GROUP = "StandardUnderTest"
+# A thin fin, as a saved standard for new fins might ask for.
+STANDARD_THICKNESS = 0.9
 CHAMFER = 1.0
 TILT = 45.0
 V = App.Vector

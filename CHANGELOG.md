@@ -14,6 +14,7 @@ All notable changes to FinSnap are listed here. The format follows
 ### Changed
 
 - Warnings and refusals in the task panel stand out in a framed box with a sign, apart from the result line
+- With a fixed tine count, tines a narrowing face cannot take are left out and named in a warning instead of refusing the fin
 
 ### Fixed
 

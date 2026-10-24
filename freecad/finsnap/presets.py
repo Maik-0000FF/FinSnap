@@ -70,9 +70,10 @@ def save(params):
     group = _group()
     group.Clear()
     accessors = _accessors(group)
+    built_in = FinParams()
     for field in fields(FinParams):
-        value = getattr(params, field.name)
-        accessors[type(getattr(FinParams(), field.name))][2](field.name, value)
+        write = accessors[type(getattr(built_in, field.name))][2]
+        write(field.name, getattr(params, field.name))
 
 
 def reset():

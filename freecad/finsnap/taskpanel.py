@@ -37,7 +37,8 @@ NOTE_STYLE = "QLabel { border: 2px solid %s; border-radius: 4px; padding: 6px; }
 WARNING_SIGN = "⚠"
 # A field whose value differs from the standard for new fins: its label in
 # this colour, and a button beside it that puts the standard value back.
-MODIFIED_STYLE = "QLabel { color: #e07000; font-weight: bold; }"
+MODIFIED_COLOR = "#e07000"
+MODIFIED_STYLE = "QLabel { color: %s; font-weight: bold; }" % MODIFIED_COLOR
 RESET_SIGN = "↺"
 IMAGES = os.path.join(os.path.dirname(__file__), "images")
 DRAWINGS = (

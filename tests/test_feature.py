@@ -14,7 +14,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import FreeCAD as App  # noqa: E402
 import Part  # noqa: E402
-from support import expect, lower_left_face, run, tilted_cube  # noqa: E402
+from support import STANDARD_THICKNESS, expect, lower_left_face, run, tilted_cube  # noqa: E402
 from freecad.finsnap import defaults as d  # noqa: E402
 from freecad.finsnap import export_3mf, feature, geometry, orient  # noqa: E402
 from freecad.finsnap import presets  # noqa: E402
@@ -33,7 +33,6 @@ XZ_PLANE = 4  # index in the origin features of a Body
 T_PROFILE = [V(10, 0, 0), V(20, 0, 0), V(20, 20, 0), V(30, 20, 0), V(30, 30, 0), V(0, 30, 0),
              V(0, 20, 0), V(10, 20, 0)]
 T_DEPTH = 10.0
-STANDARD_THICKNESS = 0.9  # a thin fin, as a saved standard might ask for
 T_TILT = 30.0  # flatter than the overhang limit, so the stem overhangs too
 TAPER_SQUARE = 20.0
 TAPER_HEIGHT = 15.0
@@ -148,7 +147,7 @@ def tapered_pad(doc):
     doc.recompute()
 
     shape = global_shape(pad)
-    failures, left_out = [], 0
+    failures, left_out, fixed_checked = [], 0, False
     for face in shape.Faces:
         for edge in face.Edges:
             stood = shape.copy()
@@ -161,9 +160,17 @@ def tapered_pad(doc):
                 except geometry.FinError as error:
                     failures.append(str(error))
                 else:
-                    left_out += any("left out" in w for w in result.warnings)
+                    narrow = any("narrower" in w for w in result.warnings)
+                    left_out += narrow
+                    if narrow and not fixed_checked:
+                        # The same face with every tine asked for by number: still built, with the warning.
+                        frame = geometry.frame_of(stood, leaning)
+                        asked = len(geometry.tine_heights(FinParams(), frame, 0)[0])
+                        fixed = geometry.build(stood, leaning, FinParams(tine_count=asked))
+                        fixed_checked = any("narrower" in w for w in fixed.warnings)
     expect(not failures, "a tapered Pad takes fins under every leaning face, on any edge: %s" % failures[:3])
     expect(left_out, "tines under the narrow end of a face are left out with a warning")
+    expect(fixed_checked, "with a fixed tine count the narrow face is built as well, with the warning")
 
 
 def saved_standard(doc):

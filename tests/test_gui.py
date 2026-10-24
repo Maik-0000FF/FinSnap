@@ -20,7 +20,7 @@ import FreeCADGui as Gui  # noqa: E402
 import Part  # noqa: E402
 from pivy import coin  # noqa: E402
 from PySide import QtWidgets  # noqa: E402
-from support import expect, lower_left_face, run, tilted_cube  # noqa: E402
+from support import STANDARD_THICKNESS, expect, lower_left_face, run, tilted_cube  # noqa: E402
 
 WORKBENCH = "FinSnapWorkbench"
 COMMANDS = ("FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCounterFin", "FinSnap_MeshToSolid",
@@ -28,7 +28,6 @@ COMMANDS = ("FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCo
 DIALOG_ACCEPTED = 1
 FLAT_TILT = 30.0  # flatter than the overhang limit
 CHAMFER = 3.0
-STANDARD_THICKNESS = 0.9  # a thin fin, as a saved standard might ask for
 
 
 def load_workbench():

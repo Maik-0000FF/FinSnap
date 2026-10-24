@@ -13,8 +13,8 @@ from . import export_3mf
 from . import feature
 from . import mesh_input
 from . import orient
-from .presets import PREFERENCES
 from .i18n import QT_TRANSLATE_NOOP, translate
+from .presets import PREFERENCES
 from .shapes import FACE_PREFIX, global_shape, outermost
 from .taskpanel import LENGTH_SUFFIX, FinSnapTaskPanel
 
