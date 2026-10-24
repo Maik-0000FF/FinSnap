@@ -4,6 +4,7 @@ The form is generated from feature.PROPERTIES, one group box per property
 group, so it never falls out of step with the object.
 """
 
+import html
 import os
 
 import FreeCAD as App
@@ -24,6 +25,12 @@ LENGTH_SUFFIX = " mm"
 # Pause after the last change before the preview is rebuilt, so typing a
 # number does not rebuild the fins at every keystroke.
 PREVIEW_DELAY_MS = 400
+# Notes below the result: warnings in amber, a refusal in red, each in a framed
+# box with a sign, so they stand out from the result line above.
+WARNING_COLOR = "#e0a000"
+ERROR_COLOR = "#d03030"
+NOTE_STYLE = "QLabel { border: 2px solid %s; border-radius: 4px; padding: 6px; }"
+WARNING_SIGN = "⚠"
 IMAGES = os.path.join(os.path.dirname(__file__), "images")
 DRAWINGS = (
     (os.path.join(IMAGES, "side_view.svg"), QT_TRANSLATE_NOOP("FinSnap", "Side view")),
@@ -122,6 +129,11 @@ class FinSnapTaskPanel:
         self.status = QtWidgets.QLabel()
         self.status.setWordWrap(True)
         layout.addWidget(self.status)
+        self.notes = QtWidgets.QLabel()
+        self.notes.setWordWrap(True)
+        self.notes.setTextFormat(QtCore.Qt.RichText)
+        self.notes.hide()
+        layout.addWidget(self.notes)
         self.update_enabled()
         self.preview()
 
@@ -154,25 +166,38 @@ class FinSnapTaskPanel:
         if not self.obj.recompute():
             raise ValueError(self.obj.getStatusString())
 
+    def show_notes(self, title, lines, color):
+        """A framed box with a sign and a title, one line per note; hidden without notes."""
+        if not lines:
+            self.notes.hide()
+            return
+        items = "".join("<li>%s</li>" % html.escape(line) for line in lines)
+        self.notes.setText("<b>%s %s</b><ul style='margin: 0'>%s</ul>" % (WARNING_SIGN, html.escape(title), items))
+        self.notes.setStyleSheet(NOTE_STYLE % color)
+        self.notes.show()
+
+    def refuse(self, error):
+        self.status.setText("")
+        self.show_notes(translate("FinSnap", "Not possible"), [str(error)], ERROR_COLOR)
+
     def preview(self):
         self.timer.stop()
         try:
             self.apply()
         except ValueError as error:
-            self.status.setText(translate("FinSnap", "Not possible: %s") % error)
+            self.refuse(error)
             return
-        lines = [translate("FinSnap", "%d fin(s), %.2f mm high, %.2f mm thick")
-                 % (self.obj.ResultFinCount, self.obj.ResultHeight.Value,
-                    self.obj.ResultThickness.Value)]
-        lines += list(self.obj.Warnings)
-        self.status.setText("\n".join(lines))
+        self.status.setText(translate("FinSnap", "%d fin(s), %.2f mm high, %.2f mm thick")
+                            % (self.obj.ResultFinCount, self.obj.ResultHeight.Value,
+                               self.obj.ResultThickness.Value))
+        self.show_notes(translate("FinSnap", "Notes"), list(self.obj.Warnings), WARNING_COLOR)
 
     def accept(self):
         self.timer.stop()
         try:
             self.apply()
         except ValueError as error:
-            self.status.setText(translate("FinSnap", "Not possible: %s") % error)
+            self.refuse(error)
             return False
         Gui.Control.closeDialog()
         App.ActiveDocument.recompute()

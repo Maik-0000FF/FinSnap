@@ -6,6 +6,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Warnings and refusals in the task panel stand out in a framed box with a sign, apart from the result line
+
 ### Fixed
 
 - A tine over a recess or hole in the face stopped the whole fin; tines that do not lie wholly on the face are now left out with a warning, and a fin with no tine left is left out as well

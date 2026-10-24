@@ -164,6 +164,12 @@ def main():
     commands.ViewProviderFinSnap(marked.ViewObject)
     doc.recompute()
     expect(marked.Overhangs == hanging, "the fins list the face that still overhangs")
+    from freecad.finsnap import taskpanel
+    noted = FinSnapTaskPanel(marked)
+    expect(not noted.notes.isHidden()
+           and taskpanel.WARNING_COLOR in noted.notes.styleSheet() and marked.Warnings[0] in noted.notes.text(),
+           "the panel shows the warnings in a framed box of their own")
+    noted.reject()
     marks = marked.ViewObject.Proxy.marks
     expect(marks.getNumChildren() == 1 and marks.whichChild.getValue() == coin.SO_SWITCH_ALL,
            "the overhanging face is marked in the 3D view")
@@ -245,6 +251,7 @@ def main():
     expect(fins.FinPlacement == d.PLACEMENT_DISTRIBUTED and not panel.timer.isActive(),
            "the automatic preview applies the change")
     expect(panel.timer.parent() is panel.form, "the preview timer goes with the panel")
+    expect(panel.notes.isHidden() == (not fins.Warnings), "the notes box shows only when there are warnings")
     foot = panel.widgets["FootShape"]
     foot.setCurrentIndex(foot.findData(d.FOOT_NONE))
     expect(not panel.widgets["FootThickness"].isEnabled()
@@ -267,8 +274,10 @@ def main():
     upward = [i for i, f in enumerate(cube.Shape.Faces, 1) if f.normalAt(0, 0).z > 1 - d.TOLERANCE][0]
     wrong = feature.create(cube, "Face%d" % upward)
     wrong_panel = FinSnapTaskPanel(wrong, created=True)
-    expect(App.Qt.translate("FinSnap", "the selected face does not lean over the bed") in wrong_panel.status.text(),
-           "the panel shows why no fins can be built: %s" % wrong_panel.status.text())
+    reason = App.Qt.translate("FinSnap", "the selected face does not lean over the bed")
+    expect(reason in wrong_panel.notes.text() and not wrong_panel.notes.isHidden()
+           and taskpanel.ERROR_COLOR in wrong_panel.notes.styleSheet(),
+           "the panel shows in a red box why no fins can be built: %s" % wrong_panel.notes.text())
     expect(not wrong_panel.accept(), "OK is refused while no fins can be built")
     wrong_panel.reject()
 

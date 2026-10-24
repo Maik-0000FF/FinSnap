@@ -528,33 +528,37 @@
         <translation>%d Flächen von %s hängen flacher als %.0f Grad über und tragen keine Finnen: %s</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="86"/>
+        <location filename="../taskpanel.py" line="93"/>
         <source>FinSnap parameters</source>
         <translation>FinSnap-Parameter</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="29"/>
+        <location filename="../taskpanel.py" line="36"/>
         <source>Side view</source>
         <translation>Seitenansicht</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="30"/>
+        <location filename="../taskpanel.py" line="37"/>
         <source>Top view</source>
         <translation>Draufsicht</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="88"/>
+        <location filename="../taskpanel.py" line="95"/>
         <source>Hover over a field for an explanation. Letters in brackets point to the drawings below. Every change is shown in the 3D view right away. Greyed-out fields have no effect with the current choices; their tooltip says why.</source>
         <translation>Für eine Erklärung mit der Maus über ein Feld fahren. Buchstaben in Klammern verweisen auf die Zeichnungen unten. Jede Änderung erscheint sofort in der 3D-Ansicht. Ausgegraute Felder wirken bei der aktuellen Wahl nicht; ihr Tooltip sagt, warum.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="162"/>
-        <location filename="../taskpanel.py" line="175"/>
-        <source>Not possible: %s</source>
-        <translation>Nicht möglich: %s</translation>
+        <location filename="../taskpanel.py" line="181"/>
+        <source>Not possible</source>
+        <translation>Nicht möglich</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="164"/>
+        <location filename="../taskpanel.py" line="193"/>
+        <source>Notes</source>
+        <translation>Hinweise</translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="190"/>
         <source>%d fin(s), %.2f mm high, %.2f mm thick</source>
         <translation>%d Finne(n), %.2f mm hoch, %.2f mm dick</translation>
     </message>
