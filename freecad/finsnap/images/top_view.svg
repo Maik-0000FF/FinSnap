@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="320" height="210" viewBox="0 0 320 210" font-family="sans-serif" font-size="15" font-weight="bold">
+  <!-- Top view: face, fins and feet. Written by tools/make_drawings.py; change the script, not this file. -->
+  <rect width="320" height="210" rx="6" fill="#ffffff"/>
+  <rect x="30" y="20" width="260" height="40" fill="#3d8fd6" fill-opacity="0.35" stroke="#1f4f7a" stroke-width="2"/>
+  <ellipse cx="54.0" cy="115.0" rx="18.0" ry="40.0" fill="#f0a030" fill-opacity="0.45" stroke="#8a5512" stroke-width="1.5"/>
+  <ellipse cx="266.0" cy="115.0" rx="18.0" ry="40.0" fill="#f0a030" fill-opacity="0.45" stroke="#8a5512" stroke-width="1.5"/>
+  <rect x="50.0" y="68.0" width="8.0" height="87.0" fill="#f0a030" stroke="#8a5512" stroke-width="2"/>
+  <rect x="262.0" y="68.0" width="8.0" height="87.0" fill="#f0a030" stroke="#8a5512" stroke-width="2"/>
+  <line x1="30.0" y1="60.0" x2="30.0" y2="196.0" stroke="#3a4148" stroke-width="1.0"/>
+  <line x1="50.0" y1="155.0" x2="50.0" y2="196.0" stroke="#3a4148" stroke-width="1.0"/>
+  <line x1="58.0" y1="155.0" x2="58.0" y2="174.0" stroke="#3a4148" stroke-width="1.0"/>
+  <line x1="284.0" y1="115.0" x2="284.0" y2="174.0" stroke="#3a4148" stroke-width="1.0"/>
+  <line x1="266.0" y1="64.0" x2="266.0" y2="174.0" stroke="#3a4148" stroke-width="1.0" stroke-dasharray="8 3 2 3"/>
+  <line x1="39.0" y1="168.0" x2="50.0" y2="168.0" stroke="#3a4148" stroke-width="1.6"/>
+  <polygon points="50.0,168.0 42.0,171.0 42.0,165.0" fill="#3a4148"/>
+  <line x1="69.0" y1="168.0" x2="58.0" y2="168.0" stroke="#3a4148" stroke-width="1.6"/>
+  <polygon points="58.0,168.0 66.0,165.0 66.0,171.0" fill="#3a4148"/>
+  <line x1="30.0" y1="190.0" x2="50.0" y2="190.0" stroke="#3a4148" stroke-width="1.6"/>
+  <polygon points="50.0,190.0 42.0,193.0 42.0,187.0" fill="#3a4148"/>
+  <polygon points="30.0,190.0 38.0,187.0 38.0,193.0" fill="#3a4148"/>
+  <line x1="266.0" y1="168.0" x2="284.0" y2="168.0" stroke="#3a4148" stroke-width="1.6"/>
+  <polygon points="284.0,168.0 276.0,171.0 276.0,165.0" fill="#3a4148"/>
+  <polygon points="266.0,168.0 274.0,165.0 274.0,171.0" fill="#3a4148"/>
+  <text x="76.0" y="173.0" fill="#1f4f7a">H</text>
+  <text x="36.0" y="206.0" fill="#1f4f7a">I</text>
+  <text x="290.0" y="173.0" fill="#1f4f7a">J</text>
+</svg>

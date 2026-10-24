@@ -1,0 +1,89 @@
+name: CI
+
+on:
+  push:
+    branches: ['**']
+    tags: ['v*']
+  pull_request:
+    branches: [main, dev]
+
+permissions:
+  contents: read
+
+env:
+  # Stable FreeCAD release the tests run against.
+  FREECAD_VERSION: '1.1.3'
+  PYTHON_VERSION: '3.12'
+  RUFF_VERSION: '0.9.5'
+  PYSIDE_VERSION: '6.8.1'
+
+jobs:
+  version:
+    # package.xml holds the version; changelog and release tag have to agree.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: python tools/check_version.py "$GITHUB_REF_NAME"
+
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install "ruff==${RUFF_VERSION}"
+      - run: ruff check .
+
+  translations:
+    # Every text in the code has to be translated in every language file.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install "PySide6-Essentials==${PYSIDE_VERSION}"
+      - name: Collect texts
+        env:
+          LUPDATE: pyside6-lupdate
+          LRELEASE: pyside6-lrelease
+        run: |
+          for ts in freecad/finsnap/translations/finsnap_*.ts; do
+            language=${ts##*finsnap_}
+            sh tools/update_translations.sh "${language%.ts}"
+          done
+      - name: Check that nothing is untranslated
+        run: |
+          if grep -n 'type="unfinished"\|type="vanished"\|type="obsolete"' \
+              freecad/finsnap/translations/*.ts; then
+            echo "untranslated or stale texts, run tools/update_translations.sh"
+            exit 1
+          fi
+
+  tests:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download FreeCAD ${{ env.FREECAD_VERSION }}
+        run: |
+          FREECAD_APPIMAGE="FreeCAD_${FREECAD_VERSION}-Linux-x86_64-py311.AppImage"
+          base="https://github.com/FreeCAD/FreeCAD/releases/download/${FREECAD_VERSION}"
+          curl -sSfL -o "$RUNNER_TEMP/$FREECAD_APPIMAGE" "$base/$FREECAD_APPIMAGE"
+          curl -sSfL -o "$RUNNER_TEMP/sha256.txt" "$base/$FREECAD_APPIMAGE-SHA256.txt"
+          cd "$RUNNER_TEMP"
+          sha256sum -c sha256.txt
+          chmod +x "$FREECAD_APPIMAGE"
+          "./$FREECAD_APPIMAGE" --appimage-extract > /dev/null
+      - name: Fins on the reference cube
+        run: $RUNNER_TEMP/squashfs-root/AppRun freecadcmd tests/test_cube.py
+      - name: Parametric object and 3MF export
+        run: $RUNNER_TEMP/squashfs-root/AppRun freecadcmd tests/test_feature.py
+      - name: Commands as a user runs them
+        # The AppImage forces the xcb platform, so the GUI runs on a virtual display.
+        run: |
+          sudo apt-get install -y --no-install-recommends xvfb
+          xvfb-run -a $RUNNER_TEMP/squashfs-root/AppRun freecad tests/test_gui.py

@@ -1,0 +1,112 @@
+"""Default values for fin generation, in one place.
+
+Every number the generator uses without being told otherwise lives here. The
+task panel shows these as starting values, the feature stores them as
+properties, and the geometry never hard-codes a value of its own.
+
+Lengths are in millimetres.
+"""
+
+# --- Slicer settings ---------------------------------------------------------
+# The fin is designed around the bead the printer lays down, so the slicer
+# settings come first. They should match the print profile used later.
+NOZZLE_DIAMETER = 0.4
+BEAD_WIDTH = 0.45
+LAYER_HEIGHT = 0.2
+FIRST_LAYER_HEIGHT = 0.2
+
+# --- Connection ---------------------------------------------------------------
+# "separate": the fin is its own object, tines only touch the part, no
+#             extrusion path runs from one into the other.
+# "merged":   fin and part are fused into one body, the tines are printed as
+#             one continuous path with the part.
+CONNECTION_SEPARATE = "separate"
+CONNECTION_MERGED = "merged"
+CONNECTIONS = (CONNECTION_SEPARATE, CONNECTION_MERGED)
+CONNECTION = CONNECTION_SEPARATE
+
+# Gap, tine width and tine height were chosen by a test print: of touching and
+# merged fins with tines one to three layers high, separate fins with tines one
+# bead wide and one layer high came off cleanest, leaving only faint contact points.
+#
+# Clearance between fin and supported face, measured along the face normal.
+GAP = 0.25
+
+# --- Tines --------------------------------------------------------------------
+# Tines are horizontal, so each one is printed within its own layers.
+TINE_SPACING = 5.0          # vertical distance between tine bottoms
+TINE_FIRST_AUTO = 0.0       # 0: the lowest tine sits on the top of the foot
+TINE_LAYERS = 1             # tine height in layers
+TINE_WIDTH_BEADS = 1        # tine width across the fin, in beads
+TINE_COUNT_AUTO = 0         # 0: as many as fit below the top of the face
+# How far a tine reaches into the fin body before it is fused with it.
+TINE_INTO_FIN = 1.0
+# How far a tine is drawn into the part before it is trimmed by it. Only has
+# to be safely larger than the gap; the excess is cut away.
+TINE_INTO_PART = 1.0
+
+# --- Fin body -----------------------------------------------------------------
+FIN_PLATEAU = 2.0           # flat top instead of a sharp tip
+FIN_MIN_BEADS = 3           # thinnest automatic fin, in beads
+FIN_THICKNESS_RATIO = 0.05  # automatic thickness as a share of fin height
+FIN_THICKNESS_AUTO = 0.0    # 0: from FIN_MIN_BEADS and FIN_THICKNESS_RATIO
+FIN_HEIGHT_AUTO = 0.0       # 0: the top tine defines the height
+# Distance kept from the top edge of the supported face, so the fin does not
+# reach into the edge or chamfer above it.
+FACE_TOP_MARGIN = 0.5
+
+# --- Placement along the supported face ---------------------------------------
+PLACEMENT_AUTO = "auto"
+PLACEMENT_CENTER = "center"
+PLACEMENT_ENDS = "ends"
+PLACEMENT_DISTRIBUTED = "distributed"
+PLACEMENTS = (PLACEMENT_AUTO, PLACEMENT_CENTER, PLACEMENT_ENDS, PLACEMENT_DISTRIBUTED)
+PLACEMENT = PLACEMENT_AUTO
+FIN_COUNT = 3               # used by "distributed"
+END_INSET = 0.5             # distance of the outer fins from the face ends
+FACE_LENGTH_PER_FIN = 50.0  # "auto": one fin per this much face length, a single one centred
+
+# --- Foot ---------------------------------------------------------------------
+FOOT_ELLIPSE = "ellipse"
+FOOT_RECTANGLE = "rectangle"
+FOOT_NONE = "none"
+FOOT_SHAPES = (FOOT_ELLIPSE, FOOT_RECTANGLE, FOOT_NONE)
+FOOT_SHAPE = FOOT_ELLIPSE
+FOOT_THICKNESS = 1.0        # thin enough to peel off without residue
+FOOT_OVERHANG = 0.0         # how far the foot reaches past the straight outer end of the fin
+FOOT_WIDTH_RATIO = 0.5      # foot width as a share of its length
+FOOT_HALF_WIDTH_AUTO = 0.0  # 0: from FOOT_WIDTH_RATIO, limited by the neighbours
+# Minimum space left between the feet of neighbouring fins. On tall, narrow
+# parts the fins stand close together and the feet are narrowed to keep it.
+FOOT_CLEARANCE = 1.0
+
+# --- Counter fin --------------------------------------------------------------
+# A small fin on the opposite face, against tipping away from the main fin.
+COUNTER_TINE_COUNT_AUTO = 0  # 0: as many tines as the main fin, so the same size
+# Minimum cosine between the lean of the counter face and the reverse lean of
+# the main face, for the automatic search of the opposite face.
+OPPOSITE_DIRECTION = 0.9
+
+# --- Warnings -----------------------------------------------------------------
+# Inclination of the supported face against the bed. Outside this range the
+# face is either close to a flat overhang or close to a wall.
+FACE_ANGLE_MIN = 30.0
+FACE_ANGLE_MAX = 60.0
+# Angle the tilt command offers first.
+TILT_ANGLE = 45.0
+# A tine shorter than this share of a bead is not printed to its end. Measured
+# with a 0.45 mm bead: a 0.28 mm tine fell short, a 0.35 mm tine reached.
+TINE_MIN_LENGTH_BEADS = 0.75
+
+# --- Checks -------------------------------------------------------------------
+TOLERANCE = 1e-4
+# Layer positions are rounded to this many decimals, so that 5 x 1.2 is 6.0.
+LENGTH_DECIMALS = 6
+# Below this the face counts as vertical or flat and cannot carry a fin.
+MIN_NORMAL_COMPONENT = 1e-3
+
+# --- Export -------------------------------------------------------------------
+# 10 µm and 1 degree: finer than PrusaSlicer's G-code resolution (0.0125 mm),
+# coarser would show facets on round features.
+MESH_LINEAR_DEFLECTION = 0.01
+MESH_ANGULAR_DEFLECTION_DEG = 1.0

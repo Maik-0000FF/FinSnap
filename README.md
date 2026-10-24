@@ -1,0 +1,146 @@
+# FinSnap | Breakaway fins for FreeCAD
+
+<p align="center"><img height="128" src="docs/assets/logo.svg" alt="FinSnap"></p>
+
+[![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
+[![FreeCAD 1.1+](https://img.shields.io/badge/FreeCAD-1.1%2B-418FDE?logo=freecad&logoColor=white)](https://www.freecad.org/)
+[![CI](https://github.com/Maik-0000FF/FinSnap/actions/workflows/ci.yml/badge.svg)](https://github.com/Maik-0000FF/FinSnap/actions/workflows/ci.yml)
+[![Sponsor](https://img.shields.io/badge/Sponsor-%E2%9D%A4-pink?logo=github)](https://github.com/sponsors/Maik-0000FF)
+[![Ko-fi](https://img.shields.io/badge/Ko--fi-Support%20me-ff5e5b?logo=ko-fi&logoColor=white)](https://ko-fi.com/maik0000ff)
+
+**A FreeCAD workbench that adds breakaway fins to parts printed standing on an edge.**
+
+Printing a part tilted by 45 degrees puts the layer lines diagonal to the load and gives every side the same surface finish, with no bottom face and no top face. A part standing on an edge has almost no grip on the bed, though. FinSnap adds thin fins next to it that hold it upright. The fins touch the part only with small horizontal tines, so they snap off without leaving marks.
+
+**Features:**
+- Fins generated automatically under a selected face that leans over the bed
+- Two connection modes:
+  - **separate**: fins are their own object, the tines only touch the part, no extrusion path runs from fin to part
+  - **merged**: fins and part become one body, the tines are printed as one path with the part
+- Tine height and width in layers and beads, so the design follows the print profile
+- Fin height set by the highest tine, thickness grows with the height
+- One fin centred, two at the ends, or several distributed along the face
+- Oval, rectangular or no foot, narrowed automatically so neighbouring feet never touch
+- Counter fin on the opposite face, added with the fins or afterwards; the opposite face is found automatically
+- Every automatic value can be overridden by hand
+- Works on STEP and FreeCAD bodies; STL meshes are converted to solids first
+- 3MF export with every body as its own object, mesh fineness adjustable
+- English and German user interface
+
+## How it works
+
+The fin's inner edge runs parallel to the supported face at a set gap. Horizontal tines bridge the gap and end exactly on the face. In the separate mode the slicer prints the fin and the part as two objects: the tine lies against the part and sticks to it, without an extrusion path crossing over.
+
+## Installation
+
+### Addon Manager
+
+FinSnap is not yet listed in the FreeCAD Addon Manager. Until then, install it manually.
+
+### Manual
+
+Clone the repository into the `Mod` folder of your FreeCAD user data directory and restart FreeCAD:
+
+```bash
+git clone https://github.com/Maik-0000FF/FinSnap.git ~/.local/share/FreeCAD/Mod/FinSnap
+```
+
+The folder differs by system and version; FreeCAD shows it under **Tools → Addon manager → Settings** and in the Python console with `App.getUserAppDataDir()`.
+
+## Usage
+
+1. Stand the part on an edge: select a bottom edge of the part lying on the bed and click **Stand on edge** (45 degrees by default), or orient it yourself.
+2. Switch to the **FinSnap** workbench.
+3. Select the face that leans over the bed.
+4. Click **Add fins**. The task panel opens with automatic values.
+5. Enter the slicer settings of your print profile: nozzle diameter, bead width, layer height, first layer height.
+6. Adjust any value, click **Preview**, and confirm with **OK**. The letters next to the fields point to the side view and top view drawn in the panel.
+7. For a counter fin against tipping away, select the fins and click **Add counter fin**. The face leaning the other way is found automatically; select a face of the part as well to choose it yourself.
+8. Click **Export 3MF**. With nothing selected, all fins of the document are exported together with their parts; otherwise the selection is exported. Selecting the fins alone also brings their part along.
+
+An STL file is imported first, then turned into a solid with **Mesh to solid**. Fins can be added to its planar faces.
+
+## Slicing
+
+> [!IMPORTANT]
+> When the 3MF file is opened, PrusaSlicer asks:
+>
+> **Multi-part object detected**
+> *"This file contains several objects positioned at multiple heights. Instead of considering them as multiple objects, should the file be loaded as a single object having multiple parts?"*
+>
+> Answer **No**. With **Yes**, part and fins become parts of one object, and the slicer joins them with a continuous path, which is exactly what the separate mode avoids.
+
+- Keep supports off; the fins are the support.
+- The tine height should be a whole number of layers of the print profile, otherwise a tine falls between two layers.
+- A gap that makes the tines shorter than about three quarters of a bead leaves them short of the face. FinSnap warns about this.
+- In the merged mode, set the seam position of the print profile to rear or random. Otherwise the slicer tends to place the seam where the tines join the part, which shows as a vertical line along the tines.
+
+## Parameters
+
+| Group | Parameter | Automatic | Meaning |
+|---|---|---|---|
+| Slicer | Nozzle diameter, bead width, layer height, first layer height | | Values of the print profile |
+| Connection | Connection | separate | separate or merged |
+| | Gap | 0.25 mm | Clearance between fin and face, along the face normal |
+| Tines | Tine spacing | 5 mm | Vertical distance between tines |
+| | Tine first | 0 = on the top of the foot | Height of the lowest tine |
+| | Tine layers | 1 | Tine height in layers |
+| | Tine width beads | 1 | Tine width in beads |
+| | Tine count | 0 = as many as fit | Tines per fin |
+| Fin | Fin thickness | 0 = from height, at least 3 beads | Wall thickness |
+| | Fin height | 0 = top of the highest tine | Height of the fin |
+| | Fin plateau | 2 mm | Flat top instead of a tip |
+| Placement | Fin placement | auto | auto, centre, ends, distributed |
+| | Fin count | 3 | Fins for distributed placement |
+| | End inset | 0.5 mm | Distance of the outer fins from the face ends |
+| | Face length per fin | 50 mm | Automatic placement adds one fin per this length |
+| Foot | Foot shape | oval | oval, rectangle, none |
+| | Foot thickness | 1 mm | Rounded to whole layers |
+| | Foot overhang | 0 mm | Reach past the straight outer end of the fin |
+| | Foot width ratio | 0.5 | Foot width as a share of its length |
+| | Foot half width | 0 = from ratio | Half width of the foot |
+| Counter fin | Counter tine count | 0 = as many as the main fin | Tines of the counter fin; it only has to stop the part from tipping over, so it may be smaller |
+
+## Requirements
+
+- FreeCAD 1.1 or newer, tested with the stable release and the weekly builds
+
+## Development
+
+The tests run in FreeCAD's console:
+
+```bash
+freecad --console tests/test_cube.py
+freecad --console tests/test_feature.py
+QT_QPA_PLATFORM=offscreen freecad tests/test_gui.py
+```
+
+The CI checks every push: lint with ruff, complete translations, and the tests against the stable FreeCAD release.
+
+`tools/check_gcode.py` checks a sliced G-code file: no path may run from a fin into its part, and every tine has to reach the part.
+
+## Contributing
+
+Bug reports and ideas are welcome as [issues](https://github.com/Maik-0000FF/FinSnap/issues). See the [Contributing guide](CONTRIBUTING.md) for translations and code changes.
+
+## Support
+
+> If you find FinSnap useful, you can support its development:
+>
+> <a href="https://github.com/sponsors/Maik-0000FF">
+>   <img src="https://img.shields.io/badge/Sponsors-Support_this_project-ea4aaa?style=for-the-badge&logo=github" alt="GitHub Sponsors">
+> </a>
+> &nbsp;
+> <a href="https://ko-fi.com/maik0000ff">
+>   <img src="https://img.shields.io/badge/Ko--fi-Buy_me_a_coffee-ff5e5b?style=for-the-badge&logo=ko-fi&logoColor=white" alt="Ko-fi">
+> </a>
+>
+> A star also helps, it makes this project easier to discover.
+
+## License
+
+GPL-3.0-or-later
+
+## Author
+
+Created by [Maik-0000FF](https://github.com/Maik-0000FF)

@@ -1,0 +1,35 @@
+<?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
+
+  <name>FinSnap</name>
+
+  <description>Breakaway fins for parts printed standing on an edge. The fins hold the tilted part on the bed and touch it only with small horizontal tines, as a separate object or merged with the part.</description>
+
+  <version>0.1.0</version>
+
+  <date>2026-10-24</date>
+
+  <maintainer email="Maik-0000FF@users.noreply.github.com">Maik-0000FF</maintainer>
+
+  <author email="Maik-0000FF@users.noreply.github.com">Maik-0000FF</author>
+
+  <license file="LICENSE">GPL-3.0-or-later</license>
+
+  <url type="repository" branch="main">https://github.com/Maik-0000FF/FinSnap</url>
+
+  <url type="bugtracker">https://github.com/Maik-0000FF/FinSnap/issues</url>
+
+  <icon>freecad/finsnap/icons/finsnap.svg</icon>
+
+  <tag>3D printing</tag>
+  <tag>support</tag>
+
+  <content>
+    <workbench>
+      <classname>FinSnapWorkbench</classname>
+      <subdirectory>./</subdirectory>
+      <freecadmin>1.1.0</freecadmin>
+    </workbench>
+  </content>
+
+</package>
