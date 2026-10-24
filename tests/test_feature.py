@@ -7,6 +7,7 @@ Run from the repository root:
 import os
 import sys
 import tempfile
+import xml.etree.ElementTree as ET
 import zipfile
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -19,6 +20,9 @@ from freecad.finsnap import export_3mf, feature, orient  # noqa: E402
 from freecad.finsnap.shapes import global_shape, outermost  # noqa: E402
 
 V = App.Vector
+# The version as package.xml states it, read independently of the workbench.
+PACKAGE_XML = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "package.xml")
+PACKAGE_VERSION = ET.parse(PACKAGE_XML).getroot().findtext("{https://wiki.freecad.org/Package_Metadata}version")
 BOX = (40.0, 20.0, 20.0)
 
 
@@ -91,6 +95,11 @@ def main():
         model = archive.read("3D/3dmodel.model").decode()
     expect(model.count("<object ") == 2, "3MF holds two objects")
     expect('name="cube_fins"' in model, "objects keep their names")
+    from freecad.finsnap.version import application, version
+    expect(version() == PACKAGE_VERSION, "the workbench reads its version from package.xml")
+    expect('<metadata name="Application">%s</metadata>' % application() in model,
+           "the 3MF names FinSnap and its version")
+    expect('<metadata name="CreationDate">' in model, "the 3MF carries its creation date")
     padded_box_in_body(doc)
     print("all checks passed", file=sys.__stdout__)
 

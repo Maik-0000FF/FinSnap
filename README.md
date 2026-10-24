@@ -75,6 +75,17 @@ An STL file is imported first, then turned into a solid with **Mesh to solid**. 
 - A gap that makes the tines shorter than about three quarters of a bead leaves them short of the face. FinSnap warns about this.
 - In the merged mode, set the seam position of the print profile to rear or random. Otherwise the slicer tends to place the seam where the tines join the part, which shows as a vertical line along the tines.
 
+## What the 3MF file contains
+
+**Export 3MF** writes a plain 3MF file (core specification, no slicer project):
+
+- **One object per body**, named after it: the part as `<part>`, its fins as `<part>_fins`. In the merged mode, part and fins are one object.
+- **Triangle meshes in millimetres.** Planar faces are exact; curved surfaces follow the mesh fineness chosen in the export dialog (surface deviation, default 0.01 mm, and angular deviation, default 1 degree).
+- **Metadata** `Application` with the name and version that wrote the file, `FinSnap <version>`, and `CreationDate` with the date of the export.
+- **No print settings, supports or colours.** The slicer opens the file with its own print profile.
+
+The file is a ZIP archive; the content above sits in `3D/3dmodel.model`. A slicer that saves the file again as its own project may replace the metadata with its own.
+
 ## Parameters
 
 | Group | Parameter | Automatic | Meaning |
@@ -113,6 +124,7 @@ The tests run in FreeCAD's console:
 freecad --console tests/test_cube.py
 freecad --console tests/test_feature.py
 QT_QPA_PLATFORM=offscreen freecad tests/test_gui.py
+python3 tests/test_version.py
 ```
 
 The CI checks every push: lint with ruff, complete translations, and the tests against the stable FreeCAD release.

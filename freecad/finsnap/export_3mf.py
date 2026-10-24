@@ -11,15 +11,24 @@ INPUTS this has to withstand (write()):
   name with &, <, > or quotes           ->  escaped in the XML
   same name twice                       ->  written as given; the slicer shows both
   linear or angle <= 0                  ->  ValueError
+  application given                     ->  written as the Application metadata;
+                                            default "FinSnap <version>"
+
+WHAT THE FILE HOLDS: one object per shape, named as given, as a triangle mesh in
+millimetres; the metadata Application (program and version) and CreationDate
+(date of the export, ISO 8601). No print settings: the slicer opens it with its
+own profile.
 """
 
+import datetime
 import math
 import zipfile
-from xml.sax.saxutils import quoteattr
+from xml.sax.saxutils import escape, quoteattr
 
 import MeshPart
 
 from . import defaults as d
+from .version import application as finsnap_application
 
 CONTENT_TYPES = (
     '<?xml version="1.0" encoding="UTF-8"?>\n'
@@ -53,7 +62,7 @@ def _object_xml(number, name, shape, linear, angular_deg):
 
 
 def write(path, named_shapes, linear=d.MESH_LINEAR_DEFLECTION,
-          angular_deg=d.MESH_ANGULAR_DEFLECTION_DEG):
+          angular_deg=d.MESH_ANGULAR_DEFLECTION_DEG, application=None):
     """linear: largest distance of the mesh from the surface in mm; angular_deg: largest
     angle between neighbouring triangles. Planar faces are exact either way."""
     if not (linear > 0 and angular_deg > 0):
@@ -67,9 +76,11 @@ def write(path, named_shapes, linear=d.MESH_LINEAR_DEFLECTION,
     objects = [_object_xml(i, name, shape, linear, angular_deg)
                for i, (name, shape) in enumerate(named_shapes, 1)]
     items = ['  <item objectid="%d"/>' % i for i in range(1, len(named_shapes) + 1)]
+    metadata = [' <metadata name="Application">%s</metadata>' % escape(application or finsnap_application()),
+                ' <metadata name="CreationDate">%s</metadata>' % datetime.date.today().isoformat()]
     model = "\n".join(['<?xml version="1.0" encoding="UTF-8"?>',
                        '<model unit="millimeter" xml:lang="en-US" xmlns="%s">' % MODEL_NAMESPACE,
-                       " <resources>", *objects, " </resources>",
+                       *metadata, " <resources>", *objects, " </resources>",
                        " <build>", *items, " </build>", "</model>", ""])
     with zipfile.ZipFile(path, "w", zipfile.ZIP_DEFLATED) as archive:
         archive.writestr("[Content_Types].xml", CONTENT_TYPES)

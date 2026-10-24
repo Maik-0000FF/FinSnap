@@ -458,38 +458,38 @@
         <translation>Zinken der Gegenfinne</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="67"/>
+        <location filename="../taskpanel.py" line="68"/>
         <source>FinSnap parameters</source>
         <translation>FinSnap-Parameter</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="25"/>
+        <location filename="../taskpanel.py" line="26"/>
         <source>Side view</source>
         <translation>Seitenansicht</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="26"/>
+        <location filename="../taskpanel.py" line="27"/>
         <source>Top view</source>
         <translation>Draufsicht</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="69"/>
+        <location filename="../taskpanel.py" line="70"/>
         <source>Hover over a field for an explanation. Letters in brackets point to the drawings below. Preview shows the result without closing the panel.</source>
         <translation>Den Mauszeiger über ein Feld halten zeigt eine Erklärung. Buchstaben in Klammern verweisen auf die Zeichnungen darunter. Vorschau zeigt das Ergebnis, ohne die Maske zu schließen.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="100"/>
+        <location filename="../taskpanel.py" line="101"/>
         <source>Preview</source>
         <translation>Vorschau</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="117"/>
-        <location filename="../taskpanel.py" line="129"/>
+        <location filename="../taskpanel.py" line="118"/>
+        <location filename="../taskpanel.py" line="130"/>
         <source>Not possible: %s</source>
         <translation>Nicht möglich: %s</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="119"/>
+        <location filename="../taskpanel.py" line="120"/>
         <source>%d fin(s), %.2f mm high, %.2f mm thick</source>
         <translation>%d Finne(n), %.2f mm hoch, %.2f mm dick</translation>
     </message>
@@ -562,12 +562,12 @@
 <context>
     <name>Workbench</name>
     <message>
-        <location filename="../init_gui.py" line="12"/>
+        <location filename="../init_gui.py" line="13"/>
         <source>FinSnap</source>
         <translation>FinSnap</translation>
     </message>
     <message>
-        <location filename="../init_gui.py" line="18"/>
+        <location filename="../init_gui.py" line="14"/>
         <source>Breakaway fins for parts printed standing on an edge</source>
         <translation>Abbrechbare Finnen für Bauteile, die auf einer Kante stehend gedruckt werden</translation>
     </message>

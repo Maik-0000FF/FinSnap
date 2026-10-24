@@ -118,6 +118,8 @@ def main():
     expect(len(panel.widgets) == len(feature.PROPERTIES), "the panel has a field for every parameter")
     expect(panel.drawings and all(not p.pixmap().isNull() for p in panel.drawings),
            "the panel shows its drawings")
+    from freecad.finsnap.version import application
+    expect(application() in panel.form.windowTitle(), "the panel title names the version")
     panel.widgets["TineCount"].setValue(2)
     panel.preview()
     expect(fins.TineCount == 2 and fins.ResultHeight.Value < 11.2, "preview applies a changed value")

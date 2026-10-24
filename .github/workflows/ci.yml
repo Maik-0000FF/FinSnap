@@ -27,6 +27,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: python tools/check_version.py "$GITHUB_REF_NAME"
+      - run: python tests/test_version.py
 
   lint:
     runs-on: ubuntu-24.04

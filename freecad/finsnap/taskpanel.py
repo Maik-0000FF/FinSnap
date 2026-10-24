@@ -12,6 +12,7 @@ from PySide import QtGui, QtWidgets
 
 from . import feature
 from .i18n import QT_TRANSLATE_NOOP, translate
+from .version import application
 
 # Upper limits of the input fields; generous, the geometry rejects nonsense.
 MAX_LENGTH = 10000.0
@@ -64,7 +65,7 @@ class FinSnapTaskPanel:
         self.widgets = {}
 
         self.form = QtWidgets.QWidget()
-        self.form.setWindowTitle(translate("FinSnap", "FinSnap parameters"))
+        self.form.setWindowTitle("%s (%s)" % (translate("FinSnap", "FinSnap parameters"), application()))
         layout = QtWidgets.QVBoxLayout(self.form)
         intro = QtWidgets.QLabel(translate(
             "FinSnap", "Hover over a field for an explanation. Letters in brackets point to the drawings "

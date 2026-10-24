@@ -21,6 +21,7 @@ After changing texts in the code, refresh the `.ts` files with `tools/update_tra
    freecad --console tests/test_cube.py
    freecad --console tests/test_feature.py
    QT_QPA_PLATFORM=offscreen freecad tests/test_gui.py
+   python3 tests/test_version.py
    ```
 3. Open a pull request against the **`dev`** branch and describe what you changed and why.
 
@@ -30,13 +31,15 @@ Icons, logo and the drawings of the task panel are written by `tools/make_icons.
 
 ## Versioning
 
-FinSnap follows [Semantic Versioning](https://semver.org/). The version lives in one place, `<version>` in [`package.xml`](package.xml), which the FreeCAD Addon Manager reads. A release:
+FinSnap follows [Semantic Versioning](https://semver.org/). The version lives in one place, `<version>` in [`package.xml`](package.xml). The FreeCAD Addon Manager reads it from there, and the workbench reads it at run time for the title of its task panel, its tooltip and the metadata of exported files. Only [`CHANGELOG.md`](CHANGELOG.md) repeats it, in the heading of the release and in two link lines at the bottom.
 
-1. Move the entries under `[Unreleased]` in [`CHANGELOG.md`](CHANGELOG.md) to a new version heading with today's date.
-2. Set `<version>` and `<date>` in `package.xml` to the same values.
-3. Tag the release commit `v<version>`, for example `v0.2.0`.
+A release:
 
-The CI checks that version, changelog and tag agree.
+1. Add the changes under `[Unreleased]` in `CHANGELOG.md` while working.
+2. Run `python3 tools/bump_version.py 0.2.0`. It sets version and date in `package.xml`, moves the entries under the new version, updates both links and checks the result.
+3. Commit, then tag the commit `v0.2.0`.
+
+`tools/check_version.py` runs in the CI and fails if any of these places disagree, including a tag that does not match.
 
 ## Other contributions
 
