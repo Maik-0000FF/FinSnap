@@ -28,6 +28,7 @@ from xml.sax.saxutils import escape, quoteattr
 import MeshPart
 
 from . import defaults as d
+from .i18n import translate
 from .version import application as finsnap_application
 
 CONTENT_TYPES = (
@@ -66,12 +67,12 @@ def write(path, named_shapes, linear=d.MESH_LINEAR_DEFLECTION,
     """linear: largest distance of the mesh from the surface in mm; angular_deg: largest
     angle between neighbouring triangles. Planar faces are exact either way."""
     if not (linear > 0 and angular_deg > 0):
-        raise ValueError("mesh deviation and angle must be greater than 0")
+        raise ValueError(translate("FinSnap", "mesh deviation and angle must be greater than 0"))
     if not named_shapes:
-        raise ValueError("nothing to export")
+        raise ValueError(translate("FinSnap", "nothing to export"))
     for name, shape in named_shapes:
         if not shape.Solids:
-            raise ValueError("%s has no solid to export" % name)
+            raise ValueError(translate("FinSnap", "%s has no solid to export") % name)
 
     objects = [_object_xml(i, name, shape, linear, angular_deg)
                for i, (name, shape) in enumerate(named_shapes, 1)]

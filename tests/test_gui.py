@@ -7,6 +7,7 @@ Dialogs that would wait for a click are replaced by fixed answers; everything
 else, from the selection to the written file, runs as in FreeCAD.
 """
 
+import math
 import os
 import sys
 import tempfile
@@ -17,13 +18,16 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import FreeCAD as App  # noqa: E402
 import FreeCADGui as Gui  # noqa: E402
 import Part  # noqa: E402
+from pivy import coin  # noqa: E402
 from PySide import QtWidgets  # noqa: E402
 from support import expect, lower_left_face, run, tilted_cube  # noqa: E402
 
 WORKBENCH = "FinSnapWorkbench"
-COMMANDS = ("FinSnap_Tilt", "FinSnap_AddFins", "FinSnap_AddCounterFin", "FinSnap_MeshToSolid",
+COMMANDS = ("FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCounterFin", "FinSnap_MeshToSolid",
             "FinSnap_Export3MF")
 DIALOG_ACCEPTED = 1
+FLAT_TILT = 30.0  # flatter than the overhang limit
+CHAMFER = 3.0
 
 
 def load_workbench():
@@ -84,6 +88,109 @@ def main():
     Gui.runCommand("FinSnap_Tilt")
     doc.recompute()
     expect(not messages and box.Shape.BoundBox.ZMax > 20 + d.TOLERANCE, "Stand on edge tilts the box")
+    select(box)
+    Gui.runCommand("FinSnap_LayFlat")
+    doc.recompute()
+    expect(not messages and box.Placement.isIdentity(), "Lay flat again puts the box back")
+
+    # Any edge with one of its faces: the face goes onto the bed first.
+    top = [i for i, e in enumerate(box.Shape.Edges, 1)
+           if e.BoundBox.ZMin > 20 - d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
+    front = [i for i, f in enumerate(box.Shape.Faces, 1) if f.BoundBox.YMax < d.TOLERANCE][0]
+    select(box, "Edge%d" % top)
+    Gui.runCommand("FinSnap_Tilt")
+    expect(len(messages) == 1 and box.Placement.isIdentity(), "a top edge alone is refused with a message")
+    del messages[:]
+    select(box, "Edge%d" % top, "Face%d" % front)
+    Gui.runCommand("FinSnap_Tilt")
+    doc.recompute()
+    expect(not messages and abs(box.Shape.BoundBox.ZMin) < d.TOLERANCE
+           and box.Shape.BoundBox.ZMax > 20 + d.TOLERANCE, "Stand on edge takes a top edge with its face")
+
+    # A chamfer alone: laid onto the bed without asking for an angle.
+    chamfered = doc.addObject("Part::Feature", "Chamfered")
+    plain = Part.makeBox(20, 20, 20)
+    chamfered.Shape = plain.makeChamfer(CHAMFER, [e for e in plain.Edges if e.BoundBox.ZMax < d.TOLERANCE
+                                                  and e.BoundBox.YMax < d.TOLERANCE])
+    slope = [i for i, f in enumerate(chamfered.Shape.Faces, 1)
+             if abs(abs(f.normalAt(0, 0).z) - math.sqrt(0.5)) < d.TOLERANCE][0]
+    QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("a face alone must not ask for an angle")))
+    select(chamfered, "Face%d" % slope)
+    Gui.runCommand("FinSnap_Tilt")
+    doc.recompute()
+    expect(not messages and chamfered.Shape.Faces[slope - 1].normalAt(0, 0).z < -1 + d.TOLERANCE,
+           "Stand on edge lays a chamfer chosen alone onto the bed")
+    select(chamfered)
+    Gui.runCommand("FinSnap_LayFlat")
+    doc.recompute()
+    beside = [i for i, f in enumerate(chamfered.Shape.Faces, 1) if f.findPlane() is not None
+              and any(e.isSame(o) for e in f.Edges for o in chamfered.Shape.Faces[slope - 1].Edges)
+              and abs(f.normalAt(0, 0).x) < d.TOLERANCE and i != slope]
+    select(chamfered, *["Face%d" % i for i in beside])
+    Gui.runCommand("FinSnap_Tilt")
+    doc.recompute()
+    expect(not messages and chamfered.Shape.Faces[slope - 1].normalAt(0, 0).z < -1 + d.TOLERANCE,
+           "Stand on edge with the two faces beside a chamfer stands the part on it")
+    QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (d.TILT_ANGLE, True))
+    doc.removeObject(chamfered.Name)
+
+    # Deleting the last fins of the box lays it flat again; other fins keep it standing.
+    leaning = [i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).z < -d.TOLERANCE]
+    first = feature.create(box, "Face%d" % leaning[0])
+    second = feature.create(box, "Face%d" % leaning[1])
+    for fins in (first, second):
+        commands.ViewProviderFinSnap(fins.ViewObject)
+    first.ViewObject.Proxy.onDelete(first.ViewObject, [])
+    doc.removeObject(first.Name)
+    expect(not box.Placement.isIdentity(), "deleting fins while others remain keeps the box standing")
+    second.ViewObject.Proxy.onDelete(second.ViewObject, [])
+    doc.removeObject(second.Name)
+    doc.recompute()
+    expect(box.Placement.isIdentity(), "deleting the last fins lays the box flat again")
+
+    # Overhangs: tilted flatter than the limit, the bottom face is selected and
+    # reported; fins under the other face leave it marked in red.
+    QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (FLAT_TILT, True))
+    select(box, "Edge%d" % bottom)
+    Gui.runCommand("FinSnap_Tilt")
+    doc.recompute()
+    selected = Gui.Selection.getSelectionEx()
+    hanging = [n for s in selected for n in s.SubElementNames]
+    expect(len(hanging) == 1, "after a flat tilt the overhanging face is selected: %s" % hanging)
+    steep = [i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).z < -d.TOLERANCE
+             and "Face%d" % i not in hanging]
+    marked = feature.create(box, "Face%d" % steep[0])
+    commands.ViewProviderFinSnap(marked.ViewObject)
+    doc.recompute()
+    expect(marked.Overhangs == hanging, "the fins list the face that still overhangs")
+    marks = marked.ViewObject.Proxy.marks
+    expect(marks.getNumChildren() == 1 and marks.whichChild.getValue() == coin.SO_SWITCH_ALL,
+           "the overhanging face is marked in the 3D view")
+    marked.ViewObject.Visibility = False
+    expect(marks.whichChild.getValue() == coin.SO_SWITCH_NONE, "hiding the fins hides the marks")
+    marked.ViewObject.Visibility = True
+
+    # Fins under the overhanging face as well: the report after a tilt leaves it out.
+    carried = feature.create(box, hanging[0])
+    commands.ViewProviderFinSnap(carried.ViewObject)
+    doc.recompute()
+    Gui.Selection.clearSelection()
+    commands._report_overhangs(box)
+    expect(not Gui.Selection.getSelectionEx(), "faces that carry fins are not reported as overhangs")
+    carried.ViewObject.Proxy.onDelete(carried.ViewObject, [])
+    doc.removeObject(carried.Name)
+    doc.recompute()
+
+    # Laid flat, the fins cannot be built any more; the marks follow the part all the same.
+    select(box)
+    Gui.runCommand("FinSnap_LayFlat")
+    doc.recompute()
+    expect(not marked.isValid() and marked.Overhangs == [] and marks.getNumChildren() == 0,
+           "when the fins fail, the marks still follow the part")
+    marked.ViewObject.Proxy.onDelete(marked.ViewObject, [])
+    doc.removeObject(marked.Name)
+    QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (d.TILT_ANGLE, True))
 
     # Add fins: selecting a leaning face creates the object and opens the panel.
     cube = doc.addObject("Part::Feature", "Cube")
@@ -125,6 +232,45 @@ def main():
     expect(fins.TineCount == 2 and fins.ResultHeight.Value < 11.2, "preview applies a changed value")
     panel.widgets["TineCount"].setValue(0)
     panel.apply()
+
+    # Fields without effect are greyed out, and a change starts the preview by itself.
+    expect(not panel.widgets["FinCount"].isEnabled() and not panel.widgets["CounterTineCount"].isEnabled(),
+           "fin count and counter tines are greyed out with automatic placement and no counter fin")
+    placement = panel.widgets["FinPlacement"]
+    placement.setCurrentIndex(placement.findData(d.PLACEMENT_DISTRIBUTED))
+    expect(panel.widgets["FinCount"].isEnabled() and not panel.widgets["FaceLengthPerFin"].isEnabled(),
+           "distributed placement enables the fin count and greys out the face length per fin")
+    expect(panel.timer.isActive(), "a change starts the automatic preview")
+    panel.timer.timeout.emit()
+    expect(fins.FinPlacement == d.PLACEMENT_DISTRIBUTED and not panel.timer.isActive(),
+           "the automatic preview applies the change")
+    expect(panel.timer.parent() is panel.form, "the preview timer goes with the panel")
+    foot = panel.widgets["FootShape"]
+    foot.setCurrentIndex(foot.findData(d.FOOT_NONE))
+    expect(not panel.widgets["FootThickness"].isEnabled()
+           and App.Qt.translate("FinSnap", feature.NOTE_NO_FOOT) in panel.widgets["FootThickness"].toolTip(),
+           "without a foot its fields are greyed out and the tooltip says why")
+    placement.setCurrentIndex(placement.findData(d.PLACEMENT_AUTO))
+    foot.setCurrentIndex(foot.findData(d.FOOT_SHAPE))
+    panel.preview()
+
+    # Cancel on fins that already existed puts back what they had before the panel opened.
+    reopened = FinSnapTaskPanel(fins)
+    before = fins.TineCount
+    reopened.widgets["TineCount"].setValue(before + 1)
+    reopened.timer.timeout.emit()
+    expect(fins.TineCount == before + 1, "the reopened panel writes a change at once")
+    reopened.reject()
+    expect(fins.TineCount == before and fins.isValid(), "Cancel puts back the values the fins had")
+
+    # A face the fins cannot stand under: the panel says why instead of keeping the old result.
+    upward = [i for i, f in enumerate(cube.Shape.Faces, 1) if f.normalAt(0, 0).z > 1 - d.TOLERANCE][0]
+    wrong = feature.create(cube, "Face%d" % upward)
+    wrong_panel = FinSnapTaskPanel(wrong, created=True)
+    expect(App.Qt.translate("FinSnap", "the selected face does not lean over the bed") in wrong_panel.status.text(),
+           "the panel shows why no fins can be built: %s" % wrong_panel.status.text())
+    expect(not wrong_panel.accept(), "OK is refused while no fins can be built")
+    wrong_panel.reject()
 
     # Export: the file is written, gets its extension and holds two objects.
     select(cube)

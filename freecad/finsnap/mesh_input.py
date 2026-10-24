@@ -12,19 +12,21 @@ INPUTS this has to withstand (solid_from_mesh()):
 
 import Part
 
+from .i18n import translate
+
 # Sewing tolerance for mesh points, in millimetres.
 SEW_TOLERANCE = 0.01
 
 
 def solid_from_mesh(mesh):
     if mesh.CountFacets == 0:
-        raise ValueError("the mesh is empty")
+        raise ValueError(translate("FinSnap", "the mesh is empty"))
     shell = Part.Shape()
     shell.makeShapeFromMesh(mesh.Topology, SEW_TOLERANCE)
     try:
         solid = Part.makeSolid(Part.makeShell(shell.Faces))
     except Part.OCCError:
-        raise ValueError("the mesh is not closed")
+        raise ValueError(translate("FinSnap", "the mesh is not closed"))
     if not solid.isValid() or solid.Volume <= 0:
-        raise ValueError("the mesh is not closed")
+        raise ValueError(translate("FinSnap", "the mesh is not closed"))
     return solid.removeSplitter()

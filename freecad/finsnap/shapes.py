@@ -12,15 +12,39 @@ INPUTS this has to withstand:
   Body itself                           ->  its shape as it is
   object in a Part container            ->  shape placed by every parent
   object without a shape                ->  ValueError naming it
+
+Faces are named and measured here as well, so every module agrees on what
+"Face3" and "the middle of a face" mean.
 """
 
 import Part
+
+from .i18n import translate
+
+# Prefix of the face names FreeCAD uses in selections and links: "Face3".
+FACE_PREFIX = "Face"
+
+
+def face_name(number):
+    """The name of face `number`, counted from 1 as FreeCAD does."""
+    return "%s%d" % (FACE_PREFIX, number)
+
+
+def middle_of(face):
+    """The surface parameters in the middle of `face`."""
+    u0, u1, v0, v1 = face.ParameterRange
+    return (u0 + u1) / 2, (v0 + v1) / 2
+
+
+def middle_normal(face):
+    """The outward normal in the middle of `face`."""
+    return face.normalAt(*middle_of(face))
 
 
 def global_shape(obj):
     shape = Part.getShape(obj, "", needSubElement=False, transform=False)
     if shape.isNull():
-        raise ValueError("%s has no shape" % obj.Label)
+        raise ValueError(translate("FinSnap", "%s has no shape") % obj.Label)
     shape = shape.copy()
     shape.Placement = obj.getGlobalPlacement()
     return shape
