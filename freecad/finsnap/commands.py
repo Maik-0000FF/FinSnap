@@ -13,6 +13,7 @@ from . import export_3mf
 from . import feature
 from . import mesh_input
 from . import orient
+from .presets import PREFERENCES
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .shapes import FACE_PREFIX, global_shape, outermost
 from .taskpanel import LENGTH_SUFFIX, FinSnapTaskPanel
@@ -30,7 +31,6 @@ TILT_DECIMALS = 1
 
 FILE_FILTER = QT_TRANSLATE_NOOP("FinSnap", "3MF files (*.3mf)")
 FILE_EXTENSION = ".3mf"
-PREFERENCES = "User parameter:BaseApp/Preferences/Mod/FinSnap"
 PREF_LINEAR = "MeshLinearDeflection"
 PREF_ANGULAR = "MeshAngularDeflection"
 MESH_LINEAR_RANGE = (0.001, 1.0)

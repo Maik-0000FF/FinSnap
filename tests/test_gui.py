@@ -28,6 +28,7 @@ COMMANDS = ("FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCo
 DIALOG_ACCEPTED = 1
 FLAT_TILT = 30.0  # flatter than the overhang limit
 CHAMFER = 3.0
+STANDARD_THICKNESS = 0.9  # a thin fin, as a saved standard might ask for
 
 
 def load_workbench():
@@ -269,6 +270,30 @@ def main():
     expect(fins.TineCount == before + 1, "the reopened panel writes a change at once")
     reopened.reject()
     expect(fins.TineCount == before and fins.isValid(), "Cancel puts back the values the fins had")
+
+    # Fields that differ from the standard are marked; their button puts the standard back.
+    from freecad.finsnap import presets
+    from freecad.finsnap.params import FinParams
+    built_in = FinParams().fin_thickness
+    marking = FinSnapTaskPanel(fins)
+    thickness, reset = marking.widgets["FinThickness"], marking.resets["FinThickness"]
+    label = marking.labels["FinThickness"]
+    expect(reset.isHidden() and not label.styleSheet(), "a field at its standard value is not marked")
+    thickness.setValue(STANDARD_THICKNESS)
+    expect(not reset.isHidden() and label.styleSheet() == taskpanel.MODIFIED_STYLE,
+           "a changed field is marked and gets a button back to the standard")
+    reset.click()
+    expect(abs(thickness.value() - built_in) < d.TOLERANCE and reset.isHidden(),
+           "the button puts the standard value back and clears the mark")
+    thickness.setValue(STANDARD_THICKNESS)
+    marking.save_standard()
+    expect(abs(presets.standard().fin_thickness - STANDARD_THICKNESS) < d.TOLERANCE and reset.isHidden(),
+           "Save as standard makes the value the standard for new fins and clears the mark")
+    QtWidgets.QMessageBox.question = staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.Yes)
+    marking.factory_settings()
+    expect(presets.standard() == FinParams() and abs(thickness.value() - built_in) < d.TOLERANCE
+           and reset.isHidden(), "Factory settings forget the saved standard and reset the fields")
+    marking.reject()
 
     # A face the fins cannot stand under: the panel says why instead of keeping the old result.
     upward = [i for i, f in enumerate(cube.Shape.Faces, 1) if f.normalAt(0, 0).z > 1 - d.TOLERANCE][0]

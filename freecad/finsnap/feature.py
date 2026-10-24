@@ -14,6 +14,7 @@ import Part
 from . import defaults as d
 from . import geometry
 from . import overhang
+from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
 from .shapes import face_name, global_shape, outermost
@@ -234,7 +235,7 @@ def value_of(obj, name):
 
 
 def add_properties(obj):
-    defaults = FinParams()
+    defaults = presets.standard()
     obj.addProperty("App::PropertyLinkSubGlobal", "Base", GROUP_SOURCE,
                     QT_TRANSLATE_NOOP("App::Property", "Part and the face the fins support"))
     obj.addProperty("App::PropertyLinkGlobal", "Container", GROUP_SOURCE,

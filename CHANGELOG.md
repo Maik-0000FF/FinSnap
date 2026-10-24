@@ -6,6 +6,11 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Save as standard and Factory settings in the task panel: new fins start with the saved values
+- Fields that differ from the standard are marked, with a button beside each that puts the standard back
+
 ### Changed
 
 - Warnings and refusals in the task panel stand out in a framed box with a sign, apart from the result line
