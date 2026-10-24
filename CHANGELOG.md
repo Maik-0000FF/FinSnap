@@ -6,6 +6,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A tine over a recess or hole in the face stopped the whole fin; tines that do not lie wholly on the face are now left out with a warning, and a fin with no tine left is left out as well
+
 ## [0.2.0] - 2026-10-24
 
 ### Added

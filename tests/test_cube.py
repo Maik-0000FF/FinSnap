@@ -26,6 +26,9 @@ PYRAMID_BASE = 20.0
 PYRAMID_STEEP = 20.0   # sides at 63 degrees against the base
 PYRAMID_FLAT = 5.0     # sides at 27 degrees, flatter than the overhang limit
 PYRAMID_TILT = 30.0    # flatter than the overhang limit
+RECESS_RADIUS = 1.5    # wider than a tine, so a tine above it touches nothing
+GROOVE_TOP_GAP = 1.0   # face left above a groove, so the groove does not split the face
+UP = V(0, 0, 1)
 BOX_SIDE = 20.0
 EDGE_ROUND = 3.0       # size of the chamfer or radius of the fillet on a box edge
 FRUSTUM_BASE = 40.0
@@ -313,6 +316,56 @@ def check_chamfer_and_fillet():
         raise AssertionError("a part was stood between the faces of an inner corner")
 
 
+def check_recesses(cube, face):
+    """Tines over a recess or a hole in the face are left out with a warning;
+    a fin none of whose tines finds the face is left out as well."""
+    frame = geometry.frame_of(cube, face)
+    normal = face.normalAt(0, 0)
+    middle = (frame.along_min + frame.along_max) / 2
+    middle_z = geometry.build(cube, face, FinParams()).tine_z[1]
+    middle_tine = middle_z + FinParams().tine_height / 2
+
+    on_face = frame.point(middle, frame.s_face(middle_tine), middle_tine)
+    pit = Part.makeCylinder(RECESS_RADIUS, 2 * RECESS_RADIUS, on_face - normal * RECESS_RADIUS, normal)
+    pitted = cube.cut(pit)
+    result = geometry.build(pitted, lower_left_face(pitted), FinParams())
+    named = "tines at %.1f mm" % middle_z
+    expect(len(result.tines) == 2 and any(named in w for w in result.warnings),
+           "the tine over a hole in the face is left out, the warning names its height: %s" % result.warnings)
+
+    # A hole under only half of the tine: it would hang free there, so it is left out too.
+    beside = frame.point(middle + RECESS_RADIUS, frame.s_face(middle_tine), middle_tine)
+    half = cube.cut(Part.makeCylinder(RECESS_RADIUS, 2 * RECESS_RADIUS, beside - normal * RECESS_RADIUS, normal))
+    partly = geometry.build(half, lower_left_face(half), FinParams())
+    expect(len(partly.tines) == 2, "a tine only partly over a hole is left out as well")
+
+    # A groove running up the face under the middle one of three fins: that fin has no tine left.
+    uphill = (UP - normal * UP.dot(normal)).normalize()
+    three = FinParams(placement=d.PLACEMENT_DISTRIBUTED, fin_count=3)
+    spread = geometry.build(cube, face, three)
+    centre = geometry.tine_start(three, spread.positions[1], spread.thickness) + three.tine_width / 2
+
+    def groove(t):
+        start = frame.point(t, frame.s_face(frame.bed_z), frame.bed_z) - uphill * RECESS_RADIUS
+        # It stops below the top of the face, so the face stays one piece.
+        length = (frame.face_top_z - frame.bed_z - GROOVE_TOP_GAP) / uphill.z
+        return Part.makeCylinder(RECESS_RADIUS, length, start, uphill)
+
+    grooved = cube.cut(groove(centre))
+    two_left = geometry.build(grooved, lower_left_face(grooved), three)
+    named = "fins at %.1f mm" % (spread.positions[1] + spread.thickness / 2 - frame.along_min)
+    expect(len(two_left.positions) == 2 and any(named in w for w in two_left.warnings),
+           "a fin over a groove is left out, the warning names where it stood: %s" % two_left.warnings)
+
+    centred = cube.cut(groove(middle))
+    try:
+        geometry.build(centred, lower_left_face(centred), FinParams(placement=d.PLACEMENT_CENTER))
+    except geometry.FinError as error:
+        expect("no tine finds" in str(error), "a fin with no tine on the face at all is refused: %s" % error)
+    else:
+        raise AssertionError("fins were built although no tine finds the face")
+
+
 def check_overhangs(cube, face):
     """Overhang detection on simple and less simple bodies."""
     expect(overhang.overhangs(Part.makeBox(30, 10, 10)) == [], "a box lying on the bed has no overhang")
@@ -420,6 +473,7 @@ def main():
     expect(len(low.fins.Solids) == 1, "a tine set below the top of the foot still reaches into the fin")
     check_corners(cube, face)
     check_overhangs(cube, face)
+    check_recesses(cube, face)
     check_frustum()
     check_loft()
     check_chamfer_and_fillet()
