@@ -63,6 +63,7 @@ from .shapes import middle_normal
 V = App.Vector
 UP = V(0, 0, 1)
 
+
 class FinError(ValueError):
     """The fin cannot be built on this face."""
 

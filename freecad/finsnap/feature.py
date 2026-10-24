@@ -272,7 +272,7 @@ def params_of(obj):
 def _face(link):
     part, subs = link
     if not subs:
-        raise geometry.FinError("no face selected on %s" % part.Label)
+        raise geometry.FinError(translate("FinSnap", "no face selected on %s") % part.Label)
     shape = global_shape(part)
     return shape, shape.getElement(subs[0])
 
@@ -282,11 +282,16 @@ def _supported(part_obj, document):
     shape = global_shape(part_obj)
     faces = []
     for other in document.Objects:
-        if not isinstance(getattr(other, "Proxy", None), FinSnapFeature):
+        if not is_fins(other):
             continue
         for link in (other.Base, other.CounterFace):
             if link and link[0] is part_obj and link[1]:
-                faces.append(shape.getElement(link[1][0]))
+                try:
+                    faces.append(shape.getElement(link[1][0]))
+                except (ValueError, IndexError, Part.OCCError):
+                    # The part changed and lost this face; those fins report
+                    # it themselves, the others are still built.
+                    continue
     return shape, faces
 
 
@@ -353,6 +358,11 @@ class FinSnapFeature:
         return None
 
 
+def is_fins(obj):
+    """Whether `obj` is a FinSnap object."""
+    return isinstance(getattr(obj, "Proxy", None), FinSnapFeature)
+
+
 def face_name_of(shape, face):
     for number, candidate in enumerate(shape.Faces, 1):
         if candidate.isSame(face):
@@ -360,36 +370,36 @@ def face_name_of(shape, face):
     return None
 
 
-def add_counter(obj, base=None, face_name=None):
+def add_counter(obj, base=None, face_ref=None):
     """Give an existing FinSnap object a counter fin.
 
-    Without a face, the face of the same part that leans the other way is
-    searched. Returns the face name, or None if there is no such face.
+    face_ref is the name of the face ("Face3"). Without it, the face of the
+    same part that leans the other way is searched. Returns the face name, or
+    None if there is no such face.
     """
-    if face_name is None:
+    if face_ref is None:
         base = obj.Base[0]
         shape, face = _face(obj.Base)
         found = geometry.opposite_face(shape, face)
         if found is None:
             return None
-        face_name = face_name_of(shape, found)
-    obj.CounterFace = (base, [face_name])
-    return face_name
+        face_ref = face_name_of(shape, found)
+    obj.CounterFace = (base, [face_ref])
+    return face_ref
 
 
-def create(base, face_name, counter=None):
-    """A new FinSnap object under `face_name` of `base`. counter: (object, face name) or None."""
+def create(base, face_ref, counter=None):
+    """A new FinSnap object under the face named `face_ref` of `base`. counter: (object, face name) or None."""
     doc = base.Document
     obj = doc.addObject("Part::FeaturePython", TYPE_NAME)
     FinSnapFeature(obj)
-    obj.Base = (base, [face_name])
+    obj.Base = (base, [face_ref])
     if outermost(base) is not base:
         obj.Container = outermost(base)
     if counter:
         obj.CounterFace = (counter[0], [counter[1]])
     # Fins already on this part now see one more carried face.
     for other in doc.Objects:
-        if other is not obj and isinstance(getattr(other, "Proxy", None), FinSnapFeature) \
-                and other.Base and other.Base[0] is base:
+        if other is not obj and is_fins(other) and other.Base and other.Base[0] is base:
             other.touch()
     return obj

@@ -17,6 +17,7 @@ from .i18n import QT_TRANSLATE_NOOP, translate
 from .presets import PREFERENCES
 from .shapes import FACE_PREFIX, global_shape, outermost
 from .taskpanel import LENGTH_SUFFIX, FinSnapTaskPanel
+from .version import NAME
 
 ICONS = os.path.join(os.path.dirname(__file__), "icons")
 ICON_WORKBENCH = os.path.join(ICONS, "finsnap.svg")
@@ -37,6 +38,7 @@ MESH_LINEAR_RANGE = (0.001, 1.0)
 MESH_ANGULAR_RANGE = (0.1, 30.0)
 MESH_LINEAR_DECIMALS = 3
 MESH_ANGULAR_DECIMALS = 1
+DEGREE_SUFFIX = " \N{DEGREE SIGN}"
 SOLID_SUFFIX = "_solid"
 FINS_SUFFIX = "_fins"
 # Marks on faces that overhang without fins: red, half see-through, drawn
@@ -125,7 +127,7 @@ class ViewProviderFinSnap:
         if obj.Base:
             owner = outermost(obj.Base[0])
             others = [o for o in obj.Document.Objects
-                      if o is not obj and _is_fins(o) and o.Base and outermost(o.Base[0]) is owner]
+                      if o is not obj and feature.is_fins(o) and o.Base and outermost(o.Base[0]) is owner]
             if not others:
                 orient.lay_back(owner)
             for other in others:
@@ -150,7 +152,7 @@ def _selected_faces():
 
 
 def _message(text):
-    QtWidgets.QMessageBox.information(Gui.getMainWindow(), "FinSnap", text)
+    QtWidgets.QMessageBox.information(Gui.getMainWindow(), NAME, text)
 
 
 class TiltOntoEdge:
@@ -244,7 +246,7 @@ def _owners(objects):
     """The moved containers of the selected parts; for fins, of the part they support."""
     owners = []
     for obj in objects:
-        part = obj.Base[0] if _is_fins(obj) and obj.Base else obj
+        part = obj.Base[0] if feature.is_fins(obj) and obj.Base else obj
         owner = outermost(part)
         if owner not in owners:
             owners.append(owner)
@@ -314,17 +316,21 @@ class AddCounterFin:
                     "fin, clear its face in the property view.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
-        return any(_is_fins(o) for o in Gui.Selection.getSelection()) or bool(_selected_faces())
+        return any(feature.is_fins(o) for o in Gui.Selection.getSelection()) or bool(_selected_faces())
 
     def Activated(self):  # noqa: N802 - FreeCAD API
         doc = App.ActiveDocument
-        fins = [o for o in Gui.Selection.getSelection() if _is_fins(o)]
-        faces = [(o, n) for o, n in _selected_faces() if not _is_fins(o)]
+        fins = [o for o in Gui.Selection.getSelection() if feature.is_fins(o)]
+        faces = [(o, n) for o, n in _selected_faces() if not feature.is_fins(o)]
         if not fins and faces:
             part = faces[0][0]
-            fins = [o for o in doc.Objects if _is_fins(o) and o.Base and o.Base[0] == part]
+            fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] == part]
         if len(fins) != 1 or len(faces) > 1:
             _message(translate("FinSnap", "Select one fin object, and optionally one face of its part."))
+            return
+        if faces and fins[0].Base and faces[0][0] is not fins[0].Base[0]:
+            _message(translate("FinSnap", "The face for the counter fin has to belong to the part the fins "
+                                          "stand under."))
             return
         doc.openTransaction(translate("FinSnap", "Add counter fin"))
         if faces:
@@ -366,16 +372,12 @@ class MeshToSolid:
         doc.recompute()
 
 
-def _is_fins(obj):
-    return getattr(obj, "Proxy", None).__class__.__name__ == "FinSnapFeature"
-
-
 def _to_export():
     """The selection, or every fin object of the document when nothing is selected."""
     selected = Gui.Selection.getSelection()
     if selected or App.ActiveDocument is None:
         return selected
-    return [o for o in App.ActiveDocument.Objects if _is_fins(o)]
+    return [o for o in App.ActiveDocument.Objects if feature.is_fins(o)]
 
 
 def _export_list(objects):
@@ -383,7 +385,7 @@ def _export_list(objects):
     shapes = []
     seen = set()
     for obj in objects:
-        if _is_fins(obj) and obj.Connection == d.CONNECTION_SEPARATE:
+        if feature.is_fins(obj) and obj.Connection == d.CONNECTION_SEPARATE:
             base = obj.Base[0]
             if base.Name not in seen:
                 shapes.append((base.Label, global_shape(base)))
@@ -412,7 +414,7 @@ def _mesh_settings():
     angular = QtWidgets.QDoubleSpinBox()
     angular.setRange(*MESH_ANGULAR_RANGE)
     angular.setDecimals(MESH_ANGULAR_DECIMALS)
-    angular.setSuffix(" \N{DEGREE SIGN}")
+    angular.setSuffix(DEGREE_SUFFIX)
     angular.setValue(prefs.GetFloat(PREF_ANGULAR, d.MESH_ANGULAR_DEFLECTION_DEG))
     form.addRow(translate("FinSnap", "Angular deviation"), angular)
 
@@ -445,7 +447,11 @@ class Export3MF:
         return bool(_to_export())
 
     def Activated(self):  # noqa: N802 - FreeCAD API
-        shapes = _export_list(_to_export())
+        try:
+            shapes = _export_list(_to_export())
+        except ValueError as error:
+            _message(str(error))
+            return
         settings = _mesh_settings()
         if settings is None:
             return

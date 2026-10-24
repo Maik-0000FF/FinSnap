@@ -173,6 +173,21 @@ def tapered_pad(doc):
     expect(fixed_checked, "with a fixed tine count the narrow face is built as well, with the warning")
 
 
+def lost_face(doc):
+    """Fins whose face the part has lost do not stop the other fins of that part."""
+    part = doc.addObject("Part::Feature", "LostFacePart")
+    part.Shape = tilted_cube()
+    name = face_name(part.Shape, lower_left_face(part.Shape))
+    kept = feature.create(part, name)
+    lost = feature.create(part, name)
+    lost.Base = (part, ["Face%d" % (len(part.Shape.Faces) + 1)])
+    doc.recompute()
+    expect(kept.isValid() and kept.Shape.Solids and not lost.isValid(),
+           "fins on a face the part no longer has fail alone, the others are still built")
+    for obj in (lost, kept, part):
+        doc.removeObject(obj.Name)
+
+
 def saved_standard(doc):
     """The standard for new fins: saved values, built-in ones, and what does not fit."""
     expect(presets.standard() == FinParams(), "without a saved standard new fins start with the built-in values")
@@ -237,6 +252,7 @@ def main():
     padded_box_in_body(doc)
     t_profile_in_part(doc)
     saved_standard(doc)
+    lost_face(doc)
     tapered_pad(doc)
     print("all checks passed", file=sys.__stdout__)
 

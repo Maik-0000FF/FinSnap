@@ -216,6 +216,16 @@ def main():
     doc.recompute()
     expect(not messages and fins.CounterFace and len(fins.Shape.Solids) == 2,
            "Add counter fin finds the opposite face and adds a fin there")
+    other = doc.addObject("Part::Feature", "OtherPart")
+    other.Shape = tilted_cube()
+    counter_before = fins.CounterFace
+    select(fins)
+    Gui.Selection.addSelection(other, face_name(other, lower_left_face(other.Shape)))
+    Gui.runCommand("FinSnap_AddCounterFin")
+    expect(len(messages) == 1 and fins.CounterFace == counter_before,
+           "a counter fin on a face of another part is refused with a message")
+    del messages[:]
+    doc.removeObject(other.Name)
     heights = sorted(round(s.BoundBox.ZLength, 3) for s in fins.Shape.Solids)
     expect(heights[0] == heights[1], "the counter fin is as large as the main fin: %s" % heights)
     fins.CounterTineCount = 1
@@ -324,6 +334,12 @@ def main():
     with zipfile.ZipFile(whole) as archive:
         model = archive.read("3D/3dmodel.model").decode()
     expect(model.count("<object ") == 2, "export without a selection takes all fins with their parts")
+    empty = doc.addObject("Part::Feature", "Empty")
+    select(empty)
+    Gui.runCommand("FinSnap_Export3MF")
+    expect(len(messages) == 1, "exporting an object without a shape shows a message: %s" % messages)
+    del messages[:]
+    doc.removeObject(empty.Name)
 
     # Mesh to solid: a mesh of the cube becomes a solid with planar faces.
     import Mesh

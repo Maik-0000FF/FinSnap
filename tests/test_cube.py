@@ -17,7 +17,7 @@ from freecad.finsnap import defaults as d  # noqa: E402
 from freecad.finsnap import geometry  # noqa: E402
 from freecad.finsnap import orient  # noqa: E402
 from freecad.finsnap import overhang  # noqa: E402
-from freecad.finsnap.params import FinParams  # noqa: E402
+from freecad.finsnap.params import FinParams, ParamError  # noqa: E402
 
 import FreeCAD as App  # noqa: E402
 
@@ -444,6 +444,18 @@ def main():
         expect("only 3 of 4" in str(error), "a fourth tine does not fit: %s" % error)
     else:
         raise AssertionError("four tines were accepted")
+
+    # Tines need a free layer between them, or they merge or round onto one layer.
+    params = FinParams()
+    least = params.tine_height + params.layer_height
+    try:
+        FinParams(tine_spacing=params.layer_height / 4).validate()
+    except ParamError as error:
+        expect("free layer" in str(error), "tines closer than a free layer are refused: %s" % error)
+    else:
+        raise AssertionError("tines on top of each other were accepted")
+    FinParams(tine_spacing=least).validate()
+    expect(True, "tines one free layer apart are accepted")
 
     box = Part.makeBox(30, 10, 10)
     bottom = [e for e in box.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.Length == 10][0]
