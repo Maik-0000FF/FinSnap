@@ -35,6 +35,17 @@ def edit(folder, name, old, new):
         handle.write(text.replace(old, new, 1))
 
 
+def empty_unreleased(folder):
+    """Drop the entries under [Unreleased], whatever the repository holds there right now."""
+    path = os.path.join(folder, cv.CHANGELOG_NAME)
+    with open(path, encoding="utf-8") as handle:
+        text = handle.read()
+    start = text.index(bump_version.UNRELEASED_HEADING) + len(bump_version.UNRELEASED_HEADING)
+    following = text.index("\n## [", start)
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write(text[:start] + "\n" + text[following:])
+
+
 def expect(condition, message):
     if not condition:
         raise AssertionError(message)
@@ -58,6 +69,7 @@ def main():
     expect(not cv.problems(ROOT, tag="dev"), "a branch name is not taken for a tag")
 
     folder = copy()
+    empty_unreleased(folder)
     expect(bump_version.bump(folder, NEW, DATE), "a bump with nothing under Unreleased is refused")
     expect(bump_version.bump(folder, version, DATE), "a bump to the current version is refused")
     expect(bump_version.bump(folder, "1.0", DATE), "a version without patch number is refused")

@@ -41,9 +41,6 @@ TINE_WIDTH_BEADS = 1        # tine width across the fin, in beads
 TINE_COUNT_AUTO = 0         # 0: as many as fit below the top of the face
 # How far a tine reaches into the fin body before it is fused with it.
 TINE_INTO_FIN = 1.0
-# How far a tine is drawn into the part before it is trimmed by it. Only has
-# to be safely larger than the gap; the excess is cut away.
-TINE_INTO_PART = 1.0
 
 # --- Fin body -----------------------------------------------------------------
 FIN_PLATEAU = 2.0           # flat top instead of a sharp tip
@@ -54,13 +51,18 @@ FIN_HEIGHT_AUTO = 0.0       # 0: the top tine defines the height
 # Distance kept from the top edge of the supported face, so the fin does not
 # reach into the edge or chamfer above it.
 FACE_TOP_MARGIN = 0.5
+# The same above the lower edge of a face that ends above the bed.
+FACE_BOTTOM_MARGIN = FACE_TOP_MARGIN
 
 # --- Placement along the supported face ---------------------------------------
 PLACEMENT_AUTO = "auto"
 PLACEMENT_CENTER = "center"
 PLACEMENT_ENDS = "ends"
 PLACEMENT_DISTRIBUTED = "distributed"
-PLACEMENTS = (PLACEMENT_AUTO, PLACEMENT_CENTER, PLACEMENT_ENDS, PLACEMENT_DISTRIBUTED)
+# Two fins on the ends of the face: each tine lies whole on the face and ends
+# flush with its end, so its mark merges with that edge.
+PLACEMENT_CORNERS = "corners"
+PLACEMENTS = (PLACEMENT_AUTO, PLACEMENT_CENTER, PLACEMENT_ENDS, PLACEMENT_CORNERS, PLACEMENT_DISTRIBUTED)
 PLACEMENT = PLACEMENT_AUTO
 FIN_COUNT = 3               # used by "distributed"
 END_INSET = 0.5             # distance of the outer fins from the face ends
@@ -94,6 +96,14 @@ FACE_ANGLE_MIN = 30.0
 FACE_ANGLE_MAX = 60.0
 # Angle the tilt command offers first.
 TILT_ANGLE = 45.0
+# Faces lying flatter than this against the bed need support; those without
+# fins are reported and marked. 45 degrees is the usual limit of FDM printing.
+OVERHANG_ANGLE = 45.0
+# Smaller overhanging faces, like the corner facets of a chamfer, bridge over
+# without support and are not reported (mm2).
+OVERHANG_MIN_AREA = 1.0
+# Grid of normals sampled per direction on a curved face.
+OVERHANG_SAMPLES = 8
 # A tine shorter than this share of a bead is not printed to its end. Measured
 # with a 0.45 mm bead: a 0.28 mm tine fell short, a 0.35 mm tine reached.
 TINE_MIN_LENGTH_BEADS = 0.75

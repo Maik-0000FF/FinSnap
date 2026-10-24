@@ -23,6 +23,7 @@ import math
 from dataclasses import dataclass, fields
 
 from . import defaults as d
+from .i18n import translate
 
 
 class ParamError(ValueError):
@@ -67,42 +68,42 @@ class FinParams:
         for f in fields(self):
             value = getattr(self, f.name)
             if isinstance(value, float) and not math.isfinite(value):
-                raise ParamError("%s is not a finite number" % f.name)
+                raise ParamError(translate("FinSnap", "%s is not a finite number") % f.name)
 
         positive = ("nozzle_diameter", "bead_width", "layer_height", "first_layer_height",
                     "gap", "tine_spacing", "fin_plateau", "end_inset",
                     "face_length_per_fin", "foot_thickness", "foot_width_ratio")
         for name in positive:
             if not getattr(self, name) > 0:
-                raise ParamError("%s must be greater than 0" % name)
+                raise ParamError(translate("FinSnap", "%s must be greater than 0") % name)
 
         automatic = ("fin_thickness", "fin_height", "foot_half_width", "tine_count", "tine_first",
                      "counter_tine_count")
         for name in automatic:
             if getattr(self, name) < 0:
-                raise ParamError("%s must be 0 (automatic) or greater" % name)
+                raise ParamError(translate("FinSnap", "%s must be 0 (automatic) or greater") % name)
 
         if self.foot_overhang < 0:
-            raise ParamError("foot_overhang must be 0 or greater")
+            raise ParamError(translate("FinSnap", "foot_overhang must be 0 or greater"))
         if self.bead_width < self.nozzle_diameter / 2:
-            raise ParamError("bead_width is less than half the nozzle diameter")
+            raise ParamError(translate("FinSnap", "bead_width is less than half the nozzle diameter"))
         if self.layer_height > self.nozzle_diameter:
-            raise ParamError("layer_height is greater than the nozzle diameter")
+            raise ParamError(translate("FinSnap", "layer_height is greater than the nozzle diameter"))
         if self.tine_layers < 1:
-            raise ParamError("tine_layers must be at least 1")
+            raise ParamError(translate("FinSnap", "tine_layers must be at least 1"))
         if self.tine_width_beads < 1:
-            raise ParamError("tine_width_beads must be at least 1")
+            raise ParamError(translate("FinSnap", "tine_width_beads must be at least 1"))
 
         choices = (("connection", d.CONNECTIONS), ("placement", d.PLACEMENTS),
                    ("foot_shape", d.FOOT_SHAPES))
         for name, allowed in choices:
             if getattr(self, name) not in allowed:
-                raise ParamError("%s must be one of %s" % (name, ", ".join(allowed)))
+                raise ParamError(translate("FinSnap", "%s must be one of %s") % (name, ", ".join(allowed)))
 
         if self.placement == d.PLACEMENT_DISTRIBUTED and self.fin_count < 1:
-            raise ParamError("fin_count must be at least 1")
+            raise ParamError(translate("FinSnap", "fin_count must be at least 1"))
         if self.fin_thickness > 0 and self.tine_width > self.fin_thickness:
-            raise ParamError("tines (%.2f mm) are wider than the fin (%.2f mm)"
+            raise ParamError(translate("FinSnap", "tines (%.2f mm) are wider than the fin (%.2f mm)")
                              % (self.tine_width, self.fin_thickness))
 
     # Derived sizes, so no caller repeats the arithmetic.

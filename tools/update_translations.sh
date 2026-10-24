@@ -13,6 +13,11 @@ LANGUAGE=${1:-de}
 
 "${LUPDATE:-lupdate}" "$PACKAGE"/*.py -no-obsolete -source-language en -target-language "$LANGUAGE" \
     -ts "$TRANSLATIONS/finsnap_$LANGUAGE.ts"
+# A running FreeCAD keeps the .qm mapped in memory; writing over it in place
+# crashes FreeCAD at its next translated text. The new file is written beside
+# it and renamed, so FreeCAD keeps reading the old one until it restarts.
 for ts in "$TRANSLATIONS"/finsnap_*.ts; do
-    "${LRELEASE:-lrelease}" "$ts"
+    qm="${ts%.ts}.qm"
+    "${LRELEASE:-lrelease}" "$ts" -qm "$qm.tmp"
+    mv "$qm.tmp" "$qm"
 done

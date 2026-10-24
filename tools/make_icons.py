@@ -127,6 +127,16 @@ def icons():
     tilt_arrow = ['<path d="M14 30 A20 20 0 0 1 30 14" fill="none" stroke="%s" stroke-width="3" '
                   'stroke-linecap="round"/>' % FIN_FILL,
                   '<polygon points="30,8 37,14 29,19" fill="%s"/>' % FIN_FILL]
+    # Lay flat again: the same picture backwards, the tilted part dashed and the
+    # flat one solid, the arrow mirrored about the diagonal so it points down.
+    laid_flat = ('<rect x="2" y="36" width="20" height="20" fill="%s" stroke="%s" stroke-width="1.5"/>'
+                 % (PART_FILL, PART_LINE))
+    tilted_outline = [element.replace('fill="%s"' % PART_FILL, 'fill="none"')
+                      .replace('stroke="%s"' % PART_LINE, 'stroke="%s" stroke-dasharray="3 2"' % BED)
+                      for element in part_shape()]
+    lay_arrow = ['<path d="M30 14 A20 20 0 0 0 14 30" fill="none" stroke="%s" stroke-width="3" '
+                 'stroke-linecap="round"/>' % FIN_FILL,
+                 '<polygon points="8,30 14,37 19,29" fill="%s"/>' % FIN_FILL]
     paper = ['<polygon points="8,2 40,2 54,16 54,62 8,62" fill="%s" stroke="%s" stroke-width="2" '
              'stroke-linejoin="round"/>' % (PAPER, BED),
              '<polyline points="40,2 40,16 54,16" fill="none" stroke="%s" stroke-width="2" '
@@ -139,6 +149,7 @@ def icons():
         "add_fins.svg": workbench() + plus_badge(),
         "counter_fin.svg": bed() + part_shape() + fin_shapes() + fin_shapes(mirrored=True) + plus_badge(),
         "tilt.svg": bed() + [tilted_from] + part_shape() + tilt_arrow,
+        "lay_flat.svg": bed() + tilted_outline + [laid_flat] + lay_arrow,
         "export_3mf.svg": paper + [small, label],
     }
 
