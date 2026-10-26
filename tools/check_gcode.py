@@ -5,7 +5,7 @@ For every part exported together with its fins (objects "<name>" and
   - no extrusion path of the fins may run into the part,
   - the tines have to reach the part in at least one layer.
 
-Usage (Python with shapely):
+Usage (Python with shapely 2.0 or newer):
     python3 tools/check_gcode.py <file.gcode>
 
 The G-code must be plain text (PrusaSlicer: binary_gcode = 0) and carry object
@@ -20,8 +20,8 @@ WHAT IS MEASURED, per layer and part:
                 in that layer, i.e. a path leading into the part. Only the part's hull
                 is used: its cross-section is assumed convex near the fins, the fins'
                 is not (blades, foot, tines).
-  unlabelled -> extrusion outside any object (purge line). It must stay at least
-                UNLABELLED_DISTANCE away from every object.
+  unlabelled -> extrusion outside any object (purge line, skirt). It must stay at least
+                UNLABELLED_DISTANCE away from every object in the same layer.
 
 INPUTS this has to withstand:
   G-code as written by PrusaSlicer          ->  report per part, exit 0
@@ -39,15 +39,21 @@ INPUTS this has to withstand:
   crossing or overlap found                 ->  exit 1
   part whose tines touch in no layer        ->  exit 1
   unlabelled extrusion too close            ->  exit 1
+  skirt round the foot of a tilted part that
+    leans out over it further up            ->  passed: compared within each layer
   file missing                              ->  message, exit 2
+  large print, hundreds of thousands of
+    segments                                ->  memory grows with the segments, not
+                                                with the crossings between layers
 """
 
+import math
 import re
 import sys
 from collections import defaultdict
 
+from shapely import STRtree
 from shapely.geometry import LineString, MultiLineString, Point
-from shapely.ops import unary_union
 
 # How far apart two beads may be on paper and still count as touching, in mm.
 # ASSUMPTION: a bead swells a few hundredths beyond its nominal width while
@@ -68,7 +74,7 @@ class Unusable(Exception):
 
 
 def read(path):
-    """Paths per (layer z, object name) as segments, unlabelled segments, bead width."""
+    """Paths per (layer z, object name) as segments, unlabelled (layer z, segment), bead width."""
     with open(path, "rb") as handle:
         if handle.read(4) == b"GCDE":
             raise Unusable("binary G-code; slice again with binary_gcode = 0")
@@ -132,7 +138,7 @@ def read(path):
                 if current >= 0:
                     paths[(z, current)].append(segment)
                 else:
-                    unlabelled.append(segment)
+                    unlabelled.append((z, segment))
             x, y = nx, ny
 
     if not names:
@@ -178,6 +184,29 @@ def measure(paths, part, fins):
     return result
 
 
+def nearest_in_layer(paths, unlabelled):
+    """Smallest distance from an unlabelled segment to an object segment of the
+    same layer; infinity if no layer holds both.
+
+    Layer by layer: the skirt of the first layer runs round the foot of a tilted
+    part, which leans out over it further up, so all layers in one plane would
+    report the skirt as touching. A spatial index per layer keeps the memory to
+    the segments; merging them into one shape nodes every crossing and ran a
+    large print out of memory.
+    """
+    by_layer = defaultdict(list)
+    for z, segment in unlabelled:
+        by_layer[z].append(LineString(segment))
+    nearest = math.inf
+    for z, extruded in by_layer.items():
+        objects = [LineString(s) for (layer, _), segments in paths.items() if layer == z for s in segments]
+        if not objects:
+            continue
+        _, distances = STRtree(objects).query_nearest(extruded, return_distance=True)
+        nearest = min(nearest, float(distances.min()))
+    return nearest
+
+
 def main(argv):
     if len(argv) != 2:
         print("Usage: python3 tools/check_gcode.py <file.gcode>")
@@ -214,10 +243,10 @@ def main(argv):
             findings += 1
 
     if unlabelled:
-        objects = unary_union([lines(s) for s in paths.values()])
-        nearest = min(LineString(s).distance(objects) for s in unlabelled)
-        print("\nunlabelled extrusion: %d segments, nearest object %.1f mm away"
-              % (len(unlabelled), nearest))
+        nearest = nearest_in_layer(paths, unlabelled)
+        where = "%.1f mm away" % nearest if math.isfinite(nearest) else "in no layer with an object"
+        print("\nunlabelled extrusion: %d segments, nearest object in the same layer %s"
+              % (len(unlabelled), where))
         if nearest < UNLABELLED_DISTANCE:
             print("  ERROR: closer than %.1f mm" % UNLABELLED_DISTANCE)
             findings += 1
