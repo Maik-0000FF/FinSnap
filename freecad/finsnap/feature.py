@@ -31,6 +31,19 @@ LAID_FLAT_AT = "LaidFlatAt"
 # The faces of the part the fins were last built under, so overhang marks leave
 # out exactly those.
 CARRIED = "CarriedFaces"
+# Fins removed by hand, by their number from the left seen from outside, for
+# the main fin and the counter fin; and which fin each solid of the shape is,
+# "main:2" or "counter:1", so a face picked in the 3D view finds its fin.
+REMOVED = {"main": "RemovedFins", "counter": "RemovedCounterFins"}
+FIN_TAGS = "FinTags"
+# How many fins the face was planned for when a fin of it was removed.
+# How many fins the face was planned for at the last build.
+PLANNED = {"main": "PlannedFins", "counter": "PlannedCounterFins"}
+REMOVED_OF = {"main": "RemovedFinsOf", "counter": "RemovedCounterFinsOf"}
+NOTE_REMOVED_DROPPED = QT_TRANSLATE_NOOP(
+    "FinSnap", "The number of fins changed, so the fins removed by hand are back; remove them again where "
+    "needed.")
+MAIN, COUNTER = "main", "counter"
 NOTE_LAID_FLAT = QT_TRANSLATE_NOOP(
     "FinSnap", "The part lies flat again: the fins keep their last shape until the part is moved, for example "
     "stood on its edge again; then they are rebuilt.")
@@ -366,12 +379,16 @@ class FinSnapFeature:
         p = params_of(obj)
         try:
             part, face = _face(obj.Base)
-            result = geometry.build(part, face, p)
+            notes = []
+            result = build_keeping_removed(
+                obj, MAIN, lambda left: geometry.build(part, face, p, left_out=left), notes)
             counter = None
             if obj.CounterFace:
                 counter_part, counter_face = _face(obj.CounterFace)
-                counter = geometry.build(counter_part, counter_face, p,
-                                         tine_count=p.counter_tine_count or None)
+                counter = build_keeping_removed(
+                    obj, COUNTER, lambda left: geometry.build(counter_part, counter_face, p,
+                                                              tine_count=p.counter_tine_count or None,
+                                                              left_out=left), notes)
         except Exception:
             # Built nothing, the fins carry no face; the overhang marks still
             # follow the part.
@@ -386,6 +403,10 @@ class FinSnapFeature:
             carried += [face_name_of(counter_part, f) for f in counter.carried]
         hidden_property(obj, CARRIED, "App::PropertyStringList")
         setattr(obj, CARRIED, carried)
+        for which, built in ((MAIN, result), (COUNTER, counter)):
+            if built is not None:
+                hidden_property(obj, PLANNED[which], "App::PropertyInteger")
+                setattr(obj, PLANNED[which], built.planned)
         overhanging = overhangs_of(obj.Base[0], obj.Document)
         setattr(obj, OVERHANGS, overhanging)
         shapes = [result.fins]
@@ -394,14 +415,22 @@ class FinSnapFeature:
         if counter is not None:
             shapes.append(counter.fins)
             warnings += [translate("FinSnap", "Counter fin: %s") % w for w in counter.warnings]
+        warnings += notes
         if overhanging:
             warnings.append(translate("FinSnap", "%d faces of %s overhang flatter than %.0f degrees without fins: %s")
                             % (len(overhanging), obj.Base[0].Label, d.OVERHANG_ANGLE, ", ".join(overhanging)))
 
+        tags = ["%s:%d" % (MAIN, n) for n in result.numbers]
+        if counter is not None:
+            tags += ["%s:%d" % (COUNTER, n) for n in counter.numbers]
         if p.connection == d.CONNECTION_MERGED:
             obj.Shape = geometry.merged(part, *shapes)
+            tags = []
         else:
             obj.Shape = Part.makeCompound(shapes)
+        # One solid per fin, in the order built; otherwise picking cannot tell them apart.
+        hidden_property(obj, FIN_TAGS, "App::PropertyStringList")
+        setattr(obj, FIN_TAGS, tags if len(tags) == len(obj.Shape.Solids) else [])
         obj.ResultHeight = result.height
         obj.ResultThickness = result.thickness
         obj.ResultFinCount = len(result.positions)
@@ -532,3 +561,84 @@ def still_laid_flat(obj):
         return True
     setattr(obj, LAID_FLAT, False)
     return False
+
+
+def build_keeping_removed(obj, which, build_fn, notes):
+    """Build the fins of `which` with the fins removed by hand left out, as long
+    as the face is planned for as many fins as when they were removed.
+
+    build_fn(left_out) builds the fins. The numbers of the removed fins count
+    along the face; with another count, from another placement or a longer face,
+    they would name other fins, so they are dropped and a note says so.
+
+    INPUTS this has to withstand:
+      nothing removed                       ->  built as usual, count recorded
+      fins removed, same count              ->  built without them
+      fins removed, count changed           ->  built whole, removals dropped, note
+      every fin removed, same count         ->  FinError: every fin is removed
+      every fin removed, count changed      ->  built whole, removals dropped, note
+      FinError for any other reason         ->  passed on
+    """
+    left = removed(obj, which)
+    result = None
+    try:
+        result = build_fn(left)
+        planned = result.planned
+    except geometry.FinError as error:
+        planned = getattr(error, "planned", None)
+        if not left or planned is None or planned == getattr(obj, REMOVED_OF[which], planned):
+            raise
+    if left and planned != getattr(obj, REMOVED_OF[which], planned):
+        setattr(obj, REMOVED[which], [])
+        notes.append(translate("FinSnap", NOTE_REMOVED_DROPPED))
+        result = build_fn(())
+    return result
+
+
+def removed(obj, which):
+    """Numbers of the fins of `which` (MAIN or COUNTER) removed by hand."""
+    return list(getattr(obj, REMOVED[which], []))
+
+
+def fin_at(obj, sub):
+    """(MAIN or COUNTER, number) of the fin a picked sub-element `sub` ("Face12")
+    of `obj` belongs to, or None.
+
+    INPUTS this has to withstand:
+      face or edge of one fin               ->  that fin
+      fins merged into the part             ->  None: the fins are no solids of their own
+      name the shape does not have          ->  None
+    """
+    tags = list(getattr(obj, FIN_TAGS, []))
+    try:
+        element = obj.Shape.getElement(sub)
+    except (ValueError, IndexError, Part.OCCError):
+        return None
+    for tag, solid in zip(tags, obj.Shape.Solids):
+        if any(element.isSame(candidate) for candidate in solid.Faces + solid.Edges):
+            which, number = tag.split(":")
+            return which, int(number)
+    return None
+
+
+def remove_fin(obj, which, number):
+    """Leave fin `number` of `which` out from now on, out of as many fins as the
+    face was planned for at the last build."""
+    hidden_property(obj, REMOVED[which], "App::PropertyIntegerList")
+    hidden_property(obj, REMOVED_OF[which], "App::PropertyInteger")
+    setattr(obj, REMOVED[which], sorted(set(removed(obj, which)) | {number}))
+    setattr(obj, REMOVED_OF[which], getattr(obj, PLANNED[which], 0))
+
+
+def restore_fins(obj):
+    """Bring every fin removed by hand back."""
+    for name in REMOVED.values():
+        if name in obj.PropertiesList:
+            setattr(obj, name, [])
+
+
+def remove_counter(obj):
+    """Drop the counter fin, and the counter fins removed by hand with it."""
+    obj.CounterFace = None
+    if REMOVED[COUNTER] in obj.PropertiesList:
+        setattr(obj, REMOVED[COUNTER], [])

@@ -433,6 +433,37 @@ def main():
            and reset.isHidden(), "Factory settings forget the saved standard and reset the fields")
     marking.reject()
 
+    # Single fins: the Delete key on a face of one fin removes that fin only;
+    # the panel removes and brings back fins and the counter fin, and Cancel
+    # puts it all back.
+    row = doc.addObject("Part::Feature", "Row")
+    row.Shape = tilted_cube()
+    lined = feature.create(row, face_name(row, lower_left_face(row.Shape)))
+    commands.ViewProviderFinSnap(lined.ViewObject)
+    lined.FinPlacement = d.PLACEMENT_DISTRIBUTED
+    lined.FinCount = 3
+    doc.recompute()
+
+    def face_of_fin(index):
+        target = lined.Shape.Solids[index].Faces[0]
+        return "Face%d" % [i for i, f in enumerate(lined.Shape.Faces, 1) if f.isSame(target)][0]
+
+    kept = lined.ViewObject.Proxy.onDelete(lined.ViewObject, [face_of_fin(1)])
+    expect(kept is False and lined.Name in [o.Name for o in doc.Objects] and lined.ResultFinCount == 2,
+           "the Delete key on one fin removes that fin and keeps the others")
+    editing = FinSnapTaskPanel(lined)
+    editing.restore()
+    expect(lined.ResultFinCount == 3, "the panel brings removed fins back")
+    select(lined, face_of_fin(0))
+    editing.remove_selected()
+    editing.add_counter()
+    expect(lined.ResultFinCount == 2 and lined.CounterFace, "the panel removes the selected fin and adds a counter fin")
+    editing.reject()
+    expect(lined.ResultFinCount == 2 and not lined.CounterFace and feature.removed(lined, feature.MAIN) == [2],
+           "Cancel puts back the fins as they were when the panel opened")
+    for obj in (lined, row):
+        doc.removeObject(obj.Name)
+
     # A face the fins cannot stand under: the panel says why instead of keeping the old result.
     upward = [i for i, f in enumerate(cube.Shape.Faces, 1) if f.normalAt(0, 0).z > 1 - d.TOLERANCE][0]
     wrong = feature.create(cube, "Face%d" % upward)
