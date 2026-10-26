@@ -50,10 +50,33 @@ ICON_COUNTER = os.path.join(ICONS, "counter_fin.svg")
 ICON_REMOVE_FIN = os.path.join(ICONS, "remove_fin.svg")
 ICON_RESTORE_FINS = os.path.join(ICONS, "restore_fins.svg")
 ICON_REMOVE_COUNTER = os.path.join(ICONS, "remove_counter.svg")
+# Icon buttons: icon size, the gap to the text and the margin inside, in pixels.
+BUTTON_ICON_SIZE = 20
+ICON_GAP = 8
+BUTTON_PADDING = 6
 DRAWINGS = (
     (os.path.join(IMAGES, "side_view.svg"), QT_TRANSLATE_NOOP("FinSnap", "Side view")),
     (os.path.join(IMAGES, "top_view.svg"), QT_TRANSLATE_NOOP("FinSnap", "Top view")),
 )
+
+
+def _icon_button(icon, text):
+    """A button with its icon and text side by side, flush left, a fixed gap
+    between them, so the buttons of a group line up."""
+    button = QtWidgets.QPushButton()
+    row = QtWidgets.QHBoxLayout(button)
+    row.setContentsMargins(BUTTON_PADDING, BUTTON_PADDING, BUTTON_PADDING, BUTTON_PADDING)
+    row.setSpacing(ICON_GAP)
+    picture = QtWidgets.QLabel()
+    picture.setPixmap(QtGui.QIcon(icon).pixmap(BUTTON_ICON_SIZE, BUTTON_ICON_SIZE))
+    label = QtWidgets.QLabel(text)
+    for part in (picture, label):
+        # The button takes the clicks, not its parts.
+        part.setAttribute(QtCore.Qt.WA_TransparentForMouseEvents)
+        row.addWidget(part)
+    row.addStretch(1)
+    button.setMinimumHeight(row.sizeHint().height())
+    return button
 
 
 def _wrapped(*paragraphs):
@@ -204,7 +227,7 @@ class FinSnapTaskPanel:
                 (0, 2, ICON_COUNTER, QT_TRANSLATE_NOOP("FinSnap", "Add counter fin"), self.add_counter),
                 (1, 2, ICON_REMOVE_COUNTER, QT_TRANSLATE_NOOP("FinSnap", "Remove counter fin"),
                  self.remove_counter)):
-            button = QtWidgets.QPushButton(QtGui.QIcon(icon), translate("FinSnap", text))
+            button = _icon_button(icon, translate("FinSnap", text))
             button.clicked.connect(action)
             edit_layout.addWidget(button, row, column)
         layout.addWidget(edit)
