@@ -33,8 +33,9 @@ XZ_PLANE = 4  # index in the origin features of a Body
 T_PROFILE = [V(10, 0, 0), V(20, 0, 0), V(20, 20, 0), V(30, 20, 0), V(30, 30, 0), V(0, 30, 0),
              V(0, 20, 0), V(10, 20, 0)]
 T_DEPTH = 10.0
-T_TILT = 30.0  # flatter than the overhang limit, so the stem overhangs too
-FLAT_TILT = 30.0  # flatter than the overhang limit, so one face overhangs
+# Flatter than the overhang limit: the stem of the T overhangs too, and of a
+# box stood on an edge one face overhangs.
+FLAT_TILT = 30.0
 TAPER_SQUARE = 20.0
 TAPER_HEIGHT = 15.0
 TAPER_ANGLE = -20.0  # negative: the Pad widens
@@ -119,14 +120,14 @@ def t_profile_in_part(doc):
 
     edge = [e for e in shape.Edges if e.BoundBox.ZMax < d.TOLERANCE and abs(e.Length - T_DEPTH) < d.TOLERANCE][0]
     owner = outermost(pad)
-    owner.Placement = orient.stand(shape, edge, T_TILT).multiply(owner.Placement)
+    owner.Placement = orient.stand(shape, edge, FLAT_TILT).multiply(owner.Placement)
     doc.recompute()
     expect(owner is container, "tilting a nested Pad moves the outermost container")
     tilted = global_shape(pad)
     expect(abs(tilted.BoundBox.ZMin) < d.TOLERANCE, "the nested part rests on the bed after the tilt")
 
     hanging = feature.overhangs_of(pad, doc)
-    expect(len(hanging) == 3, "tilted by %.0f degrees the stem and both arms overhang: %s" % (T_TILT, hanging))
+    expect(len(hanging) == 3, "tilted by %.0f degrees the stem and both arms overhang: %s" % (FLAT_TILT, hanging))
     stem = min(hanging, key=lambda name: tilted.getElement(name).BoundBox.ZMin)
     fins = feature.create(pad, stem)
     doc.recompute()
