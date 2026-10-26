@@ -272,13 +272,13 @@ class FinSnapTaskPanel:
         self.preview()
 
     def remove_selected(self):
-        fins = [feature.fin_at(self.obj, sub) for sel in Gui.Selection.getSelectionEx()
-                if sel.Object is self.obj for sub in sel.SubElementNames]
-        fins = [fin for fin in fins if fin]
         if self.obj.Connection == d.CONNECTION_MERGED:
             self.show_notes(translate("FinSnap", "Nothing removed"),
                             [translate("FinSnap", feature.NOTE_MERGED_SINGLE)], WARNING_COLOR)
             return
+        fins = [feature.fin_at(self.obj, sub) for sel in Gui.Selection.getSelectionEx()
+                if sel.Object is self.obj for sub in sel.SubElementNames]
+        fins = [fin for fin in fins if fin]
         if not fins:
             self.show_notes(translate("FinSnap", "Nothing removed"),
                             [translate("FinSnap", "Click a fin of these fins in the 3D view first.")], WARNING_COLOR)
