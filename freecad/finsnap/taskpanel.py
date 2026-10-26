@@ -154,9 +154,11 @@ def _same_mm(a, b):
 
 
 class FinSnapTaskPanel:
-    def __init__(self, obj, created=False):
+    def __init__(self, obj, created=False, on_cancel=None):
         self.obj = obj
+        # Fins just made: Cancel deletes them, then calls on_cancel, if any.
         self.created = created
+        self.on_cancel = on_cancel
         self.widgets = {}
         self.labels = {}
         self.resets = {}
@@ -411,7 +413,7 @@ class FinSnapTaskPanel:
             self.delete_all()
 
     def close(self):
-        """Close the panel as it is, before the fins object goes."""
+        """Close the panel as it is: on OK, on Cancel, or before the fins object goes."""
         self.timer.stop()
         self.release_handles()
         Gui.Control.closeDialog()
@@ -676,7 +678,12 @@ class FinSnapTaskPanel:
         if self.released:
             return
         self.released = True
-        self.drag_timer.stop()
+        # Closed by FreeCAD first, the panel's form and its timers are gone already.
+        for timer in (self.timer, self.drag_timer):
+            try:
+                timer.stop()
+            except RuntimeError:
+                pass
         Gui.Selection.removeObserver(self)
         self.handles.remove()
         self.obj.Proxy.editing = False
@@ -722,19 +729,26 @@ class FinSnapTaskPanel:
         except ValueError as error:
             self.refuse(error)
             return False
-        self.release_handles()
-        Gui.Control.closeDialog()
-        self.leave_edit()
+        self.close()
         App.ActiveDocument.recompute()
         return True
 
     def reject(self):
-        self.timer.stop()
-        self.release_handles()
-        Gui.Control.closeDialog()
-        self.leave_edit()
+        self.close()
         if self.created:
-            App.ActiveDocument.removeObject(self.obj.Name)
+            # One step on the undo stack, after the one that made the fins;
+            # a failure in between leaves no transaction open for the next action.
+            doc = self.obj.Document
+            doc.openTransaction(translate("FinSnap", "Cancel fins"))
+            try:
+                doc.removeObject(self.obj.Name)
+                if self.on_cancel is not None:
+                    self.on_cancel()
+            except Exception:
+                doc.abortTransaction()
+                raise
+            doc.commitTransaction()
+            doc.recompute()
         else:
             for name, value in self.original.items():
                 setattr(self.obj, name, value)

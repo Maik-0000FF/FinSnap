@@ -26,6 +26,8 @@ from PySide import QtCore
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from .i18n import translate
+
 # The colours and the opacity FreeCAD shows its own feature previews in:
 # green for what a feature adds, red for an error, faint enough to see through.
 VALID_COLOR = (0.0, 1.0, 0.6)
@@ -120,6 +122,10 @@ def arrow(color):
     return group
 
 
+class NoView(RuntimeError):
+    """The document has no 3D view to show the arrows in."""
+
+
 class Handles:
     """Two arrows on one fin of the object shown by `vobj`, one along the face
     and one up, with the object see-through until remove().
@@ -137,7 +143,8 @@ class Handles:
         if not hasattr(view, "getViewer"):
             views = gui_doc.mdiViewsOfType(VIEW_3D)
             if not views:
-                raise RuntimeError("no 3D view of %s is open" % vobj.Object.Document.Label)
+                raise NoView(translate("FinSnap", "No 3D view of %s is open to edit the fins in.")
+                             % vobj.Object.Document.Label)
             view = views[0]
         self.vobj = vobj
         self.on_start, self.on_move, self.on_done = on_start, on_move, on_done
@@ -246,13 +253,9 @@ class Handles:
             switch.addChild(node)
         switch.whichChild.setValue(coin.SO_SWITCH_ALL if nodes else coin.SO_SWITCH_NONE)
 
-    def show_preview(self, shapes, valid, dropped=()):
-        """Show `shapes` see-through, green if `valid`, else red, and the tines
-        in `dropped` red."""
-        nodes = [shaded(shapes, VALID_COLOR if valid else INVALID_COLOR, PREVIEW_TRANSPARENCY)]
-        if dropped:
-            nodes.append(shaded(dropped, INVALID_COLOR, PREVIEW_TRANSPARENCY))
-        self._fill(self.preview, *nodes)
+    def show_preview(self, shapes, valid):
+        """Show `shapes` see-through, green if `valid`, else red."""
+        self._fill(self.preview, shaded(shapes, VALID_COLOR if valid else INVALID_COLOR, PREVIEW_TRANSPARENCY))
 
     def show_dropped(self, tines):
         """Mark the tines in `tines`, which find no face, red until shown again."""

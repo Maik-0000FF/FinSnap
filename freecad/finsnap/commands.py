@@ -141,7 +141,12 @@ class ViewProviderFinSnap:
         if Gui.Control.activeDialog():
             return False
         created, self.created = getattr(self, "created", False), False
-        panel = FinSnapTaskPanel(vobj.Object, created=created)
+        on_cancel, self.on_cancel = getattr(self, "on_cancel", None), None
+        try:
+            panel = FinSnapTaskPanel(vobj.Object, created=created, on_cancel=on_cancel)
+        except handles.NoView as error:
+            _message(str(error))
+            return False
         try:
             Gui.Control.showDialog(panel)
         except RuntimeError:
@@ -201,10 +206,15 @@ class ViewProviderFinSnap:
                 return False
             # The last main fins: nothing was changed, the object goes as a whole.
             obj.Document.abortTransaction()
-        elif panel is not None:
-            panel.close()
+        self.close_panel()
         feature.prepare_delete(obj)
         return True
+
+    def close_panel(self):
+        """Close a task panel open on these fins, as they are, before they go or change."""
+        panel = getattr(self, "panel", None)
+        if panel is not None:
+            panel.close()
 
     def dumps(self):
         return None
@@ -404,6 +414,13 @@ class LayFlat:
             if answer == QtWidgets.QMessageBox.Cancel:
                 return
             delete = answer == QtWidgets.QMessageBox.Yes
+        # A task panel open on the fins closes first, deleted or kept, and
+        # before the transaction, so its own steps stay apart from this one.
+        for owner in owners:
+            for fins in feature.fins_of(owner, doc):
+                proxy = getattr(fins.ViewObject, "Proxy", None)
+                if isinstance(proxy, ViewProviderFinSnap):
+                    proxy.close_panel()
         doc.openTransaction(translate("FinSnap", "Lay flat again"))
         for owner in owners:
             change = orient.back_to_flat(owner)
@@ -475,6 +492,8 @@ class QuickFins:
             return
         doc = App.ActiveDocument
         doc.openTransaction(translate("FinSnap", "Quick fins"))
+        owner = outermost(obj)
+        before = orient.snapshot(owner)
         _stand(obj, plan.change)
         # The main fin only; a counter fin is added in the panel or with Add counter fin.
         fins = feature.create(obj, face_name(plan.number + 1))
@@ -483,19 +502,21 @@ class QuickFins:
         doc.commitTransaction()
         doc.recompute()
         _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside))
-        _edit_new(fins)
+        # Cancel deletes the fins and stands the part as it stood before.
+        _edit_new(fins, functools.partial(orient.put_back, owner, before))
 
 
-def _edit_new(fins):
+def _edit_new(fins, on_cancel=None):
     """Open the task panel on fins just made, in edit mode as a double click
-    does: the handles of the panel are shown only there."""
+    does: the handles of the panel are shown only there. Cancel deletes the
+    fins, then calls `on_cancel` to undo what the command did besides."""
     proxy = fins.ViewObject.Proxy
-    proxy.created = True
+    proxy.created, proxy.on_cancel = True, on_cancel
     try:
         Gui.ActiveDocument.setEdit(fins)
     finally:
         # Only for this opening: a later Cancel must not delete fins long kept.
-        proxy.created = False
+        proxy.created, proxy.on_cancel = False, None
 
 
 class AddFins:

@@ -18,7 +18,7 @@ from . import overhang
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
-from .shapes import face_name, global_shape, outermost
+from .shapes import face_name, global_shape, moved, outermost
 
 TYPE_NAME = "FinSnap"
 # Result property listing the faces that overhang without fins; the view
@@ -284,6 +284,9 @@ DEPENDS = (
             QT_TRANSLATE_NOOP("FinSnap", "Only used while Foot half width is 0.")),
     Depends("CounterTineCount", "CounterFace", (True,),
             QT_TRANSLATE_NOOP("FinSnap", "Only used with a counter fin.")),
+    Depends("TineClearance", "Connection", (d.CONNECTION_SEPARATE,),
+            QT_TRANSLATE_NOOP("FinSnap", "Not used with fins merged into the part: they need their tines on the "
+                              "face, or they would be loose bodies.")),
 )
 
 
@@ -523,6 +526,9 @@ def add_counter(obj, base=None, face_ref=None):
         if found is None:
             return None
         face_ref = face_name_of(shape, found)
+    # Changes by hand to a counter fin on another face would name other fins.
+    if obj.CounterFace != (base, [face_ref]):
+        reset_fins(obj, COUNTER)
     obj.CounterFace = (base, [face_ref])
     return face_ref
 
@@ -572,11 +578,9 @@ def keep_laid_flat(obj, change):
     hidden_property(obj, LAID_FLAT, "App::PropertyBool")
     hidden_property(obj, LAID_FLAT_AT, "App::PropertyPlacement")
     owner = outermost(obj.Base[0])
-    shape = obj.Shape.copy()
-    shape.Placement = change.multiply(shape.Placement)
     setattr(obj, LAID_FLAT_AT, change.multiply(owner.Placement))
     setattr(obj, LAID_FLAT, True)
-    obj.Shape = shape
+    obj.Shape = moved(obj.Shape, change)
 
 
 def still_laid_flat(obj):

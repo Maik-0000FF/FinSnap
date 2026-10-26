@@ -286,6 +286,14 @@ def edit_fins(doc):
     doc.recompute()
     expect(not fins.CounterFace and not any(tag.startswith(feature.COUNTER) for tag in fins.FinTags),
            "the counter fin is removed")
+    # A counter fin moved to another face loses its changes by hand there.
+    feature.add_counter(fins)
+    feature.shift_fin(fins, feature.COUNTER, 1, FIN_SHIFT)
+    feature.add_counter(fins, part, fins.Base[1][0])
+    expect(feature.edits(fins, feature.COUNTER) == ([], {}, {}),
+           "a counter fin moved to another face starts without changes by hand")
+    feature.remove_counter(fins)
+    doc.recompute()
     for obj in (fins, part):
         doc.removeObject(obj.Name)
 
