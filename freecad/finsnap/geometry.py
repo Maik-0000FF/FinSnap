@@ -61,7 +61,7 @@ import Part
 
 from . import defaults as d
 from .i18n import translate
-from .shapes import middle_normal
+from .shapes import bounds, middle_normal
 
 V = App.Vector
 UP = V(0, 0, 1)
@@ -126,10 +126,11 @@ def frame_of(part, face):
     out = horizontal.normalize()
     along = UP.cross(out)
     ts = [v.Point.dot(along) for v in face.Vertexes]
+    face_box = bounds(face)
     return Frame(out=out, along=along, n_out=n.dot(out), n_z=n.z,
-                 c=n.dot(face.Vertexes[0].Point), bed_z=part.BoundBox.ZMin,
-                 along_min=min(ts), along_max=max(ts), face_top_z=face.BoundBox.ZMax,
-                 face_bottom_z=face.BoundBox.ZMin)
+                 c=n.dot(face.Vertexes[0].Point), bed_z=bounds(part).ZMin,
+                 along_min=min(ts), along_max=max(ts), face_top_z=face_box.ZMax,
+                 face_bottom_z=face_box.ZMin)
 
 
 def tine_heights(p, frame, tine_count):

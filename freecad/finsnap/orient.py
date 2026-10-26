@@ -82,7 +82,7 @@ import Part
 
 from . import defaults as d
 from .i18n import QT_TRANSLATE_NOOP, translate
-from .shapes import middle_normal, middle_of
+from .shapes import bounds, middle_normal, middle_of
 
 V = App.Vector
 DOWN = V(0, 0, -1)
@@ -112,7 +112,8 @@ def _moved(shape, change):
 
 def on_bed(shape, edge):
     """True if both ends of `edge` lie on the bed, the lowest level of `shape`."""
-    return all(vertex.Point.z <= shape.BoundBox.ZMin + d.TOLERANCE for vertex in edge.Vertexes)
+    bed_z = bounds(shape).ZMin
+    return all(vertex.Point.z <= bed_z + d.TOLERANCE for vertex in edge.Vertexes)
 
 
 def right_angle_faces(shape, edge):
@@ -146,9 +147,9 @@ def tilt(shape, edge, angle_deg):
     # instead of pushing it through the bed.
     for sign in (1, -1):
         turn = App.Placement(V(0, 0, 0), App.Rotation(axis, sign * angle_deg), start)
-        turned = _moved(shape, turn)
-        if turned.BoundBox.ZMin >= start.z - d.TOLERANCE:
-            lift = App.Placement(V(0, 0, start.z - turned.BoundBox.ZMin), App.Rotation())
+        lowest = bounds(_moved(shape, turn)).ZMin
+        if lowest >= start.z - d.TOLERANCE:
+            lift = App.Placement(V(0, 0, start.z - lowest), App.Rotation())
             return lift.multiply(turn)
     raise OrientError(translate("FinSnap", "the part cannot stand on this edge"))
 
@@ -165,11 +166,11 @@ def lay_flat(shape, face):
     normal = face.normalAt(*middle)
     contact = face.valueAt(*middle)
     turn = App.Placement(V(0, 0, 0), App.Rotation(normal, DOWN), contact)
-    turned = _moved(shape, turn)
+    lowest = bounds(_moved(shape, turn)).ZMin
     # The part rests on the face only if nothing reaches below that point.
-    if contact.z > turned.BoundBox.ZMin + d.TOLERANCE:
+    if contact.z > lowest + d.TOLERANCE:
         raise OrientError(translate("FinSnap", "the part cannot rest on this face"))
-    lift = App.Placement(V(0, 0, shape.BoundBox.ZMin - turned.BoundBox.ZMin), App.Rotation())
+    lift = App.Placement(V(0, 0, bounds(shape).ZMin - lowest), App.Rotation())
     return lift.multiply(turn)
 
 
@@ -186,7 +187,7 @@ def rest_between(shape, first, second):
     middle.normalize()
     turn = App.Placement(V(0, 0, 0), App.Rotation(middle, DOWN), first.CenterOfMass)
     turned = _moved(shape, turn)
-    bed_z = turned.BoundBox.ZMin
+    bed_z = bounds(turned).ZMin
     # Only the two faces and what joins them may touch the bed. A copy keeps
     # the order of the faces but not their identity, so they are compared by
     # number, and neighbours are found on the original shape.
@@ -197,11 +198,11 @@ def rest_between(shape, first, second):
         return any(edge.isSame(other) for edge in faces[i].Edges for other in faces[j].Edges)
 
     for i, face in enumerate(turned.Faces):
-        if face.BoundBox.ZMin > bed_z + d.TOLERANCE or i in chosen:
+        if bounds(face).ZMin > bed_z + d.TOLERANCE or i in chosen:
             continue
         if not all(joins(i, j) for j in chosen):
             raise OrientError(translate("FinSnap", "the part cannot rest between these faces"))
-    lift = App.Placement(V(0, 0, shape.BoundBox.ZMin - bed_z), App.Rotation())
+    lift = App.Placement(V(0, 0, bounds(shape).ZMin - bed_z), App.Rotation())
     return lift.multiply(turn)
 
 

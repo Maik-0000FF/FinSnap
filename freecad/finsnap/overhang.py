@@ -24,7 +24,7 @@ INPUTS this has to withstand (overhangs()):
 import math
 
 from . import defaults as d
-from .shapes import middle_normal
+from .shapes import bounds, middle_normal
 
 
 def _normals_above(face, bed_z):
@@ -47,13 +47,13 @@ def _normals_above(face, bed_z):
 
 def overhangs(shape, supported=(), limit_deg=d.OVERHANG_ANGLE):
     """Numbers (1-based) of the faces of `shape` lying flatter than limit_deg over the bed."""
-    bed_z = shape.BoundBox.ZMin
+    bed_z = bounds(shape).ZMin
     # A face lies flatter than the limit when its normal points down more
     # steeply than the normal of a face at the limit.
     steepest = math.cos(math.radians(limit_deg))
     found = []
     for number, face in enumerate(shape.Faces, 1):
-        if face.BoundBox.ZMax <= bed_z + d.TOLERANCE or face.Area < d.OVERHANG_MIN_AREA:
+        if bounds(face).ZMax <= bed_z + d.TOLERANCE or face.Area < d.OVERHANG_MIN_AREA:
             continue
         if any(face.isSame(carried) for carried in supported):
             continue

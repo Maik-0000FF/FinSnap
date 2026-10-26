@@ -15,6 +15,12 @@ INPUTS this has to withstand:
 
 Faces are named and measured here as well, so every module agrees on what
 "Face3" and "the middle of a face" mean.
+
+INPUTS this has to withstand (bounds()):
+  planar faces only                     ->  the same box as BoundBox
+  cylinder or cone turned off its axis  ->  the box touching the surface; BoundBox
+                                            reaches up to millimetres beyond it
+  single face or edge                   ->  its tight box
 """
 
 import Part
@@ -39,6 +45,13 @@ def middle_of(face):
 def middle_normal(face):
     """The outward normal in the middle of `face`."""
     return face.normalAt(*middle_of(face))
+
+
+def bounds(shape):
+    """The box that touches `shape`. BoundBox only encloses the control points
+    of curved faces, so after a turn it can stand millimetres off a fillet: a
+    part would then float above the bed, and fins reach below it."""
+    return shape.optimalBoundingBox()
 
 
 def global_shape(obj):
