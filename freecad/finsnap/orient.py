@@ -69,6 +69,8 @@ INPUTS this has to withstand (side_direction()):
   line pointing to -Y, or along -X      ->  reversed, so a line is always seen from one side
 
 INPUTS this has to withstand (remember_flat(), lay_back()):
+  back_to_flat on a tilted object       ->  the change from its placement to the kept one
+  back_to_flat on an untilted object    ->  None
   first tilt                            ->  placement kept
   second tilt                           ->  first placement stays kept
   lay_back on a tilted object           ->  placement restored, record gone, True
@@ -265,6 +267,13 @@ def remember_flat(owner):
     owner.addProperty(PLACEMENT_TYPE, FLAT_PLACEMENT, FLAT_GROUP, FLAT_TIP)
     owner.setEditorMode(FLAT_PLACEMENT, EDITOR_HIDDEN)
     setattr(owner, FLAT_PLACEMENT, owner.Placement)
+
+
+def back_to_flat(owner):
+    """The placement change lay_back() would make to `owner`, None if it was not tilted."""
+    if FLAT_PLACEMENT not in owner.PropertiesList:
+        return None
+    return getattr(owner, FLAT_PLACEMENT).multiply(owner.Placement.inverse())
 
 
 def lay_back(owner):

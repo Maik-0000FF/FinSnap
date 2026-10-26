@@ -16,7 +16,7 @@ import FreeCAD as App  # noqa: E402
 import Part  # noqa: E402
 from support import STANDARD_THICKNESS, expect, lower_left_face, run, tilted_cube  # noqa: E402
 from freecad.finsnap import defaults as d  # noqa: E402
-from freecad.finsnap import export_3mf, feature, geometry, orient  # noqa: E402
+from freecad.finsnap import export_3mf, export_step, feature, geometry, orient  # noqa: E402
 from freecad.finsnap import presets  # noqa: E402
 from freecad.finsnap.params import FinParams, ParamError  # noqa: E402
 from freecad.finsnap.shapes import global_shape, outermost  # noqa: E402
@@ -37,6 +37,13 @@ T_TILT = 30.0  # flatter than the overhang limit, so the stem overhangs too
 TAPER_SQUARE = 20.0
 TAPER_HEIGHT = 15.0
 TAPER_ANGLE = -20.0  # negative: the Pad widens
+SHORT_TINE_GAP = 0.2  # tines shorter than TINE_MIN_LENGTH_BEADS beads
+# A block with a pocket offset around an ellipse (major and minor radius).
+BLOCK = (30.0, 20.0, 10.0)
+POCKET_ELLIPSE = (8.0, 4.0)
+POCKET_OFFSET = 1.5
+POCKET_DEPTH = 4.0
+STEP_VOLUME_TOLERANCE = 1e-3  # mm3, what reading the file back may differ by
 
 
 def face_name(shape, face):
@@ -220,6 +227,54 @@ def saved_standard(doc):
     expect(presets.standard() == FinParams(), "factory settings bring back the built-in standard")
 
 
+def warnings_and_old_files(doc):
+    """Each warning names the fin it is about; a file from before a parameter
+    existed gets it with its built-in value."""
+    from freecad.finsnap.i18n import translate
+    cube = doc.addObject("Part::Feature", "WarnedCube")
+    cube.Shape = tilted_cube()
+    main_face = lower_left_face(cube.Shape)
+    fins = feature.create(cube, face_name(cube.Shape, main_face))
+    feature.add_counter(fins)
+    # A gap this narrow makes the tines of both fins short, so both warn.
+    fins.Gap = SHORT_TINE_GAP
+    doc.recompute()
+    main_prefix = translate("FinSnap", "Main fin: %s") % ""
+    counter_prefix = translate("FinSnap", "Counter fin: %s") % ""
+    expect(any(w.startswith(main_prefix) for w in fins.Warnings)
+           and any(w.startswith(counter_prefix) for w in fins.Warnings),
+           "warnings say whether they are about the main or the counter fin: %s" % list(fins.Warnings))
+
+    fins.removeProperty("TineClearance")
+    fins.Proxy.onDocumentRestored(fins)
+    expect("TineClearance" in fins.PropertiesList and fins.TineClearance.Value == d.TINE_CLEARANCE,
+           "fins saved before the tine clearance existed get it, touching as before")
+
+
+def step_with_offset_curves():
+    """A pocket whose outline runs at a distance around an ellipse has edges on
+    offset curves. Written plainly, those faces do not come back from the STEP
+    file and the slicer drops the whole part; the export has to bring it back."""
+    rim = Part.Face(Part.Wire(Part.Ellipse(V(0, 0, 0), *POCKET_ELLIPSE).toShape())).makeOffset2D(POCKET_OFFSET)
+    block = Part.makeBox(*BLOCK, V(-BLOCK[0] / 2, -BLOCK[1] / 2, 0))
+    pocketed = block.cut(rim.extrude(V(0, 0, BLOCK[2])).translated(V(0, 0, BLOCK[2] - POCKET_DEPTH)))
+    expect(pocketed.isValid() and any(isinstance(e.Curve, Part.OffsetCurve) for e in pocketed.Edges),
+           "the pocketed block is a valid solid with edges on offset curves")
+    folder = tempfile.mkdtemp()
+    for meshed in (False, True):
+        if meshed:
+            # The 3MF export meshes the same shape first. On a PartDesign part
+            # with pockets through a chamfer that broke the STEP export; this
+            # block does not show it, so the case only guards the order.
+            export_3mf.write(os.path.join(folder, "pocketed.3mf"), [("pocketed", pocketed)])
+        path = os.path.join(folder, "pocketed.step")
+        export_step.write(path, [("pocketed", pocketed)])
+        back = Part.read(path)
+        after = ", also after a 3MF export" if meshed else ""
+        expect(len(back.Solids) == 1 and abs(back.Volume - pocketed.Volume) < STEP_VOLUME_TOLERANCE,
+               "the STEP export brings the pocketed block back whole%s" % after)
+
+
 def main():
     doc = App.newDocument("FinSnapTest")
     cube = doc.addObject("Part::Feature", "Cube")
@@ -254,6 +309,8 @@ def main():
     saved_standard(doc)
     lost_face(doc)
     tapered_pad(doc)
+    warnings_and_old_files(doc)
+    step_with_offset_curves()
     print("all checks passed", file=sys.__stdout__)
 
 

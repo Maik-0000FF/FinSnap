@@ -23,6 +23,14 @@ TYPE_NAME = "FinSnap"
 # Result property listing the faces that overhang without fins; the view
 # provider marks them.
 OVERHANGS = "Overhangs"
+# Hidden marker on fins whose part was laid flat again with the fins kept:
+# they keep their last shape, moved along with the part, until it is moved again.
+LAID_FLAT = "LaidFlat"
+# Where the part was laid flat; moved from there, the fins are rebuilt.
+LAID_FLAT_AT = "LaidFlatAt"
+NOTE_LAID_FLAT = QT_TRANSLATE_NOOP(
+    "FinSnap", "The part lies flat again: the fins keep their last shape until the part is moved, for example "
+    "stood on its edge again; then they are rebuilt.")
 
 GROUP_SLICER = QT_TRANSLATE_NOOP("App::Property", "Slicer")
 GROUP_CONNECTION = QT_TRANSLATE_NOOP("App::Property", "Connection")
@@ -50,7 +58,8 @@ GROUP_INFO = {
         "are sized in beads and layers of this profile."),
     GROUP_CONNECTION: QT_TRANSLATE_NOOP(
         "FinSnap", "Separate keeps the fins a separate object that only touches the part and "
-        "breaks off cleanly. Merged prints fins and part as one body."),
+        "breaks off cleanly. Merged prints fins and part as one body. A tine clearance keeps the "
+        "ends of the tines that far from the face."),
     GROUP_TINES: QT_TRANSLATE_NOOP(
         "FinSnap", "Tines are the small horizontal contacts between fin and part. The highest "
         "tine sets the height of the fin."),
@@ -73,7 +82,7 @@ GROUP_INFO = {
 MARKS = {
     "Gap": "A", "TineSpacing": "B", "TineFirst": "C", "TineLayers": "D", "FinHeight": "E",
     "FinPlateau": "F", "FootThickness": "G", "FinThickness": "H", "EndInset": "I",
-    "FootHalfWidth": "J",
+    "FootHalfWidth": "J", "TineClearance": "K",
 }
 
 # Labels for the values of enumerations, as the task panel shows them.
@@ -84,6 +93,8 @@ CHOICE_LABELS = {
     d.PLACEMENT_CENTER: QT_TRANSLATE_NOOP("FinSnap", "one in the centre"),
     d.PLACEMENT_ENDS: QT_TRANSLATE_NOOP("FinSnap", "two at the ends"),
     d.PLACEMENT_CORNERS: QT_TRANSLATE_NOOP("FinSnap", "two on the corners"),
+    d.PLACEMENT_CORNER_LEFT: QT_TRANSLATE_NOOP("FinSnap", "one on the left corner"),
+    d.PLACEMENT_CORNER_RIGHT: QT_TRANSLATE_NOOP("FinSnap", "one on the right corner"),
     d.PLACEMENT_DISTRIBUTED: QT_TRANSLATE_NOOP("FinSnap", "distributed"),
     d.FOOT_ELLIPSE: QT_TRANSLATE_NOOP("FinSnap", "oval"),
     d.FOOT_RECTANGLE: QT_TRANSLATE_NOOP("FinSnap", "rectangle"),
@@ -118,6 +129,13 @@ PROPERTIES = (
          QT_TRANSLATE_NOOP("FinSnap", "Gap"),
          QT_TRANSLATE_NOOP("App::Property", "Clearance between fin and face, along the face normal"),
          "gap", None),
+    Prop("TineClearance", LENGTH, GROUP_CONNECTION,
+         QT_TRANSLATE_NOOP("FinSnap", "Tine clearance"),
+         QT_TRANSLATE_NOOP("App::Property",
+                           "Distance between the end of a tine and the face, along the face normal; 0 = the "
+                           "tine touches the face. More leaves fainter marks, too much and the tine does not "
+                           "hold: find the value by a test print."),
+         "tine_clearance", None),
     Prop("TineSpacing", LENGTH, GROUP_TINES,
          QT_TRANSLATE_NOOP("FinSnap", "Tine spacing"),
          QT_TRANSLATE_NOOP("App::Property",
@@ -159,6 +177,8 @@ PROPERTIES = (
                            "auto: by face length; center: one fin; ends: two fins; corners: two fins "
                            "on the face ends, each tine whole on the face and flush with its end, so the "
                            "tine marks merge with the edges; the fin reaches a little past the end; "
+                           "left corner, right corner: one such fin on that end, left and right as seen "
+                           "from outside, looking at the face; "
                            "distributed: FinCount fins"),
          "placement", d.PLACEMENTS),
     Prop("FinCount", INTEGER, GROUP_PLACEMENT,
@@ -235,6 +255,13 @@ def value_of(obj, name):
     return value.Value if hasattr(value, "Value") else value
 
 
+def add_property(obj, prop, value):
+    obj.addProperty(prop.kind, prop.name, prop.group, prop.tip)
+    if prop.choices:
+        setattr(obj, prop.name, list(prop.choices))
+    setattr(obj, prop.name, value)
+
+
 def add_properties(obj):
     defaults = presets.standard()
     obj.addProperty("App::PropertyLinkSubGlobal", "Base", GROUP_SOURCE,
@@ -248,10 +275,7 @@ def add_properties(obj):
                     QT_TRANSLATE_NOOP("App::Property",
                                       "Optional face on the opposite side for a small counter fin"))
     for prop in PROPERTIES:
-        obj.addProperty(prop.kind, prop.name, prop.group, prop.tip)
-        if prop.choices:
-            setattr(obj, prop.name, list(prop.choices))
-        setattr(obj, prop.name, getattr(defaults, prop.field))
+        add_property(obj, prop, getattr(defaults, prop.field))
 
     results = (("ResultHeight", LENGTH), ("ResultThickness", LENGTH), ("ResultFinCount", INTEGER))
     for name, kind in results:
@@ -310,6 +334,12 @@ class FinSnapFeature:
     def execute(self, obj):
         if not obj.Base:
             return
+        if still_laid_flat(obj):
+            # The fins keep the shape they were moved to; the face they belong
+            # to no longer leans over the bed until the part stands again.
+            setattr(obj, OVERHANGS, [])
+            obj.Warnings = [translate("FinSnap", NOTE_LAID_FLAT)]
+            return
         # The overhangs depend on the part alone; set first, so the marks
         # follow the part even when the fins below cannot be built.
         overhanging = overhangs_of(obj.Base[0], obj.Document)
@@ -318,13 +348,14 @@ class FinSnapFeature:
         part, face = _face(obj.Base)
         result = geometry.build(part, face, p)
         shapes = [result.fins]
-        warnings = list(result.warnings)
+        # Each warning says which fin it is about, the main or the counter fin.
+        warnings = [translate("FinSnap", "Main fin: %s") % w for w in result.warnings]
         if obj.CounterFace:
             counter_part, counter_face = _face(obj.CounterFace)
             counter = geometry.build(counter_part, counter_face, p,
                                      tine_count=p.counter_tine_count or None)
             shapes.append(counter.fins)
-            warnings += counter.warnings
+            warnings += [translate("FinSnap", "Counter fin: %s") % w for w in counter.warnings]
         if overhanging:
             warnings.append(translate("FinSnap", "%d faces of %s overhang flatter than %.0f degrees without fins: %s")
                             % (len(overhanging), obj.Base[0].Label, d.OVERHANG_ANGLE, ", ".join(overhanging)))
@@ -344,6 +375,12 @@ class FinSnapFeature:
         obj.Proxy = self
         if OVERHANGS not in obj.PropertiesList:
             add_overhangs(obj)
+        # A parameter added in a later version starts with its built-in value,
+        # so fins saved before it keep their shape.
+        built_in = FinParams()
+        for prop in PROPERTIES:
+            if prop.name not in obj.PropertiesList:
+                add_property(obj, prop, getattr(built_in, prop.field))
         # A file saved by an older version knows fewer choices; offer the
         # current ones and keep the value.
         for prop in PROPERTIES:
@@ -404,3 +441,51 @@ def create(base, face_ref, counter=None):
         if other is not obj and is_fins(other) and other.Base and other.Base[0] is base:
             other.touch()
     return obj
+
+
+def fins_of(owner, document):
+    """The FinSnap objects of the part whose outermost container is `owner`."""
+    return [obj for obj in document.Objects
+            if is_fins(obj) and obj.Base and outermost(obj.Base[0]) is owner]
+
+
+def is_laid_flat(obj):
+    return bool(getattr(obj, LAID_FLAT, False))
+
+
+def keep_laid_flat(obj, change):
+    """Move the fins `obj` by the placement change their part makes when it is
+    laid flat, and keep that shape until the part is moved again.
+
+    INPUTS this has to withstand:
+      fins of a standing part               ->  moved with it, marked, not rebuilt
+      fins already laid flat                ->  moved once more, still marked
+    """
+    for name, kind in ((LAID_FLAT, "App::PropertyBool"), (LAID_FLAT_AT, "App::PropertyPlacement")):
+        if name not in obj.PropertiesList:
+            obj.addProperty(kind, name, GROUP_RESULT, "", 1)
+            obj.setEditorMode(name, EDITOR_HIDDEN)
+    owner = outermost(obj.Base[0])
+    shape = obj.Shape.copy()
+    shape.Placement = change.multiply(shape.Placement)
+    setattr(obj, LAID_FLAT_AT, change.multiply(owner.Placement))
+    setattr(obj, LAID_FLAT, True)
+    obj.Shape = shape
+
+
+def still_laid_flat(obj):
+    """Whether the part of the fins `obj` still lies where it was laid flat. Moved
+    since, by Stand on edge or by hand, the fins are rebuilt: the marker is cleared.
+
+    INPUTS this has to withstand:
+      fins never laid flat                  ->  False
+      part where it was laid flat           ->  True, marker kept
+      part moved since (stood again, or its
+        placement edited)                   ->  False, marker cleared
+    """
+    if not is_laid_flat(obj):
+        return False
+    if outermost(obj.Base[0]).Placement.isSame(getattr(obj, LAID_FLAT_AT), d.TOLERANCE):
+        return True
+    setattr(obj, LAID_FLAT, False)
+    return False

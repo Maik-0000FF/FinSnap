@@ -6,6 +6,28 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Stand on edge takes an edge between two flat faces at a right angle alone and stands the part on it at 45 degrees
+- Export STEP: exact surfaces instead of a mesh, every body under its own name; split the object into objects in the slicer
+- Tine clearance: the tines end short of the face, and the fin moves out by as much, so the tines keep their length
+- Fin placement left corner and right corner: one fin on that end of the face
+- Lay flat again asks whether to delete the fins; kept fins move along with the part and are rebuilt once it is moved again
+
+### Changed
+
+- After Stand on edge the view looks along the edge from the side, so the tilt angle shows; after Lay flat again it is isometric
+- Automatic fins are 1 mm thick up to 100 mm of height and grow by 1 mm per 100 mm above, at least two beads (before: at least three beads, growing with 5 % of the height); the foot width ratio is 0.2 instead of 0.5. Saved files with automatic values get thinner fins and narrower feet when they are rebuilt
+- An automatic fin ends at its highest tine that finds the face
+- Warnings name the main or the counter fin
+- Fins of a part laid flat are left out of an export, and a message names them
+- The drawings in the task panel are larger and show the tine clearance
+
+### Fixed
+
+- Heights are measured on the surfaces: the bounding box of curved faces reached up to 1.7 mm past a fillet, so outer fillets were refused as resting faces, a part laid on one floated above the bed, and fins could reach below it
+- The command icons in the README show on GitHub
+
 ## [0.3.0] - 2026-10-24
 
 ### Added

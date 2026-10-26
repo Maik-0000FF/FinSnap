@@ -31,6 +31,8 @@ ODD_TILT = 30.0        # any angle but 45, at which a right-angled edge needs it
 HALF_LAYER_STARTS = (1.1, 1.3, 1.5, 1.7)
 RECESS_RADIUS = 1.5    # wider than a tine, so a tine above it touches nothing
 GROOVE_TOP_GAP = 1.0   # face left above a groove, so the groove does not split the face
+WIDE_NOZZLE = 0.8
+WIDE_BEAD = 0.9       # two of them are thicker than the 1 mm base
 UP = V(0, 0, 1)
 BOX_SIDE = 20.0
 EDGE_ROUND = 3.0       # size of the chamfer or radius of the fillet on a box edge
@@ -406,6 +408,67 @@ def check_chamfer_and_fillet():
         raise AssertionError("a part was stood between the faces of an inner corner")
 
 
+def check_thickness():
+    """1 mm up to 100 mm of height, then 1 mm per 100 mm, never thinner than two beads."""
+    p = FinParams()
+    base_height = d.FIN_THICKNESS_BASE_HEIGHT
+    expect(math.isclose(geometry.thickness_for(p, base_height), d.FIN_THICKNESS_BASE)
+           and math.isclose(geometry.thickness_for(p, 2 * base_height), 2 * d.FIN_THICKNESS_BASE),
+           "the fin is 1 mm thick up to 100 mm and grows in proportion above")
+    wide = FinParams(nozzle_diameter=WIDE_NOZZLE, bead_width=WIDE_BEAD)
+    expect(math.isclose(geometry.thickness_for(wide, base_height), d.FIN_MIN_BEADS * WIDE_BEAD),
+           "with wide beads the fin is at least two beads thick")
+
+
+def check_one_corner(cube, face):
+    """One fin on the left or the right end of the face, its tine flush with that end."""
+    frame = geometry.frame_of(cube, face)
+    for placement, end in ((d.PLACEMENT_CORNER_LEFT, frame.along_min), (d.PLACEMENT_CORNER_RIGHT, frame.along_max)):
+        result = geometry.build(cube, face, FinParams(placement=placement))
+        ts = [v.Point.dot(frame.along) for tine in result.tines for v in tine.Vertexes]
+        flush = min(ts) if placement == d.PLACEMENT_CORNER_LEFT else max(ts)
+        expect(len(result.fins.Solids) == 1 and abs(flush - end) < d.TOLERANCE,
+               "%s gives one fin, its tine flush with that end of the face" % placement)
+
+
+def check_tine_clearance(cube, face):
+    """Tines end the clearance short of the face; the fin moves out as far, so
+    the tines keep their length and the slicer still prints them."""
+    clearance = d.GAP / 2
+    touching = geometry.build(cube, face, FinParams())
+    result = geometry.build(cube, face, FinParams(tine_clearance=clearance))
+    distances = [tine.distToShape(face)[0] for tine in result.tines]
+    expect(all(abs(distance - clearance) < d.TOLERANCE for distance in distances),
+           "every tine ends %.3f mm short of the face: %s" % (clearance, distances))
+    expect(all(abs(body.distToShape(face)[0] - (d.GAP + clearance)) < d.TOLERANCE for body in result.bodies),
+           "the fin stands the gap plus the clearance from the face")
+    expect(not result.warnings and abs(result.tines[0].Volume - touching.tines[0].Volume) < d.TOLERANCE,
+           "the tines keep their length")
+    try:
+        FinParams(tine_clearance=-clearance).validate()
+    except ParamError as error:
+        expect("tine_clearance" in str(error), "a negative clearance is refused: %s" % error)
+    else:
+        raise AssertionError("a negative tine clearance was accepted")
+
+
+def check_shortened(cube, face):
+    """A fin whose top tine finds a hole ends at the tine below; a fin height given by hand stays."""
+    frame = geometry.frame_of(cube, face)
+    normal = face.normalAt(0, 0)
+    full = geometry.build(cube, face, FinParams())
+    top_tine = full.tine_z[-1] + FinParams().tine_height / 2
+    middle = (frame.along_min + frame.along_max) / 2
+    on_face = frame.point(middle, frame.s_face(top_tine), top_tine)
+    holed = cube.cut(Part.makeCylinder(RECESS_RADIUS, 2 * RECESS_RADIUS, on_face - normal * RECESS_RADIUS, normal))
+    holed_face = lower_left_face(holed)
+    shortened = geometry.build(holed, holed_face, FinParams())
+    expect(math.isclose(shortened.height, full.tine_z[-2] + FinParams().tine_height),
+           "the fin ends at its highest tine left, %.2f mm" % shortened.height)
+    kept = geometry.build(holed, holed_face, FinParams(fin_height=full.height))
+    expect(math.isclose(kept.height, full.height), "a fin height given by hand is kept")
+
+
 def check_recesses(cube, face):
     """Tines over a recess or a hole in the face are left out with a warning;
     a fin none of whose tines finds the face is left out as well."""
@@ -510,7 +573,7 @@ def main():
     expect(separate.tine_z == [1.0, 6.0, 11.0], "tines at 1, 6 and 11 mm: %s" % separate.tine_z)
     expect(math.isclose(separate.height, 11.2), "fin height ends on the top tine")
     expect(len(separate.positions) == 1, "one fin on a 20 mm face")
-    expect(math.isclose(separate.thickness, d.FIN_MIN_BEADS * d.BEAD_WIDTH), "minimum thickness")
+    expect(math.isclose(separate.thickness, d.FIN_THICKNESS_BASE), "a fin below 100 mm is 1 mm thick")
     expect(separate.fins.common(cube).Volume < d.TOLERANCE, "fins do not overlap the cube")
     expect(len(separate.tines) == 3, "three tines on the fin")
 
@@ -592,6 +655,10 @@ def main():
     check_loft()
     check_chamfer_and_fillet()
     check_tight_bounds()
+    check_thickness()
+    check_one_corner(cube, face)
+    check_tine_clearance(cube, face)
+    check_shortened(cube, face)
     print("all checks passed", file=sys.__stdout__)
 
 

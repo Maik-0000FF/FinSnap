@@ -3,16 +3,18 @@
 The part stands tilted on the bed. A planar face of it leans outward over the
 bed (its normal points down and to the side). Fins stand under that face: each
 fin is a vertical wall whose inner edge, the flank, runs parallel to the face at
-the gap distance. Horizontal tines reach across the gap and end exactly on the
-face. A thin foot on the bed holds the fin down.
+the gap distance, plus the tine clearance. Horizontal tines reach across the gap
+and end on the face, or the tine clearance short of it. A thin foot on the bed holds the fin down.
 
 LOCAL FRAME of a face: `out` is the horizontal direction the face leans
 towards, `along` runs horizontally along the face, z is up. A point is
 t * along + s * out + z * Z. The face is the plane n . P = c with
 n = n_out * out + n_z * Z, so at height z it lies at
     s_face(z) = (c - n_z * z) / n_out
-and the flank, offset by the gap along n, at
-    s_flank(z) = (c + gap - n_z * z) / n_out.
+and a plane offset by a distance along n at
+    s_flank(z, offset) = (c + offset - n_z * z) / n_out:
+the flank at the gap plus the tine clearance, the end of a tine at the
+tine clearance alone.
 The fin occupies s >= s_flank(z); the part lies at smaller s.
 
 INPUTS this has to withstand (build()):
@@ -26,6 +28,12 @@ INPUTS this has to withstand (build()):
     tine and FOOT_CLEARANCE             ->  FinError
   corners: each tine whole on the face,
     its outer side flush with the end   ->  FinResult, fins reach past the ends
+  left or right corner                  ->  one fin, as on that end with corners
+  left or right corner, face narrower
+    than a tine                         ->  FinError
+  tine_clearance > 0                    ->  tines end that far short of the face,
+                                            measured along its normal; the fin
+                                            moves out as far, so they keep their length
   no tine fits below the top of the face ->  FinError
   hand-set first tine half a layer off
     the grid, rounding two tines closer
@@ -44,6 +52,12 @@ INPUTS this has to withstand (build()):
     the part (closer than the gap)      ->  FinError naming the distance
   tine wholly or partly over a recess
     or hole in the face                 ->  tine left out, warning
+  upper tines of a fin over a recess,
+    automatic fin height                ->  that fin ends at its highest tine left;
+                                            the fin height of the result is the
+                                            tallest fin
+  upper tines over a recess, manual
+    fin height                          ->  the fin keeps the height given
   every tine of a fin over a recess     ->  fin left out, warning
   every tine of every fin over a recess ->  FinError
   fin overlaps the part (separate mode) ->  FinError
@@ -182,6 +196,8 @@ def room_for_one_fin(p, thickness):
     for a fin on each corner, both tines and the clearance between the fins."""
     if p.placement == d.PLACEMENT_CORNERS:
         return thickness + d.FOOT_CLEARANCE + p.tine_width
+    if p.placement in d.PLACEMENT_ONE_CORNER:
+        return p.tine_width
     return thickness + 2 * p.end_inset
 
 
@@ -214,17 +230,22 @@ def tines_on_face(face, frame, tine_z, p, width):
 def thickness_for(p, height):
     if p.fin_thickness > 0:
         return p.fin_thickness
-    beads = max(d.FIN_MIN_BEADS, math.ceil(height * d.FIN_THICKNESS_RATIO / p.bead_width))
-    return beads * p.bead_width
+    grown = d.FIN_THICKNESS_BASE * max(1.0, height / d.FIN_THICKNESS_BASE_HEIGHT)
+    return max(grown, d.FIN_MIN_BEADS * p.bead_width)
 
 
 def positions_for(p, frame, thickness):
     """Start of each fin along the face."""
-    if p.placement == d.PLACEMENT_CORNERS:
+    if p.placement == d.PLACEMENT_CORNERS or p.placement in d.PLACEMENT_ONE_CORNER:
         # The tine sits in the middle of the fin; its outer side ends flush
-        # with the end of the face, the fin reaches past it.
+        # with the end of the face, the fin reaches past it. Along the face
+        # runs to the right, seen from outside.
         overhang = (thickness - p.tine_width) / 2
         positions = [frame.along_min - overhang, frame.along_max - p.tine_width - overhang]
+        if p.placement == d.PLACEMENT_CORNER_LEFT:
+            return positions[:1]
+        if p.placement == d.PLACEMENT_CORNER_RIGHT:
+            return positions[1:]
         if positions[1] - positions[0] < thickness + d.FOOT_CLEARANCE:
             raise FinError(translate("FinSnap", "the face is too short for a fin on each corner"))
         return positions
@@ -270,8 +291,8 @@ def foot_span(p, frame, height):
     the flank lies further in and the clearance only grows.
     """
     top = frame.bed_z + p.foot_height
-    s_from = frame.s_flank(top, p.gap)
-    s_to = frame.s_flank(frame.bed_z + height, p.gap) + p.fin_plateau + p.foot_overhang
+    s_from = frame.s_flank(top, p.fin_offset)
+    s_to = frame.s_flank(frame.bed_z + height, p.fin_offset) + p.fin_plateau + p.foot_overhang
     return s_from, s_to
 
 
@@ -314,8 +335,8 @@ def contact_share(frame, face, t, p, z):
 def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
     """A fin without tines, and its tines, which end on the face."""
     zb = frame.bed_z
-    s_bottom = frame.s_flank(zb, p.gap)
-    s_top = frame.s_flank(zb + height, p.gap)
+    s_bottom = frame.s_flank(zb, p.fin_offset)
+    s_top = frame.s_flank(zb + height, p.fin_offset)
     s_out = s_top + p.fin_plateau
 
     if p.foot_shape == d.FOOT_NONE:
@@ -338,14 +359,17 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
         # The fin edge furthest out along the tine: the flank at its top, or the
         # vertical inner end of the foot for a tine below the top of the foot.
         # Measured from there, a tine always reaches into the fin.
-        edge = frame.s_flank(top, p.gap)
+        edge = frame.s_flank(top, p.fin_offset)
         if p.foot_height > 0 and bottom < zb + p.foot_height:
             edge = max(edge, foot_span(p, frame, height)[0])
         s_into_fin = edge + d.TINE_INTO_FIN
-        # The tine ends in the plane of the face, following its slope, so every
-        # tine is equally long, also where the part behind the face ends early.
-        tines.append(frame.section(t_tine, [(frame.s_face(bottom), bottom), (s_into_fin, bottom),
-                                            (s_into_fin, top), (frame.s_face(top), top)], p.tine_width))
+        # The tine ends parallel to the face, following its slope, on it or the
+        # tine clearance short of it, so every tine is equally long, also where
+        # the part behind the face ends early.
+        s_end_bottom = frame.s_flank(bottom, p.tine_clearance)
+        s_end_top = frame.s_flank(top, p.tine_clearance)
+        tines.append(frame.section(t_tine, [(s_end_bottom, bottom), (s_into_fin, bottom),
+                                            (s_into_fin, top), (s_end_top, top)], p.tine_width))
     return body, tines
 
 
@@ -359,9 +383,10 @@ def check(p, part, fins, bodies):
 
     for body in bodies:
         distance = body.distToShape(part)[0]
-        if distance < p.gap - d.TOLERANCE:
-            raise FinError(translate("FinSnap", "a fin comes within %.3f mm of the part, closer than the gap %.3f mm")
-                           % (distance, p.gap))
+        if distance < p.fin_offset - d.TOLERANCE:
+            raise FinError(translate("FinSnap", "a fin comes within %.3f mm of the part, closer than the %.3f mm it "
+                                                  "keeps from the face")
+                           % (distance, p.fin_offset))
 
 
 def build(part, face, p, tine_count=None):
@@ -396,17 +421,22 @@ def build(part, face, p, tine_count=None):
     built = []
     gap_heights = set()
     fins_left_out = []
+    fin_heights = []
     for t0 in positions:
-        body, tines = one_fin(p, frame, t0, height, thickness, half_foot, tine_z)
         start = tine_start(p, t0, thickness)
         # A tine wholly or partly over a recess or a hole in the face would hang
         # free there; it is left out, and a fin without any tine left with it.
         on_face = [contact_share(frame, face, start, p, z) >= d.TINE_MIN_CONTACT - d.TOLERANCE for z in tine_z]
-        kept = [tine for tine, whole in zip(tines, on_face) if whole]
-        if not kept:
+        kept_z = [z for z, whole in zip(tine_z, on_face) if whole]
+        if not kept_z:
             fins_left_out.append(t0 + thickness / 2 - face_start)
             continue
         gap_heights.update(z for z, whole in zip(tine_z, on_face) if not whole)
+        # An automatic fin ends at its highest tine left, so no part of it
+        # stands above the last contact with the face.
+        fin_height = p.fin_height if p.fin_height > 0 else kept_z[-1] + p.tine_height
+        body, kept = one_fin(p, frame, t0, fin_height, thickness, half_foot, kept_z)
+        fin_heights.append(fin_height)
         built.append(t0)
         bodies.append(body)
         all_tines.extend(kept)
@@ -439,7 +469,7 @@ def build(part, face, p, tine_count=None):
         warnings.append(translate("FinSnap", "tines are %.2f mm long, shorter than %.2f beads; the slicer "
                                   "may not print them to the face") % (tine_length, d.TINE_MIN_LENGTH_BEADS))
 
-    return FinResult(fins=fins, bodies=bodies, tines=all_tines, height=height,
+    return FinResult(fins=fins, bodies=bodies, tines=all_tines, height=max(fin_heights),
                      thickness=thickness, tine_z=tine_z, positions=built,
                      foot_half_width=half_foot, warnings=warnings)
 
