@@ -515,24 +515,6 @@ def check_split_face():
            and any("runs into the part" in w for w in alone.warnings),
            "fins that cannot reach over the groove stand under the selected face alone, and say why")
 
-    # A change by hand refused over the groove stays refused; under the face
-    # alone it would be taken after all.
-    def refusing_by_hand(part, face, support, p, tine_count, left_out, shifts, heights):
-        if support is not face:
-            error = geometry.FinError("fins 1 and 2 stand too close")
-            error.by_hand = True
-            raise error
-        return reaching(part, face, support, p, tine_count, left_out, shifts, heights)
-
-    geometry._build = refusing_by_hand
-    try:
-        geometry.build(standing, lower, FinParams())
-    except geometry.FinError as error:
-        expect("too close" in str(error), "a change by hand refused over the groove stays refused")
-    else:
-        raise AssertionError("a change by hand refused over the groove was built under the face alone")
-    finally:
-        geometry._build = reaching
 
     # Pieces beside each other along the face are faces of their own: the legs of
     # a U profile, the halves beside an upright slot. The fin stays under the

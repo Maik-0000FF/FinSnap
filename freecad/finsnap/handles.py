@@ -26,6 +26,8 @@ from PySide import QtCore
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from .i18n import translate
+
 # The colours and the opacity FreeCAD shows its own feature previews in:
 # green for what a feature adds, red for an error, faint enough to see through.
 VALID_COLOR = (0.0, 1.0, 0.6)
@@ -120,6 +122,10 @@ def arrow(color):
     return group
 
 
+class NoView(RuntimeError):
+    """The document has no 3D view to show the arrows in."""
+
+
 class Handles:
     """Two arrows on one fin of the object shown by `vobj`, one along the face
     and one up, with the object see-through until remove().
@@ -137,7 +143,8 @@ class Handles:
         if not hasattr(view, "getViewer"):
             views = gui_doc.mdiViewsOfType(VIEW_3D)
             if not views:
-                raise RuntimeError("no 3D view of %s is open" % vobj.Object.Document.Label)
+                raise NoView(translate("FinSnap", "No 3D view of %s is open to edit the fins in.")
+                             % vobj.Object.Document.Label)
             view = views[0]
         self.vobj = vobj
         self.on_start, self.on_move, self.on_done = on_start, on_move, on_done

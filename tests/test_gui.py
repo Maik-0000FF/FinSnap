@@ -247,9 +247,12 @@ def main():
     expect(box.Placement.isSame(standing) and not feature.is_laid_flat(marked),
            "Cancel leaves the part standing and its fins as they are")
     ANSWERS.append(QtWidgets.QMessageBox.No)
+    open_when_kept = FinSnapTaskPanel(marked)
+    marked.ViewObject.Proxy.panel = open_when_kept
     select(box)
     Gui.runCommand("FinSnap_LayFlat")
     doc.recompute()
+    expect(open_when_kept.released, "No also closes a panel open on the fins, which it changes")
     expect(box.Placement.isIdentity() and marked.isValid() and feature.is_laid_flat(marked)
            and marked.Overhangs == [] and marks.getNumChildren() == 0
            and translate("FinSnap", feature.NOTE_LAID_FLAT) in marked.Warnings,
@@ -326,6 +329,8 @@ def main():
             expect(made[0].Name not in [o.Name for o in doc.Objects] and quick.Placement.isIdentity()
                    and orient.FLAT_PLACEMENT not in quick.PropertiesList,
                    "Cancel after Quick fins deletes the fins and lays the part back as it was")
+            expect(doc.UndoNames and doc.UndoNames[0] == App.Qt.translate("FinSnap", "Cancel fins"),
+                   "the Cancel is one step of its own on the undo stack: %s" % doc.UndoNames[:2])
             continue
         Gui.Control.closeDialog()
         doc.removeObject(made[0].Name)
@@ -626,7 +631,7 @@ def main():
     real_handles = handles_module.Handles
 
     def no_view(*args):
-        raise RuntimeError("no 3D view")
+        raise handles_module.NoView("no 3D view")
 
     handles_module.Handles = no_view
     try:

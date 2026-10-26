@@ -736,10 +736,14 @@ class FinSnapTaskPanel:
         Gui.Control.closeDialog()
         self.leave_edit()
         if self.created:
-            App.ActiveDocument.removeObject(self.obj.Name)
+            # One step on the undo stack, after the one that made the fins.
+            doc = self.obj.Document
+            doc.openTransaction(translate("FinSnap", "Cancel fins"))
+            doc.removeObject(self.obj.Name)
             if self.on_cancel is not None:
                 self.on_cancel()
-            App.ActiveDocument.recompute()
+            doc.commitTransaction()
+            doc.recompute()
         else:
             for name, value in self.original.items():
                 setattr(self.obj, name, value)

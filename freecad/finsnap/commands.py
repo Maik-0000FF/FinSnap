@@ -144,8 +144,7 @@ class ViewProviderFinSnap:
         on_cancel, self.on_cancel = getattr(self, "on_cancel", None), None
         try:
             panel = FinSnapTaskPanel(vobj.Object, created=created, on_cancel=on_cancel)
-        except RuntimeError as error:
-            # No 3D view to show the fins in.
+        except handles.NoView as error:
             _message(str(error))
             return False
         try:
@@ -207,10 +206,15 @@ class ViewProviderFinSnap:
                 return False
             # The last main fins: nothing was changed, the object goes as a whole.
             obj.Document.abortTransaction()
-        elif panel is not None:
-            panel.close()
+        self.close_panel()
         feature.prepare_delete(obj)
         return True
+
+    def close_panel(self):
+        """Close a task panel open on these fins, as they are, before they go or change."""
+        panel = getattr(self, "panel", None)
+        if panel is not None:
+            panel.close()
 
     def dumps(self):
         return None
@@ -414,11 +418,11 @@ class LayFlat:
         for owner in owners:
             change = orient.back_to_flat(owner)
             for fins in feature.fins_of(owner, doc):
+                # A task panel open on them closes first, deleted or kept.
+                proxy = getattr(fins.ViewObject, "Proxy", None)
+                if isinstance(proxy, ViewProviderFinSnap):
+                    proxy.close_panel()
                 if delete:
-                    # A task panel open on them closes first.
-                    panel = getattr(getattr(fins.ViewObject, "Proxy", None), "panel", None)
-                    if panel is not None:
-                        panel.close()
                     doc.removeObject(fins.Name)
                 else:
                     feature.keep_laid_flat(fins, change)

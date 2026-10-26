@@ -483,9 +483,7 @@ def build(part, face, p, tine_count=None, left_out=(), shifts=None, heights=None
 
     The fins over a groove are taller, and where the part reaches out in front
     of the face higher up they would run into it. Then they stand under the
-    selected face alone, as they did before pieces were carried along. A
-    change by hand refused over the groove stays refused: built under the face
-    alone, it would be taken after all.
+    selected face alone, as they did before pieces were carried along.
     """
     p.validate()
     shifts, heights = shifts or {}, heights or {}
@@ -495,8 +493,6 @@ def build(part, face, p, tine_count=None, left_out=(), shifts=None, heights=None
     try:
         return _build(part, face, support, p, tine_count, left_out, shifts, heights)
     except FinError as error:
-        if getattr(error, "by_hand", False):
-            raise
         reason = str(error)
     alone = _build(part, face, face, p, tine_count, left_out, shifts, heights)
     alone.warnings.append(translate("FinSnap", "fins under the selected face alone, not reaching over the "
@@ -525,14 +521,12 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     frame = replace(frame, along_min=low, along_max=high)
     positions = positions_for(p, frame, thickness)
 
-    def refused(message, by_hand=False):
+    def refused(message):
         """A FinError that says how many fins the face is planned for: with
         another count, changes by hand name other fins, and the caller drops
-        them instead of refusing. `by_hand` marks a refusal of a change by
-        hand, which no other way of building the fins may take back."""
+        them instead of refusing."""
         error = FinError(message)
         error.planned = len(positions)
-        error.by_hand = by_hand
         return error
 
     s_from, s_to = foot_span(p, frame, height)
@@ -543,10 +537,10 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     for (first, one), (second, other) in zip(standing, standing[1:]):
         if second < first:
             raise refused(translate("FinSnap", "fin %d would pass fin %d; a fin stays between its neighbours")
-                           % (one, other), by_hand=True)
+                           % (one, other))
         if second - first < thickness + d.FOOT_CLEARANCE - d.TOLERANCE:
             raise refused(translate("FinSnap", "fins %d and %d stand %.2f mm apart, closer than %.2f mm")
-                           % (one, other, second - first, thickness + d.FOOT_CLEARANCE), by_hand=True)
+                           % (one, other, second - first, thickness + d.FOOT_CLEARANCE))
     half_foot = foot_half_width_for(p, (s_to - s_from) / 2, thickness, [t0 for t0, _ in standing])
     room = frame.face_top_z - frame.bed_z - d.FACE_TOP_MARGIN
 
@@ -568,10 +562,10 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         own = heights.get(number)
         if own is not None and own > room + d.TOLERANCE:
             raise refused(translate("FinSnap", "fin %d is %.2f mm high, above the face (%.2f mm)")
-                           % (number, own, room), by_hand=True)
+                           % (number, own, room))
         candidate_z = [z for z in tine_z if own is None or z + p.tine_height <= own + d.TOLERANCE]
         if not candidate_z:
-            raise refused(translate("FinSnap", "fin %d is lower than its first tine") % number, by_hand=True)
+            raise refused(translate("FinSnap", "fin %d is lower than its first tine") % number)
         start = tine_start(p, t0, thickness)
         # A tine wholly or partly over a recess or a hole in the face would hang
         # free there; it is left out, and a fin without any tine left with it.
@@ -602,8 +596,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         # and fusing them pairwise fails on that edge.
         pieces.append(body.multiFuse(kept).removeSplitter())
     if all(number in left_out for number in range(1, len(positions) + 1)):
-        raise refused(translate("FinSnap", "every fin is removed; delete the fins instead, or bring them back"),
-                      by_hand=True)
+        raise refused(translate("FinSnap", "every fin is removed; delete the fins instead, or bring them back"))
     if not built:
         raise refused(translate("FinSnap", "no tine finds the face; it has a recess or hole at every tine"))
 
