@@ -312,7 +312,8 @@ def _supported(part_obj, document):
         for link in (other.Base, other.CounterFace):
             if link and link[0] is part_obj and link[1]:
                 try:
-                    faces.append(shape.getElement(link[1][0]))
+                    # The faces in its plane are carried as well, across a gap.
+                    faces.extend(geometry.support_of(shape, shape.getElement(link[1][0])).Faces)
                 except (ValueError, IndexError, Part.OCCError):
                     # The part changed and lost this face; those fins report
                     # it themselves, the others are still built.

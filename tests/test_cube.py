@@ -33,6 +33,9 @@ RECESS_RADIUS = 1.5    # wider than a tine, so a tine above it touches nothing
 GROOVE_TOP_GAP = 1.0   # face left above a groove, so the groove does not split the face
 WIDE_NOZZLE = 0.8
 WIDE_BEAD = 0.9       # two of them are thicker than the 1 mm base
+GROOVE_DEPTH = 2.0     # a groove across the front of a box, splitting it
+GROOVE_WIDTH = 2.0
+GROOVE_FROM = 8.0
 UP = V(0, 0, 1)
 BOX_SIDE = 20.0
 EDGE_ROUND = 3.0       # size of the chamfer or radius of the fillet on a box edge
@@ -469,6 +472,29 @@ def check_shortened(cube, face):
     expect(math.isclose(kept.height, full.height), "a fin height given by hand is kept")
 
 
+def check_split_face():
+    """A groove across the front splits it into two faces in one plane. The fin
+    reaches over the gap and carries both; the tines over the gap are left out."""
+    box = Part.makeBox(30, 20, 20)
+    grooved = box.cut(Part.makeBox(30, GROOVE_DEPTH, GROOVE_WIDTH, V(0, 0, GROOVE_FROM)))
+    edge = [e for e in grooved.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
+    standing = moved(grooved, orient.tilt(grooved, edge, d.TILT_ANGLE))
+    front = [f for f in standing.Faces if f.findPlane() is not None
+             and abs(f.normalAt(0, 0).z + math.sqrt(0.5)) < 1e-6 and abs(f.normalAt(0, 0).y) > 0.5]
+    pieces = [f for f in front if abs(f.normalAt(0, 0).dot(f.Vertexes[0].Point)
+                                      - front[0].normalAt(0, 0).dot(front[0].Vertexes[0].Point)) < d.TOLERANCE]
+    lower = min(pieces, key=lambda f: f.BoundBox.ZMin)
+    upper = max(pieces, key=lambda f: f.BoundBox.ZMin)
+    expect(len(geometry.support_of(standing, lower).Faces) == 2, "the two faces beside the groove form one support")
+    result = geometry.build(standing, lower, FinParams())
+    expect(max(result.tine_z) > upper.BoundBox.ZMin and any("recess" in w for w in result.warnings),
+           "the fin reaches over the groove to the upper face, the tines over it are named: %s" % result.warnings)
+    carried = geometry.support_of(standing, lower).Faces
+    hanging = overhang.overhangs(standing, supported=carried)
+    expect(not any(standing.Faces[n - 1].isSame(upper) for n in hanging),
+           "the face above the groove counts as supported")
+
+
 def check_recesses(cube, face):
     """Tines over a recess or a hole in the face are left out with a warning;
     a fin none of whose tines finds the face is left out as well."""
@@ -659,6 +685,7 @@ def main():
     check_one_corner(cube, face)
     check_tine_clearance(cube, face)
     check_shortened(cube, face)
+    check_split_face()
     print("all checks passed", file=sys.__stdout__)
 
 

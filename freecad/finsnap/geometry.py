@@ -59,6 +59,9 @@ INPUTS this has to withstand (build()):
   upper tines over a recess, manual
     fin height                          ->  the fin keeps the height given
   every tine of a fin over a recess     ->  fin left out, warning
+  face split by a groove into faces of
+    its own in one plane                ->  one support: the fin reaches over the
+                                            gap, tines over it left out, warning
   every tine of every fin over a recess ->  FinError
   fin overlaps the part (separate mode) ->  FinError
   tine shorter than TINE_MIN_LENGTH_BEADS
@@ -127,7 +130,24 @@ class FinResult:
     warnings: list = field(default_factory=list)
 
 
-def frame_of(part, face):
+def support_of(part, face):
+    """The face and every other planar face of `part` in its plane, as one shape.
+
+    A groove or slot running across a face splits it, in FreeCAD, into faces of
+    their own; the fin supports them all and reaches over the gap.
+    """
+    normal = middle_normal(face)
+    c = normal.dot(face.Vertexes[0].Point)
+    pieces = [face] + [other for other in part.Faces
+                       if not other.isSame(face) and other.findPlane() is not None
+                       and middle_normal(other).dot(normal) > 1 - d.TOLERANCE
+                       and abs(normal.dot(other.Vertexes[0].Point) - c) < d.TOLERANCE]
+    return face if len(pieces) == 1 else Part.makeCompound(pieces)
+
+
+def frame_of(part, face, support=None):
+    """The frame of `face`; its extent along and up is that of `support`, the
+    face with the faces in its plane, if given."""
     if face.findPlane() is None:
         raise FinError(translate("FinSnap", "the selected face is not planar"))
     n = middle_normal(face)
@@ -139,8 +159,9 @@ def frame_of(part, face):
 
     out = horizontal.normalize()
     along = UP.cross(out)
-    ts = [v.Point.dot(along) for v in face.Vertexes]
-    face_box = bounds(face)
+    extent = face if support is None else support
+    ts = [v.Point.dot(along) for v in extent.Vertexes]
+    face_box = bounds(extent)
     return Frame(out=out, along=along, n_out=n.dot(out), n_z=n.z,
                  c=n.dot(face.Vertexes[0].Point), bed_z=bounds(part).ZMin,
                  along_min=min(ts), along_max=max(ts), face_top_z=face_box.ZMax,
@@ -206,25 +227,32 @@ def tines_on_face(face, frame, tine_z, p, width):
     least `width`, and the stretch along the face they share.
 
     A face that narrows, like the side of a frustum standing on a corner, is
-    narrower at some tines than a fin is thick; those tines are left out.
-    Returns (tine heights, first, last); raises if no tine has room.
+    narrower at some tines than a fin is thick; those tines are left out. A
+    height where no face lies at all, the gap between two faces in one plane,
+    only leaves its own tine out; the run goes on above it.
+    Returns (tine heights, first, last, heights over a gap); raises if no tine
+    has room.
     """
     extents = [_extent_at(face, frame, z, p) for z in tine_z]
+    gaps = [z for z, extent in zip(tine_z, extents) if extent is None]
     best = None
     for start in range(len(tine_z)):
+        if extents[start] is None:
+            continue
         low, high = frame.along_min, frame.along_max
         for end in range(start, len(tine_z)):
             if extents[end] is None:
-                break
+                continue
             low, high = max(low, extents[end][0]), min(high, extents[end][1])
             if high - low < width - d.TOLERANCE:
                 break
-            if best is None or end + 1 - start > len(best[0]):
-                best = (tine_z[start:end + 1], low, high)
+            run = [z for z, extent in zip(tine_z[start:end + 1], extents[start:end + 1]) if extent]
+            if best is None or len(run) > len(best[0]):
+                best = (run, low, high)
     if best is None:
         raise FinError(translate("FinSnap", "the face is narrower than the %.2f mm a fin needs at every tine")
                        % width)
-    return best
+    return (*best, gaps)
 
 
 def thickness_for(p, height):
@@ -390,19 +418,21 @@ def check(p, part, fins, bodies):
 
 
 def build(part, face, p, tine_count=None):
-    """Fins under `face` of `part`. tine_count overrides p.tine_count (counter fin)."""
+    """Fins under `face` of `part`, and under the faces in its plane. tine_count
+    overrides p.tine_count (counter fin)."""
     p.validate()
-    frame = frame_of(part, face)
+    support = support_of(part, face)
+    frame = frame_of(part, face, support)
     count = p.tine_count if tine_count is None else tine_count
     all_z, height = tine_heights(p, frame, count)
     thickness = thickness_for(p, height)
     if p.tine_width > thickness:
         raise FinError(translate("FinSnap", "tines (%.2f mm) are wider than the fin (%.2f mm)")
                        % (p.tine_width, thickness))
-    tine_z, low, high = tines_on_face(face, frame, all_z, p, room_for_one_fin(p, thickness))
+    tine_z, low, high, gap_z = tines_on_face(support, frame, all_z, p, room_for_one_fin(p, thickness))
     # Also with a fixed tine count: tines the narrow face cannot take are left
     # out and named, as over a recess, rather than refusing the whole fin.
-    narrow_heights = set(all_z) - set(tine_z)
+    narrow_heights = set(all_z) - set(tine_z) - set(gap_z)
     if narrow_heights:
         # Fewer tines make a lower and so a thinner fin; it still fits where the thicker one did.
         height = p.fin_height if p.fin_height > 0 else tine_z[-1] + p.tine_height
@@ -419,14 +449,15 @@ def build(part, face, p, tine_count=None):
     all_tines = []
     pieces = []
     built = []
-    gap_heights = set()
+    # Tines over the gap between two faces in one plane are named as over a recess.
+    gap_heights = set(gap_z)
     fins_left_out = []
     fin_heights = []
     for t0 in positions:
         start = tine_start(p, t0, thickness)
         # A tine wholly or partly over a recess or a hole in the face would hang
         # free there; it is left out, and a fin without any tine left with it.
-        on_face = [contact_share(frame, face, start, p, z) >= d.TINE_MIN_CONTACT - d.TOLERANCE for z in tine_z]
+        on_face = [contact_share(frame, support, start, p, z) >= d.TINE_MIN_CONTACT - d.TOLERANCE for z in tine_z]
         kept_z = [z for z, whole in zip(tine_z, on_face) if whole]
         if not kept_z:
             fins_left_out.append(t0 + thickness / 2 - face_start)
