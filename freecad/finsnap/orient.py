@@ -4,6 +4,8 @@ The part lies flat on the bed. It is turned about a selected edge until the
 bottom face is lifted by the tilt angle, then lowered back onto the bed, so it
 stands on that edge. An edge that is not on the bed comes with one of its
 faces: that face is laid onto the bed first, which makes the edge a bottom edge.
+An edge between two flat faces at a right angle needs no face at 45 degrees:
+either face laid down gives the same result, both faces equally steep.
 A face alone, a chamfer or a fillet, is laid onto the bed and carries the part.
 
 The placement before the first tilt is kept on the moved object, so the part
@@ -18,7 +20,13 @@ INPUTS this has to withstand (tilt()):
   angle <= 0 or >= 90                   ->  OrientError
 
 INPUTS this has to withstand (stand()):
-  no face                               ->  as tilt()
+  no face, edge on the bed              ->  as tilt()
+  no face, edge between two flat faces
+    at a right angle, 45 degrees        ->  as rest_between() on those faces
+  no face, right angle, other angle     ->  OrientError: select the face
+  no face, faces not at a right angle,
+    or one of them rounded              ->  OrientError: select the face
+  no face, edge of an inner corner      ->  OrientError from rest_between()
   edge of the face, face can lie on
     the bed                             ->  face laid down, then as tilt()
   face already on the bed               ->  same result as tilt() alone
@@ -56,6 +64,7 @@ INPUTS this has to withstand (remember_flat(), lay_back()):
 """
 
 import FreeCAD as App
+import Part
 
 from . import defaults as d
 from .i18n import QT_TRANSLATE_NOOP, translate
@@ -71,6 +80,9 @@ FLAT_TIP = QT_TRANSLATE_NOOP("App::Property", "Placement before Stand on edge, r
 PLACEMENT_TYPE = "App::PropertyPlacement"
 # Editor mode that hides a property in the property view.
 EDITOR_HIDDEN = 2
+# The one angle at which an edge between two faces at a right angle stands the
+# part without saying which face goes down: both faces end up equally steep.
+RIGHT_ANGLE_TILT = 45.0
 
 
 class OrientError(ValueError):
@@ -81,6 +93,21 @@ def _moved(shape, change):
     moved = shape.copy()
     moved.Placement = change.multiply(moved.Placement)
     return moved
+
+
+def on_bed(shape, edge):
+    """True if both ends of `edge` lie on the bed, the lowest level of `shape`."""
+    return all(vertex.Point.z <= shape.BoundBox.ZMin + d.TOLERANCE for vertex in edge.Vertexes)
+
+
+def right_angle_faces(shape, edge):
+    """The two faces of `edge` if both are flat and meet at a right angle, else None."""
+    faces = shape.ancestorsOfType(edge, Part.Face)
+    if len(faces) != 2 or any(face.findPlane() is None for face in faces):
+        return None
+    if abs(middle_normal(faces[0]).dot(middle_normal(faces[1]))) > d.TOLERANCE:
+        return None
+    return tuple(faces)
 
 
 def tilt(shape, edge, angle_deg):
@@ -95,7 +122,7 @@ def tilt(shape, edge, angle_deg):
         raise OrientError(translate("FinSnap", "the edge is curved; select a straight edge"))
     if abs(axis.z) > d.TOLERANCE * axis.Length:
         raise OrientError(translate("FinSnap", "the edge is not horizontal"))
-    if start.z > shape.BoundBox.ZMin + d.TOLERANCE:
+    if not on_bed(shape, edge):
         raise OrientError(translate("FinSnap", "the edge does not lie on the bed"))
 
     # Of the two directions, the right one lifts the part over the edge
@@ -162,9 +189,19 @@ def rest_between(shape, first, second):
 
 
 def stand(shape, edge, angle_deg, face=None):
-    """Like tilt(); with a face, that face is laid onto the bed first."""
+    """Like tilt(); with a face, that face is laid onto the bed first. Without a
+    face, an edge off the bed between two faces at a right angle stands the part
+    at 45 degrees."""
     if face is None:
-        return tilt(shape, edge, angle_deg)
+        if on_bed(shape, edge):
+            return tilt(shape, edge, angle_deg)
+        corner = right_angle_faces(shape, edge)
+        if corner is None:
+            raise OrientError(translate("FinSnap", "the edge does not lie on the bed"))
+        if abs(angle_deg - RIGHT_ANGLE_TILT) > d.TOLERANCE:
+            raise OrientError(translate("FinSnap", "an edge alone stands the part only at 45 degrees; for "
+                                                   "another angle select the face that is to lie on the bed"))
+        return rest_between(shape, *corner)
     if not any(edge.isSame(candidate) for candidate in face.Edges):
         raise OrientError(translate("FinSnap", "the edge is not an edge of the selected face"))
     if face.findPlane() is None:

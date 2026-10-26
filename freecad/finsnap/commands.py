@@ -160,6 +160,9 @@ class TiltOntoEdge:
 
     SELECTIONS this has to withstand:
       one edge on the bed                   ->  turned about it by the asked angle
+      one edge off the bed between two flat
+        faces at a right angle              ->  stands on it at 45 degrees, no angle asked
+      one edge off the bed, other faces     ->  message, nothing changed
       one edge and one of its faces         ->  face laid down, then turned about the edge
       one face alone (a chamfer)            ->  face laid onto the bed, no angle asked
       two faces (beside a fillet)           ->  part stands on what joins them, both
@@ -179,10 +182,11 @@ class TiltOntoEdge:
                     "Select an edge of the part and the face of that edge that is to lie on the bed. "
                     "The face is laid onto the bed, the part is turned about the edge by the tilt angle "
                     "and set back onto the bed, standing on the edge. For an edge already on the bed, "
-                    "the edge alone is enough. A face alone, a chamfer or a fillet, is laid onto the bed "
-                    "and carries the part: a chamfer lies flat on it, a fillet touches it along its "
-                    "middle. Two faces alone, such as the two beside a fillet, stand the part on what "
-                    "joins them, both equally steep.")}
+                    "the edge alone is enough; so it is for an edge between two flat faces at a right "
+                    "angle, on which the part stands at 45 degrees. A face alone, a chamfer or a fillet, "
+                    "is laid onto the bed and carries the part: a chamfer lies flat on it, a fillet "
+                    "touches it along its middle. Two faces alone, such as the two beside a fillet, "
+                    "stand the part on what joins them, both equally steep.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
         return App.ActiveDocument is not None
@@ -207,12 +211,17 @@ class TiltOntoEdge:
             if len(chosen) == 2:
                 change = orient.rest_between(shape, *chosen)
             elif edges:
-                angle, ok = QtWidgets.QInputDialog.getDouble(
-                    Gui.getMainWindow(), translate("FinSnap", "Stand on edge"),
-                    translate("FinSnap", "Tilt angle (degrees):"), d.TILT_ANGLE, 1.0, 89.0, TILT_DECIMALS)
-                if not ok:
-                    return
-                change = orient.stand(shape, shape.getElement(edges[0][1]), angle, face)
+                edge = shape.getElement(edges[0][1])
+                if face is None and not orient.on_bed(shape, edge):
+                    # The angle is fixed by the right angle between its faces.
+                    change = orient.stand(shape, edge, orient.RIGHT_ANGLE_TILT)
+                else:
+                    angle, ok = QtWidgets.QInputDialog.getDouble(
+                        Gui.getMainWindow(), translate("FinSnap", "Stand on edge"),
+                        translate("FinSnap", "Tilt angle (degrees):"), d.TILT_ANGLE, 1.0, 89.0, TILT_DECIMALS)
+                    if not ok:
+                        return
+                    change = orient.stand(shape, edge, angle, face)
             else:
                 change = orient.lay_flat(shape, face)
         except orient.OrientError as error:
@@ -225,7 +234,20 @@ class TiltOntoEdge:
         owner.Placement = change.multiply(owner.Placement)
         doc.commitTransaction()
         doc.recompute()
+        _show_on_bed()
         _report_overhangs(obj)
+
+
+def _show_on_bed():
+    """Look at the turned part from the isometric direction, bed below, all of it in view.
+    The camera does not follow a placement change, so the part would otherwise
+    turn away under it."""
+    view = Gui.ActiveDocument.ActiveView if Gui.ActiveDocument else None
+    # The active view may be a spreadsheet or a drawing, which has no camera.
+    if view is None or not hasattr(view, "viewIsometric"):
+        return
+    view.viewIsometric()
+    view.fitAll()
 
 
 def _report_overhangs(obj):
@@ -274,6 +296,7 @@ class LayFlat:
             _message(translate("FinSnap", "The selection was not stood on an edge with Stand on edge."))
             return
         doc.recompute()
+        _show_on_bed()
 
 
 class AddFins:

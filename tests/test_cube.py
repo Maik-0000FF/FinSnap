@@ -26,6 +26,7 @@ PYRAMID_BASE = 20.0
 PYRAMID_STEEP = 20.0   # sides at 63 degrees against the base
 PYRAMID_FLAT = 5.0     # sides at 27 degrees, flatter than the overhang limit
 PYRAMID_TILT = 30.0    # flatter than the overhang limit
+ODD_TILT = 30.0        # any angle but 45, at which a right-angled edge needs its face
 # First tines half a layer (0.1 mm) off the grid of 0.2 mm layers.
 HALF_LAYER_STARTS = (1.1, 1.3, 1.5, 1.7)
 RECESS_RADIUS = 1.5    # wider than a tine, so a tine above it touches nothing
@@ -77,12 +78,26 @@ def check_stand():
     top = [e for e in box.Edges if e.BoundBox.ZMin > 10 - d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
     front = [f for f in box.Faces if f.BoundBox.YMax < d.TOLERANCE][0]
     upper = [f for f in box.Faces if f.BoundBox.ZMin > 10 - d.TOLERANCE][0]
+    # A top edge alone: its two faces meet at a right angle, so it stands at 45 degrees.
+    cornered = moved(box, orient.stand(box, top, orient.RIGHT_ANGLE_TILT))
+    lowest = [e for e in cornered.Edges if abs(e.Length - 30) < d.TOLERANCE and e.BoundBox.ZMax < d.TOLERANCE]
+    expect(abs(cornered.BoundBox.ZMin) < d.TOLERANCE and len(lowest) == 1 and len(leaning_at(cornered, 45)) == 2,
+           "a top edge alone stands the box on it, both faces at 45 degrees")
     try:
-        orient.stand(box, top, d.TILT_ANGLE)
-    except orient.OrientError:
-        pass
+        orient.stand(box, top, ODD_TILT)
+    except orient.OrientError as error:
+        expect("45" in str(error), "a top edge alone is refused at another angle: %s" % error)
     else:
-        raise AssertionError("a top edge without a face was accepted")
+        raise AssertionError("a top edge alone was accepted at another angle")
+    chamfered = box.makeChamfer(EDGE_ROUND, [top])
+    slanted = [e for e in chamfered.Edges if e.BoundBox.YMax < d.TOLERANCE
+               and abs(e.BoundBox.ZMin - (10 - EDGE_ROUND)) < d.TOLERANCE and e.BoundBox.ZLength < d.TOLERANCE][0]
+    try:
+        orient.stand(chamfered, slanted, orient.RIGHT_ANGLE_TILT)
+    except orient.OrientError as error:
+        expect("not lie on the bed" in str(error), "an edge alone between slanted faces is refused: %s" % error)
+    else:
+        raise AssertionError("an edge alone between faces not at a right angle was accepted")
 
     for face, name in ((front, "the side face"), (upper, "the upper face")):
         stood = box.copy()

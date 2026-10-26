@@ -27,6 +27,8 @@ COMMANDS = ("FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCo
             "FinSnap_Export3MF")
 DIALOG_ACCEPTED = 1
 FLAT_TILT = 30.0  # flatter than the overhang limit
+# Direction FreeCAD looks along in its isometric view.
+ISOMETRIC = App.Vector(-1, 1, -1)
 CHAMFER = 3.0
 
 
@@ -97,10 +99,22 @@ def main():
     top = [i for i, e in enumerate(box.Shape.Edges, 1)
            if e.BoundBox.ZMin > 20 - d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
     front = [i for i, f in enumerate(box.Shape.Faces, 1) if f.BoundBox.YMax < d.TOLERANCE][0]
+    # A top edge alone: its faces meet at a right angle, so it stands at 45 degrees unasked.
+    ask_angle = QtWidgets.QInputDialog.getDouble
+    QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (_ for _ in ()).throw(
+        AssertionError("a right-angled edge alone must not ask for an angle")))
+    Gui.ActiveDocument.ActiveView.viewTop()
     select(box, "Edge%d" % top)
     Gui.runCommand("FinSnap_Tilt")
-    expect(len(messages) == 1 and box.Placement.isIdentity(), "a top edge alone is refused with a message")
-    del messages[:]
+    doc.recompute()
+    QtWidgets.QInputDialog.getDouble = ask_angle
+    expect(not messages and abs(box.Shape.BoundBox.ZMin) < d.TOLERANCE
+           and box.Shape.BoundBox.ZMax > 20 + d.TOLERANCE, "Stand on edge takes a right-angled top edge alone")
+    direction = Gui.ActiveDocument.ActiveView.getViewDirection()
+    expect(direction.getAngle(ISOMETRIC) < d.TOLERANCE, "the view turns isometric after the tilt")
+    select(box)
+    Gui.runCommand("FinSnap_LayFlat")
+    doc.recompute()
     select(box, "Edge%d" % top, "Face%d" % front)
     Gui.runCommand("FinSnap_Tilt")
     doc.recompute()
