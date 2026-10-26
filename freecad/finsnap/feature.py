@@ -24,11 +24,13 @@ TYPE_NAME = "FinSnap"
 # provider marks them.
 OVERHANGS = "Overhangs"
 # Hidden marker on fins whose part was laid flat again with the fins kept:
-# they keep their last shape, moved along with the part, until it stands again.
+# they keep their last shape, moved along with the part, until it is moved again.
 LAID_FLAT = "LaidFlat"
+# Where the part was laid flat; moved from there, the fins are rebuilt.
+LAID_FLAT_AT = "LaidFlatAt"
 NOTE_LAID_FLAT = QT_TRANSLATE_NOOP(
-    "FinSnap", "The part lies flat again: the fins keep their last shape until the part stands on its edge "
-    "again with Stand on edge.")
+    "FinSnap", "The part lies flat again: the fins keep their last shape until the part is moved, for example "
+    "stood on its edge again; then they are rebuilt.")
 
 GROUP_SLICER = QT_TRANSLATE_NOOP("App::Property", "Slicer")
 GROUP_CONNECTION = QT_TRANSLATE_NOOP("App::Property", "Connection")
@@ -332,7 +334,7 @@ class FinSnapFeature:
     def execute(self, obj):
         if not obj.Base:
             return
-        if is_laid_flat(obj):
+        if still_laid_flat(obj):
             # The fins keep the shape they were moved to; the face they belong
             # to no longer leans over the bed until the part stands again.
             setattr(obj, OVERHANGS, [])
@@ -453,28 +455,37 @@ def is_laid_flat(obj):
 
 def keep_laid_flat(obj, change):
     """Move the fins `obj` by the placement change their part makes when it is
-    laid flat, and keep that shape instead of rebuilding them.
+    laid flat, and keep that shape until the part is moved again.
 
     INPUTS this has to withstand:
       fins of a standing part               ->  moved with it, marked, not rebuilt
       fins already laid flat                ->  moved once more, still marked
     """
-    if LAID_FLAT not in obj.PropertiesList:
-        obj.addProperty("App::PropertyBool", LAID_FLAT, GROUP_RESULT, "", 1)
-        obj.setEditorMode(LAID_FLAT, EDITOR_HIDDEN)
+    for name, kind in ((LAID_FLAT, "App::PropertyBool"), (LAID_FLAT_AT, "App::PropertyPlacement")):
+        if name not in obj.PropertiesList:
+            obj.addProperty(kind, name, GROUP_RESULT, "", 1)
+            obj.setEditorMode(name, EDITOR_HIDDEN)
+    owner = outermost(obj.Base[0])
     shape = obj.Shape.copy()
     shape.Placement = change.multiply(shape.Placement)
+    setattr(obj, LAID_FLAT_AT, change.multiply(owner.Placement))
     setattr(obj, LAID_FLAT, True)
     obj.Shape = shape
 
 
-def stand_again(obj):
-    """Rebuild the fins `obj` from their face, after their part stands again.
+def still_laid_flat(obj):
+    """Whether the part of the fins `obj` still lies where it was laid flat. Moved
+    since, by Stand on edge or by hand, the fins are rebuilt: the marker is cleared.
 
     INPUTS this has to withstand:
-      fins laid flat                        ->  marker cleared, rebuilt at the next recompute
-      fins never laid flat                  ->  nothing changes
+      fins never laid flat                  ->  False
+      part where it was laid flat           ->  True, marker kept
+      part moved since (stood again, or its
+        placement edited)                   ->  False, marker cleared
     """
-    if is_laid_flat(obj):
-        setattr(obj, LAID_FLAT, False)
-        obj.touch()
+    if not is_laid_flat(obj):
+        return False
+    if outermost(obj.Base[0]).Placement.isSame(getattr(obj, LAID_FLAT_AT), d.TOLERANCE):
+        return True
+    setattr(obj, LAID_FLAT, False)
+    return False

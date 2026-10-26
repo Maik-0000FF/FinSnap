@@ -50,8 +50,10 @@ TINE_INTO_FIN = 1.0
 # --- Fin body -----------------------------------------------------------------
 FIN_PLATEAU = 2.0           # flat top instead of a sharp tip
 FIN_MIN_BEADS = 2           # thinnest automatic fin, in beads: one path out and one back
-# Automatic thickness, from a test print: 1 mm, two beads of 0.45, held parts
-# up to 100 mm high. Taller fins grow in proportion, 1 mm per 100 mm.
+# Automatic thickness, from a test print: 1 mm held parts up to 100 mm high,
+# printed by the slicer as one path out and one back. It is no whole number of
+# beads on purpose; the slicer fills the rest. Taller fins grow in proportion,
+# 1 mm per 100 mm.
 FIN_THICKNESS_BASE = 1.0
 FIN_THICKNESS_BASE_HEIGHT = 100.0
 FIN_THICKNESS_AUTO = 0.0    # 0: from FIN_THICKNESS_BASE and the height, at least FIN_MIN_BEADS

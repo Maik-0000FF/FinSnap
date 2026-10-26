@@ -1,6 +1,7 @@
 """Workbench commands and the view provider of the FinSnap object."""
 
 import os
+from collections import namedtuple
 
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -58,6 +59,8 @@ OVERHANG_TRANSPARENCY = 0.4
 OVERHANG_OFFSET = -1.0
 OVERHANG_MESH = 0.1  # largest deviation of the marks from the face (mm)
 STATUS_TIMEOUT_MS = 10000
+# What an export writes, and the fins it leaves out because their part lies flat.
+Export = namedtuple("Export", "shapes left_out")
 
 
 class ViewProviderFinSnap:
@@ -242,9 +245,6 @@ class TiltOntoEdge:
         owner = outermost(obj)
         orient.remember_flat(owner)
         owner.Placement = change.multiply(owner.Placement)
-        # Fins kept while the part lay flat are built anew for the new stand.
-        for fins in feature.fins_of(owner, doc):
-            feature.stand_again(fins)
         doc.commitTransaction()
         doc.recompute()
         _show_on_bed(orient.side_direction(change, edge, chosen if len(chosen) == 2 else ()))
@@ -307,7 +307,7 @@ class LayFlat:
                     "FinSnap_LayFlat",
                     "Puts a part stood on an edge back as it lay before. Select the part or its fins. "
                     "If the part has fins, it asks whether to delete them; kept fins move along with the "
-                    "part and are rebuilt when it stands again. Deleting the last fins of a part lays it "
+                    "part and are rebuilt once it is moved again. Deleting the last fins of a part lays it "
                     "flat as well.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
@@ -354,7 +354,7 @@ def _ask_delete_fins():
     return QtWidgets.QMessageBox.question(
         Gui.getMainWindow(), NAME,
         translate("FinSnap", "Delete the fins of the part as well? No keeps them, moved along with the part, "
-                             "and rebuilds them when it stands on its edge again."),
+                             "and rebuilds them once it is moved again, for example stood on its edge."),
         buttons, QtWidgets.QMessageBox.No)
 
 
@@ -463,14 +463,22 @@ def _to_export():
 
 
 def _export_list(objects):
-    """Named shapes to export. A separate FinSnap object brings its part along."""
+    """What to export: named shapes, and the fins left out because their part lies flat.
+
+    SELECTIONS this has to withstand:
+      separate fins                         ->  their part, then the fins
+      merged fins, or any other body        ->  that body
+      fins whose part lies flat             ->  left out and named; their part
+                                                only if it was selected itself
+      nothing left after that               ->  ValueError saying why
+    """
     shapes = []
+    left_out = []
     seen = set()
     for obj in objects:
         if feature.is_fins(obj) and feature.is_laid_flat(obj):
-            raise ValueError(translate("FinSnap", "the part of %s lies flat; stand it on its edge again before "
-                                                  "exporting") % obj.Label)
-        if feature.is_fins(obj) and obj.Connection == d.CONNECTION_SEPARATE:
+            left_out.append(obj.Label)
+        elif feature.is_fins(obj) and obj.Connection == d.CONNECTION_SEPARATE:
             base = obj.Base[0]
             if base.Name not in seen:
                 shapes.append((base.Label, global_shape(base)))
@@ -479,7 +487,10 @@ def _export_list(objects):
         elif obj.Name not in seen and isinstance(getattr(obj, "Shape", None), Part.Shape):
             shapes.append((obj.Label, global_shape(obj)))
         seen.add(obj.Name)
-    return shapes
+    if not shapes and left_out:
+        raise ValueError(translate("FinSnap", "nothing to export: the parts of %s lie flat; stand them on their "
+                                              "edge again") % ", ".join(left_out))
+    return Export(shapes, left_out)
 
 
 def _mesh_settings():
@@ -532,15 +543,15 @@ class Export3MF:
         return bool(_to_export())
 
     def Activated(self):  # noqa: N802 - FreeCAD API
-        shapes = _shapes_to_export()
-        if shapes is None:
+        export = _shapes_to_export()
+        if export is None:
             return
         settings = _mesh_settings()
         if settings is None:
             return
         path = _save_path(translate("FinSnap", "Export 3MF"), FILTER_3MF, EXTENSIONS_3MF)
         if path:
-            _write(export_3mf.write, path, shapes, *settings)
+            _write(export_3mf.write, path, export, *settings)
 
 
 class ExportSTEP:
@@ -558,16 +569,16 @@ class ExportSTEP:
         return bool(_to_export())
 
     def Activated(self):  # noqa: N802 - FreeCAD API
-        shapes = _shapes_to_export()
-        if shapes is None:
+        export = _shapes_to_export()
+        if export is None:
             return
         path = _save_path(translate("FinSnap", "Export STEP"), FILTER_STEP, EXTENSIONS_STEP)
         if path:
-            _write(export_step.write, path, shapes)
+            _write(export_step.write, path, export)
 
 
 def _shapes_to_export():
-    """The named shapes of the selection, or None after saying why there are none."""
+    """What the selection exports, or None after saying why there is nothing."""
     try:
         return _export_list(_to_export())
     except ValueError as error:
@@ -584,13 +595,16 @@ def _save_path(title, file_filter, extensions):
     return path
 
 
-def _write(writer, path, shapes, *settings):
+def _write(writer, path, export, *settings):
     try:
-        writer(path, shapes, *settings)
+        writer(path, export.shapes, *settings)
     except (ValueError, OSError, Part.OCCError) as error:
         _message(str(error))
         return
-    App.Console.PrintMessage("FinSnap: %d objects written to %s\n" % (len(shapes), path))
+    App.Console.PrintMessage("FinSnap: %d objects written to %s\n" % (len(export.shapes), path))
+    if export.left_out:
+        _message(translate("FinSnap", "Left out, as their part lies flat: %s. Stand it on its edge again to "
+                                      "export these fins.") % ", ".join(export.left_out))
 
 
 COMMANDS = (("FinSnap_Tilt", TiltOntoEdge()),

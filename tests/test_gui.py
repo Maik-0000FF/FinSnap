@@ -226,8 +226,8 @@ def main():
     doc.recompute()
 
     # Lay flat again with fins. Cancel changes nothing; No keeps the fins, moved
-    # along with the part and not rebuilt; standing again rebuilds them; Yes
-    # deletes them.
+    # along with the part and not rebuilt; moving the part again, by hand or with
+    # Stand on edge, rebuilds them; Yes deletes them.
     from freecad.finsnap.i18n import translate
     standing = box.Placement
     ANSWERS.append(QtWidgets.QMessageBox.Cancel)
@@ -247,13 +247,36 @@ def main():
     select(marked)
     Gui.runCommand("FinSnap_Export3MF")
     expect(len(messages) == 1 and not os.path.exists(target + ".3mf"),
-           "fins of a part laid flat are not exported: %s" % messages)
+           "fins of a part laid flat alone give nothing to export: %s" % messages)
+    del messages[:]
+    select(box)
+    Gui.Selection.addSelection(marked)
+    Gui.runCommand("FinSnap_Export3MF")
+    with zipfile.ZipFile(target + ".3mf") as archive:
+        model = archive.read("3D/3dmodel.model").decode()
+    expect(model.count("<object ") == 1 and len(messages) == 1 and marked.Label in messages[0],
+           "beside other bodies, fins of a part laid flat are left out and named: %s" % messages)
+    os.remove(target + ".3mf")
     del messages[:]
     select(box, "Edge%d" % bottom)
     Gui.runCommand("FinSnap_Tilt")
     doc.recompute()
     expect(not feature.is_laid_flat(marked) and marked.isValid() and marked.Overhangs == hanging,
-           "standing the part again rebuilds the kept fins")
+           "standing the part again with Stand on edge rebuilds the kept fins")
+    ANSWERS.append(QtWidgets.QMessageBox.No)
+    select(box)
+    Gui.runCommand("FinSnap_LayFlat")
+    doc.recompute()
+    # Set back by hand, not with Stand on edge: the fins are rebuilt all the same.
+    box.Placement = standing
+    doc.recompute()
+    expect(not feature.is_laid_flat(marked) and marked.isValid() and marked.Overhangs == hanging,
+           "the part stood again by hand rebuilds the kept fins")
+    # Laid flat by hand, then stood with Stand on edge, so Lay flat again knows it.
+    box.Placement = App.Placement()
+    select(box, "Edge%d" % bottom)
+    Gui.runCommand("FinSnap_Tilt")
+    doc.recompute()
     ANSWERS.append(QtWidgets.QMessageBox.Yes)
     select(box)
     Gui.runCommand("FinSnap_LayFlat")
