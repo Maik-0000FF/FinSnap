@@ -6,6 +6,40 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-26
+
+### Added
+
+- Single fins can be removed: click one in the 3D view and press Delete, or Remove selected fin in the task panel; removing the last fins deletes the fins object, as deleting it in the tree does
+- Single fins can be moved along the face and given a height of their own: while the task panel is open, two arrows in the 3D view sit on the upright outer edge of the first fin, or of a fin clicked, sized by its height and in the colours of the axes. The fin follows an arrow while it is dragged; where it cannot stand it stays at its last place and is shown red where the arrow is. Under Edit fins, Place on the face and Height show where the fin stands; after a drag the field takes the keyboard, and a value typed and Enter move the fin. The fins are see-through green while editing, red while they cannot be built, and tines that find no face are marked red
+- Reset fins in the task panel undoes every change by hand: removed fins come back, moved fins and fin heights of their own are undone. With another number of fins the changes by hand are undone as well, and a note says so
+- The task panel adds and removes the counter fin; its Edit fins buttons show icons
+- A face split by a groove across it is supported together with the piece beyond the groove: the fin reaches over the gap, the tines over it are left out and named
+- Quick fins: select an edge, and the part stands on it with one fin under its largest leaning face; or select a face, and the part is turned so that it leans 45 degrees over the bed with one fin under it. A face with one of its edges, or with a chamfer or fillet beside it, sets what the part stands on; a fillet alone or the two faces beside it carry it too. A counter fin, where wanted, is added in the task panel
+- Stand on edge takes an edge between two flat faces at a right angle alone and stands the part on it at 45 degrees
+- Export STEP: exact surfaces instead of a mesh, every body under its own name; split the object into objects in the slicer
+- Tine clearance: the tines end short of the face, and the fin moves out by as much, so the tines keep their length
+- Fin placement left corner and right corner: one fin on that end of the face
+- Lay flat again asks whether to delete the fins; kept fins move along with the part and are rebuilt once it is moved again
+
+### Changed
+
+- After Stand on edge the view looks along the edge from the side, so the tilt angle shows; after Lay flat again it is isometric
+- Automatic fins are 1 mm thick up to 100 mm of height and grow by 1 mm per 100 mm above, at least two beads (before: at least three beads, growing with 5 % of the height); the foot width ratio is 0.2 instead of 0.5. Saved files with automatic values get thinner fins and narrower feet when they are rebuilt
+- An automatic fin ends at its highest tine that finds the face
+- Warnings name the main or the counter fin
+- Fins of a part laid flat are left out of an export, and a message names them
+- The red overhang marks are hidden while the part they lie on is hidden, not only while the fins are
+- The drawings in the task panel are larger and show the tine clearance
+
+### Fixed
+
+- Long tooltips in the task panel wrap instead of running off the screen
+- The fields of the task panel step by sizes that suit them; heights on the layer grid step by the layer height entered
+- Quick fins takes a chamfer selected alone, of any width or angle, as what the part rests on, not as the face for the fins
+- Heights are measured on the surfaces: the bounding box of curved faces reached up to 1.7 mm past a fillet, so outer fillets were refused as resting faces, a part laid on one floated above the bed, and fins could reach below it
+- The command icons in the README show on GitHub
+
 ## [0.3.0] - 2026-10-24
 
 ### Added
@@ -63,7 +97,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.1.0

@@ -1,37 +1,45 @@
 """Workbench commands and the view provider of the FinSnap object."""
 
-import os
+import dataclasses
+import functools
+from collections import namedtuple
 
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
 from pivy import coin
-from PySide import QtWidgets
+from PySide import QtCore, QtWidgets
 
 from . import defaults as d
 from . import export_3mf
+from . import export_step
 from . import feature
+from . import geometry
+from . import handles
 from . import mesh_input
 from . import orient
+from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
+from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_LAY_FLAT, ICON_MESH,
+                    ICON_QUICK, ICON_TILT)
 from .presets import PREFERENCES
-from .shapes import FACE_PREFIX, global_shape, outermost
+from .shapes import FACE_PREFIX, face_name, global_shape, outermost
 from .taskpanel import LENGTH_SUFFIX, FinSnapTaskPanel
 from .version import NAME
 
-ICONS = os.path.join(os.path.dirname(__file__), "icons")
-ICON_WORKBENCH = os.path.join(ICONS, "finsnap.svg")
-ICON_ADD = os.path.join(ICONS, "add_fins.svg")
-ICON_MESH = os.path.join(ICONS, "mesh_to_solid.svg")
-ICON_EXPORT = os.path.join(ICONS, "export_3mf.svg")
-ICON_TILT = os.path.join(ICONS, "tilt.svg")
-ICON_LAY_FLAT = os.path.join(ICONS, "lay_flat.svg")
-ICON_COUNTER = os.path.join(ICONS, "counter_fin.svg")
 EDGE_PREFIX = "Edge"
 TILT_DECIMALS = 1
+# Order in which App.Rotation keeps the given camera axes exact.
+CAMERA_AXES = "ZYX"
+# Direction FreeCAD's isometric view looks along.
+ISOMETRIC = App.Vector(-1, 1, -1).normalize()
 
-FILE_FILTER = QT_TRANSLATE_NOOP("FinSnap", "3MF files (*.3mf)")
-FILE_EXTENSION = ".3mf"
+# File types of the exports: the filter of the save dialog, and the endings
+# it accepts; the first is added to a name that has none of them.
+FILTER_3MF = QT_TRANSLATE_NOOP("FinSnap", "3MF files (*.3mf)")
+EXTENSIONS_3MF = (".3mf",)
+FILTER_STEP = QT_TRANSLATE_NOOP("FinSnap", "STEP files (*.step *.stp)")
+EXTENSIONS_STEP = (".step", ".stp")
 PREF_LINEAR = "MeshLinearDeflection"
 PREF_ANGULAR = "MeshAngularDeflection"
 MESH_LINEAR_RANGE = (0.001, 1.0)
@@ -45,9 +53,40 @@ FINS_SUFFIX = "_fins"
 # slightly in front of the part's own faces, which lie in the same place.
 OVERHANG_COLOR = (0.9, 0.1, 0.1)
 OVERHANG_TRANSPARENCY = 0.4
-OVERHANG_OFFSET = -1.0
-OVERHANG_MESH = 0.1  # largest deviation of the marks from the face (mm)
 STATUS_TIMEOUT_MS = 10000
+# What an export writes, and the fins it leaves out because their part lies flat.
+Export = namedtuple("Export", "shapes left_out")
+
+
+def _shown(obj):
+    """Whether `obj` is shown: it and every container it lies in, such as a Body."""
+    while obj is not None:
+        if not obj.Visibility:
+            return False
+        obj = obj.getParentGeoFeatureGroup()
+    return True
+
+
+def _holds(obj, part):
+    """Whether hiding `obj` hides `part`: it is the part, or a container it lies in."""
+    while part is not None:
+        if part is obj:
+            return True
+        part = part.getParentGeoFeatureGroup()
+    return False
+
+
+class PartVisibility:
+    """Document observer: when a part or a container of it is shown or hidden,
+    the overhang marks of its fins follow."""
+
+    def slotChangedObject(self, obj, prop):  # noqa: N802 - FreeCAD API
+        if prop != "Visibility" or obj.Document is None:
+            return
+        for fins in obj.Document.Objects:
+            if (feature.is_fins(fins) and fins.Base and _holds(obj, fins.Base[0])
+                    and isinstance(getattr(fins.ViewObject, "Proxy", None), ViewProviderFinSnap)):
+                fins.ViewObject.Proxy.show_marks()
 
 
 class ViewProviderFinSnap:
@@ -68,10 +107,16 @@ class ViewProviderFinSnap:
             self.mark(obj)
 
     def onChanged(self, vobj, prop):  # noqa: N802 - FreeCAD API
-        if prop == "Visibility" and hasattr(self, "marks"):
-            self.show_marks(vobj.Visibility)
+        if prop == "Visibility":
+            self.show_marks()
 
-    def show_marks(self, visible):
+    def show_marks(self):
+        """Show the overhang marks while the fins and their part are shown;
+        the marks lie on the part, and alone they would float in the air."""
+        if not hasattr(self, "marks"):
+            return
+        obj = self.Object
+        visible = obj.ViewObject.Visibility and (not obj.Base or _shown(obj.Base[0]))
         self.marks.whichChild.setValue(coin.SO_SWITCH_ALL if visible else coin.SO_SWITCH_NONE)
 
     def mark(self, obj):
@@ -86,35 +131,32 @@ class ViewProviderFinSnap:
             shape = global_shape(obj.Base[0])
         except ValueError:
             return
-        points, index = [], []
-        for name in names:
-            vertices, triangles = shape.getElement(name).tessellate(OVERHANG_MESH)
-            first = len(points)
-            points += [(v.x, v.y, v.z) for v in vertices]
-            for triangle in triangles:
-                index += [first + corner for corner in triangle] + [-1]
-
-        material = coin.SoMaterial()
-        material.diffuseColor.setValue(*OVERHANG_COLOR)
-        material.transparency.setValue(OVERHANG_TRANSPARENCY)
-        offset = coin.SoPolygonOffset()
-        offset.factor.setValue(OVERHANG_OFFSET)
-        offset.units.setValue(OVERHANG_OFFSET)
-        coordinates = coin.SoCoordinate3()
-        coordinates.point.setValues(0, len(points), points)
-        faces = coin.SoIndexedFaceSet()
-        faces.coordIndex.setValues(0, len(index), index)
-        group = coin.SoSeparator()
-        for node in (material, offset, coordinates, faces):
-            group.addChild(node)
-        self.marks.addChild(group)
-        self.show_marks(obj.ViewObject.Visibility)
+        faces = [shape.getElement(name) for name in names]
+        self.marks.addChild(handles.shaded(faces, OVERHANG_COLOR, OVERHANG_TRANSPARENCY))
+        self.show_marks()
 
     def setEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API
-        Gui.Control.showDialog(FinSnapTaskPanel(vobj.Object))
+        # Fins just made by a command are deleted again by Cancel.
+        # Another task dialog is open: FreeCAD keeps that one.
+        if Gui.Control.activeDialog():
+            return False
+        created, self.created = getattr(self, "created", False), False
+        panel = FinSnapTaskPanel(vobj.Object, created=created)
+        try:
+            Gui.Control.showDialog(panel)
+        except RuntimeError:
+            panel.release_handles()
+            return False
+        # Kept while editing: the Delete key on a fin goes to the panel then.
+        self.panel = panel
         return True
 
     def unsetEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API
+        # Edit mode can end without OK or Cancel; the arrows, the see-through
+        # look and the listeners of the panel go with it all the same.
+        panel, self.panel = getattr(self, "panel", None), None
+        if panel is not None:
+            panel.release_handles()
         Gui.Control.closeDialog()
         return True
 
@@ -122,16 +164,46 @@ class ViewProviderFinSnap:
         return []
 
     def onDelete(self, vobj, subelements):  # noqa: N802 - FreeCAD API
-        """Deleting the last fins of a part stood on an edge lays the part flat again."""
+        """Deleting a face or edge of one fin removes that fin alone; deleting
+        the object deletes all of them, and the last fins of a part stood on an
+        edge lay it flat again.
+
+        SITUATIONS this has to withstand:
+          face or edge of one fin selected      ->  that fin left out, object kept
+          the last main fins selected           ->  the object deleted, as from the tree
+          fins selected, task panel open        ->  the panel removes them; FreeCAD
+                                                    deletes nothing in edit mode
+          sub-elements of merged fins           ->  message, nothing deleted
+          fins and other sub-elements mixed     ->  nothing deleted
+          object selected in the tree           ->  deleted; the last fins lay the part flat;
+                                                    an open task panel on it closes first
+        """
         obj = vobj.Object
-        if obj.Base:
-            owner = outermost(obj.Base[0])
-            others = [o for o in obj.Document.Objects
-                      if o is not obj and feature.is_fins(o) and o.Base and outermost(o.Base[0]) is owner]
-            if not others:
-                orient.lay_back(owner)
-            for other in others:
-                other.touch()
+        if subelements and obj.Connection == d.CONNECTION_MERGED:
+            # Merged into the part, the fins are no solids of their own to pick.
+            _message(translate("FinSnap", feature.NOTE_MERGED_SINGLE))
+            return False
+        fins = [feature.fin_at(obj, sub) for sub in subelements or ()]
+        if fins and not all(fins):
+            # Something picked that is no fin: the object as a whole is not meant.
+            return False
+        panel = getattr(self, "panel", None)
+        if fins:
+            if panel is not None:
+                # The panel may delete this very object; not while its own
+                # onDelete still runs.
+                QtCore.QTimer.singleShot(0, functools.partial(panel.remove_fins, fins))
+                return False
+            obj.Document.openTransaction(translate("FinSnap", "Remove fin"))
+            if not feature.remove_fins(obj, fins):
+                obj.Document.commitTransaction()
+                obj.Document.recompute()
+                return False
+            # The last main fins: nothing was changed, the object goes as a whole.
+            obj.Document.abortTransaction()
+        elif panel is not None:
+            panel.close()
+        feature.prepare_delete(obj)
         return True
 
     def dumps(self):
@@ -160,6 +232,9 @@ class TiltOntoEdge:
 
     SELECTIONS this has to withstand:
       one edge on the bed                   ->  turned about it by the asked angle
+      one edge off the bed between two flat
+        faces at a right angle              ->  stands on it at 45 degrees, no angle asked
+      one edge off the bed, other faces     ->  message, nothing changed
       one edge and one of its faces         ->  face laid down, then turned about the edge
       one face alone (a chamfer)            ->  face laid onto the bed, no angle asked
       two faces (beside a fillet)           ->  part stands on what joins them, both
@@ -179,19 +254,17 @@ class TiltOntoEdge:
                     "Select an edge of the part and the face of that edge that is to lie on the bed. "
                     "The face is laid onto the bed, the part is turned about the edge by the tilt angle "
                     "and set back onto the bed, standing on the edge. For an edge already on the bed, "
-                    "the edge alone is enough. A face alone, a chamfer or a fillet, is laid onto the bed "
-                    "and carries the part: a chamfer lies flat on it, a fillet touches it along its "
-                    "middle. Two faces alone, such as the two beside a fillet, stand the part on what "
-                    "joins them, both equally steep.")}
+                    "the edge alone is enough; so it is for an edge between two flat faces at a right "
+                    "angle, on which the part stands at 45 degrees. A face alone, a chamfer or a fillet, "
+                    "is laid onto the bed and carries the part: a chamfer lies flat on it, a fillet "
+                    "touches it along its middle. Two faces alone, such as the two beside a fillet, "
+                    "stand the part on what joins them, both equally steep.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
         return App.ActiveDocument is not None
 
     def Activated(self):  # noqa: N802 - FreeCAD API
-        picked = [(sel.Object, name) for sel in Gui.Selection.getSelectionEx()
-                  for name in sel.SubElementNames if name.startswith((EDGE_PREFIX, FACE_PREFIX))]
-        edges = [(o, n) for o, n in picked if n.startswith(EDGE_PREFIX)]
-        faces = [(o, n) for o, n in picked if n.startswith(FACE_PREFIX)]
+        picked, edges, faces = _picked()
         valid = (picked and len({id(o) for o, _ in picked}) == 1
                  and ((len(edges) == 1 and len(faces) <= 1) or (not edges and len(faces) <= 2)))
         if not valid:
@@ -204,15 +277,21 @@ class TiltOntoEdge:
             shape = global_shape(obj)
             chosen = [shape.getElement(name) for _, name in faces]
             face = chosen[0] if chosen else None
+            edge = None
             if len(chosen) == 2:
                 change = orient.rest_between(shape, *chosen)
             elif edges:
-                angle, ok = QtWidgets.QInputDialog.getDouble(
-                    Gui.getMainWindow(), translate("FinSnap", "Stand on edge"),
-                    translate("FinSnap", "Tilt angle (degrees):"), d.TILT_ANGLE, 1.0, 89.0, TILT_DECIMALS)
-                if not ok:
-                    return
-                change = orient.stand(shape, shape.getElement(edges[0][1]), angle, face)
+                edge = shape.getElement(edges[0][1])
+                if face is None and not orient.on_bed(shape, edge):
+                    # The angle is fixed by the right angle between its faces.
+                    change = orient.stand(shape, edge, orient.RIGHT_ANGLE_TILT)
+                else:
+                    angle, ok = QtWidgets.QInputDialog.getDouble(
+                        Gui.getMainWindow(), translate("FinSnap", "Stand on edge"),
+                        translate("FinSnap", "Tilt angle (degrees):"), d.TILT_ANGLE, 1.0, 89.0, TILT_DECIMALS)
+                    if not ok:
+                        return
+                    change = orient.stand(shape, edge, angle, face)
             else:
                 change = orient.lay_flat(shape, face)
         except orient.OrientError as error:
@@ -220,12 +299,49 @@ class TiltOntoEdge:
             return
         doc = App.ActiveDocument
         doc.openTransaction(translate("FinSnap", "Stand on edge"))
-        owner = outermost(obj)
-        orient.remember_flat(owner)
-        owner.Placement = change.multiply(owner.Placement)
+        _stand(obj, change)
         doc.commitTransaction()
         doc.recompute()
+        _show_on_bed(orient.side_direction(change, edge, chosen if len(chosen) == 2 else ()))
         _report_overhangs(obj)
+
+
+def _picked():
+    """The selected edges and faces: (all, edges, faces), each as (object, name)."""
+    picked = [(sel.Object, name) for sel in Gui.Selection.getSelectionEx()
+              for name in sel.SubElementNames if name.startswith((EDGE_PREFIX, FACE_PREFIX))]
+    return (picked, [(o, n) for o, n in picked if n.startswith(EDGE_PREFIX)],
+            [(o, n) for o, n in picked if n.startswith(FACE_PREFIX)])
+
+
+def _stand(obj, change):
+    """Turn the part of `obj` by `change`, keeping where it lay for Lay flat again."""
+    owner = outermost(obj)
+    orient.remember_flat(owner)
+    owner.Placement = change.multiply(owner.Placement)
+
+
+def _show_on_bed(direction=None):
+    """Look at the turned part with the bed below, all of it in view.
+
+    Along `direction`, the line the part stands on, the view shows the tilt
+    angle in profile; without one it is isometric. The camera does not follow a
+    placement change, so the part would otherwise turn away under it.
+
+    The orientation is set on the camera node itself: setCameraOrientation()
+    and viewIsometric() only start an animation when navigation animations are
+    on, and fitAll() would then fit the part to where the camera started from.
+    """
+    view = Gui.ActiveDocument.ActiveView if Gui.ActiveDocument else None
+    # The active view may be a spreadsheet or a drawing, which has no camera.
+    if view is None or not hasattr(view, "getCameraNode"):
+        return
+    # The camera looks along its -Z with +Y up: -Z onto the line of sight, +Y
+    # towards the vertical, +X to the right of both.
+    back = -(direction if direction is not None else ISOMETRIC)
+    turn = App.Rotation(orient.UP.cross(back), orient.UP, back, CAMERA_AXES)
+    view.getCameraNode().orientation.setValue(coin.SbRotation(*turn.Q))
+    view.fitAll()
 
 
 def _report_overhangs(obj):
@@ -260,20 +376,126 @@ class LayFlat:
                 "ToolTip": QT_TRANSLATE_NOOP(
                     "FinSnap_LayFlat",
                     "Puts a part stood on an edge back as it lay before. Select the part or its fins. "
-                    "Deleting the last fins of a part does the same.")}
+                    "If the part has fins, it asks whether to delete them; kept fins move along with the "
+                    "part and are rebuilt once it is moved again. Deleting the last fins of a part lays it "
+                    "flat as well.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
         return bool(Gui.Selection.getSelection())
 
     def Activated(self):  # noqa: N802 - FreeCAD API
+        """
+        SITUATIONS this has to withstand:
+          part without fins                     ->  laid flat, no question
+          part with fins, answer Yes            ->  fins deleted, part laid flat
+          part with fins, answer No             ->  part laid flat, fins moved along and kept
+          part with fins, answer Cancel         ->  nothing changed
+          part not stood with Stand on edge     ->  message, nothing changed
+        """
         doc = App.ActiveDocument
-        doc.openTransaction(translate("FinSnap", "Lay flat again"))
-        laid = [owner for owner in _owners(Gui.Selection.getSelection()) if orient.lay_back(owner)]
-        doc.commitTransaction()
-        if not laid:
+        owners = [owner for owner in _owners(Gui.Selection.getSelection())
+                  if orient.back_to_flat(owner) is not None]
+        if not owners:
             _message(translate("FinSnap", "The selection was not stood on an edge with Stand on edge."))
             return
+        delete = False
+        if any(feature.fins_of(owner, doc) for owner in owners):
+            answer = _ask_delete_fins()
+            if answer == QtWidgets.QMessageBox.Cancel:
+                return
+            delete = answer == QtWidgets.QMessageBox.Yes
+        doc.openTransaction(translate("FinSnap", "Lay flat again"))
+        for owner in owners:
+            change = orient.back_to_flat(owner)
+            for fins in feature.fins_of(owner, doc):
+                if delete:
+                    doc.removeObject(fins.Name)
+                else:
+                    feature.keep_laid_flat(fins, change)
+            orient.lay_back(owner)
+        doc.commitTransaction()
         doc.recompute()
+        _show_on_bed()
+
+
+def _ask_delete_fins():
+    """Yes, No or Cancel: whether the fins of a part laid flat go with it."""
+    buttons = QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel
+    return QtWidgets.QMessageBox.question(
+        Gui.getMainWindow(), NAME,
+        translate("FinSnap", "Delete the fins of the part as well? No keeps them, moved along with the part, "
+                             "and rebuilds them once it is moved again, for example stood on its edge."),
+        buttons, QtWidgets.QMessageBox.No)
+
+
+class QuickFins:
+    """Stand a part up and add its fins in one step.
+
+    The selections it takes are those of geometry.quick_plan(); faces count in
+    the order selected.
+
+    SELECTIONS this has to withstand:
+      what quick_plan() takes               ->  stood, fins added, panel opened
+      nothing, or elements of two parts     ->  message, nothing changed
+      what quick_plan() refuses             ->  message naming why, nothing changed
+    """
+
+    def GetResources(self):  # noqa: N802 - FreeCAD API
+        return {"Pixmap": ICON_QUICK,
+                "MenuText": QT_TRANSLATE_NOOP("FinSnap_QuickFins", "Quick fins"),
+                "ToolTip": QT_TRANSLATE_NOOP(
+                    "FinSnap_QuickFins",
+                    "Stands the part up and adds one fin in the middle of a face in one step, then opens "
+                    "the panel to adjust it. "
+                    "Select the edge the part is to stand on: the fins go under the largest face that "
+                    "leans over the bed. Or select the face the fins are to support: the part is turned "
+                    "so that it leans 45 degrees over the bed, on its longest edge; select one of its "
+                    "edges as well to stand on that one, or, after the face, a chamfer or fillet to rest "
+                    "on. A chamfer or fillet alone, or the two faces beside a fillet, carry the part as "
+                    "well. A counter fin, where wanted, is added in the panel.")}
+
+    def IsActive(self):  # noqa: N802 - FreeCAD API
+        return App.ActiveDocument is not None
+
+    def Activated(self):  # noqa: N802 - FreeCAD API
+        picked, edges, faces = _picked()
+        if not picked or len({id(o) for o, _ in picked}) != 1:
+            _message(translate("FinSnap", "Select an edge or a face of one part."))
+            return
+        obj = picked[0][0]
+        # One fin in the middle of the face; the panel can spread more along it.
+        p = dataclasses.replace(presets.standard(), placement=d.PLACEMENT_CENTER)
+        try:
+            shape = global_shape(obj)
+            plan = geometry.quick_plan(
+                shape, [(shape.getElement(n), None) for _, n in edges],
+                [(shape.getElement(n), int(n[len(FACE_PREFIX):]) - 1) for _, n in faces], p, d.TILT_ANGLE)
+        except (orient.OrientError, geometry.FinError) as error:
+            _message(str(error))
+            return
+        doc = App.ActiveDocument
+        doc.openTransaction(translate("FinSnap", "Quick fins"))
+        _stand(obj, plan.change)
+        # The main fin only; a counter fin is added in the panel or with Add counter fin.
+        fins = feature.create(obj, face_name(plan.number + 1))
+        fins.FinPlacement = p.placement
+        ViewProviderFinSnap(fins.ViewObject)
+        doc.commitTransaction()
+        doc.recompute()
+        _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside))
+        _edit_new(fins)
+
+
+def _edit_new(fins):
+    """Open the task panel on fins just made, in edit mode as a double click
+    does: the handles of the panel are shown only there."""
+    proxy = fins.ViewObject.Proxy
+    proxy.created = True
+    try:
+        Gui.ActiveDocument.setEdit(fins)
+    finally:
+        # Only for this opening: a later Cancel must not delete fins long kept.
+        proxy.created = False
 
 
 class AddFins:
@@ -300,7 +522,7 @@ class AddFins:
         obj = feature.create(base, face_name, counter)
         ViewProviderFinSnap(obj.ViewObject)
         doc.commitTransaction()
-        Gui.Control.showDialog(FinSnapTaskPanel(obj, created=True))
+        _edit_new(obj)
 
 
 class AddCounterFin:
@@ -381,11 +603,22 @@ def _to_export():
 
 
 def _export_list(objects):
-    """Named shapes to export. A separate FinSnap object brings its part along."""
+    """What to export: named shapes, and the fins left out because their part lies flat.
+
+    SELECTIONS this has to withstand:
+      separate fins                         ->  their part, then the fins
+      merged fins, or any other body        ->  that body
+      fins whose part lies flat             ->  left out and named; their part
+                                                only if it was selected itself
+      nothing left after that               ->  ValueError saying why
+    """
     shapes = []
+    left_out = []
     seen = set()
     for obj in objects:
-        if feature.is_fins(obj) and obj.Connection == d.CONNECTION_SEPARATE:
+        if feature.is_fins(obj) and feature.is_laid_flat(obj):
+            left_out.append(obj.Label)
+        elif feature.is_fins(obj) and obj.Connection == d.CONNECTION_SEPARATE:
             base = obj.Base[0]
             if base.Name not in seen:
                 shapes.append((base.Label, global_shape(base)))
@@ -394,7 +627,10 @@ def _export_list(objects):
         elif obj.Name not in seen and isinstance(getattr(obj, "Shape", None), Part.Shape):
             shapes.append((obj.Label, global_shape(obj)))
         seen.add(obj.Name)
-    return shapes
+    if not shapes and left_out:
+        raise ValueError(translate("FinSnap", "nothing to export: the parts of %s lie flat; stand them on their "
+                                              "edge again") % ", ".join(left_out))
+    return Export(shapes, left_out)
 
 
 def _mesh_settings():
@@ -447,34 +683,83 @@ class Export3MF:
         return bool(_to_export())
 
     def Activated(self):  # noqa: N802 - FreeCAD API
-        try:
-            shapes = _export_list(_to_export())
-        except ValueError as error:
-            _message(str(error))
+        export = _shapes_to_export()
+        if export is None:
             return
         settings = _mesh_settings()
         if settings is None:
             return
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            Gui.getMainWindow(), translate("FinSnap", "Export 3MF"), "", translate("FinSnap", FILE_FILTER))
-        if not path:
-            return
-        if not path.lower().endswith(FILE_EXTENSION):
-            path += FILE_EXTENSION
-        try:
-            export_3mf.write(path, shapes, *settings)
-        except (ValueError, OSError, Part.OCCError) as error:
-            _message(str(error))
-            return
-        App.Console.PrintMessage("FinSnap: %d objects written to %s\n" % (len(shapes), path))
+        path = _save_path(translate("FinSnap", "Export 3MF"), FILTER_3MF, EXTENSIONS_3MF)
+        if path:
+            _write(export_3mf.write, path, export, *settings)
 
 
-COMMANDS = (("FinSnap_Tilt", TiltOntoEdge()),
+class ExportSTEP:
+    def GetResources(self):  # noqa: N802 - FreeCAD API
+        return {"Pixmap": ICON_EXPORT_STEP,
+                "MenuText": QT_TRANSLATE_NOOP("FinSnap_ExportSTEP", "Export STEP"),
+                "ToolTip": QT_TRANSLATE_NOOP(
+                    "FinSnap_ExportSTEP",
+                    "Export the selection to STEP, with exact surfaces instead of a mesh. The slicer "
+                    "loads it as one object with a part per body: split it into objects there, so part "
+                    "and fins are printed separately. With nothing selected, all fins of the document "
+                    "are exported together with their parts.")}
+
+    def IsActive(self):  # noqa: N802 - FreeCAD API
+        return bool(_to_export())
+
+    def Activated(self):  # noqa: N802 - FreeCAD API
+        export = _shapes_to_export()
+        if export is None:
+            return
+        path = _save_path(translate("FinSnap", "Export STEP"), FILTER_STEP, EXTENSIONS_STEP)
+        if path:
+            _write(export_step.write, path, export)
+
+
+def _shapes_to_export():
+    """What the selection exports, or None after saying why there is nothing."""
+    try:
+        return _export_list(_to_export())
+    except ValueError as error:
+        _message(str(error))
+        return None
+
+
+def _save_path(title, file_filter, extensions):
+    """The file to write, ending in one of `extensions`; empty if the dialog was cancelled."""
+    path, _ = QtWidgets.QFileDialog.getSaveFileName(
+        Gui.getMainWindow(), title, "", translate("FinSnap", file_filter))
+    if path and not path.lower().endswith(extensions):
+        path += extensions[0]
+    return path
+
+
+def _write(writer, path, export, *settings):
+    try:
+        writer(path, export.shapes, *settings)
+    except (ValueError, OSError, Part.OCCError) as error:
+        _message(str(error))
+        return
+    App.Console.PrintMessage("FinSnap: %d objects written to %s\n" % (len(export.shapes), path))
+    if export.left_out:
+        _message(translate("FinSnap", "Left out, as their part lies flat: %s. Stand it on its edge again to "
+                                      "export these fins.") % ", ".join(export.left_out))
+
+
+COMMANDS = (("FinSnap_QuickFins", QuickFins()),
+            ("FinSnap_Tilt", TiltOntoEdge()),
             ("FinSnap_LayFlat", LayFlat()),
             ("FinSnap_AddFins", AddFins()),
             ("FinSnap_AddCounterFin", AddCounterFin()),
             ("FinSnap_MeshToSolid", MeshToSolid()),
-            ("FinSnap_Export3MF", Export3MF()))
+            ("FinSnap_Export3MF", Export3MF()),
+            ("FinSnap_ExportSTEP", ExportSTEP()))
+
+
+# Registered once, when this module is first imported: with the workbench, or
+# with a document holding fins.
+App.addDocumentObserver(PartVisibility())
 
 
 def register():

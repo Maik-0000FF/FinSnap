@@ -16,7 +16,7 @@ import FreeCAD as App  # noqa: E402
 import Part  # noqa: E402
 from support import STANDARD_THICKNESS, expect, lower_left_face, run, tilted_cube  # noqa: E402
 from freecad.finsnap import defaults as d  # noqa: E402
-from freecad.finsnap import export_3mf, feature, geometry, orient  # noqa: E402
+from freecad.finsnap import export_3mf, export_step, feature, geometry, orient  # noqa: E402
 from freecad.finsnap import presets  # noqa: E402
 from freecad.finsnap.params import FinParams, ParamError  # noqa: E402
 from freecad.finsnap.shapes import global_shape, outermost  # noqa: E402
@@ -27,16 +27,27 @@ PACKAGE_XML = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 PACKAGE_VERSION = ET.parse(PACKAGE_XML).getroot().findtext("{https://wiki.freecad.org/Package_Metadata}version")
 BOX = (40.0, 20.0, 20.0)
 XY_PLANE = 3  # index in the origin features of a Body
+FIN_SHIFT = 1.5  # how far a fin is moved along the face by hand, in mm
+MANY_FIN_WIDTHS = 3  # far enough to run a fin into its neighbour
 XZ_PLANE = 4  # index in the origin features of a Body
 # A T standing on its stem, in sketch coordinates: stem 10 wide and 20 high,
 # arms reaching 10 to each side.
 T_PROFILE = [V(10, 0, 0), V(20, 0, 0), V(20, 20, 0), V(30, 20, 0), V(30, 30, 0), V(0, 30, 0),
              V(0, 20, 0), V(10, 20, 0)]
 T_DEPTH = 10.0
-T_TILT = 30.0  # flatter than the overhang limit, so the stem overhangs too
+# Flatter than the overhang limit: the stem of the T overhangs too, and of a
+# box stood on an edge one face overhangs.
+FLAT_TILT = 30.0
 TAPER_SQUARE = 20.0
 TAPER_HEIGHT = 15.0
 TAPER_ANGLE = -20.0  # negative: the Pad widens
+SHORT_TINE_GAP = 0.2  # tines shorter than TINE_MIN_LENGTH_BEADS beads
+# A block with a pocket offset around an ellipse (major and minor radius).
+BLOCK = (30.0, 20.0, 10.0)
+POCKET_ELLIPSE = (8.0, 4.0)
+POCKET_OFFSET = 1.5
+POCKET_DEPTH = 4.0
+STEP_VOLUME_TOLERANCE = 1e-3  # mm3, what reading the file back may differ by
 
 
 def face_name(shape, face):
@@ -111,14 +122,14 @@ def t_profile_in_part(doc):
 
     edge = [e for e in shape.Edges if e.BoundBox.ZMax < d.TOLERANCE and abs(e.Length - T_DEPTH) < d.TOLERANCE][0]
     owner = outermost(pad)
-    owner.Placement = orient.stand(shape, edge, T_TILT).multiply(owner.Placement)
+    owner.Placement = orient.stand(shape, edge, FLAT_TILT).multiply(owner.Placement)
     doc.recompute()
     expect(owner is container, "tilting a nested Pad moves the outermost container")
     tilted = global_shape(pad)
     expect(abs(tilted.BoundBox.ZMin) < d.TOLERANCE, "the nested part rests on the bed after the tilt")
 
     hanging = feature.overhangs_of(pad, doc)
-    expect(len(hanging) == 3, "tilted by %.0f degrees the stem and both arms overhang: %s" % (T_TILT, hanging))
+    expect(len(hanging) == 3, "tilted by %.0f degrees the stem and both arms overhang: %s" % (FLAT_TILT, hanging))
     stem = min(hanging, key=lambda name: tilted.getElement(name).BoundBox.ZMin)
     fins = feature.create(pad, stem)
     doc.recompute()
@@ -188,6 +199,97 @@ def lost_face(doc):
         doc.removeObject(obj.Name)
 
 
+def marks_without_face(doc):
+    """Fins that lose their face still mark the overhangs of the part as it is now."""
+    part = doc.addObject("Part::Feature", "MarkedPart")
+    box = Part.makeBox(*BOX)
+    edge = [e for e in box.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.Length == BOX[0]][0]
+
+    def standing(angle):
+        shape = box.copy()
+        shape.Placement = orient.tilt(box, edge, angle).multiply(shape.Placement)
+        return shape
+
+    part.Shape = standing(FLAT_TILT)
+    steep = [i for i, f in enumerate(part.Shape.Faces, 1) if -0.6 < f.normalAt(0, 0).z < -0.4][0]
+    fins = feature.create(part, "Face%d" % steep)
+    doc.recompute()
+    expect(fins.Overhangs, "tilted flat, the other face overhangs: %s" % fins.Overhangs)
+    part.Shape = standing(d.TILT_ANGLE)
+    fins.Base = (part, ["Face%d" % (len(part.Shape.Faces) + 1)])
+    doc.recompute()
+    expect(not fins.isValid() and fins.Overhangs == [],
+           "with its face lost the fins fail, and the marks follow the part: %s" % fins.Overhangs)
+    for obj in (fins, part):
+        doc.removeObject(obj.Name)
+
+
+def edit_fins(doc):
+    """Single fins are picked by a face, removed, brought back; the counter fin
+    is added and removed."""
+    part = doc.addObject("Part::Feature", "EditedPart")
+    part.Shape = tilted_cube()
+    fins = feature.create(part, face_name(part.Shape, lower_left_face(part.Shape)))
+    fins.FinPlacement = d.PLACEMENT_DISTRIBUTED
+    fins.FinCount = 3
+    doc.recompute()
+    expect(list(fins.FinTags) == ["main:1", "main:2", "main:3"], "each fin solid knows its fin: %s" % fins.FinTags)
+    middle = fins.Shape.Solids[1].Faces[0]
+    picked = [i for i, f in enumerate(fins.Shape.Faces, 1) if f.isSame(middle)][0]
+    expect(feature.fin_at(fins, "Face%d" % picked) == (feature.MAIN, 2), "a face picked on the middle fin finds it")
+    feature.remove_fin(fins, feature.MAIN, 2)
+    doc.recompute()
+    expect(fins.ResultFinCount == 2 and list(fins.FinTags) == ["main:1", "main:3"],
+           "the removed fin is gone, the others stay")
+    feature.reset_fins(fins)
+    doc.recompute()
+    expect(fins.ResultFinCount == 3, "removed fins come back")
+    from freecad.finsnap.i18n import translate
+    feature.remove_fin(fins, feature.MAIN, 2)
+    fins.FinCount = 2
+    doc.recompute()
+    expect(fins.ResultFinCount == 2 and not feature.removed(fins, feature.MAIN)
+           and translate("FinSnap", feature.NOTE_EDITS_DROPPED) in fins.Warnings,
+           "with another number of fins the removed ones come back, and a note says so")
+    fins.FinCount = 3
+    doc.recompute()
+    before = fins.Shape.Solids[0].BoundBox
+    feature.shift_fin(fins, feature.MAIN, 1, FIN_SHIFT)
+    feature.set_fin_height(fins, feature.MAIN, 3, fins.Shape.Solids[2].BoundBox.ZLength / 2)
+    doc.recompute()
+    after = fins.Shape.Solids[0].BoundBox
+    expect(fins.ResultFinCount == 3 and abs(after.Center.sub(before.Center).Length - FIN_SHIFT) < d.TOLERANCE,
+           "a fin moved by hand stands that far along the face")
+    expect(feature.edits(fins, feature.MAIN)[2].keys() == {3}, "a fin keeps a height of its own: %s"
+           % (feature.edits(fins, feature.MAIN),))
+    feature.shift_fin(fins, feature.MAIN, 1, -FIN_SHIFT)
+    expect(not feature.edits(fins, feature.MAIN)[1], "moved back to where it was planned, the shift is gone")
+    # A shift that no longer fits once the count changes is dropped with the others, not refused.
+    feature.shift_fin(fins, feature.MAIN, 2, fins.ResultThickness.Value * MANY_FIN_WIDTHS)
+    fins.FinCount = 2
+    doc.recompute()
+    expect(fins.ResultFinCount == 2 and feature.edits(fins, feature.MAIN) == ([], {}, {})
+           and translate("FinSnap", feature.NOTE_EDITS_DROPPED) in fins.Warnings,
+           "a fin moved onto its neighbour is dropped with the count, as the other changes are")
+    fins.FinCount = 3
+    doc.recompute()
+    fins.FinCount = 2
+    doc.recompute()
+    expect(feature.edits(fins, feature.MAIN) == ([], {}, {}),
+           "with another number of fins the heights of their own are dropped as well")
+    fins.FinCount = 3
+    doc.recompute()
+    feature.add_counter(fins)
+    doc.recompute()
+    expect(any(tag.startswith(feature.COUNTER) for tag in fins.FinTags), "a counter fin is added and tagged")
+    feature.remove_counter(fins)
+    doc.recompute()
+    expect(not fins.CounterFace and not any(tag.startswith(feature.COUNTER) for tag in fins.FinTags),
+           "the counter fin is removed")
+    for obj in (fins, part):
+        doc.removeObject(obj.Name)
+
+
 def saved_standard(doc):
     """The standard for new fins: saved values, built-in ones, and what does not fit."""
     expect(presets.standard() == FinParams(), "without a saved standard new fins start with the built-in values")
@@ -218,6 +320,94 @@ def saved_standard(doc):
         raise AssertionError("an invalid standard was saved")
     presets.reset()
     expect(presets.standard() == FinParams(), "factory settings bring back the built-in standard")
+
+
+def warnings_and_old_files(doc):
+    """Each warning names the fin it is about; a file from before a parameter
+    existed gets it with its built-in value."""
+    from freecad.finsnap.i18n import translate
+    cube = doc.addObject("Part::Feature", "WarnedCube")
+    cube.Shape = tilted_cube()
+    main_face = lower_left_face(cube.Shape)
+    fins = feature.create(cube, face_name(cube.Shape, main_face))
+    # Removing several fins at once, as the Delete key does.
+    feature.add_counter(fins)
+    doc.recompute()
+    every_main = [(feature.MAIN, n) for n in (1, 2, 3)]
+    expect(feature.remove_fins(fins, every_main + [(feature.COUNTER, 1)]) is True
+           and feature.edits(fins, feature.MAIN) == ([], {}, {}) and fins.CounterFace,
+           "removing every main fin changes nothing and asks for the object to be deleted")
+    expect(feature.remove_fins(fins, [(feature.MAIN, 2), (feature.MAIN, 2), (feature.COUNTER, 1)]) is False
+           and feature.removed(fins, feature.MAIN) == [2] and not fins.CounterFace,
+           "one main fin and the only counter fin: that fin left out, the counter fin dropped")
+    expect(feature.remove_fins(fins, []) is False and feature.removed(fins, feature.MAIN) == [2],
+           "nothing picked changes nothing")
+    feature.reset_fins(fins)
+    doc.recompute()
+    # Saved before the count was kept: changes stay, and a failing build says why.
+    feature.remove_fin(fins, feature.MAIN, 2)
+    fins.removeProperty(feature.EDITED_OF[feature.MAIN])
+    fins.FinCount = 2
+    doc.recompute()
+    expect(feature.removed(fins, feature.MAIN) == [2] and fins.ResultFinCount == 1,
+           "without the count they were made for, changes by hand stay")
+    feature.remove_fin(fins, feature.MAIN, 1)
+    fins.removeProperty(feature.EDITED_OF[feature.MAIN])
+    doc.recompute()
+    expect("every fin is removed" in fins.getStatusString() or
+           translate("FinSnap", "every fin is removed; delete the fins instead, or bring them back")
+           in fins.getStatusString(),
+           "without the count, a build that fails says why: %s" % fins.getStatusString())
+    fins.FinCount = 3
+    feature.reset_fins(fins)
+    feature.remove_fin(fins, feature.MAIN, 1)
+    fins.removeProperty(feature.EDITED_OF[feature.MAIN])
+    fins.addProperty("App::PropertyInteger", feature.REMOVED_OF[feature.MAIN])
+    setattr(fins, feature.REMOVED_OF[feature.MAIN], 3)
+    fins.Proxy.onDocumentRestored(fins)
+    expect(getattr(fins, feature.EDITED_OF[feature.MAIN], None) == 3
+           and feature.REMOVED_OF[feature.MAIN] not in fins.PropertiesList,
+           "a file from when fins could only be removed keeps the count they were removed from")
+    feature.reset_fins(fins)
+    doc.recompute()
+    feature.add_counter(fins)
+    # A gap this narrow makes the tines of both fins short, so both warn.
+    fins.Gap = SHORT_TINE_GAP
+    doc.recompute()
+    main_prefix = translate("FinSnap", "Main fin: %s") % ""
+    counter_prefix = translate("FinSnap", "Counter fin: %s") % ""
+    expect(any(w.startswith(main_prefix) for w in fins.Warnings)
+           and any(w.startswith(counter_prefix) for w in fins.Warnings),
+           "warnings say whether they are about the main or the counter fin: %s" % list(fins.Warnings))
+
+    fins.removeProperty("TineClearance")
+    fins.Proxy.onDocumentRestored(fins)
+    expect("TineClearance" in fins.PropertiesList and fins.TineClearance.Value == d.TINE_CLEARANCE,
+           "fins saved before the tine clearance existed get it, touching as before")
+
+
+def step_with_offset_curves():
+    """A pocket whose outline runs at a distance around an ellipse has edges on
+    offset curves. Written plainly, those faces do not come back from the STEP
+    file and the slicer drops the whole part; the export has to bring it back."""
+    rim = Part.Face(Part.Wire(Part.Ellipse(V(0, 0, 0), *POCKET_ELLIPSE).toShape())).makeOffset2D(POCKET_OFFSET)
+    block = Part.makeBox(*BLOCK, V(-BLOCK[0] / 2, -BLOCK[1] / 2, 0))
+    pocketed = block.cut(rim.extrude(V(0, 0, BLOCK[2])).translated(V(0, 0, BLOCK[2] - POCKET_DEPTH)))
+    expect(pocketed.isValid() and any(isinstance(e.Curve, Part.OffsetCurve) for e in pocketed.Edges),
+           "the pocketed block is a valid solid with edges on offset curves")
+    folder = tempfile.mkdtemp()
+    for meshed in (False, True):
+        if meshed:
+            # The 3MF export meshes the same shape first. On a PartDesign part
+            # with pockets through a chamfer that broke the STEP export; this
+            # block does not show it, so the case only guards the order.
+            export_3mf.write(os.path.join(folder, "pocketed.3mf"), [("pocketed", pocketed)])
+        path = os.path.join(folder, "pocketed.step")
+        export_step.write(path, [("pocketed", pocketed)])
+        back = Part.read(path)
+        after = ", also after a 3MF export" if meshed else ""
+        expect(len(back.Solids) == 1 and abs(back.Volume - pocketed.Volume) < STEP_VOLUME_TOLERANCE,
+               "the STEP export brings the pocketed block back whole%s" % after)
 
 
 def main():
@@ -253,7 +443,11 @@ def main():
     t_profile_in_part(doc)
     saved_standard(doc)
     lost_face(doc)
+    marks_without_face(doc)
+    edit_fins(doc)
     tapered_pad(doc)
+    warnings_and_old_files(doc)
+    step_with_offset_curves()
     print("all checks passed", file=sys.__stdout__)
 
 

@@ -15,12 +15,23 @@ INPUTS this has to withstand:
 
 Faces are named and measured here as well, so every module agrees on what
 "Face3" and "the middle of a face" mean.
+
+INPUTS this has to withstand (bounds()):
+  planar faces only                     ->  the same box as BoundBox
+  cylinder or cone turned off its axis  ->  the box touching the surface; BoundBox
+                                            reaches up to millimetres beyond it
+  single face or edge                   ->  its tight box
+  shape carrying a display mesh         ->  the same box: measured on the surfaces,
+                                            not on the mesh, which lies up to its
+                                            deflection off them
 """
 
 import Part
 
 from .i18n import translate
 
+# bounds() measures the surfaces themselves, never a mesh that may hang on them.
+USE_TRIANGULATION = False
 # Prefix of the face names FreeCAD uses in selections and links: "Face3".
 FACE_PREFIX = "Face"
 
@@ -39,6 +50,20 @@ def middle_of(face):
 def middle_normal(face):
     """The outward normal in the middle of `face`."""
     return face.normalAt(*middle_of(face))
+
+
+def bounds(shape):
+    """The box that touches `shape`. BoundBox only encloses the control points
+    of curved faces, so after a turn it can stand millimetres off a fillet: a
+    part would then float above the bed, and fins reach below it."""
+    return shape.optimalBoundingBox(USE_TRIANGULATION)
+
+
+def moved(shape, change):
+    """A copy of `shape` with the placement change `change` applied."""
+    result = shape.copy()
+    result.Placement = change.multiply(result.Placement)
+    return result
 
 
 def global_shape(obj):

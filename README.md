@@ -25,23 +25,27 @@ A part printed flat is weakest straight across its layers, and two of its faces 
 How much each effect matters depends on the material, the printer and the part.
 
 **Features:**
+- Quick fins: select an edge or a face, and the part is stood up with one fin in one step
 - Fins generated automatically under a selected face that leans over the bed
 - Two connection modes:
   - **separate**: fins are their own object, the tines only touch the part, no extrusion path runs from fin to part
   - **merged**: fins and part become one body, the tines are printed as one path with the part
 - Tine height and width in layers and beads, so the design follows the print profile
-- Fin height set by the highest tine, thickness grows with the height
-- One fin centred, two at the ends, two on the corners, or several distributed along the face
+- Fin height set by the highest tine that finds the face, 1 mm thick up to 100 mm of height and thicker above
+- Adjustable tine clearance, so the tines end short of the face and leave fainter marks
+- A face split by a groove across it is supported as one: the fin reaches over the groove to the piece beyond it
+- One fin centred, two at the ends, two on the corners, one on the left or right corner, or several distributed along the face
 - Oval, rectangular or no foot, narrowed automatically so neighbouring feet never touch
 - Counter fin on the opposite face, added with the fins or afterwards; the opposite face is found automatically
 - Every automatic value can be overridden by hand
+- Single fins removed by hand, and the counter fin added or removed, right in the task panel
 - Works on STEP and FreeCAD bodies; STL meshes are converted to solids first
-- 3MF export with every body as its own object, mesh fineness adjustable
+- 3MF export with every body as its own object, mesh fineness adjustable; STEP export with exact surfaces
 - English and German user interface
 
 ## How it works
 
-The fin's inner edge runs parallel to the supported face at a set gap. Horizontal tines bridge the gap and end exactly on the face. In the separate mode the slicer prints the fin and the part as two objects: the tine lies against the part and sticks to it, without an extrusion path crossing over.
+The fin's inner edge runs parallel to the supported face. Horizontal tines bridge the gap between them and end on the face, or the tine clearance short of it (see [Tine clearance](#tine-clearance)). In the separate mode the slicer prints the fin and the part as two objects: the tine lies against the part and sticks to it, without an extrusion path crossing over.
 
 ![Fin with foot and tines under a tilted part](docs/assets/fin_detail.png)
 
@@ -65,30 +69,41 @@ The folder differs by system and version; FreeCAD shows it under **Tools → Add
 
 The workbench adds one toolbar and a **FinSnap** menu with these commands, in the order they are usually used:
 
-| | Command | What it does | How to use it |
-|---|---|---|---|
-| <img src="freecad/finsnap/icons/tilt.svg" width="32" alt=""> | **Stand on edge** | Lays one face of the part onto the bed, turns the part about an edge of that face by the tilt angle and sets it back onto the bed, standing on that edge. Inside a Body, the whole Body is turned. | Select the edge and the face of that edge that is to lie on the bed, click the button and enter the angle (45 degrees by default). For an edge already on the bed, the edge alone is enough. A chamfer or a fillet selected alone is laid onto the bed and carries the part, without asking for an angle. Two faces selected alone, such as the two beside a fillet, stand the part on what joins them, both equally steep. |
-| <img src="freecad/finsnap/icons/lay_flat.svg" width="32" alt=""> | **Lay flat again** | Puts a part stood on an edge back as it lay before. Deleting the last fins of a part does the same. | Select the part or its fins and click the button. |
-| <img src="freecad/finsnap/icons/add_fins.svg" width="32" alt=""> | **Add fins** | Creates the fins under a face that leans over the bed and opens the task panel with automatic values. | Select the leaning face, click the button, adjust the values in the panel, which shows every change right away, and click **OK** to keep them. Select a second face on the opposite side as well to get a counter fin straight away. Double-click the fins in the tree to open the panel again. |
-| <img src="freecad/finsnap/icons/counter_fin.svg" width="32" alt=""> | **Add counter fin** | Adds a fin on the opposite side of existing fins, against tipping away, as large as the main fin. Fewer counter tines in the panel make it smaller. | Select the fins and click the button: the face leaning the other way is found automatically. To choose it yourself, select a face of the part as well. To remove the counter fin, clear its face in the property view. |
-| <img src="freecad/finsnap/icons/mesh_to_solid.svg" width="32" alt=""> | **Mesh to solid** | Turns an imported STL mesh into a solid with planar faces, so fins can be added to it. | Import the STL, select the mesh object and click the button. The mesh is hidden, the solid appears next to it. |
-| <img src="freecad/finsnap/icons/export_3mf.svg" width="32" alt=""> | **Export 3MF** | Writes a 3MF file for the slicer, every body as its own object, see [What the 3MF file contains](#what-the-3mf-file-contains). | Click the button with nothing selected to export all fins with their parts, or select what to export. Selecting the fins alone brings their part along. Set the mesh fineness, then choose the file. |
+| Command | What it does | How to use it |
+|---|---|---|
+| <img src="freecad/finsnap/icons/quick_fins.svg" width="32" alt=""><br>**Quick fins** | Stands the part up and adds one fin in the middle of a face in one step, then opens the task panel to adjust it; a counter fin, where wanted, is added there; Fin placement there spreads more fins along the face. | Select the edge the part is to stand on: it stands on it at 45 degrees (or on the right angle of its faces), and the fins go under the largest face leaning over the bed. Or select the face the fins are to support: the part is turned so that this face leans 45 degrees over the bed, standing on the longest edge of the face that works. To choose what it stands on, select one of the face's edges as well, or, after the face, a chamfer or fillet beside it to rest on. A chamfer or fillet alone, or the two faces beside a fillet, carry the part too, with the fins under the largest leaning face. To put fins under a chamfer itself, select it with one of its edges. |
+| <img src="freecad/finsnap/icons/tilt.svg" width="32" alt=""><br>**Stand on edge** | Lays one face of the part onto the bed, turns the part about an edge of that face by the tilt angle and sets it back onto the bed, standing on that edge. Inside a Body, the whole Body is turned. Afterwards the view looks along the edge from the side, so the tilt angle shows, and fits the part. | Select the edge and the face of that edge that is to lie on the bed, click the button and enter the angle (45 degrees by default). For an edge already on the bed, the edge alone is enough. So it is for an edge between two flat faces at a right angle: the part stands on it at 45 degrees, without asking for an angle. A chamfer or a fillet selected alone is laid onto the bed and carries the part, without asking for an angle. Two faces selected alone, such as the two beside a fillet, stand the part on what joins them, both equally steep. |
+| <img src="freecad/finsnap/icons/lay_flat.svg" width="32" alt=""><br>**Lay flat again** | Puts a part stood on an edge back as it lay before and shows it isometric. Deleting the last fins of a part does the same. | Select the part or its fins and click the button. If the part has fins, it asks whether to delete them. **No** keeps them, moved along with the part; they keep their last shape and are rebuilt once the part is moved again, by Stand on edge or by hand. While the part lies flat, its fins are left out of an export, and a message names them. |
+| <img src="freecad/finsnap/icons/add_fins.svg" width="32" alt=""><br>**Add fins** | Creates the fins under a face that leans over the bed and opens the task panel with automatic values. | Select the leaning face, click the button, adjust the values in the panel, which shows every change right away, and click **OK** to keep them. Select a second face on the opposite side as well to get a counter fin straight away. Double-click the fins in the tree to open the panel again. |
+| <img src="freecad/finsnap/icons/counter_fin.svg" width="32" alt=""><br>**Add counter fin** | Adds a fin on the opposite side of existing fins, against tipping away, as large as the main fin. Fewer counter tines in the panel make it smaller. | Select the fins and click the button: the face leaning the other way is found automatically. To choose it yourself, select a face of the part as well. To remove the counter fin, clear its face in the property view. |
+| <img src="freecad/finsnap/icons/mesh_to_solid.svg" width="32" alt=""><br>**Mesh to solid** | Turns an imported STL mesh into a solid with planar faces, so fins can be added to it. | Import the STL, select the mesh object and click the button. The mesh is hidden, the solid appears next to it. |
+| <img src="freecad/finsnap/icons/export_3mf.svg" width="32" alt=""><br>**Export 3MF** | Writes a 3MF file for the slicer, every body as its own object, see [What the 3MF file contains](#what-the-3mf-file-contains). | Click the button with nothing selected to export all fins with their parts, or select what to export. Selecting the fins alone brings their part along. Set the mesh fineness, then choose the file. |
+| <img src="freecad/finsnap/icons/export_step.svg" width="32" alt=""><br>**Export STEP** | Writes a STEP file with exact surfaces instead of a mesh, every body under its own name, see [STEP instead of 3MF](#step-instead-of-3mf). | Selection as with Export 3MF, then choose the file. In the slicer, split the object into objects. |
 
 Every button shows a tooltip with these explanations when the pointer rests on it.
 
 ## Usage
 
-1. Stand the part on an edge: select an edge of the part and the face of that edge that is to lie on the bed, then click **Stand on edge** (45 degrees by default). A part with a chamfered or rounded edge stands on it: select the chamfer or fillet alone, or the two faces beside it. Or orient the part yourself.
+For a quick start, select the edge the part is to stand on, or the face the fins are to support, and click **Quick fins**. The steps below do the same one at a time.
+
+1. Stand the part on an edge: select an edge of the part and the face of that edge that is to lie on the bed, then click **Stand on edge** (45 degrees by default). For an edge between two faces at a right angle, the edge alone is enough. Afterwards the view looks along the edge from the side, so the tilt angle shows. A part with a chamfered or rounded edge stands on it: select the chamfer or fillet alone, or the two faces beside it. Or orient the part yourself.
 2. Switch to the **FinSnap** workbench.
 3. Select the face that leans over the bed.
 4. Click **Add fins**. The task panel opens with automatic values.
 5. Enter the slicer settings of your print profile: nozzle diameter, bead width, layer height, first layer height.
 6. Adjust any value and confirm with **OK**. Every change shows in the 3D view right away. Fields that have no effect with the current choices are greyed out, and their tooltip says why. A field that differs from the standard for new fins is marked in orange, and the button beside it puts the standard back. **Save as standard** makes the current values the start of every new fin; **Factory settings** goes back to the built-in values. The letters next to the fields point to the side view and top view drawn in the panel.
 7. Check the overhangs: faces that lie flatter than 45 degrees over the bed and carry no fins are marked red and listed under the warnings of the fins. Add fins or a counter fin there, or plan support in the slicer. Stand on edge already selects such faces after the tilt.
-8. For a counter fin against tipping away, select the fins and click **Add counter fin**. The face leaning the other way is found automatically; select a face of the part as well to choose it yourself.
-9. Click **Export 3MF**. With nothing selected, all fins of the document are exported together with their parts; otherwise the selection is exported. Selecting the fins alone also brings their part along.
+8. For a counter fin against tipping away, select the fins and click **Add counter fin**. The face leaning the other way is found automatically; select a face of the part as well to choose it yourself. The task panel does the same with **Add counter fin** and **Remove counter fin** under **Edit fins**. To leave out a single fin, for example one over a hole, click it in the 3D view and press Delete, or **Remove selected fin** in the task panel. With the task panel open, two arrows sit on the upright outer edge of the first fin; click another fin to put them there. Drag them to move the fin along the face or to change its height; the fin follows, and where it cannot stand it is shown red. **Place on the face** and **Height** under **Edit fins** show the values; type one and press Enter to move the fin. The fins are see-through while editing, and tines that find no face are marked red. **Reset fins** undoes every change by hand.
+9. Click **Export 3MF**, or **Export STEP**. With nothing selected, all fins of the document are exported together with their parts; otherwise the selection is exported. Selecting the fins alone also brings their part along.
 
 An STL file is imported first, then turned into a solid with **Mesh to solid**. Fins can be added to its planar faces.
+
+**Mesh to solid** does in one step what takes three commands of the Part workbench (Shape From Mesh, Convert to Solid, Refine Shape): the triangles become a solid, and triangles lying in one plane are merged into one face again. What to expect:
+
+- **Planar faces** come back as single faces, and fins on them are the same as on the original part. Tested on a part exported as STL with 0.1 mm and 0.01 mm deviation: the fins under its main face matched those of the original in number, tines and height.
+- **Curved surfaces stay faceted**, in many small faces. That is enough for printing, but it is no clean round surface to model on, and fins are only added to planar faces anyway.
+- **Large meshes take time:** about 5 seconds for 6500 triangles; fine meshes with hundreds of thousands of triangles take much longer.
+- **The mesh has to be closed.** An open or broken mesh is refused with a message; repair it first, for example with Evaluate and Repair of the Mesh Design workbench.
 
 ## Slicing
 
@@ -104,6 +119,50 @@ An STL file is imported first, then turned into a solid with **Mesh to solid**. 
 - The tine height should be a whole number of layers of the print profile, otherwise a tine falls between two layers.
 - A gap that makes the tines shorter than about three quarters of a bead leaves them short of the face. FinSnap warns about this.
 - In the merged mode, set the seam position of the print profile to rear or random. Otherwise the slicer tends to place the seam where the tines join the part, which shows as a vertical line along the tines.
+
+### STEP instead of 3MF
+
+**Export STEP** is the second way into the slicer. It writes the exact surfaces instead of a triangle mesh, each body under its own name.
+
+PrusaSlicer loads a STEP file as **one object with a part per body**. In that state the slicer joins part and fins as in the merged mode. Split it before slicing: select the object and click **Split to objects** in the top toolbar (right-click menu: **Split → To objects**). Part and fins are then separate objects again, and the result is the same as with 3MF.
+
+Both ways were sliced and compared on a test part with a main fin and a counter fin: the same layers, the tines touching the part in the same layers, the same amount of filament to within 0.01 %. Which one to use:
+
+| | 3MF | STEP |
+|---|---|---|
+| Geometry | triangle mesh, curved surfaces within the mesh fineness | exact surfaces |
+| In PrusaSlicer | separate objects, after answering **No** to the question when opening | one object, **Split to objects** needed |
+| Use | the default | when a 3MF does not open as expected, or another program needs exact surfaces |
+
+FinSnap writes every body to STEP as NURBS surfaces. FreeCAD's own STEP export (File → Export) writes faces bounded by offset curves, as a pocket offset around an ellipse creates them, in a way that cannot be read back: the slicer then drops the whole part without a message. As NURBS the same surfaces come back whole.
+
+### Tine clearance
+
+With **Tine clearance** at 0, the tines touch the face, and a print shows faint marks where they stood. A clearance lets them end that far short of the face, measured along the face normal. The fin moves out by the same amount, so the tines keep their length; the **gap** stays the length of the tines across.
+
+```
+part face | clearance | gap (tines) | fin
+```
+
+Sliced in PrusaSlicer (part tilted 45 degrees, 0.45 mm beads, gap 0.25 mm), measured in the G-code between the edges of the beads:
+
+| Tine clearance | Tine to part in the print path |
+|---|---|
+| 0 | 0.000 mm (touching) |
+| 0.05 mm | 0.071 mm |
+| 0.10 mm | 0.142 mm |
+| 0.15 mm | 0.212 mm |
+| 0.20 mm | 0.283 mm |
+
+The slicer prints the tines exactly with the planned distance. Measured across the layer it is larger than the clearance itself, 1.41 times at 45 degrees, because the face leans.
+
+Whether a tine still holds the part across that distance depends on how far the bead swells while printing, which depends on material, temperature and speed. **Find the value with a test print:**
+
+1. Tilt a small test part, for example a 20 mm cube, add fins with the separate connection and the default gap.
+2. Make copies of fins and part with tine clearances of **0, 0.03, 0.05 and 0.08 mm** and print them with the profile you will use.
+3. For each one check: does the part stand without wobbling, and does the fin come off without force? Look at the marks the tines left on the face.
+4. Take the largest clearance that still holds the part. A bead swells by a few hundredths of a millimetre while printing; once the clearance is wider than that, the tine no longer reaches the face and the fin stops holding. Where that limit lies is not measured yet, which is what the test print is for.
+5. Save it with **Save as standard** in the panel, so new fins start with it.
 
 ## What the 3MF file contains
 
@@ -122,23 +181,24 @@ The file is a ZIP archive; the content above sits in `3D/3dmodel.model`. A slice
 |---|---|---|---|
 | Slicer | Nozzle diameter, bead width, layer height, first layer height | | Values of the print profile |
 | Connection | Connection | separate | separate or merged |
-| | Gap | 0.25 mm | Clearance between fin and face, along the face normal |
+| | Gap | 0.25 mm | Length of the tines across, between fin and the end of the tines, along the face normal |
+| | Tine clearance | 0 mm = touching | Distance from the end of the tines to the face, along the face normal; the fin moves out by as much. See [Tine clearance](#tine-clearance) |
 | Tines | Tine spacing | 5 mm | Vertical distance between tines, at least the tine height plus one layer |
 | | Tine first | 0 = on the top of the foot | Height of the lowest tine |
 | | Tine layers | 1 | Tine height in layers |
 | | Tine width beads | 1 | Tine width in beads |
 | | Tine count | 0 = as many as fit | Tines per fin |
-| Fin | Fin thickness | 0 = from height, at least 3 beads | Wall thickness |
-| | Fin height | 0 = top of the highest tine | Height of the fin. A lower value leaves out the tines above it; at most just below the top of the face |
+| Fin | Fin thickness | 0 = 1 mm up to 100 mm of height, 1 mm per 100 mm above, at least 2 beads | Wall thickness |
+| | Fin height | 0 = top of the highest tine that finds the face | Height of the fin. Tines over a recess are left out, and the fin ends at the highest tine left. A lower value leaves out the tines above it; at most just below the top of the face |
 | | Top width | 2 mm | Width of the flat top of the fin, instead of a tip |
-| Placement | Fin placement | auto | auto, centre, ends, corners, distributed. Corners puts a fin on each end of the face: each tine lies whole on the face and ends flush with its end, so the tine marks merge with the edges. The fin itself reaches a little past the end |
+| Placement | Fin placement | auto | auto, centre, ends, corners, left corner, right corner, distributed. Corners puts a fin on each end of the face: each tine lies whole on the face and ends flush with its end, so the tine marks merge with the edges. The fin itself reaches a little past the end. Left corner and right corner put one such fin on that end only, left and right as seen from outside, looking at the face |
 | | Fin count | 3 | Fins for distributed placement |
 | | End inset | 0.5 mm | Distance of the outer fins from the face ends |
 | | Face length per fin | 50 mm | Automatic placement adds one fin per this length |
 | Foot | Foot shape | oval | oval, rectangle, none |
 | | Foot thickness | 1 mm | Rounded to whole layers |
 | | Foot overhang | 0 mm | Reach past the straight outer end of the fin |
-| | Foot width ratio | 0.5 | Foot width as a share of its length |
+| | Foot width ratio | 0.2 | Foot width as a share of its length |
 | | Foot half width | 0 = from ratio | Half width of the foot |
 | Counter fin | Counter tine count | 0 = as many as the main fin | Tines of the counter fin; it only has to stop the part from tipping over, so it may be smaller |
 

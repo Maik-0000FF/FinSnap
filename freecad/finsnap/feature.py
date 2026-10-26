@@ -13,6 +13,7 @@ import Part
 
 from . import defaults as d
 from . import geometry
+from . import orient
 from . import overhang
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
@@ -23,6 +24,39 @@ TYPE_NAME = "FinSnap"
 # Result property listing the faces that overhang without fins; the view
 # provider marks them.
 OVERHANGS = "Overhangs"
+# Hidden marker on fins whose part was laid flat again with the fins kept:
+# they keep their last shape, moved along with the part, until it is moved again.
+LAID_FLAT = "LaidFlat"
+# Where the part was laid flat; moved from there, the fins are rebuilt.
+LAID_FLAT_AT = "LaidFlatAt"
+# The faces of the part the fins were last built under, so overhang marks leave
+# out exactly those.
+CARRIED = "CarriedFaces"
+# Fins removed by hand, by their number from the left seen from outside, for
+# the main fin and the counter fin; and which fin each solid of the shape is,
+# "main:2" or "counter:1", so a face picked in the 3D view finds its fin.
+REMOVED = {"main": "RemovedFins", "counter": "RemovedCounterFins"}
+FIN_TAGS = "FinTags"
+# How many fins the face was planned for at the last build.
+PLANNED = {"main": "PlannedFins", "counter": "PlannedCounterFins"}
+# Fins moved along the face and fins with a height of their own, by number: mm.
+SHIFTS = {"main": "FinShifts", "counter": "CounterFinShifts"}
+HEIGHTS = {"main": "FinHeights", "counter": "CounterFinHeights"}
+# How many fins the face was planned for when a fin of it was changed by hand,
+# and the name earlier versions kept it under, when fins could only be removed.
+EDITED_OF = {"main": "EditedFinsOf", "counter": "EditedCounterFinsOf"}
+REMOVED_OF = {"main": "RemovedFinsOf", "counter": "RemovedCounterFinsOf"}
+NOTE_EDITS_DROPPED = QT_TRANSLATE_NOOP(
+    "FinSnap", "The number of fins changed, so the fins changed by hand are as planned again: removed fins "
+    "are back, moved fins and fin heights of their own are undone.")
+MAIN, COUNTER = "main", "counter"
+# Said when a single fin is to be removed from fins merged into the part.
+NOTE_MERGED_SINGLE = QT_TRANSLATE_NOOP(
+    "FinSnap", "Single fins can be removed with the separate connection only; merged into the part they "
+    "have no body of their own. To delete all of them, select the fins in the tree.")
+NOTE_LAID_FLAT = QT_TRANSLATE_NOOP(
+    "FinSnap", "The part lies flat again: the fins keep their last shape until the part is moved, for example "
+    "stood on its edge again; then they are rebuilt.")
 
 GROUP_SLICER = QT_TRANSLATE_NOOP("App::Property", "Slicer")
 GROUP_CONNECTION = QT_TRANSLATE_NOOP("App::Property", "Connection")
@@ -41,7 +75,23 @@ CHOICE = "App::PropertyEnumeration"
 # Editor mode that hides a property in the property view.
 EDITOR_HIDDEN = 2
 
-Prop = namedtuple("Prop", "name kind group label tip field choices")
+# step: how far one turn of the mouse wheel or an arrow press changes the field;
+# None keeps the default of the field, one unit.
+Prop = namedtuple("Prop", "name kind group label tip field choices step", defaults=(None,))
+
+# Steps of the fields, each sized to what the value is: hundredths for the
+# print profile and the gap, whole millimetres only for the fin height.
+# STEP_LAYER: heights on the layer grid step by the layer height entered; a
+# value already on the grid steps to the next layer, and params rounds any
+# other value onto it.
+STEP_PROFILE = 0.05
+STEP_CLEARANCE = 0.01
+STEP_LAYER = "layer height"
+STEP_HALF = 0.5
+STEP_THICKNESS = 0.1
+STEP_HEIGHT = 1.0
+STEP_FACE_LENGTH = 5.0
+STEP_RATIO = 0.05
 
 # Short explanations shown at the top of each group in the task panel.
 GROUP_INFO = {
@@ -50,7 +100,8 @@ GROUP_INFO = {
         "are sized in beads and layers of this profile."),
     GROUP_CONNECTION: QT_TRANSLATE_NOOP(
         "FinSnap", "Separate keeps the fins a separate object that only touches the part and "
-        "breaks off cleanly. Merged prints fins and part as one body."),
+        "breaks off cleanly. Merged prints fins and part as one body. A tine clearance keeps the "
+        "ends of the tines that far from the face."),
     GROUP_TINES: QT_TRANSLATE_NOOP(
         "FinSnap", "Tines are the small horizontal contacts between fin and part. The highest "
         "tine sets the height of the fin."),
@@ -73,7 +124,7 @@ GROUP_INFO = {
 MARKS = {
     "Gap": "A", "TineSpacing": "B", "TineFirst": "C", "TineLayers": "D", "FinHeight": "E",
     "FinPlateau": "F", "FootThickness": "G", "FinThickness": "H", "EndInset": "I",
-    "FootHalfWidth": "J",
+    "FootHalfWidth": "J", "TineClearance": "K",
 }
 
 # Labels for the values of enumerations, as the task panel shows them.
@@ -84,6 +135,8 @@ CHOICE_LABELS = {
     d.PLACEMENT_CENTER: QT_TRANSLATE_NOOP("FinSnap", "one in the centre"),
     d.PLACEMENT_ENDS: QT_TRANSLATE_NOOP("FinSnap", "two at the ends"),
     d.PLACEMENT_CORNERS: QT_TRANSLATE_NOOP("FinSnap", "two on the corners"),
+    d.PLACEMENT_CORNER_LEFT: QT_TRANSLATE_NOOP("FinSnap", "one on the left corner"),
+    d.PLACEMENT_CORNER_RIGHT: QT_TRANSLATE_NOOP("FinSnap", "one on the right corner"),
     d.PLACEMENT_DISTRIBUTED: QT_TRANSLATE_NOOP("FinSnap", "distributed"),
     d.FOOT_ELLIPSE: QT_TRANSLATE_NOOP("FinSnap", "oval"),
     d.FOOT_RECTANGLE: QT_TRANSLATE_NOOP("FinSnap", "rectangle"),
@@ -95,19 +148,19 @@ PROPERTIES = (
     Prop("NozzleDiameter", LENGTH, GROUP_SLICER,
          QT_TRANSLATE_NOOP("FinSnap", "Nozzle diameter"),
          QT_TRANSLATE_NOOP("App::Property", "Nozzle diameter of the print profile"),
-         "nozzle_diameter", None),
+         "nozzle_diameter", None, STEP_PROFILE),
     Prop("BeadWidth", LENGTH, GROUP_SLICER,
          QT_TRANSLATE_NOOP("FinSnap", "Bead width"),
          QT_TRANSLATE_NOOP("App::Property", "Extrusion width of the outer perimeter"),
-         "bead_width", None),
+         "bead_width", None, STEP_PROFILE),
     Prop("LayerHeight", LENGTH, GROUP_SLICER,
          QT_TRANSLATE_NOOP("FinSnap", "Layer height"),
          QT_TRANSLATE_NOOP("App::Property", "Layer height of the print profile"),
-         "layer_height", None),
+         "layer_height", None, STEP_PROFILE),
     Prop("FirstLayerHeight", LENGTH, GROUP_SLICER,
          QT_TRANSLATE_NOOP("FinSnap", "First layer height"),
          QT_TRANSLATE_NOOP("App::Property", "Height of the first layer"),
-         "first_layer_height", None),
+         "first_layer_height", None, STEP_PROFILE),
     Prop("Connection", CHOICE, GROUP_CONNECTION,
          QT_TRANSLATE_NOOP("FinSnap", "Connection"),
          QT_TRANSLATE_NOOP("App::Property",
@@ -117,16 +170,23 @@ PROPERTIES = (
     Prop("Gap", LENGTH, GROUP_CONNECTION,
          QT_TRANSLATE_NOOP("FinSnap", "Gap"),
          QT_TRANSLATE_NOOP("App::Property", "Clearance between fin and face, along the face normal"),
-         "gap", None),
+         "gap", None, STEP_PROFILE),
+    Prop("TineClearance", LENGTH, GROUP_CONNECTION,
+         QT_TRANSLATE_NOOP("FinSnap", "Tine clearance"),
+         QT_TRANSLATE_NOOP("App::Property",
+                           "Distance between the end of a tine and the face, along the face normal; 0 = the "
+                           "tine touches the face. More leaves fainter marks, too much and the tine does not "
+                           "hold: find the value by a test print."),
+         "tine_clearance", None, STEP_CLEARANCE),
     Prop("TineSpacing", LENGTH, GROUP_TINES,
          QT_TRANSLATE_NOOP("FinSnap", "Tine spacing"),
          QT_TRANSLATE_NOOP("App::Property",
                            "Vertical distance between tines, at least the tine height plus one layer"),
-         "tine_spacing", None),
+         "tine_spacing", None, STEP_LAYER),
     Prop("TineFirst", LENGTH, GROUP_TINES,
          QT_TRANSLATE_NOOP("FinSnap", "Tine first"),
          QT_TRANSLATE_NOOP("App::Property", "Height of the lowest tine above the bed, 0 = on the top of the foot"),
-         "tine_first", None),
+         "tine_first", None, STEP_LAYER),
     Prop("TineLayers", INTEGER, GROUP_TINES,
          QT_TRANSLATE_NOOP("FinSnap", "Tine layers"),
          QT_TRANSLATE_NOOP("App::Property", "Tine height in layers"),
@@ -142,23 +202,25 @@ PROPERTIES = (
     Prop("FinThickness", LENGTH, GROUP_FIN,
          QT_TRANSLATE_NOOP("FinSnap", "Fin thickness"),
          QT_TRANSLATE_NOOP("App::Property", "Wall thickness of a fin, 0 = from its height"),
-         "fin_thickness", None),
+         "fin_thickness", None, STEP_THICKNESS),
     Prop("FinHeight", LENGTH, GROUP_FIN,
          QT_TRANSLATE_NOOP("FinSnap", "Fin height"),
          QT_TRANSLATE_NOOP("App::Property",
                            "Height of the fins, 0 = top of the highest tine. A lower value leaves out the "
                            "tines above it; the fins reach at most to just below the top of the face."),
-         "fin_height", None),
+         "fin_height", None, STEP_HEIGHT),
     Prop("FinPlateau", LENGTH, GROUP_FIN,
          QT_TRANSLATE_NOOP("FinSnap", "Top width"),
          QT_TRANSLATE_NOOP("App::Property", "Width of the flat top of a fin"),
-         "fin_plateau", None),
+         "fin_plateau", None, STEP_HALF),
     Prop("FinPlacement", CHOICE, GROUP_PLACEMENT,
          QT_TRANSLATE_NOOP("FinSnap", "Fin placement"),
          QT_TRANSLATE_NOOP("App::Property",
                            "auto: by face length; center: one fin; ends: two fins; corners: two fins "
                            "on the face ends, each tine whole on the face and flush with its end, so the "
                            "tine marks merge with the edges; the fin reaches a little past the end; "
+                           "left corner, right corner: one such fin on that end, left and right as seen "
+                           "from outside, looking at the face; "
                            "distributed: FinCount fins"),
          "placement", d.PLACEMENTS),
     Prop("FinCount", INTEGER, GROUP_PLACEMENT,
@@ -168,11 +230,11 @@ PROPERTIES = (
     Prop("EndInset", LENGTH, GROUP_PLACEMENT,
          QT_TRANSLATE_NOOP("FinSnap", "End inset"),
          QT_TRANSLATE_NOOP("App::Property", "Distance of the outer fins from the face ends"),
-         "end_inset", None),
+         "end_inset", None, STEP_HALF),
     Prop("FaceLengthPerFin", LENGTH, GROUP_PLACEMENT,
          QT_TRANSLATE_NOOP("FinSnap", "Face length per fin"),
          QT_TRANSLATE_NOOP("App::Property", "Automatic placement: one fin per this much face length"),
-         "face_length_per_fin", None),
+         "face_length_per_fin", None, STEP_FACE_LENGTH),
     Prop("FootShape", CHOICE, GROUP_FOOT,
          QT_TRANSLATE_NOOP("FinSnap", "Foot shape"),
          QT_TRANSLATE_NOOP("App::Property", "Shape of the foot on the bed"),
@@ -180,19 +242,19 @@ PROPERTIES = (
     Prop("FootThickness", LENGTH, GROUP_FOOT,
          QT_TRANSLATE_NOOP("FinSnap", "Foot thickness"),
          QT_TRANSLATE_NOOP("App::Property", "Height of the foot, rounded to whole layers"),
-         "foot_thickness", None),
+         "foot_thickness", None, STEP_LAYER),
     Prop("FootOverhang", LENGTH, GROUP_FOOT,
          QT_TRANSLATE_NOOP("FinSnap", "Foot overhang"),
          QT_TRANSLATE_NOOP("App::Property", "How far the foot reaches past the outer end of the fin"),
-         "foot_overhang", None),
+         "foot_overhang", None, STEP_HALF),
     Prop("FootWidthRatio", FLOAT, GROUP_FOOT,
          QT_TRANSLATE_NOOP("FinSnap", "Foot width ratio"),
          QT_TRANSLATE_NOOP("App::Property", "Foot width as a share of its length"),
-         "foot_width_ratio", None),
+         "foot_width_ratio", None, STEP_RATIO),
     Prop("FootHalfWidth", LENGTH, GROUP_FOOT,
          QT_TRANSLATE_NOOP("FinSnap", "Foot half width"),
          QT_TRANSLATE_NOOP("App::Property", "Half width of the foot, 0 = from FootWidthRatio"),
-         "foot_half_width", None),
+         "foot_half_width", None, STEP_HALF),
     Prop("CounterTineCount", INTEGER, GROUP_COUNTER,
          QT_TRANSLATE_NOOP("FinSnap", "Counter tine count"),
          QT_TRANSLATE_NOOP("App::Property",
@@ -235,6 +297,13 @@ def value_of(obj, name):
     return value.Value if hasattr(value, "Value") else value
 
 
+def add_property(obj, prop, value):
+    obj.addProperty(prop.kind, prop.name, prop.group, prop.tip)
+    if prop.choices:
+        setattr(obj, prop.name, list(prop.choices))
+    setattr(obj, prop.name, value)
+
+
 def add_properties(obj):
     defaults = presets.standard()
     obj.addProperty("App::PropertyLinkSubGlobal", "Base", GROUP_SOURCE,
@@ -248,10 +317,7 @@ def add_properties(obj):
                     QT_TRANSLATE_NOOP("App::Property",
                                       "Optional face on the opposite side for a small counter fin"))
     for prop in PROPERTIES:
-        obj.addProperty(prop.kind, prop.name, prop.group, prop.tip)
-        if prop.choices:
-            setattr(obj, prop.name, list(prop.choices))
-        setattr(obj, prop.name, getattr(defaults, prop.field))
+        add_property(obj, prop, getattr(defaults, prop.field))
 
     results = (("ResultHeight", LENGTH), ("ResultThickness", LENGTH), ("ResultFinCount", INTEGER))
     for name, kind in results:
@@ -279,20 +345,40 @@ def _face(link):
 
 
 def _supported(part_obj, document):
-    """Faces of `part_obj` that carry fins of any FinSnap object in `document`."""
+    """Faces of `part_obj` that carry fins of any FinSnap object in `document`:
+    the faces the fins were last built under, or else the faces they link to.
+
+    INPUTS this has to withstand:
+      fins built, faces recorded            ->  the recorded faces
+      fins never built, or built nothing    ->  the faces they link to
+      a face the part no longer has         ->  left out
+      part edited, faces numbered anew      ->  recorded names of other fins may
+                                                point to other faces until those are
+                                                rebuilt; FreeCAD renames links, not
+                                                these names. Accepted: it lasts one
+                                                recompute and only with several fin
+                                                objects on one part
+    """
     shape = global_shape(part_obj)
-    faces = []
+    names = []
     for other in document.Objects:
         if not is_fins(other):
             continue
+        carried = getattr(other, CARRIED, [])
+        if carried and other.Base and other.Base[0] is part_obj:
+            names.extend(carried)
+            continue
         for link in (other.Base, other.CounterFace):
             if link and link[0] is part_obj and link[1]:
-                try:
-                    faces.append(shape.getElement(link[1][0]))
-                except (ValueError, IndexError, Part.OCCError):
-                    # The part changed and lost this face; those fins report
-                    # it themselves, the others are still built.
-                    continue
+                names.append(link[1][0])
+    faces = []
+    for name in names:
+        try:
+            faces.append(shape.getElement(name))
+        except (ValueError, IndexError, Part.OCCError):
+            # The part changed and lost this face; those fins report it
+            # themselves, the others are still built.
+            continue
     return shape, faces
 
 
@@ -308,31 +394,70 @@ class FinSnapFeature:
         add_properties(obj)
 
     def execute(self, obj):
+        # The last build, for the arrows of an open task panel only: a failed
+        # build leaves none, and without a panel none is kept.
+        self.results = {}
         if not obj.Base:
             return
-        # The overhangs depend on the part alone; set first, so the marks
-        # follow the part even when the fins below cannot be built.
+        if still_laid_flat(obj):
+            # The fins keep the shape they were moved to; the face they belong
+            # to no longer leans over the bed until the part stands again.
+            setattr(obj, OVERHANGS, [])
+            obj.Warnings = [translate("FinSnap", NOTE_LAID_FLAT)]
+            return
+        p = params_of(obj)
+        try:
+            notes = []
+            part, build_main = builder(obj, MAIN)
+            result = build_keeping_edits(obj, MAIN, build_main, notes)
+            counter = None
+            if obj.CounterFace:
+                counter_part, build_counter = builder(obj, COUNTER)
+                counter = build_keeping_edits(obj, COUNTER, build_counter, notes)
+        except Exception:
+            # Built nothing, the fins carry no face; the overhang marks still
+            # follow the part.
+            hidden_property(obj, CARRIED, "App::PropertyStringList")
+            setattr(obj, CARRIED, [])
+            setattr(obj, OVERHANGS, overhangs_of(obj.Base[0], obj.Document))
+            raise
+        # Named on the shape each face was found on: the counter face comes from
+        # a shape of its own, even of the same part.
+        carried = [face_name_of(part, f) for f in result.carried]
+        if counter is not None and obj.CounterFace[0] is obj.Base[0]:
+            carried += [face_name_of(counter_part, f) for f in counter.carried]
+        hidden_property(obj, CARRIED, "App::PropertyStringList")
+        setattr(obj, CARRIED, carried)
+        if getattr(self, "editing", False):
+            self.results = {MAIN: result, COUNTER: counter}
+        for which, built in ((MAIN, result), (COUNTER, counter)):
+            if built is not None:
+                hidden_property(obj, PLANNED[which], "App::PropertyInteger")
+                setattr(obj, PLANNED[which], built.planned)
         overhanging = overhangs_of(obj.Base[0], obj.Document)
         setattr(obj, OVERHANGS, overhanging)
-        p = params_of(obj)
-        part, face = _face(obj.Base)
-        result = geometry.build(part, face, p)
         shapes = [result.fins]
-        warnings = list(result.warnings)
-        if obj.CounterFace:
-            counter_part, counter_face = _face(obj.CounterFace)
-            counter = geometry.build(counter_part, counter_face, p,
-                                     tine_count=p.counter_tine_count or None)
+        # Each warning says which fin it is about, the main or the counter fin.
+        warnings = [translate("FinSnap", "Main fin: %s") % w for w in result.warnings]
+        if counter is not None:
             shapes.append(counter.fins)
-            warnings += counter.warnings
+            warnings += [translate("FinSnap", "Counter fin: %s") % w for w in counter.warnings]
+        warnings += notes
         if overhanging:
             warnings.append(translate("FinSnap", "%d faces of %s overhang flatter than %.0f degrees without fins: %s")
                             % (len(overhanging), obj.Base[0].Label, d.OVERHANG_ANGLE, ", ".join(overhanging)))
 
+        tags = ["%s:%d" % (MAIN, n) for n in result.numbers]
+        if counter is not None:
+            tags += ["%s:%d" % (COUNTER, n) for n in counter.numbers]
         if p.connection == d.CONNECTION_MERGED:
             obj.Shape = geometry.merged(part, *shapes)
+            tags = []
         else:
             obj.Shape = Part.makeCompound(shapes)
+        # One solid per fin, in the order built; otherwise picking cannot tell them apart.
+        hidden_property(obj, FIN_TAGS, "App::PropertyStringList")
+        setattr(obj, FIN_TAGS, tags if len(tags) == len(obj.Shape.Solids) else [])
         obj.ResultHeight = result.height
         obj.ResultThickness = result.thickness
         obj.ResultFinCount = len(result.positions)
@@ -344,6 +469,19 @@ class FinSnapFeature:
         obj.Proxy = self
         if OVERHANGS not in obj.PropertiesList:
             add_overhangs(obj)
+        # Saved when fins could only be removed: the count is taken over.
+        for which, old in REMOVED_OF.items():
+            if old in obj.PropertiesList:
+                if EDITED_OF[which] not in obj.PropertiesList:
+                    hidden_property(obj, EDITED_OF[which], "App::PropertyInteger")
+                    setattr(obj, EDITED_OF[which], getattr(obj, old))
+                obj.removeProperty(old)
+        # A parameter added in a later version starts with its built-in value,
+        # so fins saved before it keep their shape.
+        built_in = FinParams()
+        for prop in PROPERTIES:
+            if prop.name not in obj.PropertiesList:
+                add_property(obj, prop, getattr(built_in, prop.field))
         # A file saved by an older version knows fewer choices; offer the
         # current ones and keep the value.
         for prop in PROPERTIES:
@@ -404,3 +542,250 @@ def create(base, face_ref, counter=None):
         if other is not obj and is_fins(other) and other.Base and other.Base[0] is base:
             other.touch()
     return obj
+
+
+def fins_of(owner, document):
+    """The FinSnap objects of the part whose outermost container is `owner`."""
+    return [obj for obj in document.Objects
+            if is_fins(obj) and obj.Base and outermost(obj.Base[0]) is owner]
+
+
+def hidden_property(obj, name, kind):
+    """Add the hidden result property `name` to `obj` if it has none yet."""
+    if name not in obj.PropertiesList:
+        obj.addProperty(kind, name, GROUP_RESULT, "", 1)
+        obj.setEditorMode(name, EDITOR_HIDDEN)
+
+
+def is_laid_flat(obj):
+    return bool(getattr(obj, LAID_FLAT, False))
+
+
+def keep_laid_flat(obj, change):
+    """Move the fins `obj` by the placement change their part makes when it is
+    laid flat, and keep that shape until the part is moved again.
+
+    INPUTS this has to withstand:
+      fins of a standing part               ->  moved with it, marked, not rebuilt
+      fins already laid flat                ->  moved once more, still marked
+    """
+    hidden_property(obj, LAID_FLAT, "App::PropertyBool")
+    hidden_property(obj, LAID_FLAT_AT, "App::PropertyPlacement")
+    owner = outermost(obj.Base[0])
+    shape = obj.Shape.copy()
+    shape.Placement = change.multiply(shape.Placement)
+    setattr(obj, LAID_FLAT_AT, change.multiply(owner.Placement))
+    setattr(obj, LAID_FLAT, True)
+    obj.Shape = shape
+
+
+def still_laid_flat(obj):
+    """Whether the part of the fins `obj` still lies where it was laid flat. Moved
+    since, by Stand on edge or by hand, the fins are rebuilt: the marker is cleared.
+
+    INPUTS this has to withstand:
+      fins never laid flat                  ->  False
+      part where it was laid flat           ->  True, marker kept
+      part moved since (stood again, or its
+        placement edited)                   ->  False, marker cleared
+    """
+    if not is_laid_flat(obj):
+        return False
+    if outermost(obj.Base[0]).Placement.isSame(getattr(obj, LAID_FLAT_AT), d.TOLERANCE):
+        return True
+    setattr(obj, LAID_FLAT, False)
+    return False
+
+
+def builder(obj, which):
+    """How the fins of `which` are built: (the global shape of the part they
+    stand under, a function of (left_out, shifts, heights) returning the
+    FinResult), or None for a counter fin not added. The faces in the result
+    belong to that shape. execute() builds with the changes by hand stored;
+    the task panel tries changes with it before they are made."""
+    p = params_of(obj)
+    if which == MAIN:
+        part, face = _face(obj.Base)
+        return part, lambda left, shifts, heights: geometry.build(part, face, p, left_out=left, shifts=shifts,
+                                                                  heights=heights)
+    if not obj.CounterFace:
+        return None
+    part, face = _face(obj.CounterFace)
+    return part, lambda left, shifts, heights: geometry.build(
+        part, face, p, tine_count=p.counter_tine_count or None, left_out=left, shifts=shifts, heights=heights)
+
+
+def build_keeping_edits(obj, which, build_fn, notes):
+    """Build the fins of `which` with the changes made by hand, as long as the
+    face is planned for as many fins as when they were made.
+
+    build_fn(left_out, shifts, heights) builds the fins. The numbers of the fins
+    changed by hand count along the face; with another count, from another
+    placement or a longer face, they would name other fins, so every change by
+    hand is dropped and a note says so.
+
+    INPUTS this has to withstand:
+      nothing changed by hand               ->  built as usual
+      fins removed, moved or set to a
+        height, same count                  ->  built with those changes
+      changes made, count changed           ->  built as planned, changes dropped, note
+      every fin removed, same count         ->  FinError: every fin is removed
+      every fin removed, count changed      ->  built as planned, changes dropped, note
+      changes made, count they were made
+        for unknown                         ->  built with them; a FinError passed on
+      FinError for any other reason         ->  passed on
+    """
+    left, shifts, heights = edits(obj, which)
+    changed = bool(left or shifts or heights)
+    made_for = getattr(obj, EDITED_OF[which], None)
+    result, failure = None, None
+    try:
+        result = build_fn(left, shifts, heights)
+        planned = result.planned
+    except geometry.FinError as error:
+        failure, planned = error, getattr(error, "planned", None)
+    stale = changed and made_for is not None and planned is not None and planned != made_for
+    if not stale:
+        if failure is not None:
+            raise failure
+        return result
+    reset_fins(obj, which)
+    notes.append(translate("FinSnap", NOTE_EDITS_DROPPED))
+    return build_fn((), {}, {})
+
+
+def fin_at(obj, sub):
+    """(MAIN or COUNTER, number) of the fin a picked sub-element `sub` ("Face12")
+    of `obj` belongs to, or None.
+
+    INPUTS this has to withstand:
+      face or edge of one fin               ->  that fin
+      fins merged into the part             ->  None: the fins are no solids of their own
+      name the shape does not have          ->  None
+    """
+    tags = list(getattr(obj, FIN_TAGS, []))
+    try:
+        element = obj.Shape.getElement(sub)
+    except (ValueError, IndexError, Part.OCCError):
+        return None
+    for tag, solid in zip(tags, obj.Shape.Solids):
+        if any(element.isSame(candidate) for candidate in solid.Faces + solid.Edges):
+            which, number = tag.split(":")
+            return which, int(number)
+    return None
+
+
+def edits(obj, which):
+    """The changes by hand to the fins of `which` (MAIN or COUNTER): the numbers
+    removed, and by number the shift along the face and the own height, in mm."""
+    def numbers_to_mm(name):
+        return {int(number): float(mm) for number, mm in dict(getattr(obj, name, {})).items()}
+    return (list(getattr(obj, REMOVED[which], [])), numbers_to_mm(SHIFTS[which]),
+            numbers_to_mm(HEIGHTS[which]))
+
+
+def removed(obj, which):
+    """Numbers of the fins of `which` removed by hand."""
+    return edits(obj, which)[0]
+
+
+def _edited(obj, which):
+    """Note how many fins the face was planned for when a change by hand was made."""
+    hidden_property(obj, EDITED_OF[which], "App::PropertyInteger")
+    setattr(obj, EDITED_OF[which], getattr(obj, PLANNED[which], 0))
+
+
+def remove_fin(obj, which, number):
+    """Leave fin `number` of `which` out from now on."""
+    hidden_property(obj, REMOVED[which], "App::PropertyIntegerList")
+    setattr(obj, REMOVED[which], sorted(set(removed(obj, which)) | {number}))
+    _edited(obj, which)
+
+
+def _set_mm(obj, name, number, mm):
+    hidden_property(obj, name, "App::PropertyMap")
+    values = dict(getattr(obj, name))
+    if mm is None:
+        values.pop(str(number), None)
+    else:
+        values[str(number)] = repr(round(mm, d.LENGTH_DECIMALS))
+    setattr(obj, name, values)
+
+
+def shift_fin(obj, which, number, by):
+    """Move fin `number` of `which` along the face by `by` mm more (to the right, seen from outside)."""
+    set_fin_shift(obj, which, number, edits(obj, which)[1].get(number, 0.0) + by)
+
+
+def set_fin_shift(obj, which, number, mm):
+    """Move fin `number` of `which` `mm` along the face from where it was planned."""
+    _set_mm(obj, SHIFTS[which], number, None if abs(mm) < d.TOLERANCE else mm)
+    _edited(obj, which)
+
+
+def set_fin_height(obj, which, number, mm):
+    """Give fin `number` of `which` a height of its own, or with None the height of the others again."""
+    _set_mm(obj, HEIGHTS[which], number, mm)
+    _edited(obj, which)
+
+
+def reset_fins(obj, which=None):
+    """Undo every change by hand: removed fins come back, moved fins and fins
+    with a height of their own return to where and how high they were planned.
+    Both fins without `which`."""
+    for one in (which,) if which else (MAIN, COUNTER):
+        if REMOVED[one] in obj.PropertiesList:
+            setattr(obj, REMOVED[one], [])
+        for name in (SHIFTS[one], HEIGHTS[one]):
+            if name in obj.PropertiesList:
+                setattr(obj, name, {})
+
+
+def remove_fins(obj, fins):
+    """Leave out the fins in `fins`, as (MAIN or COUNTER, number). True when
+    that would leave no main fin: then nothing is changed, and the caller
+    deletes the fins object instead.
+
+    INPUTS this has to withstand (fins built: main 1, 2, 3 and counter 1):
+      main 2                                ->  main 2 left out, False
+      main 1, 2, 3                          ->  nothing changed, True
+      main 1, 2, 3 and counter 1            ->  nothing changed, True
+      counter 1, the only counter fin       ->  counter fin dropped, False
+      main 2 and counter 1                  ->  main 2 left out, counter fin dropped, False
+      a fin twice                           ->  as once
+      empty                                 ->  nothing changed, False
+    """
+    picked = set(fins)
+    built = {MAIN: set(), COUNTER: set()}
+    for tag in getattr(obj, FIN_TAGS, []):
+        which, number = tag.split(":")
+        built[which].add(int(number))
+    gone = {which: {n for w, n in picked if w == which} for which in built}
+    if built[MAIN] and built[MAIN] <= gone[MAIN]:
+        return True
+    if built[COUNTER] and built[COUNTER] <= gone[COUNTER]:
+        remove_counter(obj)
+        gone[COUNTER] = set()
+    for which, numbers in gone.items():
+        for number in sorted(numbers):
+            remove_fin(obj, which, number)
+    return False
+
+
+def prepare_delete(obj):
+    """Before the fins object `obj` is deleted: the last fins of a part stood
+    on an edge lay it flat again; other fins of it are built anew."""
+    if not obj.Base:
+        return
+    owner = outermost(obj.Base[0])
+    others = [o for o in fins_of(owner, obj.Document) if o is not obj]
+    if not others:
+        orient.lay_back(owner)
+    for other in others:
+        other.touch()
+
+
+def remove_counter(obj):
+    """Drop the counter fin, and its changes by hand with it."""
+    obj.CounterFace = None
+    reset_fins(obj, COUNTER)
