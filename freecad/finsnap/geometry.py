@@ -74,6 +74,7 @@ INPUTS this has to withstand (build()):
 """
 
 import math
+from collections import namedtuple
 from dataclasses import dataclass, field, replace
 
 import FreeCAD as App
@@ -635,3 +636,83 @@ def stand_for_face(shape, number, p, angle_deg):
             continue
         return change, edge
     raise FinError(translate("FinSnap", "the part cannot stand so that this face takes fins"))
+
+
+# How Quick fins stands a part: the placement change, the face (number from 0)
+# the fins go under, and the edge or the two faces the part stands on, for the
+# side view.
+QuickPlan = namedtuple("QuickPlan", "change number edge beside")
+
+
+def quick_plan(shape, edges, faces, p, angle_deg):
+    """How to stand `shape` for Quick fins and which face takes the fins.
+
+    edges and faces are the selected elements of `shape` as (element, number
+    from 0), faces in the order selected: the first face takes the fins, a
+    second one is what the part rests on.
+
+    SELECTIONS this has to withstand:
+      one edge                              ->  stood on it: angle_deg on the bed, or the
+                                                right angle of its faces; fins under the
+                                                largest leaning face that takes them
+      one edge off the bed, faces not at a
+        right angle                         ->  FinError pointing to Stand on edge
+      one planar face                       ->  it leans angle_deg over the bed, on its
+                                                longest edge that works; fins under it
+      one rounded face (fillet)             ->  the part rests on it; fins under the
+                                                largest leaning face
+      a face and one of its edges           ->  stood on that edge, the face leaning
+                                                angle_deg; fins under it
+      a face and an edge of another face    ->  FinError
+      a face, then a chamfer or fillet
+        beside it, or any rounded face      ->  the part rests on the second; fins under
+                                                the first
+      two faces apart (beside a fillet)     ->  the part rests on what joins them; fins
+                                                under the largest leaning face
+      fins that do not fit under the face
+        chosen                              ->  FinError
+      anything else                         ->  FinError
+    """
+    if len(edges) == 1 and not faces:
+        edge = edges[0][0]
+        if not orient.on_bed(shape, edge) and orient.right_angle_faces(shape, edge) is None:
+            raise FinError(translate("FinSnap", "This edge does not lie on the bed, and its faces do not meet at a "
+                                                "right angle. Use Stand on edge with the edge and the face that "
+                                                "is to lie on the bed, then Add fins."))
+        angle = angle_deg if orient.on_bed(shape, edge) else orient.RIGHT_ANGLE_TILT
+        change = orient.stand(shape, edge, angle)
+        return QuickPlan(change, best_face(moved(shape, change), p), edge, ())
+    if not edges and len(faces) == 1:
+        face, number = faces[0]
+        if face.findPlane() is None:
+            change = orient.lay_flat(shape, face)
+            return QuickPlan(change, best_face(moved(shape, change), p), None, ())
+        change, edge = stand_for_face(shape, number, p, angle_deg)
+        return QuickPlan(change, number, edge, ())
+    if len(edges) == 1 and len(faces) == 1:
+        (edge, _), (face, number) = edges[0], faces[0]
+        if not any(edge.isSame(candidate) for candidate in face.Edges):
+            raise FinError(translate("FinSnap", "the edge is not an edge of the selected face"))
+        change = orient.stand(shape, edge, angle_deg, face)
+        return _checked(shape, QuickPlan(change, number, edge, ()), p)
+    if not edges and len(faces) == 2:
+        (first, number), (second, _) = faces
+        beside = any(edge.isSame(other) for edge in first.Edges for other in second.Edges)
+        if beside or second.findPlane() is None:
+            change = orient.lay_flat(shape, second)
+            return _checked(shape, QuickPlan(change, number, None, ()), p)
+        change = orient.rest_between(shape, first, second)
+        return QuickPlan(change, best_face(moved(shape, change), p), None, (first, second))
+    raise FinError(translate("FinSnap", "Select an edge or a face, a face and the edge or the chamfer or fillet "
+                                        "it is to stand on, or the two faces beside a fillet."))
+
+
+def _checked(shape, plan, p):
+    """The plan, once the fins fit under its face; FinError naming why if not."""
+    standing = moved(shape, plan.change)
+    try:
+        build(standing, standing.Faces[plan.number], p)
+    except FinError as error:
+        raise FinError(translate("FinSnap", "the fins do not fit under the selected face standing this way: %s")
+                       % error)
+    return plan

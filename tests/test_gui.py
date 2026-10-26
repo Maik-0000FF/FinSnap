@@ -36,6 +36,7 @@ UP = App.Vector(0, 0, 1)
 VIEW_SETTINGS = "User parameter:BaseApp/Preferences/View"
 NAVIGATION_ANIMATIONS = "UseNavigationAnimations"
 CHAMFER = 3.0
+QUICK_LENGTH = 80.0  # a face this long gets two fins with automatic placement
 
 
 def load_workbench():
@@ -288,7 +289,8 @@ def main():
     # Quick fins: an edge stands the part and adds fins; a face turns the part
     # so that face leans over the bed. Both open the panel.
     quick = doc.addObject("Part::Feature", "Quick")
-    quick.Shape = Part.makeBox(30, 20, 20)
+    # Long enough that automatic placement would put two fins under it.
+    quick.Shape = Part.makeBox(QUICK_LENGTH, 20, 20)
     on_bed = [i for i, e in enumerate(quick.Shape.Edges, 1)
               if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
     facing = [i for i, f in enumerate(quick.Shape.Faces, 1) if f.BoundBox.YMax < d.TOLERANCE][0]
@@ -297,8 +299,10 @@ def main():
         Gui.runCommand("FinSnap_QuickFins")
         made = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick]
         expect(not messages and len(made) == 1 and made[0].isValid() and made[0].Shape.Solids
-               and made[0].CounterFace and not quick.Placement.isIdentity() and Gui.Control.activeDialog(),
-               "Quick fins on %s stands the part, adds fins with a counter fin and opens the panel: %s"
+               and made[0].CounterFace and made[0].ResultFinCount == 1
+               and made[0].FinPlacement == d.PLACEMENT_CENTER and not quick.Placement.isIdentity()
+               and Gui.Control.activeDialog(),
+               "Quick fins on %s stands the part, adds one fin with a counter fin and opens the panel: %s"
                % (what, messages))
         if what == "a face":
             leaning = quick.Shape.Faces[facing - 1].normalAt(0, 0).z
@@ -308,6 +312,20 @@ def main():
         quick.Placement = App.Placement()
         doc.recompute()
     doc.removeObject(quick.Name)
+    # An edge off the bed between faces not at a right angle: Quick fins points to Stand on edge.
+    beveled = doc.addObject("Part::Feature", "Beveled")
+    plain_box = Part.makeBox(30, 20, 20)
+    top_front = [e for e in plain_box.Edges if e.BoundBox.ZMin > 20 - d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE]
+    beveled.Shape = plain_box.makeChamfer(CHAMFER, top_front)
+    slanted = [i for i, e in enumerate(beveled.Shape.Edges, 1) if e.BoundBox.YMax < d.TOLERANCE
+               and e.BoundBox.ZLength < d.TOLERANCE and abs(e.BoundBox.ZMin - (20 - CHAMFER)) < d.TOLERANCE][0]
+    select(beveled, "Edge%d" % slanted)
+    Gui.runCommand("FinSnap_QuickFins")
+    stand_on_edge = App.Qt.translate("FinSnap", "Stand on edge")
+    expect(len(messages) == 1 and stand_on_edge in messages[0] and beveled.Placement.isIdentity()
+           and not Gui.Control.activeDialog(), "an edge Quick fins cannot use points to Stand on edge: %s" % messages)
+    del messages[:]
+    doc.removeObject(beveled.Name)
 
     # Add fins: selecting a leaning face creates the object and opens the panel.
     cube = doc.addObject("Part::Feature", "Cube")

@@ -561,6 +561,48 @@ def check_quick_fins():
         raise AssertionError("a round face was stood on an edge")
 
 
+def check_quick_plan():
+    """Quick fins with the tilt edge, a chamfer or a fillet chosen."""
+    p = FinParams()
+    box = Part.makeBox(30, 20, 20)
+    front = [i for i, f in enumerate(box.Faces) if f.BoundBox.YMax < d.TOLERANCE][0]
+    short = [e for e in box.Faces[front].Edges if abs(e.Length - 20) < d.TOLERANCE][0]
+    plan = geometry.quick_plan(box, [(short, None)], [(box.Faces[front], front)], p, d.TILT_ANGLE)
+    stood = moved(box, plan.change)
+    on_it = [e for e in stood.Edges if abs(e.Length - 20) < d.TOLERANCE and e.BoundBox.ZMax < d.TOLERANCE]
+    expect(plan.number == front and on_it and abs(stood.Faces[front].normalAt(0, 0).z + math.sqrt(0.5)) < 1e-6,
+           "a face with one of its edges stands on that edge, the face leaning 45 degrees")
+    other = [e for e in box.Edges if not any(e.isSame(x) for x in box.Faces[front].Edges)][0]
+    try:
+        geometry.quick_plan(box, [(other, None)], [(box.Faces[front], front)], p, d.TILT_ANGLE)
+    except geometry.FinError as error:
+        expect("not an edge" in str(error), "an edge of another face is refused: %s" % error)
+    else:
+        raise AssertionError("an edge of another face was taken")
+
+    bottom_front = [e for e in box.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE]
+    chamfered = box.makeChamfer(EDGE_ROUND, bottom_front)
+    side = [i for i, f in enumerate(chamfered.Faces) if f.BoundBox.YMax < d.TOLERANCE and f.BoundBox.ZLength > 10][0]
+    bevel = [i for i, f in enumerate(chamfered.Faces) if abs(f.normalAt(0, 0).z + math.sqrt(0.5)) < 1e-6][0]
+    plan = geometry.quick_plan(chamfered, [], [(chamfered.Faces[side], side), (chamfered.Faces[bevel], bevel)],
+                               p, d.TILT_ANGLE)
+    resting = moved(chamfered, plan.change)
+    expect(plan.number == side and abs(resting.Faces[bevel].normalAt(0, 0).z + 1) < 1e-6,
+           "a face, then a chamfer beside it: the part rests on the chamfer, fins under the face")
+
+    filleted = box.makeFillet(EDGE_ROUND, bottom_front)
+    fillet = [i for i, f in enumerate(filleted.Faces) if f.findPlane() is None][0]
+    plan = geometry.quick_plan(filleted, [], [(filleted.Faces[fillet], fillet)], p, d.TILT_ANGLE)
+    expect(abs(resting_height(moved(filleted, plan.change))) < d.TOLERANCE and plan.number != fillet,
+           "a fillet alone carries the part, the fins go under a leaning face")
+    beside = [i for i, f in enumerate(filleted.Faces) if f.findPlane() is not None
+              and any(e.isSame(x) for e in f.Edges for x in filleted.Faces[fillet].Edges)
+              and abs(f.normalAt(0, 0).x) < d.TOLERANCE]
+    plan = geometry.quick_plan(filleted, [], [(filleted.Faces[i], i) for i in beside], p, d.TILT_ANGLE)
+    expect(len(plan.beside) == 2 and abs(resting_height(moved(filleted, plan.change))) < d.TOLERANCE,
+           "the two faces beside a fillet carry the part")
+
+
 def check_recesses(cube, face):
     """Tines over a recess or a hole in the face are left out with a warning;
     a fin none of whose tines finds the face is left out as well."""
@@ -753,6 +795,7 @@ def main():
     check_shortened(cube, face)
     check_split_face()
     check_quick_fins()
+    check_quick_plan()
     print("all checks passed", file=sys.__stdout__)
 
 
