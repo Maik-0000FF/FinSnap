@@ -528,7 +528,7 @@ def add_counter(obj, base=None, face_ref=None):
         face_ref = face_name_of(shape, found)
     # Changes by hand to a counter fin on another face would name other fins.
     if obj.CounterFace != (base, [face_ref]):
-        _forget_face(obj, COUNTER)
+        reset_fins(obj, COUNTER)
     obj.CounterFace = (base, [face_ref])
     return face_ref
 
@@ -745,15 +745,6 @@ def reset_fins(obj, which=None):
                 setattr(obj, name, {})
 
 
-def _forget_face(obj, which):
-    """Undo the changes by hand to the fins of `which` and forget the counts of
-    the face they stood on, before they go on another face."""
-    reset_fins(obj, which)
-    for name in (EDITED_OF[which], PLANNED[which]):
-        if name in obj.PropertiesList:
-            obj.removeProperty(name)
-
-
 def remove_fins(obj, fins):
     """Leave out the fins in `fins`, as (MAIN or COUNTER, number). True when
     that would leave no main fin: then nothing is changed, and the caller
@@ -801,4 +792,4 @@ def prepare_delete(obj):
 def remove_counter(obj):
     """Drop the counter fin, and its changes by hand with it."""
     obj.CounterFace = None
-    _forget_face(obj, COUNTER)
+    reset_fins(obj, COUNTER)

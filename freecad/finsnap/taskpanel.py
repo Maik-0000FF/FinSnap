@@ -413,7 +413,7 @@ class FinSnapTaskPanel:
             self.delete_all()
 
     def close(self):
-        """Close the panel as it is, before the fins object goes."""
+        """Close the panel as it is: on OK, on Cancel, or before the fins object goes."""
         self.timer.stop()
         self.release_handles()
         Gui.Control.closeDialog()
@@ -724,24 +724,24 @@ class FinSnapTaskPanel:
         except ValueError as error:
             self.refuse(error)
             return False
-        self.release_handles()
-        Gui.Control.closeDialog()
-        self.leave_edit()
+        self.close()
         App.ActiveDocument.recompute()
         return True
 
     def reject(self):
-        self.timer.stop()
-        self.release_handles()
-        Gui.Control.closeDialog()
-        self.leave_edit()
+        self.close()
         if self.created:
-            # One step on the undo stack, after the one that made the fins.
+            # One step on the undo stack, after the one that made the fins;
+            # a failure in between leaves no transaction open for the next action.
             doc = self.obj.Document
             doc.openTransaction(translate("FinSnap", "Cancel fins"))
-            doc.removeObject(self.obj.Name)
-            if self.on_cancel is not None:
-                self.on_cancel()
+            try:
+                doc.removeObject(self.obj.Name)
+                if self.on_cancel is not None:
+                    self.on_cancel()
+            except Exception:
+                doc.abortTransaction()
+                raise
             doc.commitTransaction()
             doc.recompute()
         else:

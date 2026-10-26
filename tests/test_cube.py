@@ -515,6 +515,23 @@ def check_split_face():
            and any("runs into the part" in w for w in alone.warnings),
            "fins that cannot reach over the groove stand under the selected face alone, and say why")
 
+    # A change by hand that does not fit over the groove is refused; built
+    # under the face alone instead, a drag would change the faces carried.
+    def refusing_by_hand(part, face, support, p, tine_count, left_out, shifts, heights):
+        if support is not face:
+            raise geometry.HandEditError("fin 2 would pass fin 3")
+        return reaching(part, face, support, p, tine_count, left_out, shifts, heights)
+
+    geometry._build = refusing_by_hand
+    try:
+        geometry.build(standing, lower, FinParams())
+    except geometry.HandEditError as error:
+        expect("would pass" in str(error), "a change by hand that does not fit over the groove is refused")
+    else:
+        raise AssertionError("a change by hand refused over the groove was built under the face alone")
+    finally:
+        geometry._build = reaching
+
 
     # Pieces beside each other along the face are faces of their own: the legs of
     # a U profile, the halves beside an upright slot. The fin stays under the
@@ -664,7 +681,8 @@ def check_moved_fins(cube, face):
     try:
         geometry.build(cube, face, three, shifts={1: 2 * gap})
     except geometry.FinError as error:
-        expect("would pass" in str(error), "a fin moved past its neighbour is refused: %s" % error)
+        expect("would pass" in str(error) and isinstance(error, geometry.HandEditError),
+               "a fin moved past its neighbour is refused as a change by hand: %s" % error)
     else:
         raise AssertionError("a fin was moved past its neighbour")
     low = whole.tine_z[0] + FinParams().tine_height

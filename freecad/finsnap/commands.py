@@ -414,14 +414,17 @@ class LayFlat:
             if answer == QtWidgets.QMessageBox.Cancel:
                 return
             delete = answer == QtWidgets.QMessageBox.Yes
+        # A task panel open on the fins closes first, deleted or kept, and
+        # before the transaction, so its own steps stay apart from this one.
+        for owner in owners:
+            for fins in feature.fins_of(owner, doc):
+                proxy = getattr(fins.ViewObject, "Proxy", None)
+                if isinstance(proxy, ViewProviderFinSnap):
+                    proxy.close_panel()
         doc.openTransaction(translate("FinSnap", "Lay flat again"))
         for owner in owners:
             change = orient.back_to_flat(owner)
             for fins in feature.fins_of(owner, doc):
-                # A task panel open on them closes first, deleted or kept.
-                proxy = getattr(fins.ViewObject, "Proxy", None)
-                if isinstance(proxy, ViewProviderFinSnap):
-                    proxy.close_panel()
                 if delete:
                     doc.removeObject(fins.Name)
                 else:

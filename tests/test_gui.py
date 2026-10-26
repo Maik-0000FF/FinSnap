@@ -640,6 +640,9 @@ def main():
         handles_module.Handles = real_handles
     expect(opened is False and messages and "no 3D view" in messages[-1] and not Gui.Control.activeDialog(),
            "without a 3D view no panel opens, and a message says why: %s" % messages)
+    no_view_text = "No 3D view of %s is open to edit the fins in."
+    expect(App.Qt.translate("FinSnap", no_view_text) != no_view_text,
+           "the message without a 3D view is translated")
     del messages[:]
     expect(lined.ViewObject.Proxy.onDelete(lined.ViewObject, ["Vertex1"]) is False
            and lined.Name in [o.Name for o in doc.Objects], "a pick that is no fin deletes nothing")

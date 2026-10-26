@@ -290,9 +290,8 @@ def edit_fins(doc):
     feature.add_counter(fins)
     feature.shift_fin(fins, feature.COUNTER, 1, FIN_SHIFT)
     feature.add_counter(fins, part, fins.Base[1][0])
-    expect(feature.edits(fins, feature.COUNTER) == ([], {}, {})
-           and feature.EDITED_OF[feature.COUNTER] not in fins.PropertiesList,
-           "a counter fin moved to another face starts without changes by hand, or their count")
+    expect(feature.edits(fins, feature.COUNTER) == ([], {}, {}),
+           "a counter fin moved to another face starts without changes by hand")
     feature.remove_counter(fins)
     doc.recompute()
     for obj in (fins, part):
