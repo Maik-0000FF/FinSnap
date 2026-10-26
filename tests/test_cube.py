@@ -36,6 +36,7 @@ WIDE_BEAD = 0.9       # two of them are thicker than the 1 mm base
 GROOVE_DEPTH = 2.0     # a groove across the front of a box, splitting it
 GROOVE_WIDTH = 2.0
 GROOVE_FROM = 8.0
+WIDE_BOX = 60.0          # long enough for a U profile with legs of a third each
 UP = V(0, 0, 1)
 BOX_SIDE = 20.0
 EDGE_ROUND = 3.0       # size of the chamfer or radius of the fillet on a box edge
@@ -493,6 +494,43 @@ def check_split_face():
     hanging = overhang.overhangs(standing, supported=carried)
     expect(not any(standing.Faces[n - 1].isSame(upper) for n in hanging),
            "the face above the groove counts as supported")
+
+    # Where fins over the groove would run into the part, they stand under the
+    # selected face alone and carry only that one.
+    reaching = geometry._build
+
+    def running_into_part(part, face, support, p, tine_count):
+        if support is not face:
+            raise geometry.FinError("runs into the part")
+        return reaching(part, face, support, p, tine_count)
+
+    geometry._build = running_into_part
+    try:
+        alone = geometry.build(standing, lower, FinParams())
+    finally:
+        geometry._build = reaching
+    expect(len(alone.carried) == 1 and alone.carried[0].isSame(lower) and max(alone.tine_z) < upper.BoundBox.ZMin,
+           "fins that cannot reach over the groove stand under the selected face alone")
+
+    # Pieces beside each other along the face are faces of their own: the legs of
+    # a U profile, the halves beside an upright slot. The fin stays under the
+    # selected one, as without any other face in the plane.
+    wide = Part.makeBox(WIDE_BOX, 20, 20)
+    for name, cutter in (("U profile", Part.makeBox(WIDE_BOX / 3, 10, 20, V(WIDE_BOX / 3, 0, 0))),
+                         ("upright slot", Part.makeBox(GROOVE_WIDTH, GROOVE_DEPTH, 20,
+                                                       V(WIDE_BOX / 2, 0, 0)))):
+        cut = wide.cut(cutter)
+        bottom = max((e for e in cut.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE),
+                     key=lambda e: e.Length)
+        stood = moved(cut, orient.tilt(cut, bottom, d.TILT_ANGLE))
+        side = [f for f in stood.Faces if f.findPlane() is not None
+                and abs(f.normalAt(0, 0).z + math.sqrt(0.5)) < 1e-6 and f.normalAt(0, 0).y < -0.5]
+        chosen = min(side, key=lambda f: f.BoundBox.XMin)
+        alone = geometry.frame_of(stood, chosen)
+        built = geometry.build(stood, chosen, FinParams())
+        expect(len(geometry.support_of(stood, chosen).Faces) == 1
+               and all(alone.along_min - d.TOLERANCE <= t <= alone.along_max for t in built.positions),
+               "%s: the fin stays under the selected face" % name)
 
 
 def check_recesses(cube, face):

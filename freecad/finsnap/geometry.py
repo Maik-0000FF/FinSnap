@@ -62,6 +62,8 @@ INPUTS this has to withstand (build()):
   face split by a groove into faces of
     its own in one plane                ->  one support: the fin reaches over the
                                             gap, tines over it left out, warning
+  fins over the groove would run into the
+    part higher up                      ->  fins under the selected face alone
   every tine of every fin over a recess ->  FinError
   fin overlaps the part (separate mode) ->  FinError
   tine shorter than TINE_MIN_LENGTH_BEADS
@@ -128,20 +130,50 @@ class FinResult:
     positions: list
     foot_half_width: float
     warnings: list = field(default_factory=list)
+    # The faces the fins stand under: the selected one, and the pieces beyond a
+    # groove across it when the fins reach over it.
+    carried: list = field(default_factory=list)
 
 
 def support_of(part, face):
-    """The face and every other planar face of `part` in its plane, as one shape.
+    """The face and the faces of `part` above and below it in its plane, as one shape.
 
-    A groove or slot running across a face splits it, in FreeCAD, into faces of
-    their own; the fin supports them all and reaches over the gap.
+    A groove running across a face splits it, in FreeCAD, into faces of their
+    own; the fin reaches over the gap and supports them all. Only faces that
+    overlap the selected one along the face count: pieces beside it, the legs
+    of a U profile or the halves beside an upright slot, are faces of their own
+    that the fin does not stand under.
+
+    INPUTS this has to withstand:
+      no other face in its plane            ->  the face itself
+      groove across the face                ->  the pieces above and below, as one
+      upright slot, U profile (pieces side
+        by side along the face)             ->  the face itself
+      groove across and slot beside         ->  the pieces above and below only
+      face without a lean (flat or upright) ->  the face itself; frame_of() refuses it
     """
     normal = middle_normal(face)
+    horizontal = V(normal.x, normal.y, 0)
+    if horizontal.Length < d.MIN_NORMAL_COMPONENT:
+        return face
+    along = UP.cross(horizontal.normalize())
+
+    def span(candidate):
+        ts = [vertex.Point.dot(along) for vertex in candidate.Vertexes]
+        return min(ts), max(ts)
+
+    low, high = span(face)
     c = normal.dot(face.Vertexes[0].Point)
-    pieces = [face] + [other for other in part.Faces
-                       if not other.isSame(face) and other.findPlane() is not None
-                       and middle_normal(other).dot(normal) > 1 - d.TOLERANCE
-                       and abs(normal.dot(other.Vertexes[0].Point) - c) < d.TOLERANCE]
+    pieces = [face]
+    for other in part.Faces:
+        if other.isSame(face) or other.findPlane() is None:
+            continue
+        in_plane = abs(normal.dot(other.Vertexes[0].Point) - c) <= d.TOLERANCE
+        if middle_normal(other).dot(normal) < 1 - d.TOLERANCE or not in_plane:
+            continue
+        other_low, other_high = span(other)
+        if other_low < high - d.TOLERANCE and other_high > low + d.TOLERANCE:
+            pieces.append(other)
     return face if len(pieces) == 1 else Part.makeCompound(pieces)
 
 
@@ -418,10 +450,24 @@ def check(p, part, fins, bodies):
 
 
 def build(part, face, p, tine_count=None):
-    """Fins under `face` of `part`, and under the faces in its plane. tine_count
-    overrides p.tine_count (counter fin)."""
+    """Fins under `face` of `part`, reaching over a groove to the pieces beyond
+    it. tine_count overrides p.tine_count (counter fin).
+
+    The fins over a groove are taller, and where the part reaches out in front
+    of the face higher up they would run into it. Then they stand under the
+    selected face alone, as they did before pieces were carried along.
+    """
     p.validate()
     support = support_of(part, face)
+    if support is not face:
+        try:
+            return _build(part, face, support, p, tine_count)
+        except FinError:
+            pass
+    return _build(part, face, face, p, tine_count)
+
+
+def _build(part, face, support, p, tine_count):
     frame = frame_of(part, face, support)
     count = p.tine_count if tine_count is None else tine_count
     all_z, height = tine_heights(p, frame, count)
@@ -502,7 +548,7 @@ def build(part, face, p, tine_count=None):
 
     return FinResult(fins=fins, bodies=bodies, tines=all_tines, height=max(fin_heights),
                      thickness=thickness, tine_z=tine_z, positions=built,
-                     foot_half_width=half_foot, warnings=warnings)
+                     foot_half_width=half_foot, warnings=warnings, carried=support.Faces)
 
 
 def merged(part, *fin_shapes):
