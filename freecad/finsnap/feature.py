@@ -394,6 +394,9 @@ class FinSnapFeature:
         add_properties(obj)
 
     def execute(self, obj):
+        # The last build, for the arrows of an open task panel only: a failed
+        # build leaves none, and without a panel none is kept.
+        self.results = {}
         if not obj.Base:
             return
         if still_laid_flat(obj):
@@ -425,8 +428,8 @@ class FinSnapFeature:
             carried += [face_name_of(counter_part, f) for f in counter.carried]
         hidden_property(obj, CARRIED, "App::PropertyStringList")
         setattr(obj, CARRIED, carried)
-        # Kept for the handles of the task panel, never saved.
-        self.results = {MAIN: result, COUNTER: counter}
+        if getattr(self, "editing", False):
+            self.results = {MAIN: result, COUNTER: counter}
         for which, built in ((MAIN, result), (COUNTER, counter)):
             if built is not None:
                 hidden_property(obj, PLANNED[which], "App::PropertyInteger")

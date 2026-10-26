@@ -55,6 +55,8 @@ AXIS_COLORS = {"x": ("AxisXColor", 0xCC3333FF), "y": ("AxisYColor", 0x33CC33FF),
                "z": ("AxisZColor", 0x3333CCFF)}
 HELD_COLOR = (1.0, 1.0, 0.0)
 BYTE = 255
+# The type of FreeCAD's 3D views among the views of a document.
+VIEW_3D = "Gui::View3DInventor"
 # A Coin translate dragger moves along its own x axis.
 DRAGGER_AXIS = coin.SbVec3f(1, 0, 0)
 
@@ -128,6 +130,15 @@ class Handles:
     """
 
     def __init__(self, vobj, on_start, on_move, on_done):
+        # The 3D view of the document; the active view may be a drawing page
+        # or a spreadsheet. Found first, so nothing is changed without one.
+        gui_doc = Gui.getDocument(vobj.Object.Document)
+        view = gui_doc.ActiveView
+        if not hasattr(view, "getViewer"):
+            views = gui_doc.mdiViewsOfType(VIEW_3D)
+            if not views:
+                raise RuntimeError("no 3D view of %s is open" % vobj.Object.Document.Label)
+            view = views[0]
         self.vobj = vobj
         self.on_start, self.on_move, self.on_done = on_start, on_move, on_done
         # How the object looked before, put back by remove().
@@ -135,7 +146,6 @@ class Handles:
         vobj.Transparency = round(PREVIEW_TRANSPARENCY * PERCENT)
         self.tint(True)
 
-        view = Gui.getDocument(vobj.Object.Document).ActiveView
         self.view = view
         self.callbacks = []
         self.root = coin.SoSeparator()

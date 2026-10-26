@@ -39,6 +39,7 @@ CHAMFER = 3.0
 QUICK_LENGTH = 80.0  # a face this long gets two fins with automatic placement
 THICK_LAYER = 0.3  # a layer height other than the standard, to see the steps follow
 FIN_SHIFT = 1.5  # how far a handle moves a fin along the face, in mm
+TOO_MANY_FINS = 50  # more fins than the face takes, so the build fails
 AXIS_Z_RGB = (0.2, 0.2, 0.8)  # FreeCAD's standard colour of the z axis
 COLOR_TOLERANCE = 0.01
 
@@ -575,7 +576,19 @@ def main():
     moving.fin_fields[handles.ALONG].setValue(shown)
     moving.field_entered(handles.ALONG)
     expect(feature.edits(lined, feature.MAIN) == ([], {}, {}), "a field left as it is shows, changes nothing")
+    # A drag that started on no fin is passed over, without a jump or an error.
+    moving.drag_base = {}
+    moving.handle_moved(handles.UP, FIN_SHIFT)
+    moving.finish_drag(handles.UP, FIN_SHIFT)
+    expect(feature.edits(lined, feature.MAIN) == ([], {}, {}), "a drag that never started on a fin changes nothing")
+    # A build that fails leaves no old result for the arrows.
+    lined.FinCount = TOO_MANY_FINS
+    lined.recompute()
+    expect(not lined.Proxy.results, "a failed build leaves no old result behind")
+    lined.FinCount = 3
+    lined.recompute()
     moving.reject()
+    expect(not lined.Proxy.results and not lined.Proxy.editing, "without a panel, no build is kept")
     expect(feature.edits(lined, feature.MAIN) == ([], {}, {})
            and moving.handles.arrows.whichChild.getValue() == coin.SO_SWITCH_NONE,
            "Cancel undoes the moves and takes the handles away")
@@ -587,6 +600,24 @@ def main():
     lined.ViewObject.Proxy.unsetEdit(lined.ViewObject)
     expect(leaving.released and lined.ViewObject.Transparency == look[1],
            "leaving edit mode another way takes the arrows away and gives the fins their look back")
+    # Another task dialog open: double click opens no fins panel and changes nothing.
+    blocker = FinSnapTaskPanel(lined)
+    blocker.release_handles()
+    Gui.Control.showDialog(blocker)
+    expect(lined.ViewObject.Proxy.setEdit(lined.ViewObject) is False and lined.ViewObject.Transparency == look[1],
+           "with another task dialog open no panel opens, and the fins keep their look")
+    commands._edit_new(lined)
+    expect(not getattr(lined.ViewObject.Proxy, "created", False),
+           "fins opened while another dialog is open are not taken as just made")
+    Gui.Control.closeDialog()
+    expect(lined.ViewObject.Proxy.onDelete(lined.ViewObject, ["Vertex1"]) is False
+           and lined.Name in [o.Name for o in doc.Objects], "a pick that is no fin deletes nothing")
+    # The whole object deleted in the tree while its panel is open: the panel closes first.
+    open_panel = FinSnapTaskPanel(lined)
+    lined.ViewObject.Proxy.panel = open_panel
+    expect(lined.ViewObject.Proxy.onDelete(lined.ViewObject, []) is True and open_panel.released,
+           "deleting the object with its panel open closes the panel first")
+    lined.ViewObject.Proxy.panel = None
     # The Delete key on every fin: the object goes as a whole, as from the tree.
     every = [face_of_fin(i) for i in range(len(lined.Shape.Solids))]
     expect(lined.ViewObject.Proxy.onDelete(lined.ViewObject, every) is True and lined.FinTags,

@@ -195,6 +195,8 @@ class FinSnapTaskPanel:
         # True while the panel fills the fields of the fin, not the user.
         self.filling_fields = False
         self.handles = handles.Handles(obj.ViewObject, self.handle_started, self.handle_moved, self.handle_done)
+        # The fins keep their last build for the arrows while the panel is open.
+        obj.Proxy.editing = True
         Gui.Selection.addObserver(self)
         self.form.setWindowTitle("%s (%s)" % (translate("FinSnap", "FinSnap parameters"), application()))
         layout = QtWidgets.QVBoxLayout(self.form)
@@ -408,12 +410,16 @@ class FinSnapTaskPanel:
         if answer == QtWidgets.QMessageBox.Yes:
             self.delete_all()
 
-    def delete_all(self):
-        """Close the panel and delete the fins object, as deleting it in the tree does."""
+    def close(self):
+        """Close the panel as it is, before the fins object goes."""
         self.timer.stop()
         self.release_handles()
         Gui.Control.closeDialog()
         self.leave_edit()
+
+    def delete_all(self):
+        """Close the panel and delete the fins object, as deleting it in the tree does."""
+        self.close()
         doc = self.obj.Document
         doc.openTransaction(translate("FinSnap", "Delete fins"))
         feature.prepare_delete(self.obj)
@@ -584,6 +590,8 @@ class FinSnapTaskPanel:
     def handle_started(self, kind):
         """An arrow grabbed: note where the fin stands and what it has by hand;
         the drag starts from there."""
+        # Nothing of an earlier drag carries over; without a fin the drag is passed over.
+        self.drag_base, self.drag_own, self.drag_values = {}, {}, {}
         if self.handled_result() is None:
             return
         which, number = self.handled
@@ -593,6 +601,8 @@ class FinSnapTaskPanel:
         self.drag_values = self.fin_values()
 
     def handle_moved(self, kind, mm):
+        if kind not in self.drag_base:
+            return
         self.dragged = (kind, mm)
         self.show_fin_values({kind: self.drag_values[kind] + mm})
         self.drag_timer.start()
@@ -612,7 +622,7 @@ class FinSnapTaskPanel:
         """While an arrow is held, the fins are built with the fin where the
         arrow is. Where it cannot stand, it stays at its last place, and a red
         preview shows it where the arrow is."""
-        if self.dragged is None or self.handled_result() is None:
+        if self.dragged is None or self.handled_result() is None or self.dragged[0] not in self.drag_base:
             return
         kind, mm = self.dragged
         if self.drag_to(kind, mm):
@@ -636,7 +646,8 @@ class FinSnapTaskPanel:
         """An arrow let go: the fin goes where it is, or stays at its last place
         where it could stand; the arrows return onto it, and its field takes
         the keyboard, so a value can be typed right away."""
-        if self.handled_result() is None:
+        if self.handled_result() is None or kind not in self.drag_base:
+            self.place_handles()
             return
         self.drag_to(kind, mm)
         self.handles.clear_preview()
@@ -668,6 +679,8 @@ class FinSnapTaskPanel:
         self.drag_timer.stop()
         Gui.Selection.removeObserver(self)
         self.handles.remove()
+        self.obj.Proxy.editing = False
+        self.obj.Proxy.results = {}
 
     def leave_edit(self):
         """Leave edit mode once the panel is closed, as FreeCAD's own panels do."""

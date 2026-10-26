@@ -520,6 +520,14 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     frame = replace(frame, along_min=low, along_max=high)
     positions = positions_for(p, frame, thickness)
 
+    def refused(message):
+        """A FinError that says how many fins the face is planned for: with
+        another count, changes by hand name other fins, and the caller drops
+        them instead of refusing."""
+        error = FinError(message)
+        error.planned = len(positions)
+        return error
+
     s_from, s_to = foot_span(p, frame, height)
     # Fins moved along the face by hand stay clear of their neighbours and in
     # their order: the numbers count from the left, also after a move.
@@ -527,10 +535,10 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     standing = [(starts[number], number) for number in sorted(starts) if number not in left_out]
     for (first, one), (second, other) in zip(standing, standing[1:]):
         if second < first:
-            raise FinError(translate("FinSnap", "fin %d would pass fin %d; a fin stays between its neighbours")
+            raise refused(translate("FinSnap", "fin %d would pass fin %d; a fin stays between its neighbours")
                            % (one, other))
         if second - first < thickness + d.FOOT_CLEARANCE - d.TOLERANCE:
-            raise FinError(translate("FinSnap", "fins %d and %d stand %.2f mm apart, closer than %.2f mm")
+            raise refused(translate("FinSnap", "fins %d and %d stand %.2f mm apart, closer than %.2f mm")
                            % (one, other, second - first, thickness + d.FOOT_CLEARANCE))
     half_foot = foot_half_width_for(p, (s_to - s_from) / 2, thickness, [t0 for t0, _ in standing])
     room = frame.face_top_z - frame.bed_z - d.FACE_TOP_MARGIN
@@ -552,11 +560,11 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         # A fin height set by hand for this fin alone: tines above it are left out.
         own = heights.get(number)
         if own is not None and own > room + d.TOLERANCE:
-            raise FinError(translate("FinSnap", "fin %d is %.2f mm high, above the face (%.2f mm)")
+            raise refused(translate("FinSnap", "fin %d is %.2f mm high, above the face (%.2f mm)")
                            % (number, own, room))
         candidate_z = [z for z in tine_z if own is None or z + p.tine_height <= own + d.TOLERANCE]
         if not candidate_z:
-            raise FinError(translate("FinSnap", "fin %d is lower than its first tine") % number)
+            raise refused(translate("FinSnap", "fin %d is lower than its first tine") % number)
         start = tine_start(p, t0, thickness)
         # A tine wholly or partly over a recess or a hole in the face would hang
         # free there; it is left out, and a fin without any tine left with it.
@@ -587,12 +595,9 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         # and fusing them pairwise fails on that edge.
         pieces.append(body.multiFuse(kept).removeSplitter())
     if all(number in left_out for number in range(1, len(positions) + 1)):
-        error = FinError(translate("FinSnap", "every fin is removed; delete the fins instead, or bring them back"))
-        # The caller compares it with the count the fins were removed from.
-        error.planned = len(positions)
-        raise error
+        raise refused(translate("FinSnap", "every fin is removed; delete the fins instead, or bring them back"))
     if not built:
-        raise FinError(translate("FinSnap", "no tine finds the face; it has a recess or hole at every tine"))
+        raise refused(translate("FinSnap", "no tine finds the face; it has a recess or hole at every tine"))
 
     fins = Part.makeCompound(pieces)
     check(p, part, fins, bodies)

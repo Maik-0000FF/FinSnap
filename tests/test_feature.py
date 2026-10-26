@@ -28,6 +28,7 @@ PACKAGE_VERSION = ET.parse(PACKAGE_XML).getroot().findtext("{https://wiki.freeca
 BOX = (40.0, 20.0, 20.0)
 XY_PLANE = 3  # index in the origin features of a Body
 FIN_SHIFT = 1.5  # how far a fin is moved along the face by hand, in mm
+MANY_FIN_WIDTHS = 3  # far enough to run a fin into its neighbour
 XZ_PLANE = 4  # index in the origin features of a Body
 # A T standing on its stem, in sketch coordinates: stem 10 wide and 20 high,
 # arms reaching 10 to each side.
@@ -263,6 +264,15 @@ def edit_fins(doc):
            % (feature.edits(fins, feature.MAIN),))
     feature.shift_fin(fins, feature.MAIN, 1, -FIN_SHIFT)
     expect(not feature.edits(fins, feature.MAIN)[1], "moved back to where it was planned, the shift is gone")
+    # A shift that no longer fits once the count changes is dropped with the others, not refused.
+    feature.shift_fin(fins, feature.MAIN, 2, fins.ResultThickness.Value * MANY_FIN_WIDTHS)
+    fins.FinCount = 2
+    doc.recompute()
+    expect(fins.ResultFinCount == 2 and feature.edits(fins, feature.MAIN) == ([], {}, {})
+           and translate("FinSnap", feature.NOTE_EDITS_DROPPED) in fins.Warnings,
+           "a fin moved onto its neighbour is dropped with the count, as the other changes are")
+    fins.FinCount = 3
+    doc.recompute()
     fins.FinCount = 2
     doc.recompute()
     expect(feature.edits(fins, feature.MAIN) == ([], {}, {}),

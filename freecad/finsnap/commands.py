@@ -137,10 +137,18 @@ class ViewProviderFinSnap:
 
     def setEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API
         # Fins just made by a command are deleted again by Cancel.
+        # Another task dialog is open: FreeCAD keeps that one.
+        if Gui.Control.activeDialog():
+            return False
         created, self.created = getattr(self, "created", False), False
+        panel = FinSnapTaskPanel(vobj.Object, created=created)
+        try:
+            Gui.Control.showDialog(panel)
+        except RuntimeError:
+            panel.release_handles()
+            return False
         # Kept while editing: the Delete key on a fin goes to the panel then.
-        self.panel = FinSnapTaskPanel(vobj.Object, created=created)
-        Gui.Control.showDialog(self.panel)
+        self.panel = panel
         return True
 
     def unsetEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API
@@ -166,7 +174,9 @@ class ViewProviderFinSnap:
           fins selected, task panel open        ->  the panel removes them; FreeCAD
                                                     deletes nothing in edit mode
           sub-elements of merged fins           ->  message, nothing deleted
-          object selected in the tree           ->  deleted; the last fins lay the part flat
+          fins and other sub-elements mixed     ->  nothing deleted
+          object selected in the tree           ->  deleted; the last fins lay the part flat;
+                                                    an open task panel on it closes first
         """
         obj = vobj.Object
         if subelements and obj.Connection == d.CONNECTION_MERGED:
@@ -174,8 +184,11 @@ class ViewProviderFinSnap:
             _message(translate("FinSnap", feature.NOTE_MERGED_SINGLE))
             return False
         fins = [feature.fin_at(obj, sub) for sub in subelements or ()]
-        if fins and all(fins):
-            panel = getattr(self, "panel", None)
+        if fins and not all(fins):
+            # Something picked that is no fin: the object as a whole is not meant.
+            return False
+        panel = getattr(self, "panel", None)
+        if fins:
             if panel is not None:
                 # The panel may delete this very object; not while its own
                 # onDelete still runs.
@@ -188,6 +201,8 @@ class ViewProviderFinSnap:
                 return False
             # The last main fins: nothing was changed, the object goes as a whole.
             obj.Document.abortTransaction()
+        elif panel is not None:
+            panel.close()
         feature.prepare_delete(obj)
         return True
 
@@ -474,8 +489,13 @@ class QuickFins:
 def _edit_new(fins):
     """Open the task panel on fins just made, in edit mode as a double click
     does: the handles of the panel are shown only there."""
-    fins.ViewObject.Proxy.created = True
-    Gui.ActiveDocument.setEdit(fins)
+    proxy = fins.ViewObject.Proxy
+    proxy.created = True
+    try:
+        Gui.ActiveDocument.setEdit(fins)
+    finally:
+        # Only for this opening: a later Cancel must not delete fins long kept.
+        proxy.created = False
 
 
 class AddFins:
