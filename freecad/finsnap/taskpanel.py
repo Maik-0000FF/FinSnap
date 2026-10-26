@@ -30,6 +30,8 @@ LENGTH_SUFFIX = " mm"
 # Pause after the last change before the preview is rebuilt, so typing a
 # number does not rebuild the fins at every keystroke.
 PREVIEW_DELAY_MS = 400
+# FinParams field of the layer height, the step of the fields on the layer grid.
+LAYER_FIELD = "layer_height"
 # Notes below the result: warnings in amber, a refusal in red, each in a framed
 # box with a sign, so they stand out from the result line above.
 WARNING_COLOR = "#e0a000"
@@ -46,6 +48,12 @@ DRAWINGS = (
     (os.path.join(IMAGES, "side_view.svg"), QT_TRANSLATE_NOOP("FinSnap", "Side view")),
     (os.path.join(IMAGES, "top_view.svg"), QT_TRANSLATE_NOOP("FinSnap", "Top view")),
 )
+
+
+def _wrapped(*paragraphs):
+    """A tooltip Qt wraps: plain text it shows on one line however long, rich
+    text it breaks to a readable width. Each paragraph its own."""
+    return "".join("<p>%s</p>" % html.escape(paragraph) for paragraph in paragraphs)
 
 
 def _widget(prop, value):
@@ -65,6 +73,8 @@ def _widget(prop, value):
         else:
             box.setRange(0, MAX_RATIO)
             box.setDecimals(RATIO_DECIMALS)
+        if prop.step not in (None, feature.STEP_LAYER):
+            box.setSingleStep(prop.step)
     _write(prop, box, value)
     return box
 
@@ -111,6 +121,8 @@ class FinSnapTaskPanel:
         self.labels = {}
         self.resets = {}
         self.standard = presets.standard()
+        # The field whose value is the step of the fields on the layer grid.
+        self.layer_prop = next(prop for prop in feature.PROPERTIES if prop.field == LAYER_FIELD)
         # Every change is written to the object at once; Cancel puts these back.
         self.original = {prop.name: feature.value_of(obj, prop.name) for prop in feature.PROPERTIES}
         # And what Edit fins changes: the removed fins and the counter face.
@@ -154,7 +166,7 @@ class FinSnapTaskPanel:
                 groups[prop.group].addRow(info)
                 layout.addWidget(box)
             widget = _widget(prop, feature.value_of(obj, prop.name))
-            widget.setToolTip(translate("App::Property", prop.tip))
+            widget.setToolTip(_wrapped(translate("App::Property", prop.tip)))
             label = translate("FinSnap", prop.label)
             if prop.name in feature.MARKS:
                 label = "%s (%s)" % (label, feature.MARKS[prop.name])
@@ -192,12 +204,12 @@ class FinSnapTaskPanel:
 
         standard_buttons = QtWidgets.QHBoxLayout()
         save = QtWidgets.QPushButton(translate("FinSnap", "Save as standard"))
-        save.setToolTip(translate("FinSnap", "New fins start with these values. Fields that differ from the "
-                                             "standard are marked, and their button puts the standard back."))
+        save.setToolTip(_wrapped(translate("FinSnap", "New fins start with these values. Fields that differ from the "
+                                             "standard are marked, and their button puts the standard back.")))
         save.clicked.connect(self.save_standard)
         factory = QtWidgets.QPushButton(translate("FinSnap", "Factory settings"))
-        factory.setToolTip(translate("FinSnap", "Forget the saved standard and set every field to the "
-                                                "built-in value."))
+        factory.setToolTip(_wrapped(translate("FinSnap", "Forget the saved standard and set every field to the "
+                                                "built-in value.")))
         factory.clicked.connect(self.factory_settings)
         standard_buttons.addWidget(save)
         standard_buttons.addWidget(factory)
@@ -211,6 +223,7 @@ class FinSnapTaskPanel:
         self.notes.setTextFormat(QtCore.Qt.RichText)
         self.notes.hide()
         layout.addWidget(self.notes)
+        self.update_steps()
         self.update_enabled()
         self.update_marks()
         self.preview()
@@ -222,14 +235,21 @@ class FinSnapTaskPanel:
                 return _read(prop, self.widgets[name])
         return bool(getattr(self.obj, name))
 
+    def update_steps(self):
+        """Fields on the layer grid step by the layer height entered."""
+        layer = _read(self.layer_prop, self.widgets[self.layer_prop.name])
+        for prop in feature.PROPERTIES:
+            if prop.step == feature.STEP_LAYER and layer > 0:
+                self.widgets[prop.name].setSingleStep(layer)
+
     def update_enabled(self):
         for prop in feature.PROPERTIES:
             notes = feature.unused_notes(prop.name, self.current)
-            tip = translate("App::Property", prop.tip)
+            paragraphs = [translate("App::Property", prop.tip)]
             if notes:
-                tip += "\n" + " ".join(translate("FinSnap", note) for note in notes)
+                paragraphs.append(" ".join(translate("FinSnap", note) for note in notes))
             self.widgets[prop.name].setEnabled(not notes)
-            self.widgets[prop.name].setToolTip(tip)
+            self.widgets[prop.name].setToolTip(_wrapped(*paragraphs))
             self.labels[prop.name].setEnabled(not notes)
 
     def update_marks(self):
@@ -239,7 +259,8 @@ class FinSnapTaskPanel:
             modified = not _same(prop, _read(prop, self.widgets[prop.name]), value)
             self.labels[prop.name].setStyleSheet(MODIFIED_STYLE if modified else "")
             self.resets[prop.name].setVisible(modified)
-            self.resets[prop.name].setToolTip(translate("FinSnap", "Back to the standard: %s") % _shown(prop, value))
+            self.resets[prop.name].setToolTip(_wrapped(translate("FinSnap", "Back to the standard: %s")
+                                                       % _shown(prop, value)))
 
     def back_to_standard(self, prop):
         _write(prop, self.widgets[prop.name], getattr(self.standard, prop.field))
@@ -309,6 +330,7 @@ class FinSnapTaskPanel:
 
     def changed(self):
         self.update_enabled()
+        self.update_steps()
         self.update_marks()
         self.timer.start()
 

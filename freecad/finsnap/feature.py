@@ -69,7 +69,22 @@ CHOICE = "App::PropertyEnumeration"
 # Editor mode that hides a property in the property view.
 EDITOR_HIDDEN = 2
 
-Prop = namedtuple("Prop", "name kind group label tip field choices")
+# step: how far one turn of the mouse wheel or an arrow press changes the field;
+# None keeps the default of the field, one unit.
+Prop = namedtuple("Prop", "name kind group label tip field choices step", defaults=(None,))
+
+# Steps of the fields, each sized to what the value is: hundredths for the
+# print profile and the gap, whole millimetres only for the fin height.
+# STEP_LAYER: heights on the layer grid step by the layer height entered,
+# so every step lands on the next layer.
+STEP_PROFILE = 0.05
+STEP_CLEARANCE = 0.01
+STEP_LAYER = "layer height"
+STEP_HALF = 0.5
+STEP_THICKNESS = 0.1
+STEP_HEIGHT = 1.0
+STEP_FACE_LENGTH = 5.0
+STEP_RATIO = 0.05
 
 # Short explanations shown at the top of each group in the task panel.
 GROUP_INFO = {
@@ -126,19 +141,19 @@ PROPERTIES = (
     Prop("NozzleDiameter", LENGTH, GROUP_SLICER,
          QT_TRANSLATE_NOOP("FinSnap", "Nozzle diameter"),
          QT_TRANSLATE_NOOP("App::Property", "Nozzle diameter of the print profile"),
-         "nozzle_diameter", None),
+         "nozzle_diameter", None, STEP_PROFILE),
     Prop("BeadWidth", LENGTH, GROUP_SLICER,
          QT_TRANSLATE_NOOP("FinSnap", "Bead width"),
          QT_TRANSLATE_NOOP("App::Property", "Extrusion width of the outer perimeter"),
-         "bead_width", None),
+         "bead_width", None, STEP_PROFILE),
     Prop("LayerHeight", LENGTH, GROUP_SLICER,
          QT_TRANSLATE_NOOP("FinSnap", "Layer height"),
          QT_TRANSLATE_NOOP("App::Property", "Layer height of the print profile"),
-         "layer_height", None),
+         "layer_height", None, STEP_PROFILE),
     Prop("FirstLayerHeight", LENGTH, GROUP_SLICER,
          QT_TRANSLATE_NOOP("FinSnap", "First layer height"),
          QT_TRANSLATE_NOOP("App::Property", "Height of the first layer"),
-         "first_layer_height", None),
+         "first_layer_height", None, STEP_PROFILE),
     Prop("Connection", CHOICE, GROUP_CONNECTION,
          QT_TRANSLATE_NOOP("FinSnap", "Connection"),
          QT_TRANSLATE_NOOP("App::Property",
@@ -148,23 +163,23 @@ PROPERTIES = (
     Prop("Gap", LENGTH, GROUP_CONNECTION,
          QT_TRANSLATE_NOOP("FinSnap", "Gap"),
          QT_TRANSLATE_NOOP("App::Property", "Clearance between fin and face, along the face normal"),
-         "gap", None),
+         "gap", None, STEP_PROFILE),
     Prop("TineClearance", LENGTH, GROUP_CONNECTION,
          QT_TRANSLATE_NOOP("FinSnap", "Tine clearance"),
          QT_TRANSLATE_NOOP("App::Property",
                            "Distance between the end of a tine and the face, along the face normal; 0 = the "
                            "tine touches the face. More leaves fainter marks, too much and the tine does not "
                            "hold: find the value by a test print."),
-         "tine_clearance", None),
+         "tine_clearance", None, STEP_CLEARANCE),
     Prop("TineSpacing", LENGTH, GROUP_TINES,
          QT_TRANSLATE_NOOP("FinSnap", "Tine spacing"),
          QT_TRANSLATE_NOOP("App::Property",
                            "Vertical distance between tines, at least the tine height plus one layer"),
-         "tine_spacing", None),
+         "tine_spacing", None, STEP_LAYER),
     Prop("TineFirst", LENGTH, GROUP_TINES,
          QT_TRANSLATE_NOOP("FinSnap", "Tine first"),
          QT_TRANSLATE_NOOP("App::Property", "Height of the lowest tine above the bed, 0 = on the top of the foot"),
-         "tine_first", None),
+         "tine_first", None, STEP_LAYER),
     Prop("TineLayers", INTEGER, GROUP_TINES,
          QT_TRANSLATE_NOOP("FinSnap", "Tine layers"),
          QT_TRANSLATE_NOOP("App::Property", "Tine height in layers"),
@@ -180,17 +195,17 @@ PROPERTIES = (
     Prop("FinThickness", LENGTH, GROUP_FIN,
          QT_TRANSLATE_NOOP("FinSnap", "Fin thickness"),
          QT_TRANSLATE_NOOP("App::Property", "Wall thickness of a fin, 0 = from its height"),
-         "fin_thickness", None),
+         "fin_thickness", None, STEP_THICKNESS),
     Prop("FinHeight", LENGTH, GROUP_FIN,
          QT_TRANSLATE_NOOP("FinSnap", "Fin height"),
          QT_TRANSLATE_NOOP("App::Property",
                            "Height of the fins, 0 = top of the highest tine. A lower value leaves out the "
                            "tines above it; the fins reach at most to just below the top of the face."),
-         "fin_height", None),
+         "fin_height", None, STEP_HEIGHT),
     Prop("FinPlateau", LENGTH, GROUP_FIN,
          QT_TRANSLATE_NOOP("FinSnap", "Top width"),
          QT_TRANSLATE_NOOP("App::Property", "Width of the flat top of a fin"),
-         "fin_plateau", None),
+         "fin_plateau", None, STEP_HALF),
     Prop("FinPlacement", CHOICE, GROUP_PLACEMENT,
          QT_TRANSLATE_NOOP("FinSnap", "Fin placement"),
          QT_TRANSLATE_NOOP("App::Property",
@@ -208,11 +223,11 @@ PROPERTIES = (
     Prop("EndInset", LENGTH, GROUP_PLACEMENT,
          QT_TRANSLATE_NOOP("FinSnap", "End inset"),
          QT_TRANSLATE_NOOP("App::Property", "Distance of the outer fins from the face ends"),
-         "end_inset", None),
+         "end_inset", None, STEP_HALF),
     Prop("FaceLengthPerFin", LENGTH, GROUP_PLACEMENT,
          QT_TRANSLATE_NOOP("FinSnap", "Face length per fin"),
          QT_TRANSLATE_NOOP("App::Property", "Automatic placement: one fin per this much face length"),
-         "face_length_per_fin", None),
+         "face_length_per_fin", None, STEP_FACE_LENGTH),
     Prop("FootShape", CHOICE, GROUP_FOOT,
          QT_TRANSLATE_NOOP("FinSnap", "Foot shape"),
          QT_TRANSLATE_NOOP("App::Property", "Shape of the foot on the bed"),
@@ -220,19 +235,19 @@ PROPERTIES = (
     Prop("FootThickness", LENGTH, GROUP_FOOT,
          QT_TRANSLATE_NOOP("FinSnap", "Foot thickness"),
          QT_TRANSLATE_NOOP("App::Property", "Height of the foot, rounded to whole layers"),
-         "foot_thickness", None),
+         "foot_thickness", None, STEP_LAYER),
     Prop("FootOverhang", LENGTH, GROUP_FOOT,
          QT_TRANSLATE_NOOP("FinSnap", "Foot overhang"),
          QT_TRANSLATE_NOOP("App::Property", "How far the foot reaches past the outer end of the fin"),
-         "foot_overhang", None),
+         "foot_overhang", None, STEP_HALF),
     Prop("FootWidthRatio", FLOAT, GROUP_FOOT,
          QT_TRANSLATE_NOOP("FinSnap", "Foot width ratio"),
          QT_TRANSLATE_NOOP("App::Property", "Foot width as a share of its length"),
-         "foot_width_ratio", None),
+         "foot_width_ratio", None, STEP_RATIO),
     Prop("FootHalfWidth", LENGTH, GROUP_FOOT,
          QT_TRANSLATE_NOOP("FinSnap", "Foot half width"),
          QT_TRANSLATE_NOOP("App::Property", "Half width of the foot, 0 = from FootWidthRatio"),
-         "foot_half_width", None),
+         "foot_half_width", None, STEP_HALF),
     Prop("CounterTineCount", INTEGER, GROUP_COUNTER,
          QT_TRANSLATE_NOOP("FinSnap", "Counter tine count"),
          QT_TRANSLATE_NOOP("App::Property",

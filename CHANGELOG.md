@@ -29,6 +29,9 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Fixed
 
+- Long tooltips in the task panel wrap instead of running off the screen
+- The fields of the task panel step by sizes that suit them; heights on the layer grid step by the layer height entered
+- Quick fins takes a chamfer selected alone, however wide, as what the part rests on, not as the face for the fins
 - Heights are measured on the surfaces: the bounding box of curved faces reached up to 1.7 mm past a fillet, so outer fillets were refused as resting faces, a part laid on one floated above the bed, and fins could reach below it
 - The command icons in the README show on GitHub
 

@@ -37,6 +37,7 @@ VIEW_SETTINGS = "User parameter:BaseApp/Preferences/View"
 NAVIGATION_ANIMATIONS = "UseNavigationAnimations"
 CHAMFER = 3.0
 QUICK_LENGTH = 80.0  # a face this long gets two fins with automatic placement
+THICK_LAYER = 0.3  # a layer height other than the standard, to see the steps follow
 
 
 def load_workbench():
@@ -452,6 +453,13 @@ def main():
     expect(kept is False and lined.Name in [o.Name for o in doc.Objects] and lined.ResultFinCount == 2,
            "the Delete key on one fin removes that fin and keeps the others")
     editing = FinSnapTaskPanel(lined)
+    gap_field = editing.widgets["Gap"]
+    expect(abs(gap_field.singleStep() - feature.STEP_PROFILE) < d.TOLERANCE
+           and gap_field.toolTip().startswith("<p>"),
+           "fields step in sizes that suit them, and their tooltips wrap")
+    editing.widgets["LayerHeight"].setValue(THICK_LAYER)
+    expect(abs(editing.widgets["TineFirst"].singleStep() - THICK_LAYER) < d.TOLERANCE,
+           "fields on the layer grid step by the layer height entered")
     editing.restore()
     expect(lined.ResultFinCount == 3, "the panel brings removed fins back")
     select(lined, face_of_fin(0))
