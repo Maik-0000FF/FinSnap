@@ -151,6 +151,10 @@ class FinResult:
     along: App.Vector = None
     # The height of each fin built (mm, from the bed), by number.
     heights: dict = field(default_factory=dict)
+    # The middle of the upright outer edge of each fin built, by number.
+    edges: dict = field(default_factory=dict)
+    # Where the face starts along it (mm, as starts): fins are placed from there.
+    face_start: float = 0.0
 
 
 def support_of(part, face):
@@ -411,7 +415,8 @@ def contact_share(frame, face, t, p, z):
 
 
 def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
-    """A fin without tines, and its tines, which end on the face."""
+    """A fin without tines, its tines, which end on the face, and the middle
+    of the upright outer edge of its blade, where the handles go."""
     zb = frame.bed_z
     s_bottom = frame.s_flank(zb, p.fin_offset)
     s_top = frame.s_flank(zb + height, p.fin_offset)
@@ -428,6 +433,7 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
         body = frame.section(t0, [(s_from, zb), (s_out, zb), (s_out, zb + height),
                                   (s_top, zb + height), (s_from, foot_top)], thickness)
         body = body.fuse(foot(p, frame, t0, thickness, s_from, s_to, half_foot))
+    outer_middle = frame.point(t0 + thickness / 2, s_out, zb + height / 2)
 
     tines = []
     t_tine = tine_start(p, t0, thickness)
@@ -448,7 +454,7 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
         s_end_top = frame.s_flank(top, p.tine_clearance)
         tines.append(frame.section(t_tine, [(s_end_bottom, bottom), (s_into_fin, bottom),
                                             (s_into_fin, top), (s_end_top, top)], p.tine_width))
-    return body, tines
+    return body, tines, outer_middle
 
 
 def check(p, part, fins, bodies):
@@ -515,10 +521,14 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     positions = positions_for(p, frame, thickness)
 
     s_from, s_to = foot_span(p, frame, height)
-    # Fins moved along the face by hand; the neighbours have to stay clear.
+    # Fins moved along the face by hand stay clear of their neighbours and in
+    # their order: the numbers count from the left, also after a move.
     starts = {number: t0 + shifts.get(number, 0.0) for number, t0 in enumerate(positions, 1)}
-    standing = sorted((t0, number) for number, t0 in starts.items() if number not in left_out)
+    standing = [(starts[number], number) for number in sorted(starts) if number not in left_out]
     for (first, one), (second, other) in zip(standing, standing[1:]):
+        if second < first:
+            raise FinError(translate("FinSnap", "fin %d would pass fin %d; a fin stays between its neighbours")
+                           % (one, other))
         if second - first < thickness + d.FOOT_CLEARANCE - d.TOLERANCE:
             raise FinError(translate("FinSnap", "fins %d and %d stand %.2f mm apart, closer than %.2f mm")
                            % (one, other, second - first, thickness + d.FOOT_CLEARANCE))
@@ -534,6 +544,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     gap_heights = set(gap_z)
     fins_left_out = []
     fin_heights = []
+    edges = []
     numbers = []
     for number, t0 in starts.items():
         if number in left_out:
@@ -562,10 +573,11 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
             fin_height = own
         else:
             fin_height = p.fin_height if p.fin_height > 0 else kept_z[-1] + p.tine_height
-        body, tines = one_fin(p, frame, t0, fin_height, thickness, half_foot, candidate_z)
+        body, tines, edge = one_fin(p, frame, t0, fin_height, thickness, half_foot, candidate_z)
         kept = [tine for tine, whole in zip(tines, on_face) if whole]
         dropped += [tine for tine, whole in zip(tines, on_face) if not whole]
         fin_heights.append(fin_height)
+        edges.append(edge)
         built.append(t0)
         numbers.append(number)
         bodies.append(body)
@@ -609,7 +621,8 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
                      foot_half_width=half_foot, warnings=warnings, carried=support.Faces,
                      numbers=numbers, planned=len(positions),
                      dropped=dropped, starts={n: starts[n] for n in numbers}, along=frame.along,
-                     heights=dict(zip(numbers, fin_heights)))
+                     heights=dict(zip(numbers, fin_heights)), edges=dict(zip(numbers, edges)),
+                     face_start=face_start)
 
 
 def merged(part, *fin_shapes):

@@ -13,6 +13,7 @@ import Part
 
 from . import defaults as d
 from . import geometry
+from . import orient
 from . import overhang
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
@@ -41,8 +42,10 @@ PLANNED = {"main": "PlannedFins", "counter": "PlannedCounterFins"}
 # Fins moved along the face and fins with a height of their own, by number: mm.
 SHIFTS = {"main": "FinShifts", "counter": "CounterFinShifts"}
 HEIGHTS = {"main": "FinHeights", "counter": "CounterFinHeights"}
-# How many fins the face was planned for when a fin of it was changed by hand.
+# How many fins the face was planned for when a fin of it was changed by hand,
+# and the name earlier versions kept it under, when fins could only be removed.
 EDITED_OF = {"main": "EditedFinsOf", "counter": "EditedCounterFinsOf"}
+REMOVED_OF = {"main": "RemovedFinsOf", "counter": "RemovedCounterFinsOf"}
 NOTE_EDITS_DROPPED = QT_TRANSLATE_NOOP(
     "FinSnap", "The number of fins changed, so the fins changed by hand are as planned again: removed fins "
     "are back, moved fins and fin heights of their own are undone.")
@@ -463,6 +466,13 @@ class FinSnapFeature:
         obj.Proxy = self
         if OVERHANGS not in obj.PropertiesList:
             add_overhangs(obj)
+        # Saved when fins could only be removed: the count is taken over.
+        for which, old in REMOVED_OF.items():
+            if old in obj.PropertiesList:
+                if EDITED_OF[which] not in obj.PropertiesList:
+                    hidden_property(obj, EDITED_OF[which], "App::PropertyInteger")
+                    setattr(obj, EDITED_OF[which], getattr(obj, old))
+                obj.removeProperty(old)
         # A parameter added in a later version starts with its built-in value,
         # so fins saved before it keep their shape.
         built_in = FinParams()
@@ -618,24 +628,27 @@ def build_keeping_edits(obj, which, build_fn, notes):
       changes made, count changed           ->  built as planned, changes dropped, note
       every fin removed, same count         ->  FinError: every fin is removed
       every fin removed, count changed      ->  built as planned, changes dropped, note
+      changes made, count they were made
+        for unknown                         ->  built with them; a FinError passed on
       FinError for any other reason         ->  passed on
     """
     left, shifts, heights = edits(obj, which)
     changed = bool(left or shifts or heights)
     made_for = getattr(obj, EDITED_OF[which], None)
-    result = None
+    result, failure = None, None
     try:
         result = build_fn(left, shifts, heights)
         planned = result.planned
     except geometry.FinError as error:
-        planned = getattr(error, "planned", None)
-        if not changed or planned is None or planned == made_for:
-            raise
-    if changed and made_for is not None and planned != made_for:
-        reset_fins(obj, which)
-        notes.append(translate("FinSnap", NOTE_EDITS_DROPPED))
-        result = build_fn((), {}, {})
-    return result
+        failure, planned = error, getattr(error, "planned", None)
+    stale = changed and made_for is not None and planned is not None and planned != made_for
+    if not stale:
+        if failure is not None:
+            raise failure
+        return result
+    reset_fins(obj, which)
+    notes.append(translate("FinSnap", NOTE_EDITS_DROPPED))
+    return build_fn((), {}, {})
 
 
 def fin_at(obj, sub):
@@ -698,8 +711,12 @@ def _set_mm(obj, name, number, mm):
 
 def shift_fin(obj, which, number, by):
     """Move fin `number` of `which` along the face by `by` mm more (to the right, seen from outside)."""
-    total = edits(obj, which)[1].get(number, 0.0) + by
-    _set_mm(obj, SHIFTS[which], number, None if abs(total) < d.TOLERANCE else total)
+    set_fin_shift(obj, which, number, edits(obj, which)[1].get(number, 0.0) + by)
+
+
+def set_fin_shift(obj, which, number, mm):
+    """Move fin `number` of `which` `mm` along the face from where it was planned."""
+    _set_mm(obj, SHIFTS[which], number, None if abs(mm) < d.TOLERANCE else mm)
     _edited(obj, which)
 
 
@@ -719,6 +736,50 @@ def reset_fins(obj, which=None):
         for name in (SHIFTS[one], HEIGHTS[one]):
             if name in obj.PropertiesList:
                 setattr(obj, name, {})
+
+
+def remove_fins(obj, fins):
+    """Leave out the fins in `fins`, as (MAIN or COUNTER, number). True when
+    that would leave no main fin: then nothing is changed, and the caller
+    deletes the fins object instead.
+
+    INPUTS this has to withstand (fins built: main 1, 2, 3 and counter 1):
+      main 2                                ->  main 2 left out, False
+      main 1, 2, 3                          ->  nothing changed, True
+      main 1, 2, 3 and counter 1            ->  nothing changed, True
+      counter 1, the only counter fin       ->  counter fin dropped, False
+      main 2 and counter 1                  ->  main 2 left out, counter fin dropped, False
+      a fin twice                           ->  as once
+      empty                                 ->  nothing changed, False
+    """
+    picked = set(fins)
+    built = {MAIN: set(), COUNTER: set()}
+    for tag in getattr(obj, FIN_TAGS, []):
+        which, number = tag.split(":")
+        built[which].add(int(number))
+    gone = {which: {n for w, n in picked if w == which} for which in built}
+    if built[MAIN] and built[MAIN] <= gone[MAIN]:
+        return True
+    if built[COUNTER] and built[COUNTER] <= gone[COUNTER]:
+        remove_counter(obj)
+        gone[COUNTER] = set()
+    for which, numbers in gone.items():
+        for number in sorted(numbers):
+            remove_fin(obj, which, number)
+    return False
+
+
+def prepare_delete(obj):
+    """Before the fins object `obj` is deleted: the last fins of a part stood
+    on an edge lay it flat again; other fins of it are built anew."""
+    if not obj.Base:
+        return
+    owner = outermost(obj.Base[0])
+    others = [o for o in fins_of(owner, obj.Document) if o is not obj]
+    if not others:
+        orient.lay_back(owner)
+    for other in others:
+        other.touch()
 
 
 def remove_counter(obj):

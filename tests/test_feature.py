@@ -320,6 +320,46 @@ def warnings_and_old_files(doc):
     cube.Shape = tilted_cube()
     main_face = lower_left_face(cube.Shape)
     fins = feature.create(cube, face_name(cube.Shape, main_face))
+    # Removing several fins at once, as the Delete key does.
+    feature.add_counter(fins)
+    doc.recompute()
+    every_main = [(feature.MAIN, n) for n in (1, 2, 3)]
+    expect(feature.remove_fins(fins, every_main + [(feature.COUNTER, 1)]) is True
+           and feature.edits(fins, feature.MAIN) == ([], {}, {}) and fins.CounterFace,
+           "removing every main fin changes nothing and asks for the object to be deleted")
+    expect(feature.remove_fins(fins, [(feature.MAIN, 2), (feature.MAIN, 2), (feature.COUNTER, 1)]) is False
+           and feature.removed(fins, feature.MAIN) == [2] and not fins.CounterFace,
+           "one main fin and the only counter fin: that fin left out, the counter fin dropped")
+    expect(feature.remove_fins(fins, []) is False and feature.removed(fins, feature.MAIN) == [2],
+           "nothing picked changes nothing")
+    feature.reset_fins(fins)
+    doc.recompute()
+    # Saved before the count was kept: changes stay, and a failing build says why.
+    feature.remove_fin(fins, feature.MAIN, 2)
+    fins.removeProperty(feature.EDITED_OF[feature.MAIN])
+    fins.FinCount = 2
+    doc.recompute()
+    expect(feature.removed(fins, feature.MAIN) == [2] and fins.ResultFinCount == 1,
+           "without the count they were made for, changes by hand stay")
+    feature.remove_fin(fins, feature.MAIN, 1)
+    fins.removeProperty(feature.EDITED_OF[feature.MAIN])
+    doc.recompute()
+    expect("every fin is removed" in fins.getStatusString() or
+           translate("FinSnap", "every fin is removed; delete the fins instead, or bring them back")
+           in fins.getStatusString(),
+           "without the count, a build that fails says why: %s" % fins.getStatusString())
+    fins.FinCount = 3
+    feature.reset_fins(fins)
+    feature.remove_fin(fins, feature.MAIN, 1)
+    fins.removeProperty(feature.EDITED_OF[feature.MAIN])
+    fins.addProperty("App::PropertyInteger", feature.REMOVED_OF[feature.MAIN])
+    setattr(fins, feature.REMOVED_OF[feature.MAIN], 3)
+    fins.Proxy.onDocumentRestored(fins)
+    expect(getattr(fins, feature.EDITED_OF[feature.MAIN], None) == 3
+           and feature.REMOVED_OF[feature.MAIN] not in fins.PropertiesList,
+           "a file from when fins could only be removed keeps the count they were removed from")
+    feature.reset_fins(fins)
+    doc.recompute()
     feature.add_counter(fins)
     # A gap this narrow makes the tines of both fins short, so both warn.
     fins.Gap = SHORT_TINE_GAP

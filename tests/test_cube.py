@@ -635,6 +635,10 @@ def check_moved_fins(cube, face):
     three = FinParams(placement=d.PLACEMENT_DISTRIBUTED, fin_count=3)
     whole = geometry.build(cube, face, three)
     moved_one = geometry.build(cube, face, three, shifts={1: SHIFT})
+    edge = whole.edges[1]
+    expect(abs(edge.z - whole.heights[1] / 2) < d.TOLERANCE
+           and whole.bodies[0].distToShape(Part.Vertex(edge))[0] < d.TOLERANCE,
+           "the handles go on the middle of the upright outer edge of the fin: %s" % edge)
     expect(abs(moved_one.starts[1] - (whole.starts[1] + SHIFT)) < d.TOLERANCE
            and moved_one.starts[2] == whole.starts[2],
            "a fin moved by hand moves alone, the others stay")
@@ -645,6 +649,12 @@ def check_moved_fins(cube, face):
         expect("closer than" in str(error), "a fin moved onto its neighbour is refused: %s" % error)
     else:
         raise AssertionError("a fin was moved onto its neighbour")
+    try:
+        geometry.build(cube, face, three, shifts={1: 2 * gap})
+    except geometry.FinError as error:
+        expect("would pass" in str(error), "a fin moved past its neighbour is refused: %s" % error)
+    else:
+        raise AssertionError("a fin was moved past its neighbour")
     low = whole.tine_z[0] + FinParams().tine_height
     lowered = geometry.build(cube, face, three, heights={2: low})
     middle = lowered.bodies[1].BoundBox
@@ -674,6 +684,9 @@ def check_recesses(cube, face):
     named = "tines at %.1f mm" % middle_z
     expect(len(result.tines) == 2 and any(named in w for w in result.warnings),
            "the tine over a hole in the face is left out, the warning names its height: %s" % result.warnings)
+    left_out = result.dropped[0].BoundBox.Center.z if len(result.dropped) == 1 else None
+    expect(left_out is not None and abs(left_out - middle_tine) < FinParams().tine_height,
+           "the tine left out is handed back as a shape, for the red mark")
 
     # A hole under only half of the tine: it would hang free there, so it is left out too.
     beside = frame.point(middle + RECESS_RADIUS, frame.s_face(middle_tine), middle_tine)

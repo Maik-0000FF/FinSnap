@@ -1,13 +1,14 @@
 """Workbench commands and the view provider of the FinSnap object."""
 
 import dataclasses
+import functools
 from collections import namedtuple
 
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
 from pivy import coin
-from PySide import QtWidgets
+from PySide import QtCore, QtWidgets
 
 from . import defaults as d
 from . import export_3mf
@@ -57,6 +58,37 @@ STATUS_TIMEOUT_MS = 10000
 Export = namedtuple("Export", "shapes left_out")
 
 
+def _shown(obj):
+    """Whether `obj` is shown: it and every container it lies in, such as a Body."""
+    while obj is not None:
+        if not obj.Visibility:
+            return False
+        obj = obj.getParentGeoFeatureGroup()
+    return True
+
+
+def _holds(obj, part):
+    """Whether hiding `obj` hides `part`: it is the part, or a container it lies in."""
+    while part is not None:
+        if part is obj:
+            return True
+        part = part.getParentGeoFeatureGroup()
+    return False
+
+
+class PartVisibility:
+    """Document observer: when a part or a container of it is shown or hidden,
+    the overhang marks of its fins follow."""
+
+    def slotChangedObject(self, obj, prop):  # noqa: N802 - FreeCAD API
+        if prop != "Visibility" or obj.Document is None:
+            return
+        for fins in obj.Document.Objects:
+            if (feature.is_fins(fins) and fins.Base and _holds(obj, fins.Base[0])
+                    and isinstance(getattr(fins.ViewObject, "Proxy", None), ViewProviderFinSnap)):
+                fins.ViewObject.Proxy.show_marks()
+
+
 class ViewProviderFinSnap:
     def __init__(self, vobj):
         vobj.Proxy = self
@@ -75,10 +107,16 @@ class ViewProviderFinSnap:
             self.mark(obj)
 
     def onChanged(self, vobj, prop):  # noqa: N802 - FreeCAD API
-        if prop == "Visibility" and hasattr(self, "marks"):
-            self.show_marks(vobj.Visibility)
+        if prop == "Visibility":
+            self.show_marks()
 
-    def show_marks(self, visible):
+    def show_marks(self):
+        """Show the overhang marks while the fins and their part are shown;
+        the marks lie on the part, and alone they would float in the air."""
+        if not hasattr(self, "marks"):
+            return
+        obj = self.Object
+        visible = obj.ViewObject.Visibility and (not obj.Base or _shown(obj.Base[0]))
         self.marks.whichChild.setValue(coin.SO_SWITCH_ALL if visible else coin.SO_SWITCH_NONE)
 
     def mark(self, obj):
@@ -95,13 +133,22 @@ class ViewProviderFinSnap:
             return
         faces = [shape.getElement(name) for name in names]
         self.marks.addChild(handles.shaded(faces, OVERHANG_COLOR, OVERHANG_TRANSPARENCY))
-        self.show_marks(obj.ViewObject.Visibility)
+        self.show_marks()
 
     def setEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API
-        Gui.Control.showDialog(FinSnapTaskPanel(vobj.Object))
+        # Fins just made by a command are deleted again by Cancel.
+        created, self.created = getattr(self, "created", False), False
+        # Kept while editing: the Delete key on a fin goes to the panel then.
+        self.panel = FinSnapTaskPanel(vobj.Object, created=created)
+        Gui.Control.showDialog(self.panel)
         return True
 
     def unsetEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API
+        # Edit mode can end without OK or Cancel; the arrows, the see-through
+        # look and the listeners of the panel go with it all the same.
+        panel, self.panel = getattr(self, "panel", None), None
+        if panel is not None:
+            panel.release_handles()
         Gui.Control.closeDialog()
         return True
 
@@ -115,6 +162,9 @@ class ViewProviderFinSnap:
 
         SITUATIONS this has to withstand:
           face or edge of one fin selected      ->  that fin left out, object kept
+          the last main fins selected           ->  the object deleted, as from the tree
+          fins selected, task panel open        ->  the panel removes them; FreeCAD
+                                                    deletes nothing in edit mode
           sub-elements of merged fins           ->  message, nothing deleted
           object selected in the tree           ->  deleted; the last fins lay the part flat
         """
@@ -125,19 +175,20 @@ class ViewProviderFinSnap:
             return False
         fins = [feature.fin_at(obj, sub) for sub in subelements or ()]
         if fins and all(fins):
+            panel = getattr(self, "panel", None)
+            if panel is not None:
+                # The panel may delete this very object; not while its own
+                # onDelete still runs.
+                QtCore.QTimer.singleShot(0, functools.partial(panel.remove_fins, fins))
+                return False
             obj.Document.openTransaction(translate("FinSnap", "Remove fin"))
-            for which, number in set(fins):
-                feature.remove_fin(obj, which, number)
-            obj.Document.commitTransaction()
-            obj.Document.recompute()
-            return False
-        if obj.Base:
-            owner = outermost(obj.Base[0])
-            others = [o for o in feature.fins_of(owner, obj.Document) if o is not obj]
-            if not others:
-                orient.lay_back(owner)
-            for other in others:
-                other.touch()
+            if not feature.remove_fins(obj, fins):
+                obj.Document.commitTransaction()
+                obj.Document.recompute()
+                return False
+            # The last main fins: nothing was changed, the object goes as a whole.
+            obj.Document.abortTransaction()
+        feature.prepare_delete(obj)
         return True
 
     def dumps(self):
@@ -417,7 +468,14 @@ class QuickFins:
         doc.commitTransaction()
         doc.recompute()
         _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside))
-        Gui.Control.showDialog(FinSnapTaskPanel(fins, created=True))
+        _edit_new(fins)
+
+
+def _edit_new(fins):
+    """Open the task panel on fins just made, in edit mode as a double click
+    does: the handles of the panel are shown only there."""
+    fins.ViewObject.Proxy.created = True
+    Gui.ActiveDocument.setEdit(fins)
 
 
 class AddFins:
@@ -444,7 +502,7 @@ class AddFins:
         obj = feature.create(base, face_name, counter)
         ViewProviderFinSnap(obj.ViewObject)
         doc.commitTransaction()
-        Gui.Control.showDialog(FinSnapTaskPanel(obj, created=True))
+        _edit_new(obj)
 
 
 class AddCounterFin:
@@ -677,6 +735,11 @@ COMMANDS = (("FinSnap_QuickFins", QuickFins()),
             ("FinSnap_MeshToSolid", MeshToSolid()),
             ("FinSnap_Export3MF", Export3MF()),
             ("FinSnap_ExportSTEP", ExportSTEP()))
+
+
+# Registered once, when this module is first imported: with the workbench, or
+# with a document holding fins.
+App.addDocumentObserver(PartVisibility())
 
 
 def register():
