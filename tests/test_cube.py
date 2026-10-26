@@ -34,6 +34,8 @@ GROOVE_TOP_GAP = 1.0   # face left above a groove, so the groove does not split 
 UP = V(0, 0, 1)
 BOX_SIDE = 20.0
 EDGE_ROUND = 3.0       # size of the chamfer or radius of the fillet on a box edge
+FLOOR_SIZE = 1000.0    # a plane under every test part, to measure how high it rests
+FLOOR_DEPTH = 100.0
 FRUSTUM_BASE = 40.0
 FRUSTUM_TOP = 20.0
 FRUSTUM_HEIGHT = 15.0  # sides at 56 degrees against the base
@@ -314,6 +316,30 @@ def leaning_at(shape, degrees):
     return [f for f in shape.Faces if f.findPlane() is not None and abs(f.normalAt(0, 0).z - wanted) < 1e-6]
 
 
+def resting_height(shape):
+    """Height of the lowest point of `shape`, measured to a plane far below, not from its BoundBox."""
+    floor = Part.makePlane(FLOOR_SIZE, FLOOR_SIZE, V(-FLOOR_SIZE / 2, -FLOOR_SIZE / 2, -FLOOR_DEPTH))
+    return shape.distToShape(floor)[0] - FLOOR_DEPTH
+
+
+def check_tight_bounds():
+    """Two fillets meeting at a corner: after the part is laid on one, the BoundBox of the
+    other reaches below the bed. The part must still rest on the fillet, on the bed, with
+    its fins on the bed too."""
+    box = Part.makeBox(30, 20, 20)
+    corner = [e for e in box.Edges if e.BoundBox.ZMin > 20 - d.TOLERANCE
+              and (e.BoundBox.YMax < d.TOLERANCE or e.BoundBox.XMax < d.TOLERANCE)]
+    rounded = box.makeFillet(EDGE_ROUND, corner)
+    long_fillet = [f for f in rounded.Faces if f.findPlane() is None and f.BoundBox.XLength > 20][0]
+    lying = moved(rounded, orient.lay_flat(rounded, long_fillet))
+    expect(abs(resting_height(lying)) < d.TOLERANCE,
+           "a part laid on a fillet beside another rests on the bed, not above it")
+    leaning = [f for f in lying.Faces if f.findPlane() is not None
+               and -1 + d.TOLERANCE < f.normalAt(0, 0).z < -d.MIN_NORMAL_COMPONENT]
+    built = geometry.build(lying, leaning[0], FinParams())
+    expect(abs(resting_height(built.fins)) < d.TOLERANCE, "the fins of that part stand on the bed, not below it")
+
+
 def check_chamfer_and_fillet():
     """A chamfer or a fillet chosen alone is laid onto the bed and carries the part."""
     box = Part.makeBox(BOX_SIDE, BOX_SIDE, BOX_SIDE)
@@ -411,8 +437,9 @@ def check_recesses(cube, face):
 
     def groove(t):
         start = frame.point(t, frame.s_face(frame.bed_z), frame.bed_z) - uphill * RECESS_RADIUS
-        # It stops below the top of the face, so the face stays one piece.
-        length = (frame.face_top_z - frame.bed_z - GROOVE_TOP_GAP) / uphill.z
+        # It stops below the top of the face, so the face stays one piece. The
+        # start lies one radius below the bed, which the length makes up for.
+        length = (frame.face_top_z - frame.bed_z - GROOVE_TOP_GAP) / uphill.z + RECESS_RADIUS
         return Part.makeCylinder(RECESS_RADIUS, length, start, uphill)
 
     grooved = cube.cut(groove(centre))
@@ -564,6 +591,7 @@ def main():
     check_frustum()
     check_loft()
     check_chamfer_and_fillet()
+    check_tight_bounds()
     print("all checks passed", file=sys.__stdout__)
 
 
