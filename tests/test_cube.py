@@ -99,6 +99,53 @@ def check_stand():
     else:
         raise AssertionError("an edge alone between faces not at a right angle was accepted")
 
+    # A vertical edge alone: the two side faces meet square, the edge comes to lie on the bed.
+    vertical = [e for e in box.Edges if e.BoundBox.XMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
+    upended = moved(box, orient.stand(box, vertical, orient.RIGHT_ANGLE_TILT))
+    on_it = [e for e in upended.Edges if abs(e.Length - 10) < d.TOLERANCE and e.BoundBox.ZMax < d.TOLERANCE]
+    expect(abs(upended.BoundBox.ZMin) < d.TOLERANCE and on_it and len(leaning_at(upended, 45)) == 2,
+           "a vertical edge alone stands the box on it, both side faces at 45 degrees")
+
+    # The inner corner of an L profile: square, but hollow, so nothing rests on it.
+    profile = box.cut(Part.makeBox(20, 10, 5, App.Vector(10, 0, 5)))
+    hollow = [e for e in profile.Edges if abs(e.BoundBox.XMin - 10) < d.TOLERANCE
+              and abs(e.BoundBox.XMax - 10) < d.TOLERANCE and abs(e.BoundBox.ZMax - 5) < d.TOLERANCE
+              and e.BoundBox.YLength > d.TOLERANCE][0]
+    try:
+        orient.stand(profile, hollow, orient.RIGHT_ANGLE_TILT)
+    except orient.OrientError as error:
+        expect("cannot rest" in str(error), "the edge of an inner corner alone is refused: %s" % error)
+    else:
+        raise AssertionError("the edge of an inner corner was accepted")
+
+    # A side leaning slightly out of square, as on a solid from a mesh.
+    for off, accepted in ((d.RIGHT_ANGLE_TOLERANCE / 2, True), (d.RIGHT_ANGLE_TOLERANCE * 2, False)):
+        reach = 10 * math.tan(math.radians(off))
+        outline = Part.makePolygon([App.Vector(0, 0, 0), App.Vector(10, 0, 0), App.Vector(10 + reach, 0, 10),
+                                    App.Vector(0, 0, 10), App.Vector(0, 0, 0)])
+        skewed = Part.Face(outline).extrude(App.Vector(0, 30, 0))
+        ridge = [e for e in skewed.Edges if e.BoundBox.ZMin > 10 - d.TOLERANCE
+                 and e.BoundBox.XMin > 10 - d.TOLERANCE][0]
+        try:
+            orient.stand(skewed, ridge, orient.RIGHT_ANGLE_TILT)
+            taken = True
+        except orient.OrientError:
+            taken = False
+        expect(taken == accepted, "an edge %.2f degrees out of square alone is %s"
+               % (off, "taken" if accepted else "refused"))
+
+    # The view looks along the line the part stands on.
+    along_x = App.Vector(1, 0, 0)
+    alone_change = orient.stand(box, top, orient.RIGHT_ANGLE_TILT)
+    expect(orient.side_direction(alone_change, top).getAngle(along_x) < d.TOLERANCE,
+           "the side view looks along the edge the box stands on")
+    upper_and_front = (upper, front)
+    expect(orient.side_direction(orient.rest_between(box, *upper_and_front), faces=upper_and_front)
+           .getAngle(along_x) < d.TOLERANCE, "the side view looks along what joins two faces")
+    bottom_face = [f for f in box.Faces if f.BoundBox.ZMax < d.TOLERANCE][0]
+    expect(orient.side_direction(orient.lay_flat(box, bottom_face)) is None,
+           "a face already on the bed gives no side view")
+
     for face, name in ((front, "the side face"), (upper, "the upper face")):
         stood = box.copy()
         stood.Placement = orient.stand(box, top, d.TILT_ANGLE, face).multiply(stood.Placement)

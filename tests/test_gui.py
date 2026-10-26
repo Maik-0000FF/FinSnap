@@ -27,8 +27,8 @@ COMMANDS = ("FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCo
             "FinSnap_Export3MF")
 DIALOG_ACCEPTED = 1
 FLAT_TILT = 30.0  # flatter than the overhang limit
-# Direction FreeCAD looks along in its isometric view.
-ISOMETRIC = App.Vector(-1, 1, -1)
+# Up on the screen, in the coordinates of the camera.
+SCREEN_UP = App.Vector(0, 1, 0)
 CHAMFER = 3.0
 
 
@@ -105,13 +105,18 @@ def main():
         AssertionError("a right-angled edge alone must not ask for an angle")))
     Gui.ActiveDocument.ActiveView.viewTop()
     select(box, "Edge%d" % top)
-    Gui.runCommand("FinSnap_Tilt")
-    doc.recompute()
-    QtWidgets.QInputDialog.getDouble = ask_angle
+    try:
+        Gui.runCommand("FinSnap_Tilt")
+        doc.recompute()
+    finally:
+        QtWidgets.QInputDialog.getDouble = ask_angle
     expect(not messages and abs(box.Shape.BoundBox.ZMin) < d.TOLERANCE
            and box.Shape.BoundBox.ZMax > 20 + d.TOLERANCE, "Stand on edge takes a right-angled top edge alone")
-    direction = Gui.ActiveDocument.ActiveView.getViewDirection()
-    expect(direction.getAngle(ISOMETRIC) < d.TOLERANCE, "the view turns isometric after the tilt")
+    # The top edge runs along X: the view looks along it, the bed below.
+    view = Gui.ActiveDocument.ActiveView
+    up = view.getCameraOrientation().multVec(SCREEN_UP)
+    expect(view.getViewDirection().getAngle(App.Vector(1, 0, 0)) < d.TOLERANCE
+           and up.getAngle(App.Vector(0, 0, 1)) < d.TOLERANCE, "the view looks along the edge, the bed below")
     select(box)
     Gui.runCommand("FinSnap_LayFlat")
     doc.recompute()

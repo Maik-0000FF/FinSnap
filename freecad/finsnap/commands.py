@@ -29,6 +29,8 @@ ICON_LAY_FLAT = os.path.join(ICONS, "lay_flat.svg")
 ICON_COUNTER = os.path.join(ICONS, "counter_fin.svg")
 EDGE_PREFIX = "Edge"
 TILT_DECIMALS = 1
+# Order in which App.Rotation keeps the given camera axes exact.
+CAMERA_AXES = "ZYX"
 
 FILE_FILTER = QT_TRANSLATE_NOOP("FinSnap", "3MF files (*.3mf)")
 FILE_EXTENSION = ".3mf"
@@ -208,6 +210,7 @@ class TiltOntoEdge:
             shape = global_shape(obj)
             chosen = [shape.getElement(name) for _, name in faces]
             face = chosen[0] if chosen else None
+            edge = None
             if len(chosen) == 2:
                 change = orient.rest_between(shape, *chosen)
             elif edges:
@@ -234,19 +237,28 @@ class TiltOntoEdge:
         owner.Placement = change.multiply(owner.Placement)
         doc.commitTransaction()
         doc.recompute()
-        _show_on_bed()
+        _show_on_bed(orient.side_direction(change, edge, chosen if len(chosen) == 2 else ()))
         _report_overhangs(obj)
 
 
-def _show_on_bed():
-    """Look at the turned part from the isometric direction, bed below, all of it in view.
-    The camera does not follow a placement change, so the part would otherwise
-    turn away under it."""
+def _show_on_bed(direction=None):
+    """Look at the turned part with the bed below, all of it in view.
+
+    Along `direction`, the line the part stands on, the view shows the tilt
+    angle in profile; without one it is isometric. The camera does not follow a
+    placement change, so the part would otherwise turn away under it.
+    """
     view = Gui.ActiveDocument.ActiveView if Gui.ActiveDocument else None
     # The active view may be a spreadsheet or a drawing, which has no camera.
-    if view is None or not hasattr(view, "viewIsometric"):
+    if view is None or not hasattr(view, "setCameraOrientation"):
         return
-    view.viewIsometric()
+    if direction is None:
+        view.viewIsometric()
+    else:
+        # The camera looks along its -Z with +Y up: -Z onto the line, +Y onto
+        # the vertical, +X to the right of both.
+        back = -direction
+        view.setCameraOrientation(App.Rotation(orient.UP.cross(back), orient.UP, back, CAMERA_AXES))
     view.fitAll()
 
 

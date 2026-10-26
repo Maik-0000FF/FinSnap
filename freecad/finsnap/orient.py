@@ -23,6 +23,11 @@ INPUTS this has to withstand (stand()):
   no face, edge on the bed              ->  as tilt()
   no face, edge between two flat faces
     at a right angle, 45 degrees        ->  as rest_between() on those faces
+  no face, vertical edge between two
+    side faces at a right angle         ->  as rest_between(): stands on that edge,
+                                            which comes to lie on the bed
+  no face, right angle off by less than
+    RIGHT_ANGLE_TOLERANCE (mesh solids) ->  as a right angle
   no face, right angle, other angle     ->  OrientError: select the face
   no face, faces not at a right angle,
     or one of them rounded              ->  OrientError: select the face
@@ -56,12 +61,21 @@ INPUTS this has to withstand (lay_flat()):
   face rounded and concave (inner
     fillet)                             ->  OrientError: cannot rest on it
 
+INPUTS this has to withstand (side_direction()):
+  edge                                  ->  the edge after the change, horizontal
+  two faces (sharp edge or fillet)      ->  the line joining them after the change
+  face alone, turned                    ->  the axis of the turn
+  face alone, already on the bed        ->  None
+  line pointing to -Y, or along -X      ->  reversed, so the view comes from the front
+
 INPUTS this has to withstand (remember_flat(), lay_back()):
   first tilt                            ->  placement kept
   second tilt                           ->  first placement stays kept
   lay_back on a tilted object           ->  placement restored, record gone, True
   lay_back on an untilted object        ->  nothing changed, False
 """
+
+import math
 
 import FreeCAD as App
 import Part
@@ -72,6 +86,7 @@ from .shapes import middle_normal, middle_of
 
 V = App.Vector
 DOWN = V(0, 0, -1)
+UP = V(0, 0, 1)
 
 # Placement of the moved object before its first tilt.
 FLAT_PLACEMENT = "FinSnapFlatPlacement"
@@ -105,7 +120,8 @@ def right_angle_faces(shape, edge):
     faces = shape.ancestorsOfType(edge, Part.Face)
     if len(faces) != 2 or any(face.findPlane() is None for face in faces):
         return None
-    if abs(middle_normal(faces[0]).dot(middle_normal(faces[1]))) > d.TOLERANCE:
+    off_square = math.sin(math.radians(d.RIGHT_ANGLE_TOLERANCE))
+    if abs(middle_normal(faces[0]).dot(middle_normal(faces[1]))) > off_square:
         return None
     return tuple(faces)
 
@@ -209,6 +225,34 @@ def stand(shape, edge, angle_deg, face=None):
                                                "it alone, or the two faces beside it"))
     flat = lay_flat(shape, face)
     return tilt(_moved(shape, flat), _moved(edge, flat), angle_deg).multiply(flat)
+
+
+def side_direction(change, edge=None, faces=()):
+    """The horizontal direction of the line the part stands on after `change`.
+
+    Looking along it shows the part from the side, the tilt angle in profile.
+    The line is the edge, or what joins two faces (its direction is the cross
+    product of their normals), or for a face alone the axis the part was turned
+    about. Of the two senses the one pointing to +Y (or +X for a line along X)
+    is returned, so the view is taken from the front, as FreeCAD's front view.
+    None if the part was not turned, a face that already lay on the bed.
+    """
+    if edge is not None:
+        line = edge.Vertexes[-1].Point - edge.Vertexes[0].Point
+    elif len(faces) == 2:
+        line = middle_normal(faces[0]).cross(middle_normal(faces[1]))
+    elif abs(change.Rotation.Angle) > d.TOLERANCE:
+        line = change.Rotation.Axis
+    else:
+        return None
+    line = change.Rotation.multVec(line)
+    line.z = 0
+    if line.Length < d.TOLERANCE:
+        return None
+    line.normalize()
+    if line.y < -d.TOLERANCE or (abs(line.y) <= d.TOLERANCE and line.x < 0):
+        line = -line
+    return line
 
 
 def remember_flat(owner):

@@ -96,6 +96,9 @@ FACE_ANGLE_MIN = 30.0
 FACE_ANGLE_MAX = 60.0
 # Angle the tilt command offers first.
 TILT_ANGLE = 45.0
+# Two faces count as square to each other within this many degrees, so that an
+# edge alone stands the part. Solids converted from a mesh are rarely exact.
+RIGHT_ANGLE_TOLERANCE = 0.5
 # Faces lying flatter than this against the bed need support; those without
 # fins are reported and marked. 45 degrees is the usual limit of FDM printing.
 OVERHANG_ANGLE = 45.0
