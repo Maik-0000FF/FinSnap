@@ -38,6 +38,7 @@ GROOVE_WIDTH = 2.0
 GROOVE_FROM = 8.0
 WIDE_BOX = 60.0          # long enough for a U profile with legs of a third each
 SHIFT = 1.5           # how far a fin is moved along the face by hand, in mm
+MERGED_CLEARANCE = 0.3  # a tine clearance that merged fins must not take
 UP = V(0, 0, 1)
 BOX_SIDE = 20.0
 EDGE_ROUND = 3.0       # size of the chamfer or radius of the fillet on a box edge
@@ -514,6 +515,24 @@ def check_split_face():
            and any("runs into the part" in w for w in alone.warnings),
            "fins that cannot reach over the groove stand under the selected face alone, and say why")
 
+    # A change by hand that does not fit over the groove is refused; built
+    # under the face alone instead, a drag would change the faces carried.
+    def refusing_by_hand(part, face, support, p, tine_count, left_out, shifts, heights):
+        if support is not face:
+            raise geometry.HandEditError("fin 2 would pass fin 3")
+        return reaching(part, face, support, p, tine_count, left_out, shifts, heights)
+
+    geometry._build = refusing_by_hand
+    try:
+        geometry.build(standing, lower, FinParams())
+    except geometry.HandEditError as error:
+        expect("would pass" in str(error), "a change by hand that does not fit over the groove is refused")
+    else:
+        raise AssertionError("a change by hand refused over the groove was built under the face alone")
+    finally:
+        geometry._build = reaching
+
+
     # Pieces beside each other along the face are faces of their own: the legs of
     # a U profile, the halves beside an upright slot. The fin stays under the
     # selected one, as without any other face in the plane.
@@ -630,6 +649,16 @@ def check_left_out(cube, face):
         raise AssertionError("fins were built with every fin removed")
 
 
+def check_merged_clearance(cube, face):
+    """Fins merged into the part reach it through their tines: a tine
+    clearance would leave them loose, so it is not applied."""
+    merged = FinParams(connection=d.CONNECTION_MERGED, tine_clearance=MERGED_CLEARANCE)
+    result = geometry.build(cube, face, merged)
+    expect(merged.clearance == 0 and merged.fin_offset == merged.gap
+           and min(t.distToShape(cube)[0] for t in result.tines) < d.TOLERANCE,
+           "merged fins keep their tines on the face, whatever the tine clearance")
+
+
 def check_moved_fins(cube, face):
     """Fins moved along the face and set to their own height by hand."""
     three = FinParams(placement=d.PLACEMENT_DISTRIBUTED, fin_count=3)
@@ -652,7 +681,8 @@ def check_moved_fins(cube, face):
     try:
         geometry.build(cube, face, three, shifts={1: 2 * gap})
     except geometry.FinError as error:
-        expect("would pass" in str(error), "a fin moved past its neighbour is refused: %s" % error)
+        expect("would pass" in str(error) and isinstance(error, geometry.HandEditError),
+               "a fin moved past its neighbour is refused as a change by hand: %s" % error)
     else:
         raise AssertionError("a fin was moved past its neighbour")
     low = whole.tine_z[0] + FinParams().tine_height
@@ -866,6 +896,7 @@ def main():
     check_quick_plan()
     check_left_out(cube, face)
     check_moved_fins(cube, face)
+    check_merged_clearance(cube, face)
     print("all checks passed", file=sys.__stdout__)
 
 

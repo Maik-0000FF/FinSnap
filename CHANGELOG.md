@@ -6,6 +6,16 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- Fins merged into the part ignore the tine clearance, so they no longer print loose; the field is greyed out then
+- A change by hand that does not fit over a groove is refused, instead of building the fins under the selected face alone
+- Cancel after Quick fins also stands the part back as it was
+- Without a 3D view the task panel says so instead of failing
+- A counter fin moved to another face starts without the changes by hand of the old one
+- Lay flat again closes a task panel open on the fins before deleting or moving them
+- Cancel after Quick fins is one step on the undo stack
+
 ## [0.4.0] - 2026-10-26
 
 ### Added

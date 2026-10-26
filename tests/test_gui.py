@@ -88,6 +88,7 @@ def main():
 
     from freecad.finsnap import defaults as d
     from freecad.finsnap import feature
+    from freecad.finsnap import orient
     from freecad.finsnap.commands import ISOMETRIC
     from freecad.finsnap.taskpanel import FinSnapTaskPanel
 
@@ -246,9 +247,12 @@ def main():
     expect(box.Placement.isSame(standing) and not feature.is_laid_flat(marked),
            "Cancel leaves the part standing and its fins as they are")
     ANSWERS.append(QtWidgets.QMessageBox.No)
+    open_when_kept = FinSnapTaskPanel(marked)
+    marked.ViewObject.Proxy.panel = open_when_kept
     select(box)
     Gui.runCommand("FinSnap_LayFlat")
     doc.recompute()
+    expect(open_when_kept.released, "No also closes a panel open on the fins, which it changes")
     expect(box.Placement.isIdentity() and marked.isValid() and feature.is_laid_flat(marked)
            and marked.Overhangs == [] and marks.getNumChildren() == 0
            and translate("FinSnap", feature.NOTE_LAID_FLAT) in marked.Warnings,
@@ -288,11 +292,14 @@ def main():
     Gui.runCommand("FinSnap_Tilt")
     doc.recompute()
     ANSWERS.append(QtWidgets.QMessageBox.Yes)
+    open_on_marked = FinSnapTaskPanel(marked)
+    marked.ViewObject.Proxy.panel = open_on_marked
     select(box)
     Gui.runCommand("FinSnap_LayFlat")
     doc.recompute()
-    expect(box.Placement.isIdentity() and marked.Name not in [o.Name for o in doc.Objects],
-           "Yes lays the part flat and deletes its fins")
+    expect(box.Placement.isIdentity() and marked.Name not in [o.Name for o in doc.Objects]
+           and open_on_marked.released,
+           "Yes lays the part flat and deletes its fins, closing a panel open on them first")
     QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (d.TILT_ANGLE, True))
 
     # Quick fins: an edge stands the part and adds fins; a face turns the part
@@ -316,6 +323,15 @@ def main():
         if what == "a face":
             leaning = quick.Shape.Faces[facing - 1].normalAt(0, 0).z
             expect(abs(leaning + math.sqrt(0.5)) < d.TOLERANCE, "the chosen face leans 45 degrees over the bed")
+        if what == "an edge":
+            # Cancel undoes Quick fins whole: the fins go, the part lies as before.
+            made[0].ViewObject.Proxy.panel.reject()
+            expect(made[0].Name not in [o.Name for o in doc.Objects] and quick.Placement.isIdentity()
+                   and orient.FLAT_PLACEMENT not in quick.PropertiesList,
+                   "Cancel after Quick fins deletes the fins and lays the part back as it was")
+            expect(doc.UndoNames and doc.UndoNames[0] == App.Qt.translate("FinSnap", "Cancel fins"),
+                   "the Cancel is one step of its own on the undo stack: %s" % doc.UndoNames[:2])
+            continue
         Gui.Control.closeDialog()
         doc.removeObject(made[0].Name)
         quick.Placement = App.Placement()
@@ -610,6 +626,29 @@ def main():
     expect(not getattr(lined.ViewObject.Proxy, "created", False),
            "fins opened while another dialog is open are not taken as just made")
     Gui.Control.closeDialog()
+    # No 3D view to show the fins in: double click says so instead of failing.
+    from freecad.finsnap import handles as handles_module
+    real_handles = handles_module.Handles
+
+    def no_view(*args):
+        raise handles_module.NoView("no 3D view")
+
+    handles_module.Handles = no_view
+    try:
+        opened = lined.ViewObject.Proxy.setEdit(lined.ViewObject)
+    finally:
+        handles_module.Handles = real_handles
+    expect(opened is False and messages and "no 3D view" in messages[-1] and not Gui.Control.activeDialog(),
+           "without a 3D view no panel opens, and a message says why: %s" % messages)
+    # Read from the German file itself: the language FreeCAD runs in may be English.
+    import xml.etree.ElementTree as ET
+    from freecad.finsnap.paths import TRANSLATIONS
+    no_view_text = "No 3D view of %s is open to edit the fins in."
+    german = ET.parse(os.path.join(TRANSLATIONS, "finsnap_de.ts")).getroot()
+    expect(any(m.findtext("source") == no_view_text and m.find("translation").get("type") is None
+               and m.findtext("translation") for m in german.iter("message")),
+           "the message without a 3D view has a German translation")
+    del messages[:]
     expect(lined.ViewObject.Proxy.onDelete(lined.ViewObject, ["Vertex1"]) is False
            and lined.Name in [o.Name for o in doc.Objects], "a pick that is no fin deletes nothing")
     # The whole object deleted in the tree while its panel is open: the panel closes first.

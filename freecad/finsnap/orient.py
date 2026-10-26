@@ -263,6 +263,19 @@ def remember_flat(owner):
     setattr(owner, FLAT_PLACEMENT, owner.Placement)
 
 
+def snapshot(owner):
+    """How `owner` stands now: its placement, and whether it was tilted, for put_back()."""
+    return App.Placement(owner.Placement), FLAT_PLACEMENT in owner.PropertiesList
+
+
+def put_back(owner, before):
+    """Stand `owner` as snapshot() found it: the same placement, tilted or flat as then."""
+    placement, tilted = before
+    owner.Placement = placement
+    if not tilted and FLAT_PLACEMENT in owner.PropertiesList:
+        owner.removeProperty(FLAT_PLACEMENT)
+
+
 def back_to_flat(owner):
     """The placement change lay_back() would make to `owner`, None if it was not tilted."""
     if FLAT_PLACEMENT not in owner.PropertiesList:
