@@ -41,6 +41,8 @@ INPUTS this has to withstand:
   unlabelled extrusion too close            ->  exit 1
   skirt round the foot of a tilted part that
     leans out over it further up            ->  passed: compared within each layer
+  purge line in the start G-code, before the
+    first ;Z: comment                       ->  compared with the first layer
   file missing                              ->  message, exit 2
   large print, hundreds of thousands of
     segments                                ->  memory grows with the segments, not
@@ -64,6 +66,9 @@ UNLABELLED_DISTANCE = 2.0
 # Header line that holds the width of the outer perimeter.
 WIDTH_KEY = "external_perimeter_extrusion_width"
 FINS_SUFFIX = "_fins"
+# Height of whatever is extruded before the first layer, until read() assigns it
+# to the first layer.
+BEFORE_FIRST_LAYER = None
 WORD = re.compile(r"([A-Z])(-?[0-9.]+)")
 
 EXIT_OK, EXIT_FINDINGS, EXIT_UNUSABLE = 0, 1, 2
@@ -85,7 +90,8 @@ def read(path):
     width = None
     current = -1
     last_id = None
-    z = 0.0
+    # No layer before the first ;Z: comment; the start G-code (purge line) runs there.
+    z = BEFORE_FIRST_LAYER
     x = y = 0.0
     relative_e = True
     last_e = 0.0
@@ -146,10 +152,17 @@ def read(path):
     if width is None:
         raise Unusable("%s missing in the G-code header" % WIDTH_KEY)
 
+    # The purge line is drawn at the height of the first layer, beside its objects.
+    layers = sorted(layer for layer, _ in paths if layer is not BEFORE_FIRST_LAYER)
+    first = layers[0] if layers else BEFORE_FIRST_LAYER
+
+    def layer_of(layer):
+        return first if layer is BEFORE_FIRST_LAYER else layer
+
     named = defaultdict(list)
     for (layer, number), segments in paths.items():
-        named[(layer, names.get(number, "object_%d" % number))].extend(segments)
-    return named, unlabelled, width
+        named[(layer_of(layer), names.get(number, "object_%d" % number))].extend(segments)
+    return named, [(layer_of(layer), segment) for layer, segment in unlabelled], width
 
 
 def pairs(paths):
