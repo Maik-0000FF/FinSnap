@@ -34,6 +34,7 @@ T_PROFILE = [V(10, 0, 0), V(20, 0, 0), V(20, 20, 0), V(30, 20, 0), V(30, 30, 0),
              V(0, 20, 0), V(10, 20, 0)]
 T_DEPTH = 10.0
 T_TILT = 30.0  # flatter than the overhang limit, so the stem overhangs too
+FLAT_TILT = 30.0  # flatter than the overhang limit, so one face overhangs
 TAPER_SQUARE = 20.0
 TAPER_HEIGHT = 15.0
 TAPER_ANGLE = -20.0  # negative: the Pad widens
@@ -195,6 +196,31 @@ def lost_face(doc):
         doc.removeObject(obj.Name)
 
 
+def marks_without_face(doc):
+    """Fins that lose their face still mark the overhangs of the part as it is now."""
+    part = doc.addObject("Part::Feature", "MarkedPart")
+    box = Part.makeBox(*BOX)
+    edge = [e for e in box.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.Length == BOX[0]][0]
+
+    def standing(angle):
+        shape = box.copy()
+        shape.Placement = orient.tilt(box, edge, angle).multiply(shape.Placement)
+        return shape
+
+    part.Shape = standing(FLAT_TILT)
+    steep = [i for i, f in enumerate(part.Shape.Faces, 1) if -0.6 < f.normalAt(0, 0).z < -0.4][0]
+    fins = feature.create(part, "Face%d" % steep)
+    doc.recompute()
+    expect(fins.Overhangs, "tilted flat, the other face overhangs: %s" % fins.Overhangs)
+    part.Shape = standing(d.TILT_ANGLE)
+    fins.Base = (part, ["Face%d" % (len(part.Shape.Faces) + 1)])
+    doc.recompute()
+    expect(not fins.isValid() and fins.Overhangs == [],
+           "with its face lost the fins fail, and the marks follow the part: %s" % fins.Overhangs)
+    for obj in (fins, part):
+        doc.removeObject(obj.Name)
+
+
 def saved_standard(doc):
     """The standard for new fins: saved values, built-in ones, and what does not fit."""
     expect(presets.standard() == FinParams(), "without a saved standard new fins start with the built-in values")
@@ -308,6 +334,7 @@ def main():
     t_profile_in_part(doc)
     saved_standard(doc)
     lost_face(doc)
+    marks_without_face(doc)
     tapered_pad(doc)
     warnings_and_old_files(doc)
     step_with_offset_curves()

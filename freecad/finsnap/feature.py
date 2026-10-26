@@ -307,7 +307,19 @@ def _face(link):
 
 def _supported(part_obj, document):
     """Faces of `part_obj` that carry fins of any FinSnap object in `document`:
-    the faces the fins were last built under, or else the faces they link to."""
+    the faces the fins were last built under, or else the faces they link to.
+
+    INPUTS this has to withstand:
+      fins built, faces recorded            ->  the recorded faces
+      fins never built, or built nothing    ->  the faces they link to
+      a face the part no longer has         ->  left out
+      part edited, faces numbered anew      ->  recorded names of other fins may
+                                                point to other faces until those are
+                                                rebuilt; FreeCAD renames links, not
+                                                these names. Accepted: it lasts one
+                                                recompute and only with several fin
+                                                objects on one part
+    """
     shape = global_shape(part_obj)
     names = []
     for other in document.Objects:
@@ -352,8 +364,8 @@ class FinSnapFeature:
             obj.Warnings = [translate("FinSnap", NOTE_LAID_FLAT)]
             return
         p = params_of(obj)
-        part, face = _face(obj.Base)
         try:
+            part, face = _face(obj.Base)
             result = geometry.build(part, face, p)
             counter = None
             if obj.CounterFace:

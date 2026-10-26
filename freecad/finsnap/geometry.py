@@ -63,7 +63,8 @@ INPUTS this has to withstand (build()):
     its own in one plane                ->  one support: the fin reaches over the
                                             gap, tines over it left out, warning
   fins over the groove would run into the
-    part higher up                      ->  fins under the selected face alone
+    part higher up                      ->  fins under the selected face alone,
+                                            warning naming why
   every tine of every fin over a recess ->  FinError
   fin overlaps the part (separate mode) ->  FinError
   tine shorter than TINE_MIN_LENGTH_BEADS
@@ -459,12 +460,16 @@ def build(part, face, p, tine_count=None):
     """
     p.validate()
     support = support_of(part, face)
-    if support is not face:
-        try:
-            return _build(part, face, support, p, tine_count)
-        except FinError:
-            pass
-    return _build(part, face, face, p, tine_count)
+    if support is face:
+        return _build(part, face, face, p, tine_count)
+    try:
+        return _build(part, face, support, p, tine_count)
+    except FinError as error:
+        reason = str(error)
+    alone = _build(part, face, face, p, tine_count)
+    alone.warnings.append(translate("FinSnap", "fins under the selected face alone, not reaching over the "
+                                               "groove: %s") % reason)
+    return alone
 
 
 def _build(part, face, support, p, tine_count):

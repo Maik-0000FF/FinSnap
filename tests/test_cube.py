@@ -509,8 +509,9 @@ def check_split_face():
         alone = geometry.build(standing, lower, FinParams())
     finally:
         geometry._build = reaching
-    expect(len(alone.carried) == 1 and alone.carried[0].isSame(lower) and max(alone.tine_z) < upper.BoundBox.ZMin,
-           "fins that cannot reach over the groove stand under the selected face alone")
+    expect(len(alone.carried) == 1 and alone.carried[0].isSame(lower) and max(alone.tine_z) < upper.BoundBox.ZMin
+           and any("runs into the part" in w for w in alone.warnings),
+           "fins that cannot reach over the groove stand under the selected face alone, and say why")
 
     # Pieces beside each other along the face are faces of their own: the legs of
     # a U profile, the halves beside an upright slot. The fin stays under the
