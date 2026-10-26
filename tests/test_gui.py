@@ -31,6 +31,8 @@ FLAT_TILT = 30.0  # flatter than the overhang limit
 SCREEN_UP = App.Vector(0, 1, 0)
 ALONG_X = App.Vector(1, 0, 0)
 UP = App.Vector(0, 0, 1)
+VIEW_SETTINGS = "User parameter:BaseApp/Preferences/View"
+NAVIGATION_ANIMATIONS = "UseNavigationAnimations"
 CHAMFER = 3.0
 
 
@@ -105,6 +107,11 @@ def main():
     ask_angle = QtWidgets.QInputDialog.getDouble
     QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (_ for _ in ()).throw(
         AssertionError("a right-angled edge alone must not ask for an angle")))
+    # With navigation animations on, the camera only starts turning when the
+    # command returns; the check below would read where it started from.
+    view_settings = App.ParamGet(VIEW_SETTINGS)
+    animated = view_settings.GetBool(NAVIGATION_ANIMATIONS, True)
+    view_settings.SetBool(NAVIGATION_ANIMATIONS, False)
     Gui.ActiveDocument.ActiveView.viewTop()
     select(box, "Edge%d" % top)
     try:
@@ -112,6 +119,7 @@ def main():
         doc.recompute()
     finally:
         QtWidgets.QInputDialog.getDouble = ask_angle
+        view_settings.SetBool(NAVIGATION_ANIMATIONS, animated)
     expect(not messages and abs(box.Shape.BoundBox.ZMin) < d.TOLERANCE
            and box.Shape.BoundBox.ZMax > 20 + d.TOLERANCE, "Stand on edge takes a right-angled top edge alone")
     # The top edge runs along X: the view looks along it, the bed below.
