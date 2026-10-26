@@ -575,7 +575,7 @@ def check_quick_plan():
     other = [e for e in box.Edges if not any(e.isSame(x) for x in box.Faces[front].Edges)][0]
     try:
         geometry.quick_plan(box, [(other, None)], [(box.Faces[front], front)], p, d.TILT_ANGLE)
-    except geometry.FinError as error:
+    except orient.OrientError as error:
         expect("not an edge" in str(error), "an edge of another face is refused: %s" % error)
     else:
         raise AssertionError("an edge of another face was taken")

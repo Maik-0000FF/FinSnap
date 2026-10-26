@@ -663,7 +663,7 @@ def quick_plan(shape, edges, faces, p, angle_deg):
                                                 largest leaning face
       a face and one of its edges           ->  stood on that edge, the face leaning
                                                 angle_deg; fins under it
-      a face and an edge of another face    ->  FinError
+      a face and an edge of another face    ->  OrientError from stand()
       a face, then a chamfer or fillet
         beside it, or any rounded face      ->  the part rests on the second; fins under
                                                 the first
@@ -691,8 +691,7 @@ def quick_plan(shape, edges, faces, p, angle_deg):
         return QuickPlan(change, number, edge, ())
     if len(edges) == 1 and len(faces) == 1:
         (edge, _), (face, number) = edges[0], faces[0]
-        if not any(edge.isSame(candidate) for candidate in face.Edges):
-            raise FinError(translate("FinSnap", "the edge is not an edge of the selected face"))
+        # stand() refuses an edge of another face itself.
         change = orient.stand(shape, edge, angle_deg, face)
         return _checked(shape, QuickPlan(change, number, edge, ()), p)
     if not edges and len(faces) == 2:

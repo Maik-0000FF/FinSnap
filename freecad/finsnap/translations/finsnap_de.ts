@@ -777,12 +777,12 @@
         <translation>das Teil lässt sich nicht so aufstellen, dass diese Fläche Finnen aufnimmt</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="706"/>
+        <location filename="../geometry.py" line="705"/>
         <source>Select an edge or a face, a face and the edge or the chamfer or fillet it is to stand on, or the two faces beside a fillet.</source>
         <translation>Wähle eine Kante oder eine Fläche, eine Fläche und die Kante oder die Fase oder Rundung, auf der sie stehen soll, oder die beiden Flächen neben einer Rundung.</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="716"/>
+        <location filename="../geometry.py" line="715"/>
         <source>the fins do not fit under the selected face standing this way: %s</source>
         <translation>die Finnen passen in dieser Lage nicht unter die gewählte Fläche: %s</translation>
     </message>
@@ -874,7 +874,6 @@
         <translation>eine Kante allein stellt das Teil nur bei 45 Grad auf; für einen anderen Winkel wähle zusätzlich die Fläche, die auf das Bett soll</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="695"/>
         <location filename="../orient.py" line="220"/>
         <source>the edge is not an edge of the selected face</source>
         <translation>die Kante gehört nicht zur gewählten Fläche</translation>
