@@ -37,6 +37,7 @@ GROOVE_DEPTH = 2.0     # a groove across the front of a box, splitting it
 GROOVE_WIDTH = 2.0
 GROOVE_FROM = 8.0
 WIDE_BOX = 60.0          # long enough for a U profile with legs of a third each
+SHIFT = 1.5           # how far a fin is moved along the face by hand, in mm
 UP = V(0, 0, 1)
 BOX_SIDE = 20.0
 EDGE_ROUND = 3.0       # size of the chamfer or radius of the fillet on a box edge
@@ -499,10 +500,10 @@ def check_split_face():
     # selected face alone and carry only that one.
     reaching = geometry._build
 
-    def running_into_part(part, face, support, p, tine_count, left_out):
+    def running_into_part(part, face, support, p, tine_count, left_out, shifts, heights):
         if support is not face:
             raise geometry.FinError("runs into the part")
-        return reaching(part, face, support, p, tine_count, left_out)
+        return reaching(part, face, support, p, tine_count, left_out, shifts, heights)
 
     geometry._build = running_into_part
     try:
@@ -629,6 +630,44 @@ def check_left_out(cube, face):
         raise AssertionError("fins were built with every fin removed")
 
 
+def check_moved_fins(cube, face):
+    """Fins moved along the face and set to their own height by hand."""
+    three = FinParams(placement=d.PLACEMENT_DISTRIBUTED, fin_count=3)
+    whole = geometry.build(cube, face, three)
+    moved_one = geometry.build(cube, face, three, shifts={1: SHIFT})
+    edge = whole.edges[1]
+    expect(abs(edge.z - whole.heights[1] / 2) < d.TOLERANCE
+           and whole.bodies[0].distToShape(Part.Vertex(edge))[0] < d.TOLERANCE,
+           "the handles go on the middle of the upright outer edge of the fin: %s" % edge)
+    expect(abs(moved_one.starts[1] - (whole.starts[1] + SHIFT)) < d.TOLERANCE
+           and moved_one.starts[2] == whole.starts[2],
+           "a fin moved by hand moves alone, the others stay")
+    try:
+        gap = whole.starts[2] - whole.starts[1]
+        geometry.build(cube, face, three, shifts={1: gap})
+    except geometry.FinError as error:
+        expect("closer than" in str(error), "a fin moved onto its neighbour is refused: %s" % error)
+    else:
+        raise AssertionError("a fin was moved onto its neighbour")
+    try:
+        geometry.build(cube, face, three, shifts={1: 2 * gap})
+    except geometry.FinError as error:
+        expect("would pass" in str(error), "a fin moved past its neighbour is refused: %s" % error)
+    else:
+        raise AssertionError("a fin was moved past its neighbour")
+    low = whole.tine_z[0] + FinParams().tine_height
+    lowered = geometry.build(cube, face, three, heights={2: low})
+    middle = lowered.bodies[1].BoundBox
+    expect(abs(middle.ZMax - low) < d.TOLERANCE and abs(lowered.bodies[0].BoundBox.ZMax - whole.height) < d.TOLERANCE,
+           "a fin set lower by hand stands at its own height, the others keep theirs")
+    try:
+        geometry.build(cube, face, three, heights={2: whole.tine_z[0] / 2})
+    except geometry.FinError as error:
+        expect("lower than its first tine" in str(error), "a fin below its first tine is refused: %s" % error)
+    else:
+        raise AssertionError("a fin lower than its first tine was built")
+
+
 def check_recesses(cube, face):
     """Tines over a recess or a hole in the face are left out with a warning;
     a fin none of whose tines finds the face is left out as well."""
@@ -645,6 +684,9 @@ def check_recesses(cube, face):
     named = "tines at %.1f mm" % middle_z
     expect(len(result.tines) == 2 and any(named in w for w in result.warnings),
            "the tine over a hole in the face is left out, the warning names its height: %s" % result.warnings)
+    left_out = result.dropped[0].BoundBox.Center.z if len(result.dropped) == 1 else None
+    expect(left_out is not None and abs(left_out - middle_tine) < FinParams().tine_height,
+           "the tine left out is handed back as a shape, for the red mark")
 
     # A hole under only half of the tine: it would hang free there, so it is left out too.
     beside = frame.point(middle + RECESS_RADIUS, frame.s_face(middle_tine), middle_tine)
@@ -823,6 +865,7 @@ def main():
     check_quick_fins()
     check_quick_plan()
     check_left_out(cube, face)
+    check_moved_fins(cube, face)
     print("all checks passed", file=sys.__stdout__)
 
 

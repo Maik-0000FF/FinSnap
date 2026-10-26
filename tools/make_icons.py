@@ -184,7 +184,7 @@ def icons():
         "quick_fins.svg": workbench() + bolt_badge(),
         "counter_fin.svg": bed() + part_shape() + fin_shapes() + fin_shapes(mirrored=True) + plus_badge(),
         "remove_fin.svg": workbench() + minus_badge(),
-        "restore_fins.svg": workbench() + back_badge(),
+        "reset_fins.svg": workbench() + back_badge(),
         "remove_counter.svg": bed() + part_shape() + fin_shapes() + fin_shapes(mirrored=True) + minus_badge(),
         "tilt.svg": bed() + [tilted_from] + part_shape() + tilt_arrow,
         "lay_flat.svg": bed() + tilted_outline + [laid_flat] + lay_arrow,

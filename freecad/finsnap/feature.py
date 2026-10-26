@@ -13,6 +13,7 @@ import Part
 
 from . import defaults as d
 from . import geometry
+from . import orient
 from . import overhang
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
@@ -38,11 +39,16 @@ REMOVED = {"main": "RemovedFins", "counter": "RemovedCounterFins"}
 FIN_TAGS = "FinTags"
 # How many fins the face was planned for at the last build.
 PLANNED = {"main": "PlannedFins", "counter": "PlannedCounterFins"}
-# How many fins the face was planned for when a fin of it was removed.
+# Fins moved along the face and fins with a height of their own, by number: mm.
+SHIFTS = {"main": "FinShifts", "counter": "CounterFinShifts"}
+HEIGHTS = {"main": "FinHeights", "counter": "CounterFinHeights"}
+# How many fins the face was planned for when a fin of it was changed by hand,
+# and the name earlier versions kept it under, when fins could only be removed.
+EDITED_OF = {"main": "EditedFinsOf", "counter": "EditedCounterFinsOf"}
 REMOVED_OF = {"main": "RemovedFinsOf", "counter": "RemovedCounterFinsOf"}
-NOTE_REMOVED_DROPPED = QT_TRANSLATE_NOOP(
-    "FinSnap", "The number of fins changed, so the fins removed by hand are back; remove them again where "
-    "needed.")
+NOTE_EDITS_DROPPED = QT_TRANSLATE_NOOP(
+    "FinSnap", "The number of fins changed, so the fins changed by hand are as planned again: removed fins "
+    "are back, moved fins and fin heights of their own are undone.")
 MAIN, COUNTER = "main", "counter"
 # Said when a single fin is to be removed from fins merged into the part.
 NOTE_MERGED_SINGLE = QT_TRANSLATE_NOOP(
@@ -388,6 +394,9 @@ class FinSnapFeature:
         add_properties(obj)
 
     def execute(self, obj):
+        # The last build, for the arrows of an open task panel only: a failed
+        # build leaves none, and without a panel none is kept.
+        self.results = {}
         if not obj.Base:
             return
         if still_laid_flat(obj):
@@ -398,17 +407,13 @@ class FinSnapFeature:
             return
         p = params_of(obj)
         try:
-            part, face = _face(obj.Base)
             notes = []
-            result = build_keeping_removed(
-                obj, MAIN, lambda left: geometry.build(part, face, p, left_out=left), notes)
+            part, build_main = builder(obj, MAIN)
+            result = build_keeping_edits(obj, MAIN, build_main, notes)
             counter = None
             if obj.CounterFace:
-                counter_part, counter_face = _face(obj.CounterFace)
-                counter = build_keeping_removed(
-                    obj, COUNTER, lambda left: geometry.build(counter_part, counter_face, p,
-                                                              tine_count=p.counter_tine_count or None,
-                                                              left_out=left), notes)
+                counter_part, build_counter = builder(obj, COUNTER)
+                counter = build_keeping_edits(obj, COUNTER, build_counter, notes)
         except Exception:
             # Built nothing, the fins carry no face; the overhang marks still
             # follow the part.
@@ -423,6 +428,8 @@ class FinSnapFeature:
             carried += [face_name_of(counter_part, f) for f in counter.carried]
         hidden_property(obj, CARRIED, "App::PropertyStringList")
         setattr(obj, CARRIED, carried)
+        if getattr(self, "editing", False):
+            self.results = {MAIN: result, COUNTER: counter}
         for which, built in ((MAIN, result), (COUNTER, counter)):
             if built is not None:
                 hidden_property(obj, PLANNED[which], "App::PropertyInteger")
@@ -462,6 +469,13 @@ class FinSnapFeature:
         obj.Proxy = self
         if OVERHANGS not in obj.PropertiesList:
             add_overhangs(obj)
+        # Saved when fins could only be removed: the count is taken over.
+        for which, old in REMOVED_OF.items():
+            if old in obj.PropertiesList:
+                if EDITED_OF[which] not in obj.PropertiesList:
+                    hidden_property(obj, EDITED_OF[which], "App::PropertyInteger")
+                    setattr(obj, EDITED_OF[which], getattr(obj, old))
+                obj.removeProperty(old)
         # A parameter added in a later version starts with its built-in value,
         # so fins saved before it keep their shape.
         built_in = FinParams()
@@ -583,41 +597,61 @@ def still_laid_flat(obj):
     return False
 
 
-def build_keeping_removed(obj, which, build_fn, notes):
-    """Build the fins of `which` with the fins removed by hand left out, as long
-    as the face is planned for as many fins as when they were removed.
+def builder(obj, which):
+    """How the fins of `which` are built: (the global shape of the part they
+    stand under, a function of (left_out, shifts, heights) returning the
+    FinResult), or None for a counter fin not added. The faces in the result
+    belong to that shape. execute() builds with the changes by hand stored;
+    the task panel tries changes with it before they are made."""
+    p = params_of(obj)
+    if which == MAIN:
+        part, face = _face(obj.Base)
+        return part, lambda left, shifts, heights: geometry.build(part, face, p, left_out=left, shifts=shifts,
+                                                                  heights=heights)
+    if not obj.CounterFace:
+        return None
+    part, face = _face(obj.CounterFace)
+    return part, lambda left, shifts, heights: geometry.build(
+        part, face, p, tine_count=p.counter_tine_count or None, left_out=left, shifts=shifts, heights=heights)
 
-    build_fn(left_out) builds the fins. The numbers of the removed fins count
-    along the face; with another count, from another placement or a longer face,
-    they would name other fins, so they are dropped and a note says so.
+
+def build_keeping_edits(obj, which, build_fn, notes):
+    """Build the fins of `which` with the changes made by hand, as long as the
+    face is planned for as many fins as when they were made.
+
+    build_fn(left_out, shifts, heights) builds the fins. The numbers of the fins
+    changed by hand count along the face; with another count, from another
+    placement or a longer face, they would name other fins, so every change by
+    hand is dropped and a note says so.
 
     INPUTS this has to withstand:
-      nothing removed                       ->  built as usual, count recorded
-      fins removed, same count              ->  built without them
-      fins removed, count changed           ->  built whole, removals dropped, note
+      nothing changed by hand               ->  built as usual
+      fins removed, moved or set to a
+        height, same count                  ->  built with those changes
+      changes made, count changed           ->  built as planned, changes dropped, note
       every fin removed, same count         ->  FinError: every fin is removed
-      every fin removed, count changed      ->  built whole, removals dropped, note
+      every fin removed, count changed      ->  built as planned, changes dropped, note
+      changes made, count they were made
+        for unknown                         ->  built with them; a FinError passed on
       FinError for any other reason         ->  passed on
     """
-    left = removed(obj, which)
-    result = None
+    left, shifts, heights = edits(obj, which)
+    changed = bool(left or shifts or heights)
+    made_for = getattr(obj, EDITED_OF[which], None)
+    result, failure = None, None
     try:
-        result = build_fn(left)
+        result = build_fn(left, shifts, heights)
         planned = result.planned
     except geometry.FinError as error:
-        planned = getattr(error, "planned", None)
-        if not left or planned is None or planned == getattr(obj, REMOVED_OF[which], planned):
-            raise
-    if left and planned != getattr(obj, REMOVED_OF[which], planned):
-        setattr(obj, REMOVED[which], [])
-        notes.append(translate("FinSnap", NOTE_REMOVED_DROPPED))
-        result = build_fn(())
-    return result
-
-
-def removed(obj, which):
-    """Numbers of the fins of `which` (MAIN or COUNTER) removed by hand."""
-    return list(getattr(obj, REMOVED[which], []))
+        failure, planned = error, getattr(error, "planned", None)
+    stale = changed and made_for is not None and planned is not None and planned != made_for
+    if not stale:
+        if failure is not None:
+            raise failure
+        return result
+    reset_fins(obj, which)
+    notes.append(translate("FinSnap", NOTE_EDITS_DROPPED))
+    return build_fn((), {}, {})
 
 
 def fin_at(obj, sub):
@@ -641,24 +675,117 @@ def fin_at(obj, sub):
     return None
 
 
+def edits(obj, which):
+    """The changes by hand to the fins of `which` (MAIN or COUNTER): the numbers
+    removed, and by number the shift along the face and the own height, in mm."""
+    def numbers_to_mm(name):
+        return {int(number): float(mm) for number, mm in dict(getattr(obj, name, {})).items()}
+    return (list(getattr(obj, REMOVED[which], [])), numbers_to_mm(SHIFTS[which]),
+            numbers_to_mm(HEIGHTS[which]))
+
+
+def removed(obj, which):
+    """Numbers of the fins of `which` removed by hand."""
+    return edits(obj, which)[0]
+
+
+def _edited(obj, which):
+    """Note how many fins the face was planned for when a change by hand was made."""
+    hidden_property(obj, EDITED_OF[which], "App::PropertyInteger")
+    setattr(obj, EDITED_OF[which], getattr(obj, PLANNED[which], 0))
+
+
 def remove_fin(obj, which, number):
-    """Leave fin `number` of `which` out from now on, out of as many fins as the
-    face was planned for at the last build."""
+    """Leave fin `number` of `which` out from now on."""
     hidden_property(obj, REMOVED[which], "App::PropertyIntegerList")
-    hidden_property(obj, REMOVED_OF[which], "App::PropertyInteger")
     setattr(obj, REMOVED[which], sorted(set(removed(obj, which)) | {number}))
-    setattr(obj, REMOVED_OF[which], getattr(obj, PLANNED[which], 0))
+    _edited(obj, which)
 
 
-def restore_fins(obj):
-    """Bring every fin removed by hand back."""
-    for name in REMOVED.values():
-        if name in obj.PropertiesList:
-            setattr(obj, name, [])
+def _set_mm(obj, name, number, mm):
+    hidden_property(obj, name, "App::PropertyMap")
+    values = dict(getattr(obj, name))
+    if mm is None:
+        values.pop(str(number), None)
+    else:
+        values[str(number)] = repr(round(mm, d.LENGTH_DECIMALS))
+    setattr(obj, name, values)
+
+
+def shift_fin(obj, which, number, by):
+    """Move fin `number` of `which` along the face by `by` mm more (to the right, seen from outside)."""
+    set_fin_shift(obj, which, number, edits(obj, which)[1].get(number, 0.0) + by)
+
+
+def set_fin_shift(obj, which, number, mm):
+    """Move fin `number` of `which` `mm` along the face from where it was planned."""
+    _set_mm(obj, SHIFTS[which], number, None if abs(mm) < d.TOLERANCE else mm)
+    _edited(obj, which)
+
+
+def set_fin_height(obj, which, number, mm):
+    """Give fin `number` of `which` a height of its own, or with None the height of the others again."""
+    _set_mm(obj, HEIGHTS[which], number, mm)
+    _edited(obj, which)
+
+
+def reset_fins(obj, which=None):
+    """Undo every change by hand: removed fins come back, moved fins and fins
+    with a height of their own return to where and how high they were planned.
+    Both fins without `which`."""
+    for one in (which,) if which else (MAIN, COUNTER):
+        if REMOVED[one] in obj.PropertiesList:
+            setattr(obj, REMOVED[one], [])
+        for name in (SHIFTS[one], HEIGHTS[one]):
+            if name in obj.PropertiesList:
+                setattr(obj, name, {})
+
+
+def remove_fins(obj, fins):
+    """Leave out the fins in `fins`, as (MAIN or COUNTER, number). True when
+    that would leave no main fin: then nothing is changed, and the caller
+    deletes the fins object instead.
+
+    INPUTS this has to withstand (fins built: main 1, 2, 3 and counter 1):
+      main 2                                ->  main 2 left out, False
+      main 1, 2, 3                          ->  nothing changed, True
+      main 1, 2, 3 and counter 1            ->  nothing changed, True
+      counter 1, the only counter fin       ->  counter fin dropped, False
+      main 2 and counter 1                  ->  main 2 left out, counter fin dropped, False
+      a fin twice                           ->  as once
+      empty                                 ->  nothing changed, False
+    """
+    picked = set(fins)
+    built = {MAIN: set(), COUNTER: set()}
+    for tag in getattr(obj, FIN_TAGS, []):
+        which, number = tag.split(":")
+        built[which].add(int(number))
+    gone = {which: {n for w, n in picked if w == which} for which in built}
+    if built[MAIN] and built[MAIN] <= gone[MAIN]:
+        return True
+    if built[COUNTER] and built[COUNTER] <= gone[COUNTER]:
+        remove_counter(obj)
+        gone[COUNTER] = set()
+    for which, numbers in gone.items():
+        for number in sorted(numbers):
+            remove_fin(obj, which, number)
+    return False
+
+
+def prepare_delete(obj):
+    """Before the fins object `obj` is deleted: the last fins of a part stood
+    on an edge lay it flat again; other fins of it are built anew."""
+    if not obj.Base:
+        return
+    owner = outermost(obj.Base[0])
+    others = [o for o in fins_of(owner, obj.Document) if o is not obj]
+    if not others:
+        orient.lay_back(owner)
+    for other in others:
+        other.touch()
 
 
 def remove_counter(obj):
-    """Drop the counter fin, and the counter fins removed by hand with it."""
+    """Drop the counter fin, and its changes by hand with it."""
     obj.CounterFace = None
-    if REMOVED[COUNTER] in obj.PropertiesList:
-        setattr(obj, REMOVED[COUNTER], [])
+    reset_fins(obj, COUNTER)

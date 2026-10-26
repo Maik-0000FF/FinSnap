@@ -38,6 +38,10 @@ NAVIGATION_ANIMATIONS = "UseNavigationAnimations"
 CHAMFER = 3.0
 QUICK_LENGTH = 80.0  # a face this long gets two fins with automatic placement
 THICK_LAYER = 0.3  # a layer height other than the standard, to see the steps follow
+FIN_SHIFT = 1.5  # how far a handle moves a fin along the face, in mm
+TOO_MANY_FINS = 50  # more fins than the face takes, so the build fails
+AXIS_Z_RGB = (0.2, 0.2, 0.8)  # FreeCAD's standard colour of the z axis
+COLOR_TOLERANCE = 0.01
 
 
 def load_workbench():
@@ -215,6 +219,10 @@ def main():
     marked.ViewObject.Visibility = False
     expect(marks.whichChild.getValue() == coin.SO_SWITCH_NONE, "hiding the fins hides the marks")
     marked.ViewObject.Visibility = True
+    box.ViewObject.Visibility = False
+    expect(marks.whichChild.getValue() == coin.SO_SWITCH_NONE, "hiding the part hides the marks on it")
+    box.ViewObject.Visibility = True
+    expect(marks.whichChild.getValue() == coin.SO_SWITCH_ALL, "showing the part shows them again")
 
     # Fins under the overhanging face as well: the report after a tilt leaves it out.
     carried = feature.create(box, hanging[0])
@@ -460,7 +468,7 @@ def main():
     editing.widgets["LayerHeight"].setValue(THICK_LAYER)
     expect(abs(editing.widgets["TineFirst"].singleStep() - THICK_LAYER) < d.TOLERANCE,
            "fields on the layer grid step by the layer height entered")
-    editing.restore()
+    editing.reset()
     expect(lined.ResultFinCount == 3, "the panel brings removed fins back")
     select(lined, face_of_fin(0))
     editing.remove_selected()
@@ -470,7 +478,7 @@ def main():
     expect(lined.ResultFinCount == 2 and not lined.CounterFace and feature.removed(lined, feature.MAIN) == [2],
            "Cancel puts back the fins as they were when the panel opened")
     # Through the Delete command itself, as the key runs it: one step undoes it.
-    feature.restore_fins(lined)
+    feature.reset_fins(lined)
     doc.recompute()
     select(lined, face_of_fin(2))
     Gui.runCommand("Std_Delete")
@@ -490,9 +498,9 @@ def main():
     lined.Connection = d.CONNECTION_SEPARATE
     doc.recompute()
     # Removed for the first time in the panel, then Cancel: nothing stays removed.
-    feature.restore_fins(lined)
+    feature.reset_fins(lined)
     lined.removeProperty(feature.REMOVED[feature.MAIN])
-    lined.removeProperty(feature.REMOVED_OF[feature.MAIN])
+    lined.removeProperty(feature.EDITED_OF[feature.MAIN])
     doc.recompute()
     fresh = FinSnapTaskPanel(lined)
     select(lined, face_of_fin(0))
@@ -500,8 +508,133 @@ def main():
     fresh.reject()
     expect(lined.ResultFinCount == 3 and not feature.removed(lined, feature.MAIN),
            "Cancel also forgets a fin removed for the first time in the panel")
-    for obj in (lined, row):
-        doc.removeObject(obj.Name)
+    # Handles: on the first fin from the start, on a fin clicked after; dragged,
+    # the fin is previewed and then moved.
+    from freecad.finsnap import handles
+    select(lined)
+    look = (lined.ViewObject.ShapeAppearance[0].DiffuseColor, lined.ViewObject.Transparency)
+    moving = FinSnapTaskPanel(lined)
+    expect(moving.handled == (feature.MAIN, 1) and moving.handles.arrows.whichChild.getValue() == coin.SO_SWITCH_ALL,
+           "the panel opens with two arrows on the first fin")
+    expect(lined.ViewObject.Transparency == round(handles.PREVIEW_TRANSPARENCY * handles.PERCENT),
+           "the fins are see-through while the panel is open")
+    select(lined, face_of_fin(2))
+    expect(moving.handled == (feature.MAIN, 3), "a fin clicked gets the handles")
+    select(lined, face_of_fin(0))
+    before = lined.Shape.Solids[0].BoundBox.Center
+    held = dict(moving.handles.draggers)
+    place = moving.fin_fields[handles.ALONG].value()
+    moving.handle_started(handles.ALONG)
+    moving.handle_moved(handles.ALONG, FIN_SHIFT)
+    expect(abs(moving.fin_fields[handles.ALONG].value() - (place + FIN_SHIFT)) < d.TOLERANCE,
+           "the field follows the arrow while it is dragged")
+    moving.drag_step()
+    expect(abs(lined.Shape.Solids[0].BoundBox.Center.sub(before).Length - FIN_SHIFT) < d.TOLERANCE
+           and feature.edits(lined, feature.MAIN)[1] == {1: FIN_SHIFT},
+           "a dragged fin is built where the arrow is, while it is held")
+    moving.finish_drag(handles.ALONG, FIN_SHIFT)
+    expect(feature.edits(lined, feature.MAIN)[1] == {1: FIN_SHIFT}
+           and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_NONE,
+           "a fin let go stays there")
+    expect(all(moving.handles.draggers[kind] is held[kind] for kind in held),
+           "the arrows stay the same after a move; Coin may still hold the one let go")
+    expect(all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(handles.axis_color("z"), AXIS_Z_RGB)),
+           "the arrow up has the colour of the z axis: %s" % (handles.axis_color("z"),))
+    result = lined.Proxy.results[feature.MAIN]
+    onto_neighbour = result.starts[2] - result.starts[1]
+    moving.handle_started(handles.ALONG)
+    moving.handle_moved(handles.ALONG, onto_neighbour)
+    moving.drag_step()
+    expect(feature.edits(lined, feature.MAIN)[1] == {1: FIN_SHIFT}
+           and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_ALL
+           and taskpanel.ERROR_COLOR in moving.notes.styleSheet(),
+           "a fin dragged onto its neighbour stays at its last place, shown red where the arrow is")
+    moving.finish_drag(handles.ALONG, onto_neighbour)
+    expect(feature.edits(lined, feature.MAIN)[1] == {1: FIN_SHIFT}
+           and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_NONE,
+           "let go there, it stays at its last place")
+    lower = result.heights[1] - FIN_SHIFT
+    moving.fin_fields[handles.UP].setValue(lower)
+    moving.field_entered(handles.UP)
+    lowered = lined.Proxy.results[feature.MAIN]
+    expect(abs(lowered.heights[1] - lower) < d.TOLERANCE, "a height typed into the field sets the fin's height")
+    moving.fin_fields[handles.ALONG].setValue(place)
+    moving.field_entered(handles.ALONG)
+    expect(not feature.edits(lined, feature.MAIN)[1], "a place typed into the field moves the fin there")
+    lowered = lined.Proxy.results[feature.MAIN]
+    expect(App.Vector(*moving.handles.places[handles.UP].translation.getValue().getValue())
+           .sub(lowered.edges[1]).Length < d.TOLERANCE,
+           "the arrows follow to the upright outer edge of the fin")
+    # A click on an arrow without a move, and a field left as it is, change nothing.
+    feature.reset_fins(lined)
+    lined.recompute()
+    moving.place_handles()
+    moving.handle_started(handles.UP)
+    moving.finish_drag(handles.UP, 0.0)
+    expect(feature.edits(lined, feature.MAIN) == ([], {}, {}), "a click on an arrow alone changes nothing")
+    shown = moving.fin_fields[handles.ALONG].value()
+    moving.fin_fields[handles.ALONG].setValue(shown)
+    moving.field_entered(handles.ALONG)
+    expect(feature.edits(lined, feature.MAIN) == ([], {}, {}), "a field left as it is shows, changes nothing")
+    # A drag that started on no fin is passed over, without a jump or an error.
+    moving.drag_base = {}
+    moving.handle_moved(handles.UP, FIN_SHIFT)
+    moving.finish_drag(handles.UP, FIN_SHIFT)
+    expect(feature.edits(lined, feature.MAIN) == ([], {}, {}), "a drag that never started on a fin changes nothing")
+    # A build that fails leaves no old result for the arrows.
+    lined.FinCount = TOO_MANY_FINS
+    lined.recompute()
+    expect(not lined.Proxy.results, "a failed build leaves no old result behind")
+    lined.FinCount = 3
+    lined.recompute()
+    moving.reject()
+    expect(not lined.Proxy.results and not lined.Proxy.editing, "without a panel, no build is kept")
+    expect(feature.edits(lined, feature.MAIN) == ([], {}, {})
+           and moving.handles.arrows.whichChild.getValue() == coin.SO_SWITCH_NONE,
+           "Cancel undoes the moves and takes the handles away")
+    expect((lined.ViewObject.ShapeAppearance[0].DiffuseColor, lined.ViewObject.Transparency) == look,
+           "Cancel gives the fins their look back")
+    # Edit mode left another way than OK or Cancel: the panel cleans up all the same.
+    leaving = FinSnapTaskPanel(lined)
+    lined.ViewObject.Proxy.panel = leaving
+    lined.ViewObject.Proxy.unsetEdit(lined.ViewObject)
+    expect(leaving.released and lined.ViewObject.Transparency == look[1],
+           "leaving edit mode another way takes the arrows away and gives the fins their look back")
+    # Another task dialog open: double click opens no fins panel and changes nothing.
+    blocker = FinSnapTaskPanel(lined)
+    blocker.release_handles()
+    Gui.Control.showDialog(blocker)
+    expect(lined.ViewObject.Proxy.setEdit(lined.ViewObject) is False and lined.ViewObject.Transparency == look[1],
+           "with another task dialog open no panel opens, and the fins keep their look")
+    commands._edit_new(lined)
+    expect(not getattr(lined.ViewObject.Proxy, "created", False),
+           "fins opened while another dialog is open are not taken as just made")
+    Gui.Control.closeDialog()
+    expect(lined.ViewObject.Proxy.onDelete(lined.ViewObject, ["Vertex1"]) is False
+           and lined.Name in [o.Name for o in doc.Objects], "a pick that is no fin deletes nothing")
+    # The whole object deleted in the tree while its panel is open: the panel closes first.
+    open_panel = FinSnapTaskPanel(lined)
+    lined.ViewObject.Proxy.panel = open_panel
+    expect(lined.ViewObject.Proxy.onDelete(lined.ViewObject, []) is True and open_panel.released,
+           "deleting the object with its panel open closes the panel first")
+    lined.ViewObject.Proxy.panel = None
+    # The Delete key on every fin: the object goes as a whole, as from the tree.
+    every = [face_of_fin(i) for i in range(len(lined.Shape.Solids))]
+    expect(lined.ViewObject.Proxy.onDelete(lined.ViewObject, every) is True and lined.FinTags,
+           "the Delete key on the last fins deletes the object instead of leaving it broken")
+    # The same with the panel open: FreeCAD deletes nothing in edit mode, the panel asks and does it.
+    asking = FinSnapTaskPanel(lined)
+    lined.ViewObject.Proxy.panel = asking
+    question = QtWidgets.QMessageBox.question
+    QtWidgets.QMessageBox.question = lambda *args: QtWidgets.QMessageBox.Yes
+    try:
+        lined.ViewObject.Proxy.onDelete(lined.ViewObject, every)
+        # The panel deletes once the Delete command is through.
+        QtWidgets.QApplication.processEvents()
+    finally:
+        QtWidgets.QMessageBox.question = question
+    expect(lined.Name not in [o.Name for o in doc.Objects], "with the panel open it asks, then deletes the fins")
+    doc.removeObject(row.Name)
 
     # A face the fins cannot stand under: the panel says why instead of keeping the old result.
     upward = [i for i, f in enumerate(cube.Shape.Faces, 1) if f.normalAt(0, 0).z > 1 - d.TOLERANCE][0]

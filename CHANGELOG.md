@@ -8,7 +8,9 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Added
 
-- Single fins can be removed: click one in the 3D view and press Delete, or Remove selected fin in the task panel; Bring removed fins back restores them
+- Single fins can be removed: click one in the 3D view and press Delete, or Remove selected fin in the task panel; removing the last fins deletes the fins object, as deleting it in the tree does
+- Single fins can be moved along the face and given a height of their own: while the task panel is open, two arrows in the 3D view sit on the upright outer edge of the first fin, or of a fin clicked, sized by its height and in the colours of the axes. The fin follows an arrow while it is dragged; where it cannot stand it stays at its last place and is shown red where the arrow is. Under Edit fins, Place on the face and Height show where the fin stands; after a drag the field takes the keyboard, and a value typed and Enter move the fin. The fins are see-through green while editing, red while they cannot be built, and tines that find no face are marked red
+- Reset fins in the task panel undoes every change by hand: removed fins come back, moved fins and fin heights of their own are undone. With another number of fins the changes by hand are undone as well, and a note says so
 - The task panel adds and removes the counter fin; its Edit fins buttons show icons
 - A face split by a groove across it is supported together with the piece beyond the groove: the fin reaches over the gap, the tines over it are left out and named
 - Quick fins: select an edge, and the part stands on it with one fin under its largest leaning face; or select a face, and the part is turned so that it leans 45 degrees over the bed with one fin under it. A face with one of its edges, or with a chamfer or fillet beside it, sets what the part stands on; a fillet alone or the two faces beside it carry it too. A counter fin, where wanted, is added in the task panel
@@ -25,6 +27,7 @@ All notable changes to FinSnap are listed here. The format follows
 - An automatic fin ends at its highest tine that finds the face
 - Warnings name the main or the counter fin
 - Fins of a part laid flat are left out of an export, and a message names them
+- The red overhang marks are hidden while the part they lie on is hidden, not only while the fins are
 - The drawings in the task panel are larger and show the tine clearance
 
 ### Fixed

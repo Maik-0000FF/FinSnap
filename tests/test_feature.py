@@ -27,6 +27,8 @@ PACKAGE_XML = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 PACKAGE_VERSION = ET.parse(PACKAGE_XML).getroot().findtext("{https://wiki.freecad.org/Package_Metadata}version")
 BOX = (40.0, 20.0, 20.0)
 XY_PLANE = 3  # index in the origin features of a Body
+FIN_SHIFT = 1.5  # how far a fin is moved along the face by hand, in mm
+MANY_FIN_WIDTHS = 3  # far enough to run a fin into its neighbour
 XZ_PLANE = 4  # index in the origin features of a Body
 # A T standing on its stem, in sketch coordinates: stem 10 wide and 20 high,
 # arms reaching 10 to each side.
@@ -239,7 +241,7 @@ def edit_fins(doc):
     doc.recompute()
     expect(fins.ResultFinCount == 2 and list(fins.FinTags) == ["main:1", "main:3"],
            "the removed fin is gone, the others stay")
-    feature.restore_fins(fins)
+    feature.reset_fins(fins)
     doc.recompute()
     expect(fins.ResultFinCount == 3, "removed fins come back")
     from freecad.finsnap.i18n import translate
@@ -247,8 +249,34 @@ def edit_fins(doc):
     fins.FinCount = 2
     doc.recompute()
     expect(fins.ResultFinCount == 2 and not feature.removed(fins, feature.MAIN)
-           and translate("FinSnap", feature.NOTE_REMOVED_DROPPED) in fins.Warnings,
+           and translate("FinSnap", feature.NOTE_EDITS_DROPPED) in fins.Warnings,
            "with another number of fins the removed ones come back, and a note says so")
+    fins.FinCount = 3
+    doc.recompute()
+    before = fins.Shape.Solids[0].BoundBox
+    feature.shift_fin(fins, feature.MAIN, 1, FIN_SHIFT)
+    feature.set_fin_height(fins, feature.MAIN, 3, fins.Shape.Solids[2].BoundBox.ZLength / 2)
+    doc.recompute()
+    after = fins.Shape.Solids[0].BoundBox
+    expect(fins.ResultFinCount == 3 and abs(after.Center.sub(before.Center).Length - FIN_SHIFT) < d.TOLERANCE,
+           "a fin moved by hand stands that far along the face")
+    expect(feature.edits(fins, feature.MAIN)[2].keys() == {3}, "a fin keeps a height of its own: %s"
+           % (feature.edits(fins, feature.MAIN),))
+    feature.shift_fin(fins, feature.MAIN, 1, -FIN_SHIFT)
+    expect(not feature.edits(fins, feature.MAIN)[1], "moved back to where it was planned, the shift is gone")
+    # A shift that no longer fits once the count changes is dropped with the others, not refused.
+    feature.shift_fin(fins, feature.MAIN, 2, fins.ResultThickness.Value * MANY_FIN_WIDTHS)
+    fins.FinCount = 2
+    doc.recompute()
+    expect(fins.ResultFinCount == 2 and feature.edits(fins, feature.MAIN) == ([], {}, {})
+           and translate("FinSnap", feature.NOTE_EDITS_DROPPED) in fins.Warnings,
+           "a fin moved onto its neighbour is dropped with the count, as the other changes are")
+    fins.FinCount = 3
+    doc.recompute()
+    fins.FinCount = 2
+    doc.recompute()
+    expect(feature.edits(fins, feature.MAIN) == ([], {}, {}),
+           "with another number of fins the heights of their own are dropped as well")
     fins.FinCount = 3
     doc.recompute()
     feature.add_counter(fins)
@@ -302,6 +330,46 @@ def warnings_and_old_files(doc):
     cube.Shape = tilted_cube()
     main_face = lower_left_face(cube.Shape)
     fins = feature.create(cube, face_name(cube.Shape, main_face))
+    # Removing several fins at once, as the Delete key does.
+    feature.add_counter(fins)
+    doc.recompute()
+    every_main = [(feature.MAIN, n) for n in (1, 2, 3)]
+    expect(feature.remove_fins(fins, every_main + [(feature.COUNTER, 1)]) is True
+           and feature.edits(fins, feature.MAIN) == ([], {}, {}) and fins.CounterFace,
+           "removing every main fin changes nothing and asks for the object to be deleted")
+    expect(feature.remove_fins(fins, [(feature.MAIN, 2), (feature.MAIN, 2), (feature.COUNTER, 1)]) is False
+           and feature.removed(fins, feature.MAIN) == [2] and not fins.CounterFace,
+           "one main fin and the only counter fin: that fin left out, the counter fin dropped")
+    expect(feature.remove_fins(fins, []) is False and feature.removed(fins, feature.MAIN) == [2],
+           "nothing picked changes nothing")
+    feature.reset_fins(fins)
+    doc.recompute()
+    # Saved before the count was kept: changes stay, and a failing build says why.
+    feature.remove_fin(fins, feature.MAIN, 2)
+    fins.removeProperty(feature.EDITED_OF[feature.MAIN])
+    fins.FinCount = 2
+    doc.recompute()
+    expect(feature.removed(fins, feature.MAIN) == [2] and fins.ResultFinCount == 1,
+           "without the count they were made for, changes by hand stay")
+    feature.remove_fin(fins, feature.MAIN, 1)
+    fins.removeProperty(feature.EDITED_OF[feature.MAIN])
+    doc.recompute()
+    expect("every fin is removed" in fins.getStatusString() or
+           translate("FinSnap", "every fin is removed; delete the fins instead, or bring them back")
+           in fins.getStatusString(),
+           "without the count, a build that fails says why: %s" % fins.getStatusString())
+    fins.FinCount = 3
+    feature.reset_fins(fins)
+    feature.remove_fin(fins, feature.MAIN, 1)
+    fins.removeProperty(feature.EDITED_OF[feature.MAIN])
+    fins.addProperty("App::PropertyInteger", feature.REMOVED_OF[feature.MAIN])
+    setattr(fins, feature.REMOVED_OF[feature.MAIN], 3)
+    fins.Proxy.onDocumentRestored(fins)
+    expect(getattr(fins, feature.EDITED_OF[feature.MAIN], None) == 3
+           and feature.REMOVED_OF[feature.MAIN] not in fins.PropertiesList,
+           "a file from when fins could only be removed keeps the count they were removed from")
+    feature.reset_fins(fins)
+    doc.recompute()
     feature.add_counter(fins)
     # A gap this narrow makes the tines of both fins short, so both warn.
     fins.Gap = SHORT_TINE_GAP

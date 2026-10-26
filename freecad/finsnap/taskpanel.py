@@ -13,10 +13,12 @@ from PySide import QtCore, QtGui, QtWidgets
 
 from . import defaults as d
 from . import feature
+from . import geometry
+from . import handles
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
-from .paths import ICON_COUNTER, ICON_REMOVE_COUNTER, ICON_REMOVE_FIN, ICON_RESTORE_FINS, SIDE_VIEW, TOP_VIEW
+from .paths import ICON_COUNTER, ICON_REMOVE_COUNTER, ICON_REMOVE_FIN, ICON_RESET_FINS, SIDE_VIEW, TOP_VIEW
 from .shapes import FACE_PREFIX
 from .version import application
 
@@ -25,11 +27,18 @@ MAX_LENGTH = 10000.0
 MAX_INTEGER = 1000
 MAX_RATIO = 10.0
 LENGTH_DECIMALS = 3
+# Half the last place a length field shows: a value closer than this is the one shown.
+FIELD_TOLERANCE = 0.5 * 10 ** -LENGTH_DECIMALS
 RATIO_DECIMALS = 2
 LENGTH_SUFFIX = " mm"
 # Pause after the last change before the preview is rebuilt, so typing a
 # number does not rebuild the fins at every keystroke.
 PREVIEW_DELAY_MS = 400
+# Pause after the last move of a handle before the preview for it is built.
+DRAG_PREVIEW_MS = 150
+NOTE_CLICK_FIN = QT_TRANSLATE_NOOP("FinSnap", "Click a fin of these fins in the 3D view first.")
+SIDES = {feature.MAIN: QT_TRANSLATE_NOOP("FinSnap", "Main fin"),
+         feature.COUNTER: QT_TRANSLATE_NOOP("FinSnap", "Counter fin")}
 # FinParams field of the layer height, the step of the fields on the layer grid.
 LAYER_FIELD = "layer_height"
 # Notes below the result: warnings in amber, a refusal in red, each in a framed
@@ -137,6 +146,13 @@ def _read(prop, widget):
     return widget.value()
 
 
+def _same_mm(a, b):
+    """Whether two lengths in mm, each possibly None, are the same."""
+    if a is None or b is None:
+        return a is b
+    return abs(a - b) < d.TOLERANCE
+
+
 class FinSnapTaskPanel:
     def __init__(self, obj, created=False):
         self.obj = obj
@@ -149,10 +165,12 @@ class FinSnapTaskPanel:
         self.layer_prop = next(prop for prop in feature.PROPERTIES if prop.field == LAYER_FIELD)
         # Every change is written to the object at once; Cancel puts these back.
         self.original = {prop.name: feature.value_of(obj, prop.name) for prop in feature.PROPERTIES}
-        # And what Edit fins changes: the removed fins and the counter face.
-        # A property the fins do not have yet counts as empty: nothing removed.
+        # And what Edit fins changes: the fins removed, moved or set to a height
+        # of their own, and the counter face. A property the fins do not have
+        # yet counts as empty: nothing changed.
         self.original_edits = {name: getattr(obj, name, empty) for names, empty in
-                               ((feature.REMOVED.values(), []), (feature.REMOVED_OF.values(), 0))
+                               ((feature.REMOVED.values(), []), (feature.SHIFTS.values(), {}),
+                                (feature.HEIGHTS.values(), {}), (feature.EDITED_OF.values(), 0))
                                for name in names}
         self.original_counter = obj.CounterFace
 
@@ -163,6 +181,23 @@ class FinSnapTaskPanel:
         self.timer.setSingleShot(True)
         self.timer.setInterval(PREVIEW_DELAY_MS)
         self.timer.timeout.connect(self.preview)
+        self.drag_timer = QtCore.QTimer(self.form)
+        self.drag_timer.setSingleShot(True)
+        self.drag_timer.setInterval(DRAG_PREVIEW_MS)
+        self.drag_timer.timeout.connect(self.drag_step)
+        # The fin with the handles on it, as (MAIN or COUNTER, number); the
+        # arrow being dragged with how far, as (kind, mm); and the shift and
+        # height of the fin, and the values in its fields, when it was grabbed.
+        self.handled = None
+        self.dragged = None
+        self.drag_base, self.drag_own, self.drag_values = {}, {}, {}
+        self.released = False
+        # True while the panel fills the fields of the fin, not the user.
+        self.filling_fields = False
+        self.handles = handles.Handles(obj.ViewObject, self.handle_started, self.handle_moved, self.handle_done)
+        # The fins keep their last build for the arrows while the panel is open.
+        obj.Proxy.editing = True
+        Gui.Selection.addObserver(self)
         self.form.setWindowTitle("%s (%s)" % (translate("FinSnap", "FinSnap parameters"), application()))
         layout = QtWidgets.QVBoxLayout(self.form)
         intro = QtWidgets.QLabel(translate(
@@ -213,18 +248,44 @@ class FinSnapTaskPanel:
         edit_info = QtWidgets.QLabel(translate(
             "FinSnap", "To remove one fin, click it in the 3D view and press Remove selected fin, or the "
             "Delete key. The counter fin goes on the face leaning the other way, or on a face of the part "
-            "you select."))
+            "you select. Drag the two arrows on a fin to move it along the face or to change its height, "
+            "or type the values below; click another fin to put the arrows there. Reset fins undoes every "
+            "change by hand."))
         edit_info.setWordWrap(True)
         edit_layout.addWidget(edit_info, 0, 0, 1, 2)
         for column, row, icon, text, action in (
                 (0, 1, ICON_REMOVE_FIN, QT_TRANSLATE_NOOP("FinSnap", "Remove selected fin"), self.remove_selected),
-                (1, 1, ICON_RESTORE_FINS, QT_TRANSLATE_NOOP("FinSnap", "Bring removed fins back"), self.restore),
+                (1, 1, ICON_RESET_FINS, QT_TRANSLATE_NOOP("FinSnap", "Reset fins"), self.reset),
                 (0, 2, ICON_COUNTER, QT_TRANSLATE_NOOP("FinSnap", "Add counter fin"), self.add_counter),
                 (1, 2, ICON_REMOVE_COUNTER, QT_TRANSLATE_NOOP("FinSnap", "Remove counter fin"),
                  self.remove_counter)):
             button = _icon_button(icon, translate("FinSnap", text))
             button.clicked.connect(action)
             edit_layout.addWidget(button, row, column)
+        self.fin_label = QtWidgets.QLabel(translate("FinSnap", NOTE_CLICK_FIN))
+        self.fin_label.setWordWrap(True)
+        edit_layout.addWidget(self.fin_label, 3, 0, 1, 2)
+        # Where the fin with the arrows stands, to read or to type in; Enter moves it.
+        self.fin_fields = {}
+        for row, kind, text, tip in (
+                (4, handles.ALONG, QT_TRANSLATE_NOOP("FinSnap", "Place on the face"),
+                 QT_TRANSLATE_NOOP("FinSnap", "Distance of the middle of the fin from the left end of the face, "
+                                   "seen from outside. Type a value and press Enter to move the fin.")),
+                (5, handles.UP, QT_TRANSLATE_NOOP("FinSnap", "Height"),
+                 QT_TRANSLATE_NOOP("FinSnap", "Height of this fin alone. Type a value and press Enter to set "
+                                   "it; Reset fins gives it the height of the others again."))):
+            label = QtWidgets.QLabel(translate("FinSnap", text))
+            box = QtWidgets.QDoubleSpinBox()
+            box.setDecimals(LENGTH_DECIMALS)
+            box.setSuffix(LENGTH_SUFFIX)
+            box.setRange(-MAX_LENGTH, MAX_LENGTH)
+            box.setKeyboardTracking(False)
+            box.setToolTip(_wrapped(translate("FinSnap", tip)))
+            label.setToolTip(box.toolTip())
+            box.editingFinished.connect(functools.partial(self.field_entered, kind))
+            edit_layout.addWidget(label, row, 0)
+            edit_layout.addWidget(box, row, 1)
+            self.fin_fields[kind] = box
         layout.addWidget(edit)
 
         standard_buttons = QtWidgets.QHBoxLayout()
@@ -318,24 +379,56 @@ class FinSnapTaskPanel:
         self.update_enabled()
         self.preview()
 
+    def selected_fins(self):
+        """The fins of these fins picked in the 3D view, as (MAIN or COUNTER, number)."""
+        fins = [feature.fin_at(self.obj, sub) for sel in Gui.Selection.getSelectionEx()
+                if sel.Object is self.obj for sub in sel.SubElementNames]
+        return [fin for fin in fins if fin]
+
     def remove_selected(self):
+        self.remove_fins(self.selected_fins())
+
+    def remove_fins(self, fins):
+        """Remove the fins in `fins`, as (MAIN or COUNTER, number), from the
+        button or the Delete key. The last main fins take the whole object
+        with them, once the user agrees."""
         if self.obj.Connection == d.CONNECTION_MERGED:
             self.show_notes(translate("FinSnap", "Nothing removed"),
                             [translate("FinSnap", feature.NOTE_MERGED_SINGLE)], WARNING_COLOR)
             return
-        fins = [feature.fin_at(self.obj, sub) for sel in Gui.Selection.getSelectionEx()
-                if sel.Object is self.obj for sub in sel.SubElementNames]
-        fins = [fin for fin in fins if fin]
         if not fins:
             self.show_notes(translate("FinSnap", "Nothing removed"),
-                            [translate("FinSnap", "Click a fin of these fins in the 3D view first.")], WARNING_COLOR)
+                            [translate("FinSnap", NOTE_CLICK_FIN)], WARNING_COLOR)
             return
-        for which, number in set(fins):
-            feature.remove_fin(self.obj, which, number)
-        self.edited()
+        if not feature.remove_fins(self.obj, fins):
+            self.edited()
+            return
+        answer = QtWidgets.QMessageBox.question(
+            self.form, translate("FinSnap", "Delete the fins?"),
+            translate("FinSnap", "These are the last fins. Delete the fins object? A part stood on an edge "
+                      "for these fins alone is laid flat again."))
+        if answer == QtWidgets.QMessageBox.Yes:
+            self.delete_all()
 
-    def restore(self):
-        feature.restore_fins(self.obj)
+    def close(self):
+        """Close the panel as it is, before the fins object goes."""
+        self.timer.stop()
+        self.release_handles()
+        Gui.Control.closeDialog()
+        self.leave_edit()
+
+    def delete_all(self):
+        """Close the panel and delete the fins object, as deleting it in the tree does."""
+        self.close()
+        doc = self.obj.Document
+        doc.openTransaction(translate("FinSnap", "Delete fins"))
+        feature.prepare_delete(self.obj)
+        doc.removeObject(self.obj.Name)
+        doc.commitTransaction()
+        doc.recompute()
+
+    def reset(self):
+        feature.reset_fins(self.obj)
         self.edited()
 
     def add_counter(self):
@@ -378,6 +471,223 @@ class FinSnapTaskPanel:
         self.notes.setStyleSheet(NOTE_STYLE % color)
         self.notes.show()
 
+    def addSelection(self, doc, name, sub, point):  # noqa: N802 - FreeCAD API
+        """A fin picked in the 3D view gets the handles."""
+        try:
+            mine = doc == self.obj.Document.Name and name == self.obj.Name
+        except ReferenceError:
+            # The fins were deleted with the panel still listening; it stops
+            # once FreeCAD is through with the selection.
+            QtCore.QTimer.singleShot(0, functools.partial(Gui.Selection.removeObserver, self))
+            return
+        if not mine:
+            return
+        # An arrow stands inside its see-through fin, so grabbing it picks the
+        # fin as well; the arrows must not move while held.
+        if self.handles.held:
+            return
+        fin = feature.fin_at(self.obj, sub)
+        if fin and fin != self.handled:
+            self.handled = fin
+            self.place_handles()
+
+    def handled_result(self):
+        """The last build of the side of the fin with the handles, and the
+        index of that fin in it; None while no fin built has them."""
+        if self.handled is None:
+            return None
+        which, number = self.handled
+        result = getattr(self.obj.Proxy, "results", {}).get(which)
+        if result is None or number not in result.numbers:
+            return None
+        return result, result.numbers.index(number)
+
+    def choose_fin(self):
+        """The fin to put the handles on when none has them: the one selected,
+        or else the first fin built."""
+        picked = self.selected_fins()
+        if picked:
+            return picked[0]
+        for which in (feature.MAIN, feature.COUNTER):
+            result = getattr(self.obj.Proxy, "results", {}).get(which)
+            if result is not None and result.numbers:
+                return which, result.numbers[0]
+        return None
+
+    def fin_values(self):
+        """Where the handled fin stands, from the last build: its middle from the
+        start of the face along it (ALONG) and its height (UP), in mm."""
+        result = self.handled_result()[0]
+        number = self.handled[1]
+        return {handles.ALONG: result.starts[number] + result.thickness / 2 - result.face_start,
+                handles.UP: result.heights[number]}
+
+    def place_handles(self):
+        if self.handled_result() is None:
+            self.handled = self.choose_fin()
+        found = self.handled_result()
+        enabled = found is not None
+        for box in self.fin_fields.values():
+            box.setEnabled(enabled)
+        if not enabled:
+            self.handles.hide()
+            self.fin_label.setText(translate("FinSnap", NOTE_CLICK_FIN))
+            return
+        result = found[0]
+        which, number = self.handled
+        # A held arrow stays where it was grabbed; only the numbers follow it.
+        if not self.handles.held:
+            self.handles.show(result.edges[number], result.heights[number], result.along)
+        self.show_fin_values(self.fin_values())
+        self.fin_label.setText(translate("FinSnap", "%s %d") % (translate("FinSnap", SIDES[which]), number))
+
+    def show_fin_values(self, values):
+        """Show `values` in the fields of the handled fin, without taking them as typed."""
+        self.filling_fields = True
+        for kind, value in values.items():
+            self.fin_fields[kind].setValue(value)
+        self.filling_fields = False
+
+    def own_value(self, kind):
+        """What the handled fin has by hand now: its shift along the face
+        (ALONG) or its own height (UP), in mm, or None."""
+        which, number = self.handled
+        return feature.edits(self.obj, which)[1 if kind == handles.ALONG else 2].get(number)
+
+    def write_fin(self, kind, value):
+        """Store `value` as the shift (ALONG) or the own height (UP) of the
+        handled fin; None takes it away."""
+        which, number = self.handled
+        if kind == handles.ALONG:
+            feature.set_fin_shift(self.obj, which, number, value or 0.0)
+        else:
+            feature.set_fin_height(self.obj, which, number, value)
+
+    def set_fin(self, kind, value):
+        """Give the handled fin the shift along the face (ALONG) or the height
+        (UP) `value` and build the fins, once. Where they cannot be built so,
+        or the fin finds no face there, it gets back what it had, the panel
+        says why, and False is returned."""
+        before = self.own_value(kind)
+        self.write_fin(kind, value)
+        error = None
+        try:
+            self.apply()
+        except ValueError as failed:
+            error = failed
+        else:
+            if self.handled_result() is None:
+                error = geometry.FinError(translate("FinSnap", "no tine of the fin finds the face there"))
+        if error is None:
+            self.update_enabled()
+            self.show_result()
+            return True
+        self.write_fin(kind, before)
+        self.preview()
+        self.refuse(error)
+        return False
+
+    def handle_started(self, kind):
+        """An arrow grabbed: note where the fin stands and what it has by hand;
+        the drag starts from there."""
+        # Nothing of an earlier drag carries over; without a fin the drag is passed over.
+        self.drag_base, self.drag_own, self.drag_values = {}, {}, {}
+        if self.handled_result() is None:
+            return
+        which, number = self.handled
+        self.drag_base = {handles.ALONG: feature.edits(self.obj, which)[1].get(number, 0.0),
+                          handles.UP: self.handled_result()[0].heights[number]}
+        self.drag_own = {one: self.own_value(one) for one in (handles.ALONG, handles.UP)}
+        self.drag_values = self.fin_values()
+
+    def handle_moved(self, kind, mm):
+        if kind not in self.drag_base:
+            return
+        self.dragged = (kind, mm)
+        self.show_fin_values({kind: self.drag_values[kind] + mm})
+        self.drag_timer.start()
+
+    def drag_to(self, kind, mm):
+        """Build the fins with the handled fin `mm` from where it was grabbed.
+        A move too small to count gives it back what it had when grabbed, so a
+        click on an arrow alone changes nothing."""
+        if abs(mm) >= d.TOLERANCE:
+            return self.set_fin(kind, self.drag_base[kind] + mm)
+        if not _same_mm(self.own_value(kind), self.drag_own[kind]):
+            self.write_fin(kind, self.drag_own[kind])
+            self.edited()
+        return True
+
+    def drag_step(self):
+        """While an arrow is held, the fins are built with the fin where the
+        arrow is. Where it cannot stand, it stays at its last place, and a red
+        preview shows it where the arrow is."""
+        if self.dragged is None or self.handled_result() is None or self.dragged[0] not in self.drag_base:
+            return
+        kind, mm = self.dragged
+        if self.drag_to(kind, mm):
+            self.handles.clear_preview()
+            return
+        result, index = self.handled_result()
+        fin = result.fins.childShapes()[index].copy()
+        if kind == handles.ALONG:
+            built_shift = self.own_value(handles.ALONG) or 0.0
+            fin.translate(result.along * (self.drag_base[kind] + mm - built_shift))
+        self.handles.show_preview([fin], False)
+
+    def handle_done(self, kind, mm):
+        # Coin still handles the drag here; rebuilding would move the arrow
+        # under it, so the last step is made once the event is through.
+        self.drag_timer.stop()
+        self.dragged = None
+        QtCore.QTimer.singleShot(0, functools.partial(self.finish_drag, kind, mm))
+
+    def finish_drag(self, kind, mm):
+        """An arrow let go: the fin goes where it is, or stays at its last place
+        where it could stand; the arrows return onto it, and its field takes
+        the keyboard, so a value can be typed right away."""
+        if self.handled_result() is None or kind not in self.drag_base:
+            self.place_handles()
+            return
+        self.drag_to(kind, mm)
+        self.handles.clear_preview()
+        self.place_handles()
+        box = self.fin_fields[kind]
+        box.setFocus()
+        box.selectAll()
+
+    def field_entered(self, kind):
+        """A value typed into a field of the handled fin: where it stands along
+        the face (ALONG) or how high it is (UP)."""
+        if self.filling_fields or self.handled_result() is None:
+            return
+        value = self.fin_fields[kind].value()
+        current = self.fin_values()[kind]
+        # The field shows the value rounded; leaving it untouched changes nothing.
+        if abs(value - current) < FIELD_TOLERANCE:
+            return
+        if kind == handles.ALONG:
+            value = (self.own_value(kind) or 0.0) + value - current
+        if not self.set_fin(kind, value):
+            self.place_handles()
+
+    def release_handles(self):
+        """Take the arrows away and stop listening, once, whichever way the panel closes."""
+        if self.released:
+            return
+        self.released = True
+        self.drag_timer.stop()
+        Gui.Selection.removeObserver(self)
+        self.handles.remove()
+        self.obj.Proxy.editing = False
+        self.obj.Proxy.results = {}
+
+    def leave_edit(self):
+        """Leave edit mode once the panel is closed, as FreeCAD's own panels do."""
+        gui_doc = Gui.getDocument(self.obj.Document)
+        if gui_doc.getInEdit() is not None and gui_doc.getInEdit().Object is self.obj:
+            gui_doc.resetEdit()
+
     def refuse(self, error):
         self.status.setText("")
         self.show_notes(translate("FinSnap", "Not possible"), [str(error)], ERROR_COLOR)
@@ -387,8 +697,19 @@ class FinSnapTaskPanel:
         try:
             self.apply()
         except ValueError as error:
+            self.handles.tint(False)
             self.refuse(error)
             return
+        self.show_result()
+
+    def show_result(self):
+        """After a build: the colour of the fins, the red tines, the arrows, the
+        result and the notes."""
+        self.handles.tint(True)
+        results = getattr(self.obj.Proxy, "results", {}).values()
+        self.handles.show_dropped([tine for result in results if result for tine in result.dropped])
+        # Every build can move the fins or change their height: the arrows follow.
+        self.place_handles()
         self.status.setText(translate("FinSnap", "%d fin(s), %.2f mm high, %.2f mm thick")
                             % (self.obj.ResultFinCount, self.obj.ResultHeight.Value,
                                self.obj.ResultThickness.Value))
@@ -401,13 +722,17 @@ class FinSnapTaskPanel:
         except ValueError as error:
             self.refuse(error)
             return False
+        self.release_handles()
         Gui.Control.closeDialog()
+        self.leave_edit()
         App.ActiveDocument.recompute()
         return True
 
     def reject(self):
         self.timer.stop()
+        self.release_handles()
         Gui.Control.closeDialog()
+        self.leave_edit()
         if self.created:
             App.ActiveDocument.removeObject(self.obj.Name)
         else:
