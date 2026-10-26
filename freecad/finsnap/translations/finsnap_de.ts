@@ -207,7 +207,7 @@
 <context>
     <name>FinSnap</name>
     <message>
-        <location filename="../commands.py" line="42"/>
+        <location filename="../commands.py" line="45"/>
         <source>3MF files (*.3mf)</source>
         <translation>3MF-Dateien (*.3mf)</translation>
     </message>
@@ -228,97 +228,107 @@
         <translation>Kippwinkel (Grad):</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="285"/>
+        <location filename="../commands.py" line="298"/>
         <source>%d faces overhang flatter than %.0f degrees and are selected: they need fins or support.</source>
         <translation>%d Flächen hängen flacher als %.0f Grad über und sind ausgewählt: sie brauchen Finnen oder Stützen.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="337"/>
+        <location filename="../commands.py" line="350"/>
         <source>Lay flat again</source>
         <translation>Wieder flach legen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="356"/>
+        <location filename="../commands.py" line="369"/>
         <source>Delete the fins of the part as well? No keeps them, moved along with the part, and rebuilds them once it is moved again, for example stood on its edge.</source>
         <translation>Die Finnen des Teils auch löschen? Nein behält sie, mit dem Teil mitbewegt, und baut sie neu, sobald es wieder bewegt wird, etwa auf die Kante gestellt.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="491"/>
+        <location filename="../commands.py" line="572"/>
         <source>nothing to export: the parts of %s lie flat; stand them on their edge again</source>
         <translation>nichts zu exportieren: die Teile von %s liegen flach; stelle sie wieder auf die Kante</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="606"/>
+        <location filename="../commands.py" line="687"/>
         <source>Left out, as their part lies flat: %s. Stand it on its edge again to export these fins.</source>
         <translation>Ausgelassen, weil ihr Teil flach liegt: %s. Stelle es wieder auf die Kante, um diese Finnen zu exportieren.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="329"/>
+        <location filename="../commands.py" line="342"/>
         <source>The selection was not stood on an edge with Stand on edge.</source>
         <translation>Die Auswahl wurde nicht mit Auf Kante stellen aufgestellt.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="44"/>
+        <location filename="../commands.py" line="47"/>
         <source>STEP files (*.step *.stp)</source>
         <translation>STEP-Dateien (*.step *.stp)</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="376"/>
+        <location filename="../commands.py" line="406"/>
+        <source>Select one edge to stand the part on, or one face to put fins under.</source>
+        <translation>Wähle eine Kante, auf die das Teil gestellt wird, oder eine Fläche, unter die Finnen kommen.</translation>
+    </message>
+    <message>
+        <location filename="../commands.py" line="432"/>
+        <source>Quick fins</source>
+        <translation>Schnelle Finnen</translation>
+    </message>
+    <message>
+        <location filename="../commands.py" line="457"/>
         <source>Select one face to support, or two faces for a counter fin.</source>
         <translation>Eine Fläche zum Stützen auswählen, oder zwei Flächen für eine Gegenfinne.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="381"/>
+        <location filename="../commands.py" line="462"/>
         <source>Add fins</source>
         <translation>Finnen hinzufügen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="411"/>
+        <location filename="../commands.py" line="492"/>
         <source>Select one fin object, and optionally one face of its part.</source>
         <translation>Ein Finnen-Objekt auswählen, optional dazu eine Fläche seines Bauteils.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="414"/>
+        <location filename="../commands.py" line="495"/>
         <source>The face for the counter fin has to belong to the part the fins stand under.</source>
         <translation>Die Fläche für die Gegenfinne muss zu dem Teil gehören, unter dem die Finnen stehen.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="417"/>
+        <location filename="../commands.py" line="498"/>
         <source>Add counter fin</source>
         <translation>Gegenfinne hinzufügen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="424"/>
+        <location filename="../commands.py" line="505"/>
         <source>The part has no face leaning the other way. Select one yourself.</source>
         <translation>Das Bauteil hat keine Fläche, die zur anderen Seite geneigt ist. Bitte selbst eine auswählen.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="500"/>
+        <location filename="../commands.py" line="581"/>
         <source>Mesh fineness</source>
         <translation>Netzfeinheit</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="508"/>
+        <location filename="../commands.py" line="589"/>
         <source>Surface deviation</source>
         <translation>Oberflächenabweichung</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="515"/>
+        <location filename="../commands.py" line="596"/>
         <source>Angular deviation</source>
         <translation>Winkelabweichung</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="517"/>
+        <location filename="../commands.py" line="598"/>
         <source>Planar faces are exported exactly; these values only affect curved surfaces.</source>
         <translation>Ebene Flächen werden exakt exportiert; diese Werte wirken nur auf gekrümmte Flächen.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="552"/>
+        <location filename="../commands.py" line="633"/>
         <source>Export 3MF</source>
         <translation>3MF exportieren</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="575"/>
+        <location filename="../commands.py" line="656"/>
         <source>Export STEP</source>
         <translation>STEP exportieren</translation>
     </message>
@@ -681,103 +691,113 @@
         <translation>%s hat keinen Volumenkörper zum Exportieren</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="185"/>
+        <location filename="../geometry.py" line="186"/>
         <source>the selected face is not planar</source>
         <translation>die gewählte Fläche ist nicht eben</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="189"/>
+        <location filename="../geometry.py" line="190"/>
         <source>the selected face does not lean over the bed</source>
         <translation>die gewählte Fläche hängt nicht über das Bett, sie zeigt nach oben oder zur Seite</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="191"/>
+        <location filename="../geometry.py" line="192"/>
         <source>the selected face is flat; it rests on the bed or needs regular support</source>
         <translation>die gewählte Fläche liegt waagerecht; sie liegt auf dem Bett oder braucht normale Stützen</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="209"/>
+        <location filename="../geometry.py" line="210"/>
         <source>fin_height %.2f reaches above the face (%.2f)</source>
         <translation>Finnenhöhe %.2f reicht über die Fläche hinaus (%.2f)</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="230"/>
+        <location filename="../geometry.py" line="231"/>
         <source>no tine fits below %.2f mm</source>
         <translation>unter %.2f mm passt keine Zinke</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="232"/>
+        <location filename="../geometry.py" line="233"/>
         <source>only %d of %d tines fit below %.2f mm</source>
         <translation>nur %d von %d Zinken passen unter %.2f mm</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="286"/>
+        <location filename="../geometry.py" line="287"/>
         <source>the face is narrower than the %.2f mm a fin needs at every tine</source>
         <translation>die Fläche ist an jeder Zinke schmaler als die %.2f mm, die eine Finne braucht</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="311"/>
+        <location filename="../geometry.py" line="312"/>
         <source>the face is too short for a fin on each corner</source>
         <translation>die Fläche ist zu kurz für eine Finne auf jeder Ecke</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="317"/>
+        <location filename="../geometry.py" line="318"/>
         <source>the face is too short for a fin of %.2f mm</source>
         <translation>die Fläche ist zu kurz für eine Finne von %.2f mm</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="335"/>
+        <location filename="../geometry.py" line="336"/>
         <source>%d fins do not fit side by side on this face</source>
         <translation>%d Finnen passen nicht nebeneinander unter diese Fläche</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="443"/>
+        <location filename="../geometry.py" line="444"/>
         <source>the fins overlap the part by %.4f mm3</source>
         <translation>die Finnen überschneiden das Teil um %.4f mm³</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="470"/>
+        <location filename="../geometry.py" line="471"/>
         <source>fins under the selected face alone, not reaching over the groove: %s</source>
         <translation>Finnen nur unter der gewählten Fläche, nicht über die Rille hinweg: %s</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="481"/>
+        <location filename="../geometry.py" line="482"/>
         <location filename="../params.py" line="116"/>
         <source>tines (%.2f mm) are wider than the fin (%.2f mm)</source>
         <translation>die Zinken (%.2f mm) sind breiter als die Finne (%.2f mm)</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="543"/>
+        <location filename="../geometry.py" line="544"/>
         <source>tines at %s mm above the bed left out: the face is narrower there than the fin</source>
         <translation>Zinken bei %s mm über dem Bett weggelassen: die Fläche ist dort schmaler als die Finne</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="530"/>
+        <location filename="../geometry.py" line="609"/>
+        <source>no face of the part leans over the bed and takes fins</source>
+        <translation>keine Fläche des Teils hängt über das Bett und nimmt Finnen auf</translation>
+    </message>
+    <message>
+        <location filename="../geometry.py" line="637"/>
+        <source>the part cannot stand so that this face takes fins</source>
+        <translation>das Teil lässt sich nicht so aufstellen, dass diese Fläche Finnen aufnimmt</translation>
+    </message>
+    <message>
+        <location filename="../geometry.py" line="531"/>
         <source>no tine finds the face; it has a recess or hole at every tine</source>
         <translation>keine Zinke trifft die Fläche; sie hat an jeder Zinke eine Aussparung oder ein Loch</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="448"/>
+        <location filename="../geometry.py" line="449"/>
         <source>a fin comes within %.3f mm of the part, closer than the %.3f mm it keeps from the face</source>
         <translation>eine Finne kommt dem Teil bis auf %.3f mm nahe, näher als die %.3f mm, die sie von der Fläche hält</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="537"/>
+        <location filename="../geometry.py" line="538"/>
         <source>tines at %s mm above the bed left out: a recess or hole in the face lies under them</source>
         <translation>Zinken bei %s mm über dem Bett weggelassen: unter ihnen liegt eine Aussparung oder ein Loch in der Fläche</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="540"/>
+        <location filename="../geometry.py" line="541"/>
         <source>fins at %s mm from the end of the face left out: none of their tines lies wholly on the face</source>
         <translation>Finnen bei %s mm vom Ende der Fläche weggelassen: keine ihrer Zinken liegt ganz auf der Fläche</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="547"/>
+        <location filename="../geometry.py" line="548"/>
         <source>the face is inclined %.0f degrees against the bed, outside %.0f to %.0f</source>
         <translation>die Fläche ist %.0f Grad gegen das Bett geneigt, außerhalb von %.0f bis %.0f</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="551"/>
+        <location filename="../geometry.py" line="552"/>
         <source>tines are %.2f mm long, shorter than %.2f beads; the slicer may not print them to the face</source>
         <translation>die Zinken sind %.2f mm lang, kürzer als %.2f Bahnen; der Slicer druckt sie womöglich nicht bis an die Fläche</translation>
     </message>
@@ -793,58 +813,58 @@
         <translation>das Netz ist nicht geschlossen</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="136"/>
+        <location filename="../orient.py" line="130"/>
         <source>the tilt angle must lie between 0 and 90 degrees</source>
         <translation>der Kippwinkel muss zwischen 0 und 90 Grad liegen</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="142"/>
+        <location filename="../orient.py" line="136"/>
         <source>the edge is curved; select a straight edge</source>
         <translation>die Kante ist gekrümmt; wähle eine gerade Kante</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="144"/>
+        <location filename="../orient.py" line="138"/>
         <source>the edge is not horizontal</source>
         <translation>die Kante liegt nicht waagerecht</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="146"/>
-        <location filename="../orient.py" line="220"/>
+        <location filename="../orient.py" line="140"/>
+        <location filename="../orient.py" line="214"/>
         <source>the edge does not lie on the bed</source>
         <translation>die Kante liegt nicht auf dem Bett; wähle zusätzlich die Fläche, die auf das Bett soll</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="156"/>
+        <location filename="../orient.py" line="150"/>
         <source>the part cannot stand on this edge</source>
         <translation>das Teil kann nicht auf dieser Kante stehen</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="174"/>
+        <location filename="../orient.py" line="168"/>
         <source>the part cannot rest on this face</source>
         <translation>das Teil kann nicht auf dieser Fläche liegen, andere Teile davon reichen tiefer</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="188"/>
+        <location filename="../orient.py" line="182"/>
         <source>the two faces point in opposite directions</source>
         <translation>die beiden Flächen zeigen in entgegengesetzte Richtungen</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="206"/>
+        <location filename="../orient.py" line="200"/>
         <source>the part cannot rest between these faces</source>
         <translation>das Teil kann nicht zwischen diesen Flächen aufliegen, andere Teile davon reichen tiefer</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="222"/>
+        <location filename="../orient.py" line="216"/>
         <source>an edge alone stands the part only at 45 degrees; for another angle select the face that is to lie on the bed</source>
         <translation>eine Kante allein stellt das Teil nur bei 45 Grad auf; für einen anderen Winkel wähle zusätzlich die Fläche, die auf das Bett soll</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="226"/>
+        <location filename="../orient.py" line="220"/>
         <source>the edge is not an edge of the selected face</source>
         <translation>die Kante gehört nicht zur gewählten Fläche</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="228"/>
+        <location filename="../orient.py" line="222"/>
         <source>a rounded face does not lie on the bed with its edge; select it alone, or the two faces beside it</source>
         <translation>eine gewölbte Fläche liegt nicht mit ihrer Kante auf dem Bett; wähle sie allein oder die beiden Flächen daneben</translation>
     </message>
@@ -909,7 +929,7 @@
         <translation>Finnenanzahl muss mindestens 1 sein</translation>
     </message>
     <message>
-        <location filename="../shapes.py" line="65"/>
+        <location filename="../shapes.py" line="72"/>
         <source>%s has no shape</source>
         <translation>%s hat keine Form</translation>
     </message>
@@ -917,12 +937,12 @@
 <context>
     <name>FinSnap_AddCounterFin</name>
     <message>
-        <location filename="../commands.py" line="391"/>
+        <location filename="../commands.py" line="472"/>
         <source>Add counter fin</source>
         <translation>Gegenfinne hinzufügen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="392"/>
+        <location filename="../commands.py" line="473"/>
         <source>Adds a fin on the opposite side of existing fins, against tipping away, as large as the main fin; fewer counter tines in the panel make it smaller. Select the fins: the face leaning the other way is found automatically. Or select a face of the part as well to choose it yourself. To remove the counter fin, clear its face in the property view.</source>
         <translation>Fügt vorhandenen Finnen eine Finne auf der Gegenseite hinzu, gegen Wegkippen, so groß wie die Hauptfinne; weniger Zinken der Gegenfinne in der Maske machen sie kleiner. Die Finnen auswählen: Die zur anderen Seite geneigte Fläche wird automatisch gefunden. Oder zusätzlich eine Fläche des Bauteils auswählen, um sie selbst festzulegen. Zum Entfernen die Fläche der Gegenfinne in der Eigenschaftenansicht leeren.</translation>
     </message>
@@ -930,12 +950,12 @@
 <context>
     <name>FinSnap_AddFins</name>
     <message>
-        <location filename="../commands.py" line="364"/>
+        <location filename="../commands.py" line="445"/>
         <source>Add fins</source>
         <translation>Finnen hinzufügen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="365"/>
+        <location filename="../commands.py" line="446"/>
         <source>Select the face that leans over the bed; optionally a second face on the opposite side for a counter fin</source>
         <translation>Die Fläche auswählen, die über das Bett ragt; optional eine zweite Fläche auf der Gegenseite für eine Gegenfinne</translation>
     </message>
@@ -943,12 +963,12 @@
 <context>
     <name>FinSnap_Export3MF</name>
     <message>
-        <location filename="../commands.py" line="536"/>
+        <location filename="../commands.py" line="617"/>
         <source>Export 3MF</source>
         <translation>3MF exportieren</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="537"/>
+        <location filename="../commands.py" line="618"/>
         <source>Export the selection to 3MF, every body as its own object for the slicer. With nothing selected, all fins of the document are exported together with their parts.</source>
         <translation>Die Auswahl als 3MF exportieren, jeden Körper als eigenes Objekt für den Slicer. Ist nichts ausgewählt, werden alle Finnen des Dokuments mit ihren Bauteilen exportiert.</translation>
     </message>
@@ -956,12 +976,12 @@
 <context>
     <name>FinSnap_ExportSTEP</name>
     <message>
-        <location filename="../commands.py" line="560"/>
+        <location filename="../commands.py" line="641"/>
         <source>Export STEP</source>
         <translation>STEP exportieren</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="561"/>
+        <location filename="../commands.py" line="642"/>
         <source>Export the selection to STEP, with exact surfaces instead of a mesh. The slicer loads it as one object with a part per body: split it into objects there, so part and fins are printed separately. With nothing selected, all fins of the document are exported together with their parts.</source>
         <translation>Die Auswahl als STEP exportieren, mit exakten Flächen statt eines Netzes. Der Slicer lädt sie als ein Objekt mit einem Teil je Körper: dort in Objekte trennen, damit Bauteil und Finnen getrennt gedruckt werden. Ist nichts ausgewählt, werden alle Finnen des Dokuments mit ihren Bauteilen exportiert.</translation>
     </message>
@@ -969,12 +989,12 @@
 <context>
     <name>FinSnap_LayFlat</name>
     <message>
-        <location filename="../commands.py" line="305"/>
+        <location filename="../commands.py" line="318"/>
         <source>Lay flat again</source>
         <translation>Wieder flach legen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="306"/>
+        <location filename="../commands.py" line="319"/>
         <source>Puts a part stood on an edge back as it lay before. Select the part or its fins. If the part has fins, it asks whether to delete them; kept fins move along with the part and are rebuilt once it is moved again. Deleting the last fins of a part lays it flat as well.</source>
         <translation>Legt ein auf eine Kante gestelltes Teil wieder so hin, wie es vorher lag. Wähle das Teil oder seine Finnen. Hat das Teil Finnen, wird gefragt, ob sie gelöscht werden; behaltene Finnen bewegen sich mit dem Teil und werden neu gebaut, sobald es wieder bewegt wird. Das Löschen der letzten Finnen eines Teils legt es ebenfalls flach.</translation>
     </message>
@@ -982,25 +1002,38 @@
 <context>
     <name>FinSnap_MeshToSolid</name>
     <message>
-        <location filename="../commands.py" line="432"/>
+        <location filename="../commands.py" line="513"/>
         <source>Mesh to solid</source>
         <translation>Netz zu Volumenkörper</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="433"/>
+        <location filename="../commands.py" line="514"/>
         <source>Turn a selected STL mesh into a solid with planar faces, so fins can be added</source>
         <translation>Ein ausgewähltes STL-Netz in einen Volumenkörper mit ebenen Flächen umwandeln, damit Finnen hinzugefügt werden können</translation>
     </message>
 </context>
 <context>
+    <name>FinSnap_QuickFins</name>
+    <message>
+        <location filename="../commands.py" line="391"/>
+        <source>Quick fins</source>
+        <translation>Schnelle Finnen</translation>
+    </message>
+    <message>
+        <location filename="../commands.py" line="392"/>
+        <source>Stands the part up and adds fins in one step, then opens the panel to adjust them. Select the edge the part is to stand on: the fins go under the largest face that leans over the bed. Or select the face the fins are to support: the part is turned so that it leans 45 degrees over the bed. A counter fin is added on the opposite face where one fits.</source>
+        <translation>Stellt das Teil auf und setzt Finnen in einem Schritt, dann öffnet sich die Maske zum Anpassen. Wähle die Kante, auf der das Teil stehen soll: Die Finnen kommen unter die größte Fläche, die über das Bett hängt. Oder wähle die Fläche, die gestützt werden soll: Das Teil wird so gedreht, dass sie mit 45 Grad über dem Bett hängt. Wo sie passt, kommt eine Gegenfinne auf die gegenüberliegende Fläche.</translation>
+    </message>
+</context>
+<context>
     <name>FinSnap_Tilt</name>
     <message>
-        <location filename="../commands.py" line="191"/>
+        <location filename="../commands.py" line="194"/>
         <source>Stand on edge</source>
         <translation>Auf Kante stellen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="192"/>
+        <location filename="../commands.py" line="195"/>
         <source>Select an edge of the part and the face of that edge that is to lie on the bed. The face is laid onto the bed, the part is turned about the edge by the tilt angle and set back onto the bed, standing on the edge. For an edge already on the bed, the edge alone is enough; so it is for an edge between two flat faces at a right angle, on which the part stands at 45 degrees. A face alone, a chamfer or a fillet, is laid onto the bed and carries the part: a chamfer lies flat on it, a fillet touches it along its middle. Two faces alone, such as the two beside a fillet, stand the part on what joins them, both equally steep.</source>
         <translation>Wähle eine Kante des Teils und die Fläche dieser Kante, die auf dem Bett liegen soll. Die Fläche wird auf das Bett gelegt, das Teil um den Kippwinkel um die Kante gedreht und wieder auf das Bett gesetzt, sodass es auf der Kante steht. Liegt die Kante schon auf dem Bett, genügt die Kante allein; ebenso bei einer Kante zwischen zwei ebenen Flächen im rechten Winkel, auf der das Teil dann mit 45 Grad steht. Eine Fläche allein, eine Fase oder eine Verrundung, wird auf das Bett gelegt und trägt das Teil: eine Fase liegt flach auf, eine Verrundung berührt das Bett entlang ihrer Mitte. Zwei Flächen allein, etwa die beiden neben einer Verrundung, stellen das Teil auf das, was sie verbindet, beide gleich steil.</translation>
     </message>

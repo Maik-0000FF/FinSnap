@@ -23,8 +23,8 @@ from PySide import QtWidgets  # noqa: E402
 from support import STANDARD_THICKNESS, expect, lower_left_face, run, tilted_cube  # noqa: E402
 
 WORKBENCH = "FinSnapWorkbench"
-COMMANDS = ("FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCounterFin", "FinSnap_MeshToSolid",
-            "FinSnap_Export3MF", "FinSnap_ExportSTEP")
+COMMANDS = ("FinSnap_QuickFins", "FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCounterFin",
+            "FinSnap_MeshToSolid", "FinSnap_Export3MF", "FinSnap_ExportSTEP")
 DIALOG_ACCEPTED = 1
 # Answers to the questions commands ask, taken in order by answer_dialogs().
 ANSWERS = []
@@ -284,6 +284,30 @@ def main():
     expect(box.Placement.isIdentity() and marked.Name not in [o.Name for o in doc.Objects],
            "Yes lays the part flat and deletes its fins")
     QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (d.TILT_ANGLE, True))
+
+    # Quick fins: an edge stands the part and adds fins; a face turns the part
+    # so that face leans over the bed. Both open the panel.
+    quick = doc.addObject("Part::Feature", "Quick")
+    quick.Shape = Part.makeBox(30, 20, 20)
+    on_bed = [i for i, e in enumerate(quick.Shape.Edges, 1)
+              if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
+    facing = [i for i, f in enumerate(quick.Shape.Faces, 1) if f.BoundBox.YMax < d.TOLERANCE][0]
+    for what, sub in (("an edge", "Edge%d" % on_bed), ("a face", "Face%d" % facing)):
+        select(quick, sub)
+        Gui.runCommand("FinSnap_QuickFins")
+        made = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick]
+        expect(not messages and len(made) == 1 and made[0].isValid() and made[0].Shape.Solids
+               and made[0].CounterFace and not quick.Placement.isIdentity() and Gui.Control.activeDialog(),
+               "Quick fins on %s stands the part, adds fins with a counter fin and opens the panel: %s"
+               % (what, messages))
+        if what == "a face":
+            leaning = quick.Shape.Faces[facing - 1].normalAt(0, 0).z
+            expect(abs(leaning + math.sqrt(0.5)) < d.TOLERANCE, "the chosen face leans 45 degrees over the bed")
+        Gui.Control.closeDialog()
+        doc.removeObject(made[0].Name)
+        quick.Placement = App.Placement()
+        doc.recompute()
+    doc.removeObject(quick.Name)
 
     # Add fins: selecting a leaning face creates the object and opens the panel.
     cube = doc.addObject("Part::Feature", "Cube")

@@ -59,6 +59,13 @@ def bounds(shape):
     return shape.optimalBoundingBox(USE_TRIANGULATION)
 
 
+def moved(shape, change):
+    """A copy of `shape` with the placement change `change` applied."""
+    result = shape.copy()
+    result.Placement = change.multiply(result.Placement)
+    return result
+
+
 def global_shape(obj):
     shape = Part.getShape(obj, "", needSubElement=False, transform=False)
     if shape.isNull():

@@ -532,6 +532,33 @@ def check_split_face():
         expect(len(geometry.support_of(stood, chosen).Faces) == 1
                and all(alone.along_min - d.TOLERANCE <= t <= alone.along_max for t in built.positions),
                "%s: the fin stays under the selected face" % name)
+def check_quick_fins():
+    """Quick fins: the face that takes fins best after standing on an edge, and
+    the orientation that makes a chosen face lean over the bed."""
+    p = FinParams()
+    box = Part.makeBox(30, 20, 20)
+    bottom = [e for e in box.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
+    standing = moved(box, orient.tilt(box, bottom, d.TILT_ANGLE))
+    best = geometry.best_face(standing, p)
+    leaning = [f for f in standing.Faces if abs(f.normalAt(0, 0).z + math.sqrt(0.5)) < 1e-6]
+    expect(standing.Faces[best].Area == max(f.Area for f in leaning),
+           "after standing on an edge the largest leaning face takes the fins")
+
+    front = [i for i, f in enumerate(box.Faces) if f.BoundBox.YMax < d.TOLERANCE][0]
+    change, edge = geometry.stand_for_face(box, front, p, d.TILT_ANGLE)
+    leant = moved(box, change)
+    expect(abs(leant.Faces[front].normalAt(0, 0).z + math.sqrt(0.5)) < 1e-6 and abs(edge.Length - 30) < d.TOLERANCE,
+           "a chosen face is turned to lean 45 degrees over the bed, standing on its longest edge")
+    expect(abs(resting_height(leant)) < d.TOLERANCE, "the part turned for that face rests on the bed")
+
+    disc = Part.makeCylinder(10, 5)
+    top = [i for i, f in enumerate(disc.Faces) if f.findPlane() is not None and f.BoundBox.ZMin > 5 - d.TOLERANCE][0]
+    try:
+        geometry.stand_for_face(disc, top, p, d.TILT_ANGLE)
+    except geometry.FinError as error:
+        expect("cannot stand" in str(error), "a face without a straight edge is refused: %s" % error)
+    else:
+        raise AssertionError("a round face was stood on an edge")
 
 
 def check_recesses(cube, face):
@@ -725,6 +752,7 @@ def main():
     check_tine_clearance(cube, face)
     check_shortened(cube, face)
     check_split_face()
+    check_quick_fins()
     print("all checks passed", file=sys.__stdout__)
 
 

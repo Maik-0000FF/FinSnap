@@ -80,8 +80,9 @@ import FreeCAD as App
 import Part
 
 from . import defaults as d
+from . import orient
 from .i18n import translate
-from .shapes import bounds, middle_normal
+from .shapes import bounds, middle_normal, moved
 
 V = App.Vector
 UP = V(0, 0, 1)
@@ -580,3 +581,57 @@ def opposite_face(part, face):
         if other.out.dot(out) < -d.OPPOSITE_DIRECTION and (best is None or candidate.Area > best.Area):
             best = candidate
     return best
+
+
+def best_face(shape, p):
+    """Number (from 0) of the face of `shape` that takes fins best: of the planar
+    faces leaning over the bed, the largest one the fins can be built under.
+
+    INPUTS this has to withstand:
+      part standing on an edge              ->  its largest leaning face that takes fins
+      largest leaning face refuses fins
+        (fins would run into the part)      ->  the next largest that takes them
+      no face leans, or none takes fins     ->  FinError
+    """
+    leaning = []
+    for number, face in enumerate(shape.Faces):
+        try:
+            frame_of(shape, face)
+        except FinError:
+            continue
+        leaning.append((face.Area, number))
+    for _, number in sorted(leaning, reverse=True):
+        try:
+            build(shape, shape.Faces[number], p)
+        except FinError:
+            continue
+        return number
+    raise FinError(translate("FinSnap", "no face of the part leans over the bed and takes fins"))
+
+
+def stand_for_face(shape, number, p, angle_deg):
+    """Stand `shape` so that face `number` leans over the bed by angle_deg and
+    takes fins: (placement change, edge it stands on).
+
+    The face is laid onto the bed and the part turned about one of its straight
+    edges, the longest first, so it stands on the longest edge it can.
+
+    INPUTS this has to withstand:
+      planar face with straight edges       ->  stood on its longest edge that works
+      longest edge does not carry the part
+        or the fins do not fit there        ->  the next longest edge
+      face without a straight edge, or none
+        works                               ->  FinError
+    """
+    face = shape.Faces[number]
+    straight = [edge for edge in face.Edges
+                if abs(edge.Length - (edge.Vertexes[-1].Point - edge.Vertexes[0].Point).Length) < d.TOLERANCE]
+    for edge in sorted(straight, key=lambda candidate: -candidate.Length):
+        try:
+            change = orient.stand(shape, edge, angle_deg, face)
+            standing = moved(shape, change)
+            build(standing, standing.Faces[number], p)
+        except (orient.OrientError, FinError):
+            continue
+        return change, edge
+    raise FinError(translate("FinSnap", "the part cannot stand so that this face takes fins"))

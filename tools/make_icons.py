@@ -30,6 +30,9 @@ FIN_LINE = "#8a5512"
 BED = "#5c6670"
 ADD_FILL = "#3fa34d"
 ADD_LINE = "#1d5e26"
+# The badge of Quick fins: a lightning bolt on yellow, one step instead of several.
+QUICK_FILL = "#f2c230"
+QUICK_LINE = "#8a6d12"
 WHITE = "#ffffff"
 PAPER = "#f4f6f8"
 LINE_WIDTH = 1.5
@@ -110,6 +113,13 @@ def plus_badge():
             '<line x1="52" y1="7" x2="52" y2="17"/><line x1="47" y1="12" x2="57" y2="12"/></g>']
 
 
+def bolt_badge():
+    bolt = "53,4 45,13 50,13 48,20 57,10 52,10 54,4"
+    return ['<circle cx="52" cy="12" r="10" fill="%s" stroke="%s" stroke-width="2"/>' % (QUICK_FILL, QUICK_LINE),
+            '<polygon points="%s" fill="%s" stroke="%s" stroke-width="1" stroke-linejoin="round"/>'
+            % (bolt, WHITE, QUICK_LINE)]
+
+
 def svg(body, width=SIZE, height=SIZE):
     return "\n".join(['<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">'
                       % (width, height, width, height),
@@ -150,6 +160,7 @@ def icons():
     return {
         "finsnap.svg": workbench(),
         "add_fins.svg": workbench() + plus_badge(),
+        "quick_fins.svg": workbench() + bolt_badge(),
         "counter_fin.svg": bed() + part_shape() + fin_shapes() + fin_shapes(mirrored=True) + plus_badge(),
         "tilt.svg": bed() + [tilted_from] + part_shape() + tilt_arrow,
         "lay_flat.svg": bed() + tilted_outline + [laid_flat] + lay_arrow,
