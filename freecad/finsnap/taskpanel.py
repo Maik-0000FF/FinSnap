@@ -6,7 +6,6 @@ group, so it never falls out of step with the object.
 
 import functools
 import html
-import os
 
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -17,6 +16,7 @@ from . import feature
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
+from .paths import ICON_COUNTER, ICON_REMOVE_COUNTER, ICON_REMOVE_FIN, ICON_RESTORE_FINS, SIDE_VIEW, TOP_VIEW
 from .shapes import FACE_PREFIX
 from .version import application
 
@@ -43,20 +43,13 @@ WARNING_SIGN = "⚠"
 MODIFIED_COLOR = "#e07000"
 MODIFIED_STYLE = "QLabel { color: %s; font-weight: bold; }" % MODIFIED_COLOR
 RESET_SIGN = "↺"
-IMAGES = os.path.join(os.path.dirname(__file__), "images")
-ICONS = os.path.join(os.path.dirname(__file__), "icons")
-# Icons of the Edit fins buttons; the counter fin one is the command's as well.
-ICON_COUNTER = os.path.join(ICONS, "counter_fin.svg")
-ICON_REMOVE_FIN = os.path.join(ICONS, "remove_fin.svg")
-ICON_RESTORE_FINS = os.path.join(ICONS, "restore_fins.svg")
-ICON_REMOVE_COUNTER = os.path.join(ICONS, "remove_counter.svg")
 # Icon buttons: icon size, the gap to the text and the margin inside, in pixels.
 BUTTON_ICON_SIZE = 20
 ICON_GAP = 8
 BUTTON_PADDING = 6
 DRAWINGS = (
-    (os.path.join(IMAGES, "side_view.svg"), QT_TRANSLATE_NOOP("FinSnap", "Side view")),
-    (os.path.join(IMAGES, "top_view.svg"), QT_TRANSLATE_NOOP("FinSnap", "Top view")),
+    (SIDE_VIEW, QT_TRANSLATE_NOOP("FinSnap", "Side view")),
+    (TOP_VIEW, QT_TRANSLATE_NOOP("FinSnap", "Top view")),
 )
 
 
@@ -64,6 +57,8 @@ def _icon_button(icon, text):
     """A button with its icon and text side by side, flush left, a fixed gap
     between them, so the buttons of a group line up."""
     button = QtWidgets.QPushButton()
+    # The text lives in a label of its own; the button still needs it as its name.
+    button.setAccessibleName(text)
     row = QtWidgets.QHBoxLayout(button)
     row.setContentsMargins(BUTTON_PADDING, BUTTON_PADDING, BUTTON_PADDING, BUTTON_PADDING)
     row.setSpacing(ICON_GAP)

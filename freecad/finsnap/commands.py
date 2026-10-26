@@ -1,7 +1,6 @@
 """Workbench commands and the view provider of the FinSnap object."""
 
 import dataclasses
-import os
 from collections import namedtuple
 
 import FreeCAD as App
@@ -21,17 +20,11 @@ from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .presets import PREFERENCES
 from .shapes import FACE_PREFIX, face_name, global_shape, outermost
-from .taskpanel import ICON_COUNTER, ICONS, LENGTH_SUFFIX, FinSnapTaskPanel
+from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_LAY_FLAT, ICON_MESH,
+                    ICON_QUICK, ICON_TILT)
+from .taskpanel import LENGTH_SUFFIX, FinSnapTaskPanel
 from .version import NAME
 
-ICON_WORKBENCH = os.path.join(ICONS, "finsnap.svg")
-ICON_ADD = os.path.join(ICONS, "add_fins.svg")
-ICON_MESH = os.path.join(ICONS, "mesh_to_solid.svg")
-ICON_EXPORT = os.path.join(ICONS, "export_3mf.svg")
-ICON_EXPORT_STEP = os.path.join(ICONS, "export_step.svg")
-ICON_QUICK = os.path.join(ICONS, "quick_fins.svg")
-ICON_TILT = os.path.join(ICONS, "tilt.svg")
-ICON_LAY_FLAT = os.path.join(ICONS, "lay_flat.svg")
 EDGE_PREFIX = "Edge"
 TILT_DECIMALS = 1
 # Order in which App.Rotation keeps the given camera axes exact.

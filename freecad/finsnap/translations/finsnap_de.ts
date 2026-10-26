@@ -207,68 +207,68 @@
 <context>
     <name>FinSnap</name>
     <message>
-        <location filename="../commands.py" line="44"/>
+        <location filename="../commands.py" line="37"/>
         <source>3MF files (*.3mf)</source>
         <translation>3MF-Dateien (*.3mf)</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="156"/>
+        <location filename="../commands.py" line="149"/>
         <source>Remove fin</source>
         <translation>Finne entfernen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="233"/>
+        <location filename="../commands.py" line="226"/>
         <source>Select one edge of the part, and the face of that edge that is to lie on the bed; or a face alone, a chamfer or a fillet; or the two faces beside it.</source>
         <translation>Wähle eine Kante des Teils und die Fläche dieser Kante, die auf dem Bett liegen soll; oder eine Fläche allein, eine Fase oder eine Verrundung; oder die beiden Flächen daneben.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="252"/>
-        <location filename="../commands.py" line="263"/>
+        <location filename="../commands.py" line="245"/>
+        <location filename="../commands.py" line="256"/>
         <source>Stand on edge</source>
         <translation>Auf Kante stellen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="253"/>
+        <location filename="../commands.py" line="246"/>
         <source>Tilt angle (degrees):</source>
         <translation>Kippwinkel (Grad):</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="317"/>
+        <location filename="../commands.py" line="310"/>
         <source>%d faces overhang flatter than %.0f degrees and are selected: they need fins or support.</source>
         <translation>%d Flächen hängen flacher als %.0f Grad über und sind ausgewählt: sie brauchen Finnen oder Stützen.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="369"/>
+        <location filename="../commands.py" line="362"/>
         <source>Lay flat again</source>
         <translation>Wieder flach legen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="388"/>
+        <location filename="../commands.py" line="381"/>
         <source>Delete the fins of the part as well? No keeps them, moved along with the part, and rebuilds them once it is moved again, for example stood on its edge.</source>
         <translation>Die Finnen des Teils auch löschen? Nein behält sie, mit dem Teil mitbewegt, und baut sie neu, sobald es wieder bewegt wird, etwa auf die Kante gestellt.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="425"/>
+        <location filename="../commands.py" line="418"/>
         <source>Select an edge or a face of one part.</source>
         <translation>Wähle eine Kante oder eine Fläche eines Teils.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="581"/>
+        <location filename="../commands.py" line="574"/>
         <source>nothing to export: the parts of %s lie flat; stand them on their edge again</source>
         <translation>nichts zu exportieren: die Teile von %s liegen flach; stelle sie wieder auf die Kante</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="696"/>
+        <location filename="../commands.py" line="689"/>
         <source>Left out, as their part lies flat: %s. Stand it on its edge again to export these fins.</source>
         <translation>Ausgelassen, weil ihr Teil flach liegt: %s. Stelle es wieder auf die Kante, um diese Finnen zu exportieren.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="361"/>
+        <location filename="../commands.py" line="354"/>
         <source>The selection was not stood on an edge with Stand on edge.</source>
         <translation>Die Auswahl wurde nicht mit Auf Kante stellen aufgestellt.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="46"/>
+        <location filename="../commands.py" line="39"/>
         <source>STEP files (*.step *.stp)</source>
         <translation>STEP-Dateien (*.step *.stp)</translation>
     </message>
@@ -278,69 +278,69 @@
         <translation>Diese Kante liegt nicht auf dem Bett, und ihre Flächen treffen sich nicht im rechten Winkel. Nimm „Auf Kante stellen“ mit der Kante und der Fläche, die auf das Bett soll, und danach „Finnen hinzufügen“.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="439"/>
+        <location filename="../commands.py" line="432"/>
         <source>Quick fins</source>
         <translation>Schnelle Finnen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="466"/>
+        <location filename="../commands.py" line="459"/>
         <source>Select one face to support, or two faces for a counter fin.</source>
         <translation>Eine Fläche zum Stützen auswählen, oder zwei Flächen für eine Gegenfinne.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="471"/>
+        <location filename="../commands.py" line="464"/>
         <source>Add fins</source>
         <translation>Finnen hinzufügen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="501"/>
+        <location filename="../commands.py" line="494"/>
         <source>Select one fin object, and optionally one face of its part.</source>
         <translation>Ein Finnen-Objekt auswählen, optional dazu eine Fläche seines Bauteils.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="504"/>
+        <location filename="../commands.py" line="497"/>
         <source>The face for the counter fin has to belong to the part the fins stand under.</source>
         <translation>Die Fläche für die Gegenfinne muss zu dem Teil gehören, unter dem die Finnen stehen.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="507"/>
-        <location filename="../taskpanel.py" line="227"/>
+        <location filename="../commands.py" line="500"/>
+        <location filename="../taskpanel.py" line="222"/>
         <source>Add counter fin</source>
         <translation>Gegenfinne hinzufügen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="514"/>
-        <location filename="../taskpanel.py" line="353"/>
+        <location filename="../commands.py" line="507"/>
+        <location filename="../taskpanel.py" line="348"/>
         <source>The part has no face leaning the other way. Select one yourself.</source>
         <translation>Das Bauteil hat keine Fläche, die zur anderen Seite geneigt ist. Bitte selbst eine auswählen.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="590"/>
+        <location filename="../commands.py" line="583"/>
         <source>Mesh fineness</source>
         <translation>Netzfeinheit</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="598"/>
+        <location filename="../commands.py" line="591"/>
         <source>Surface deviation</source>
         <translation>Oberflächenabweichung</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="605"/>
+        <location filename="../commands.py" line="598"/>
         <source>Angular deviation</source>
         <translation>Winkelabweichung</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="607"/>
+        <location filename="../commands.py" line="600"/>
         <source>Planar faces are exported exactly; these values only affect curved surfaces.</source>
         <translation>Ebene Flächen werden exakt exportiert; diese Werte wirken nur auf gekrümmte Flächen.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="642"/>
+        <location filename="../commands.py" line="635"/>
         <source>Export 3MF</source>
         <translation>3MF exportieren</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="665"/>
+        <location filename="../commands.py" line="658"/>
         <source>Export STEP</source>
         <translation>STEP exportieren</translation>
     </message>
@@ -630,109 +630,109 @@
         <translation>%d Flächen von %s hängen flacher als %.0f Grad über und tragen keine Finnen: %s</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="171"/>
+        <location filename="../taskpanel.py" line="166"/>
         <source>FinSnap parameters</source>
         <translation>FinSnap-Parameter</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="58"/>
+        <location filename="../taskpanel.py" line="51"/>
         <source>Side view</source>
         <translation>Seitenansicht</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="59"/>
+        <location filename="../taskpanel.py" line="52"/>
         <source>Top view</source>
         <translation>Draufsicht</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="173"/>
+        <location filename="../taskpanel.py" line="168"/>
         <source>Hover over a field for an explanation. Letters in brackets point to the drawings below. Every change is shown in the 3D view right away. Greyed-out fields have no effect with the current choices; their tooltip says why.</source>
         <translation>Für eine Erklärung mit der Maus über ein Feld fahren. Buchstaben in Klammern verweisen auf die Zeichnungen unten. Jede Änderung erscheint sofort in der 3D-Ansicht. Ausgegraute Felder wirken bei der aktuellen Wahl nicht; ihr Tooltip sagt, warum.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="216"/>
+        <location filename="../taskpanel.py" line="211"/>
         <source>Edit fins</source>
         <translation>Finnen bearbeiten</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="218"/>
+        <location filename="../taskpanel.py" line="213"/>
         <source>To remove one fin, click it in the 3D view and press Remove selected fin, or the Delete key. The counter fin goes on the face leaning the other way, or on a face of the part you select.</source>
         <translation>Um eine einzelne Finne zu entfernen, klicke sie in der 3D-Ansicht an und drücke „Gewählte Finne entfernen“ oder die Entf-Taste. Die Gegenfinne kommt auf die Fläche, die sich zur anderen Seite neigt, oder auf eine Fläche des Teils, die du wählst.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="225"/>
+        <location filename="../taskpanel.py" line="220"/>
         <source>Remove selected fin</source>
         <translation>Gewählte Finne entfernen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="226"/>
+        <location filename="../taskpanel.py" line="221"/>
         <source>Bring removed fins back</source>
         <translation>Entfernte Finnen zurückholen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="228"/>
+        <location filename="../taskpanel.py" line="223"/>
         <source>Remove counter fin</source>
         <translation>Gegenfinne entfernen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="236"/>
+        <location filename="../taskpanel.py" line="231"/>
         <source>Save as standard</source>
         <translation>Als Standard speichern</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="237"/>
+        <location filename="../taskpanel.py" line="232"/>
         <source>New fins start with these values. Fields that differ from the standard are marked, and their button puts the standard back.</source>
         <translation>Neue Finnen starten mit diesen Werten. Felder, die vom Standard abweichen, sind markiert, und ihr Knopf stellt den Standard wieder her.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="241"/>
-        <location filename="../taskpanel.py" line="311"/>
+        <location filename="../taskpanel.py" line="236"/>
+        <location filename="../taskpanel.py" line="306"/>
         <source>Factory settings</source>
         <translation>Werkseinstellungen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="242"/>
+        <location filename="../taskpanel.py" line="237"/>
         <source>Forget the saved standard and set every field to the built-in value.</source>
         <translation>Den gespeicherten Standard verwerfen und jedes Feld auf den eingebauten Wert setzen.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="293"/>
+        <location filename="../taskpanel.py" line="288"/>
         <source>Back to the standard: %s</source>
         <translation>Zurück auf den Standard: %s</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="312"/>
+        <location filename="../taskpanel.py" line="307"/>
         <source>Forget the saved standard and set every field to the built-in value?</source>
         <translation>Den gespeicherten Standard verwerfen und jedes Feld auf den eingebauten Wert setzen?</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="328"/>
-        <location filename="../taskpanel.py" line="335"/>
+        <location filename="../taskpanel.py" line="323"/>
+        <location filename="../taskpanel.py" line="330"/>
         <source>Nothing removed</source>
         <translation>Nichts entfernt</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="336"/>
+        <location filename="../taskpanel.py" line="331"/>
         <source>Click a fin of these fins in the 3D view first.</source>
         <translation>Klicke zuerst eine dieser Finnen in der 3D-Ansicht an.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="352"/>
+        <location filename="../taskpanel.py" line="347"/>
         <source>No counter fin</source>
         <translation>Keine Gegenfinne</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="388"/>
+        <location filename="../taskpanel.py" line="383"/>
         <source>Not possible</source>
         <translation>Nicht möglich</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="400"/>
+        <location filename="../taskpanel.py" line="395"/>
         <source>Notes</source>
         <translation>Hinweise</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="397"/>
+        <location filename="../taskpanel.py" line="392"/>
         <source>%d fin(s), %.2f mm high, %.2f mm thick</source>
         <translation>%d Finne(n), %.2f mm hoch, %.2f mm dick</translation>
     </message>
@@ -1015,12 +1015,12 @@
 <context>
     <name>FinSnap_AddCounterFin</name>
     <message>
-        <location filename="../commands.py" line="481"/>
+        <location filename="../commands.py" line="474"/>
         <source>Add counter fin</source>
         <translation>Gegenfinne hinzufügen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="482"/>
+        <location filename="../commands.py" line="475"/>
         <source>Adds a fin on the opposite side of existing fins, against tipping away, as large as the main fin; fewer counter tines in the panel make it smaller. Select the fins: the face leaning the other way is found automatically. Or select a face of the part as well to choose it yourself. To remove the counter fin, clear its face in the property view.</source>
         <translation>Fügt vorhandenen Finnen eine Finne auf der Gegenseite hinzu, gegen Wegkippen, so groß wie die Hauptfinne; weniger Zinken der Gegenfinne in der Maske machen sie kleiner. Die Finnen auswählen: Die zur anderen Seite geneigte Fläche wird automatisch gefunden. Oder zusätzlich eine Fläche des Bauteils auswählen, um sie selbst festzulegen. Zum Entfernen die Fläche der Gegenfinne in der Eigenschaftenansicht leeren.</translation>
     </message>
@@ -1028,12 +1028,12 @@
 <context>
     <name>FinSnap_AddFins</name>
     <message>
-        <location filename="../commands.py" line="454"/>
+        <location filename="../commands.py" line="447"/>
         <source>Add fins</source>
         <translation>Finnen hinzufügen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="455"/>
+        <location filename="../commands.py" line="448"/>
         <source>Select the face that leans over the bed; optionally a second face on the opposite side for a counter fin</source>
         <translation>Die Fläche auswählen, die über das Bett ragt; optional eine zweite Fläche auf der Gegenseite für eine Gegenfinne</translation>
     </message>
@@ -1041,12 +1041,12 @@
 <context>
     <name>FinSnap_Export3MF</name>
     <message>
-        <location filename="../commands.py" line="626"/>
+        <location filename="../commands.py" line="619"/>
         <source>Export 3MF</source>
         <translation>3MF exportieren</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="627"/>
+        <location filename="../commands.py" line="620"/>
         <source>Export the selection to 3MF, every body as its own object for the slicer. With nothing selected, all fins of the document are exported together with their parts.</source>
         <translation>Die Auswahl als 3MF exportieren, jeden Körper als eigenes Objekt für den Slicer. Ist nichts ausgewählt, werden alle Finnen des Dokuments mit ihren Bauteilen exportiert.</translation>
     </message>
@@ -1054,12 +1054,12 @@
 <context>
     <name>FinSnap_ExportSTEP</name>
     <message>
-        <location filename="../commands.py" line="650"/>
+        <location filename="../commands.py" line="643"/>
         <source>Export STEP</source>
         <translation>STEP exportieren</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="651"/>
+        <location filename="../commands.py" line="644"/>
         <source>Export the selection to STEP, with exact surfaces instead of a mesh. The slicer loads it as one object with a part per body: split it into objects there, so part and fins are printed separately. With nothing selected, all fins of the document are exported together with their parts.</source>
         <translation>Die Auswahl als STEP exportieren, mit exakten Flächen statt eines Netzes. Der Slicer lädt sie als ein Objekt mit einem Teil je Körper: dort in Objekte trennen, damit Bauteil und Finnen getrennt gedruckt werden. Ist nichts ausgewählt, werden alle Finnen des Dokuments mit ihren Bauteilen exportiert.</translation>
     </message>
@@ -1067,12 +1067,12 @@
 <context>
     <name>FinSnap_LayFlat</name>
     <message>
-        <location filename="../commands.py" line="337"/>
+        <location filename="../commands.py" line="330"/>
         <source>Lay flat again</source>
         <translation>Wieder flach legen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="338"/>
+        <location filename="../commands.py" line="331"/>
         <source>Puts a part stood on an edge back as it lay before. Select the part or its fins. If the part has fins, it asks whether to delete them; kept fins move along with the part and are rebuilt once it is moved again. Deleting the last fins of a part lays it flat as well.</source>
         <translation>Legt ein auf eine Kante gestelltes Teil wieder so hin, wie es vorher lag. Wähle das Teil oder seine Finnen. Hat das Teil Finnen, wird gefragt, ob sie gelöscht werden; behaltene Finnen bewegen sich mit dem Teil und werden neu gebaut, sobald es wieder bewegt wird. Das Löschen der letzten Finnen eines Teils legt es ebenfalls flach.</translation>
     </message>
@@ -1080,12 +1080,12 @@
 <context>
     <name>FinSnap_MeshToSolid</name>
     <message>
-        <location filename="../commands.py" line="522"/>
+        <location filename="../commands.py" line="515"/>
         <source>Mesh to solid</source>
         <translation>Netz zu Volumenkörper</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="523"/>
+        <location filename="../commands.py" line="516"/>
         <source>Turn a selected STL mesh into a solid with planar faces, so fins can be added</source>
         <translation>Ein ausgewähltes STL-Netz in einen Volumenkörper mit ebenen Flächen umwandeln, damit Finnen hinzugefügt werden können</translation>
     </message>
@@ -1093,12 +1093,12 @@
 <context>
     <name>FinSnap_QuickFins</name>
     <message>
-        <location filename="../commands.py" line="407"/>
+        <location filename="../commands.py" line="400"/>
         <source>Quick fins</source>
         <translation>Schnelle Finnen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="408"/>
+        <location filename="../commands.py" line="401"/>
         <source>Stands the part up and adds one fin in the middle of a face in one step, then opens the panel to adjust it. Select the edge the part is to stand on: the fins go under the largest face that leans over the bed. Or select the face the fins are to support: the part is turned so that it leans 45 degrees over the bed, on its longest edge; select one of its edges as well to stand on that one, or, after the face, a chamfer or fillet to rest on. A chamfer or fillet alone, or the two faces beside a fillet, carry the part as well. A counter fin, where wanted, is added in the panel.</source>
         <translation>Stellt das Teil auf und setzt in einem Schritt eine Finne in die Mitte einer Fläche, dann öffnet sich die Maske zum Anpassen. Wähle die Kante, auf der das Teil stehen soll: Die Finnen kommen unter die größte Fläche, die über das Bett hängt. Oder wähle die Fläche, die gestützt werden soll: Das Teil wird so gedreht, dass sie mit 45 Grad über dem Bett hängt, auf ihrer längsten Kante; wähle zusätzlich eine ihrer Kanten, um auf dieser zu stehen, oder nach der Fläche eine Fase oder Rundung, auf der das Teil liegen soll. Eine Fase oder Rundung allein oder die beiden Flächen neben einer Rundung tragen das Teil ebenfalls. Eine Gegenfinne fügst du bei Bedarf in der Maske hinzu.</translation>
     </message>
@@ -1106,12 +1106,12 @@
 <context>
     <name>FinSnap_Tilt</name>
     <message>
-        <location filename="../commands.py" line="213"/>
+        <location filename="../commands.py" line="206"/>
         <source>Stand on edge</source>
         <translation>Auf Kante stellen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="214"/>
+        <location filename="../commands.py" line="207"/>
         <source>Select an edge of the part and the face of that edge that is to lie on the bed. The face is laid onto the bed, the part is turned about the edge by the tilt angle and set back onto the bed, standing on the edge. For an edge already on the bed, the edge alone is enough; so it is for an edge between two flat faces at a right angle, on which the part stands at 45 degrees. A face alone, a chamfer or a fillet, is laid onto the bed and carries the part: a chamfer lies flat on it, a fillet touches it along its middle. Two faces alone, such as the two beside a fillet, stand the part on what joins them, both equally steep.</source>
         <translation>Wähle eine Kante des Teils und die Fläche dieser Kante, die auf dem Bett liegen soll. Die Fläche wird auf das Bett gelegt, das Teil um den Kippwinkel um die Kante gedreht und wieder auf das Bett gesetzt, sodass es auf der Kante steht. Liegt die Kante schon auf dem Bett, genügt die Kante allein; ebenso bei einer Kante zwischen zwei ebenen Flächen im rechten Winkel, auf der das Teil dann mit 45 Grad steht. Eine Fläche allein, eine Fase oder eine Verrundung, wird auf das Bett gelegt und trägt das Teil: eine Fase liegt flach auf, eine Verrundung berührt das Bett entlang ihrer Mitte. Zwei Flächen allein, etwa die beiden neben einer Verrundung, stellen das Teil auf das, was sie verbindet, beide gleich steil.</translation>
     </message>

@@ -9,9 +9,13 @@ tines and a foot. Changing that picture here changes every icon.
 """
 
 import os
+import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-ICONS = os.path.join(ROOT, "freecad", "finsnap", "icons")
+sys.path.insert(0, ROOT)
+from freecad.finsnap import paths  # noqa: E402
+
+ICONS = paths.ICONS
 LOGO = os.path.join(ROOT, "docs", "assets", "logo.svg")
 # The mark of the logo is the workbench icon, scaled up; the name sits beside it.
 LOGO_SCALE = 2.6
