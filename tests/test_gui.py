@@ -37,6 +37,7 @@ VIEW_SETTINGS = "User parameter:BaseApp/Preferences/View"
 NAVIGATION_ANIMATIONS = "UseNavigationAnimations"
 CHAMFER = 3.0
 QUICK_LENGTH = 80.0  # a face this long gets two fins with automatic placement
+THICK_LAYER = 0.3  # a layer height other than the standard, to see the steps follow
 
 
 def load_workbench():
@@ -299,10 +300,10 @@ def main():
         Gui.runCommand("FinSnap_QuickFins")
         made = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick]
         expect(not messages and len(made) == 1 and made[0].isValid() and made[0].Shape.Solids
-               and made[0].CounterFace and made[0].ResultFinCount == 1
+               and not made[0].CounterFace and made[0].ResultFinCount == 1
                and made[0].FinPlacement == d.PLACEMENT_CENTER and not quick.Placement.isIdentity()
                and Gui.Control.activeDialog(),
-               "Quick fins on %s stands the part, adds one fin with a counter fin and opens the panel: %s"
+               "Quick fins on %s stands the part, adds the main fin alone and opens the panel: %s"
                % (what, messages))
         if what == "a face":
             leaning = quick.Shape.Faces[facing - 1].normalAt(0, 0).z
@@ -452,6 +453,13 @@ def main():
     expect(kept is False and lined.Name in [o.Name for o in doc.Objects] and lined.ResultFinCount == 2,
            "the Delete key on one fin removes that fin and keeps the others")
     editing = FinSnapTaskPanel(lined)
+    gap_field = editing.widgets["Gap"]
+    expect(abs(gap_field.singleStep() - feature.STEP_PROFILE) < d.TOLERANCE
+           and gap_field.toolTip().startswith("<p>"),
+           "fields step in sizes that suit them, and their tooltips wrap")
+    editing.widgets["LayerHeight"].setValue(THICK_LAYER)
+    expect(abs(editing.widgets["TineFirst"].singleStep() - THICK_LAYER) < d.TOLERANCE,
+           "fields on the layer grid step by the layer height entered")
     editing.restore()
     expect(lined.ResultFinCount == 3, "the panel brings removed fins back")
     select(lined, face_of_fin(0))

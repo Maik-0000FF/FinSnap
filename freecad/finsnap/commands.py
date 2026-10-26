@@ -1,7 +1,6 @@
 """Workbench commands and the view provider of the FinSnap object."""
 
 import dataclasses
-import os
 from collections import namedtuple
 
 import FreeCAD as App
@@ -19,21 +18,13 @@ from . import mesh_input
 from . import orient
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
+from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_LAY_FLAT, ICON_MESH,
+                    ICON_QUICK, ICON_TILT)
 from .presets import PREFERENCES
-from .shapes import FACE_PREFIX, face_name, global_shape, moved, outermost
+from .shapes import FACE_PREFIX, face_name, global_shape, outermost
 from .taskpanel import LENGTH_SUFFIX, FinSnapTaskPanel
 from .version import NAME
 
-ICONS = os.path.join(os.path.dirname(__file__), "icons")
-ICON_WORKBENCH = os.path.join(ICONS, "finsnap.svg")
-ICON_ADD = os.path.join(ICONS, "add_fins.svg")
-ICON_MESH = os.path.join(ICONS, "mesh_to_solid.svg")
-ICON_EXPORT = os.path.join(ICONS, "export_3mf.svg")
-ICON_EXPORT_STEP = os.path.join(ICONS, "export_step.svg")
-ICON_QUICK = os.path.join(ICONS, "quick_fins.svg")
-ICON_TILT = os.path.join(ICONS, "tilt.svg")
-ICON_LAY_FLAT = os.path.join(ICONS, "lay_flat.svg")
-ICON_COUNTER = os.path.join(ICONS, "counter_fin.svg")
 EDGE_PREFIX = "Edge"
 TILT_DECIMALS = 1
 # Order in which App.Rotation keeps the given camera axes exact.
@@ -415,8 +406,8 @@ class QuickFins:
                     "leans over the bed. Or select the face the fins are to support: the part is turned "
                     "so that it leans 45 degrees over the bed, on its longest edge; select one of its "
                     "edges as well to stand on that one, or, after the face, a chamfer or fillet to rest "
-                    "on. A fillet alone, or the two faces beside it, carry the part as well. A counter "
-                    "fin is added on the opposite face where one fits.")}
+                    "on. A chamfer or fillet alone, or the two faces beside a fillet, carry the part as "
+                    "well. A counter fin, where wanted, is added in the panel.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
         return App.ActiveDocument is not None
@@ -437,18 +428,11 @@ class QuickFins:
         except (orient.OrientError, geometry.FinError) as error:
             _message(str(error))
             return
-        standing = moved(shape, plan.change)
-        counter = geometry.opposite_face(standing, standing.Faces[plan.number])
-        if counter is not None:
-            try:
-                geometry.build(standing, counter, p, tine_count=p.counter_tine_count or None)
-                counter = (obj, feature.face_name_of(standing, counter))
-            except geometry.FinError:
-                counter = None
         doc = App.ActiveDocument
         doc.openTransaction(translate("FinSnap", "Quick fins"))
         _stand(obj, plan.change)
-        fins = feature.create(obj, face_name(plan.number + 1), counter)
+        # The main fin only; a counter fin is added in the panel or with Add counter fin.
+        fins = feature.create(obj, face_name(plan.number + 1))
         fins.FinPlacement = p.placement
         ViewProviderFinSnap(fins.ViewObject)
         doc.commitTransaction()

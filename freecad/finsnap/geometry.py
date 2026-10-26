@@ -680,6 +680,7 @@ def quick_plan(shape, edges, faces, p, angle_deg):
                                                 longest edge that works; fins under it
       one rounded face (fillet)             ->  the part rests on it; fins under the
                                                 largest leaning face
+      one chamfer, wide or narrow           ->  as a rounded face: the part rests on it
       a face and one of its edges           ->  stood on that edge, the face leaning
                                                 angle_deg; fins under it
       a face and an edge of another face    ->  OrientError from stand()
@@ -703,7 +704,7 @@ def quick_plan(shape, edges, faces, p, angle_deg):
         return QuickPlan(change, best_face(moved(shape, change), p), edge, ())
     if not edges and len(faces) == 1:
         face, number = faces[0]
-        if face.findPlane() is None:
+        if face.findPlane() is None or is_chamfer(shape, face):
             change = orient.lay_flat(shape, face)
             return QuickPlan(change, best_face(moved(shape, change), p), None, ())
         change, edge = stand_for_face(shape, number, p, angle_deg)
@@ -723,6 +724,40 @@ def quick_plan(shape, edges, faces, p, angle_deg):
         return QuickPlan(change, best_face(moved(shape, change), p), None, (first, second))
     raise FinError(translate("FinSnap", "Select an edge or a face, a face and the edge or the chamfer or fillet "
                                         "it is to stand on, or the two faces beside a fillet."))
+
+
+def is_chamfer(shape, face):
+    """Whether planar `face` sits between two planar faces of `shape` like a
+    chamfer: its normal turned part of the way from one neighbour's normal to
+    the other's, whatever the angle or the two widths of the chamfer.
+
+    INPUTS this has to withstand:
+      chamfer on the edge of a box, equal or
+        unequal widths, wide or narrow      ->  True
+      chamfer at another angle than 45      ->  True
+      side of a box                         ->  False: no two neighbours with its
+                                                normal between theirs
+      side of an octagon prism              ->  True: it lies between its neighbours
+                                                too; to put fins under it, select it
+                                                with one of its edges
+      rounded face                          ->  False
+    """
+    if face.findPlane() is None:
+        return False
+    normal = middle_normal(face)
+    beside = [middle_normal(other) for other in shape.Faces
+              if not other.isSame(face) and other.findPlane() is not None
+              and any(edge.isSame(mine) for edge in other.Edges for mine in face.Edges)]
+    for i, first in enumerate(beside):
+        for second in beside[i + 1:]:
+            apart = first.getAngle(second)
+            # Between them: in their plane, and the two angles to it adding up
+            # to the angle between them, neither of them zero.
+            in_between = abs(first.getAngle(normal) + normal.getAngle(second) - apart) < d.TOLERANCE
+            if d.TOLERANCE < apart < math.pi - d.TOLERANCE and in_between \
+                    and min(first.getAngle(normal), second.getAngle(normal)) > d.TOLERANCE:
+                return True
+    return False
 
 
 def _checked(shape, plan, p):

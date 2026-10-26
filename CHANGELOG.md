@@ -9,9 +9,9 @@ All notable changes to FinSnap are listed here. The format follows
 ### Added
 
 - Single fins can be removed: click one in the 3D view and press Delete, or Remove selected fin in the task panel; Bring removed fins back restores them
-- The task panel adds and removes the counter fin
+- The task panel adds and removes the counter fin; its Edit fins buttons show icons
 - A face split by a groove across it is supported together with the piece beyond the groove: the fin reaches over the gap, the tines over it are left out and named
-- Quick fins: select an edge, and the part stands on it with one fin under its largest leaning face; or select a face, and the part is turned so that it leans 45 degrees over the bed with one fin under it. A face with one of its edges, or with a chamfer or fillet beside it, sets what the part stands on; a fillet alone or the two faces beside it carry it too. A counter fin is added opposite where one fits
+- Quick fins: select an edge, and the part stands on it with one fin under its largest leaning face; or select a face, and the part is turned so that it leans 45 degrees over the bed with one fin under it. A face with one of its edges, or with a chamfer or fillet beside it, sets what the part stands on; a fillet alone or the two faces beside it carry it too. A counter fin, where wanted, is added in the task panel
 - Stand on edge takes an edge between two flat faces at a right angle alone and stands the part on it at 45 degrees
 - Export STEP: exact surfaces instead of a mesh, every body under its own name; split the object into objects in the slicer
 - Tine clearance: the tines end short of the face, and the fin moves out by as much, so the tines keep their length
@@ -29,6 +29,9 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Fixed
 
+- Long tooltips in the task panel wrap instead of running off the screen
+- The fields of the task panel step by sizes that suit them; heights on the layer grid step by the layer height entered
+- Quick fins takes a chamfer selected alone, of any width or angle, as what the part rests on, not as the face for the fins
 - Heights are measured on the surfaces: the bounding box of curved faces reached up to 1.7 mm past a fillet, so outer fillets were refused as resting faces, a part laid on one floated above the bed, and fins could reach below it
 - The command icons in the README show on GitHub
 

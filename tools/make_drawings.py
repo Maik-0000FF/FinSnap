@@ -12,9 +12,13 @@ Arrowheads are drawn as polygons: Qt renders SVG Tiny, which has no markers.
 
 import math
 import os
+import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-IMAGES = os.path.join(ROOT, "freecad", "finsnap", "images")
+sys.path.insert(0, ROOT)
+from freecad.finsnap import paths  # noqa: E402
+
+IMAGES = paths.IMAGES
 
 PART_FILL = "#3d8fd6"
 PART_LINE = "#1f4f7a"

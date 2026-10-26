@@ -10,12 +10,10 @@ INPUTS this has to withstand (version()):
   <version> empty or missing                 ->  UNKNOWN
 """
 
-import os
 import xml.etree.ElementTree as ET
 
-# package.xml sits in the root of the addon, two levels above this package.
-PACKAGE_XML = os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
-                           "package.xml")
+from .paths import PACKAGE_XML
+
 NAMESPACE = {"p": "https://wiki.freecad.org/Package_Metadata"}
 NAME = "FinSnap"
 UNKNOWN = "unknown"

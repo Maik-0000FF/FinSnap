@@ -5,11 +5,7 @@ can collect it into translations/finsnap_<lang>.ts. Adding a language means
 adding one .ts file and compiling it to .qm; no code changes.
 """
 
-import os
-
 import FreeCAD as App
-
-TRANSLATIONS_PATH = os.path.join(os.path.dirname(__file__), "translations")
 
 
 def translate(context, text):
