@@ -14,6 +14,7 @@ from . import export_3mf
 from . import export_step
 from . import feature
 from . import geometry
+from . import handles
 from . import mesh_input
 from . import orient
 from . import presets
@@ -51,8 +52,6 @@ FINS_SUFFIX = "_fins"
 # slightly in front of the part's own faces, which lie in the same place.
 OVERHANG_COLOR = (0.9, 0.1, 0.1)
 OVERHANG_TRANSPARENCY = 0.4
-OVERHANG_OFFSET = -1.0
-OVERHANG_MESH = 0.1  # largest deviation of the marks from the face (mm)
 STATUS_TIMEOUT_MS = 10000
 # What an export writes, and the fins it leaves out because their part lies flat.
 Export = namedtuple("Export", "shapes left_out")
@@ -94,28 +93,8 @@ class ViewProviderFinSnap:
             shape = global_shape(obj.Base[0])
         except ValueError:
             return
-        points, index = [], []
-        for name in names:
-            vertices, triangles = shape.getElement(name).tessellate(OVERHANG_MESH)
-            first = len(points)
-            points += [(v.x, v.y, v.z) for v in vertices]
-            for triangle in triangles:
-                index += [first + corner for corner in triangle] + [-1]
-
-        material = coin.SoMaterial()
-        material.diffuseColor.setValue(*OVERHANG_COLOR)
-        material.transparency.setValue(OVERHANG_TRANSPARENCY)
-        offset = coin.SoPolygonOffset()
-        offset.factor.setValue(OVERHANG_OFFSET)
-        offset.units.setValue(OVERHANG_OFFSET)
-        coordinates = coin.SoCoordinate3()
-        coordinates.point.setValues(0, len(points), points)
-        faces = coin.SoIndexedFaceSet()
-        faces.coordIndex.setValues(0, len(index), index)
-        group = coin.SoSeparator()
-        for node in (material, offset, coordinates, faces):
-            group.addChild(node)
-        self.marks.addChild(group)
+        faces = [shape.getElement(name) for name in names]
+        self.marks.addChild(handles.shaded(faces, OVERHANG_COLOR, OVERHANG_TRANSPARENCY))
         self.show_marks(obj.ViewObject.Visibility)
 
     def setEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API

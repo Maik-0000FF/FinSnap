@@ -38,6 +38,7 @@ NAVIGATION_ANIMATIONS = "UseNavigationAnimations"
 CHAMFER = 3.0
 QUICK_LENGTH = 80.0  # a face this long gets two fins with automatic placement
 THICK_LAYER = 0.3  # a layer height other than the standard, to see the steps follow
+FIN_SHIFT = 1.5  # how far a handle moves a fin along the face, in mm
 
 
 def load_workbench():
@@ -460,7 +461,7 @@ def main():
     editing.widgets["LayerHeight"].setValue(THICK_LAYER)
     expect(abs(editing.widgets["TineFirst"].singleStep() - THICK_LAYER) < d.TOLERANCE,
            "fields on the layer grid step by the layer height entered")
-    editing.restore()
+    editing.reset()
     expect(lined.ResultFinCount == 3, "the panel brings removed fins back")
     select(lined, face_of_fin(0))
     editing.remove_selected()
@@ -470,7 +471,7 @@ def main():
     expect(lined.ResultFinCount == 2 and not lined.CounterFace and feature.removed(lined, feature.MAIN) == [2],
            "Cancel puts back the fins as they were when the panel opened")
     # Through the Delete command itself, as the key runs it: one step undoes it.
-    feature.restore_fins(lined)
+    feature.reset_fins(lined)
     doc.recompute()
     select(lined, face_of_fin(2))
     Gui.runCommand("Std_Delete")
@@ -490,9 +491,9 @@ def main():
     lined.Connection = d.CONNECTION_SEPARATE
     doc.recompute()
     # Removed for the first time in the panel, then Cancel: nothing stays removed.
-    feature.restore_fins(lined)
+    feature.reset_fins(lined)
     lined.removeProperty(feature.REMOVED[feature.MAIN])
-    lined.removeProperty(feature.REMOVED_OF[feature.MAIN])
+    lined.removeProperty(feature.EDITED_OF[feature.MAIN])
     doc.recompute()
     fresh = FinSnapTaskPanel(lined)
     select(lined, face_of_fin(0))
@@ -500,6 +501,36 @@ def main():
     fresh.reject()
     expect(lined.ResultFinCount == 3 and not feature.removed(lined, feature.MAIN),
            "Cancel also forgets a fin removed for the first time in the panel")
+    # Handles: a fin clicked gets them; dragged, it is previewed and then moved.
+    from freecad.finsnap import handles
+    moving = FinSnapTaskPanel(lined)
+    moving.step_fin(handles.ALONG, taskpanel.FIN_STEP)
+    expect(not feature.edits(lined, feature.MAIN)[1] and not moving.notes.isHidden(),
+           "an arrow button without a fin clicked changes nothing and says so")
+    select(lined, face_of_fin(0))
+    expect(moving.handled == (feature.MAIN, 1) and moving.handles.arrows.getNumChildren() == 2,
+           "a fin clicked gets two handles")
+    before = lined.Shape.Solids[0].BoundBox.Center
+    moving.handle_moved(handles.ALONG, FIN_SHIFT)
+    moving.preview_drag()
+    expect(moving.handles.preview.getNumChildren() >= 1, "a dragged fin is previewed")
+    moving.change_fin(handles.ALONG, FIN_SHIFT)
+    expect(abs(lined.Shape.Solids[0].BoundBox.Center.sub(before).Length - FIN_SHIFT) < d.TOLERANCE
+           and feature.edits(lined, feature.MAIN)[1] == {1: FIN_SHIFT},
+           "a fin let go is moved there")
+    result = lined.Proxy.results[feature.MAIN]
+    onto_neighbour = result.starts[2] - result.starts[1]
+    moving.change_fin(handles.ALONG, onto_neighbour)
+    expect(feature.edits(lined, feature.MAIN)[1] == {1: FIN_SHIFT}
+           and taskpanel.ERROR_COLOR in moving.notes.styleSheet(),
+           "a fin dragged onto its neighbour stays where it was, and the panel says why")
+    moving.step_fin(handles.UP, -taskpanel.FIN_STEP)
+    expect(abs(lined.Proxy.results[feature.MAIN].heights[1] - (result.heights[1] - taskpanel.FIN_STEP))
+           < d.TOLERANCE, "the arrow button down lowers the fin by one step")
+    moving.reject()
+    expect(feature.edits(lined, feature.MAIN) == ([], {}, {}) and moving.handles.root not in
+           [lined.ViewObject.RootNode.getChild(i) for i in range(lined.ViewObject.RootNode.getNumChildren())],
+           "Cancel undoes the moves and takes the handles away")
     for obj in (lined, row):
         doc.removeObject(obj.Name)
 

@@ -26,7 +26,7 @@ ICON_EXPORT_STEP = os.path.join(ICONS, "export_step.svg")
 # Icons of the Edit fins buttons in the task panel; Add counter fin there uses
 # the command's.
 ICON_REMOVE_FIN = os.path.join(ICONS, "remove_fin.svg")
-ICON_RESTORE_FINS = os.path.join(ICONS, "restore_fins.svg")
+ICON_RESET_FINS = os.path.join(ICONS, "reset_fins.svg")
 ICON_REMOVE_COUNTER = os.path.join(ICONS, "remove_counter.svg")
 
 # Drawings of the task panel.

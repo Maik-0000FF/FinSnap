@@ -27,6 +27,7 @@ PACKAGE_XML = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__fil
 PACKAGE_VERSION = ET.parse(PACKAGE_XML).getroot().findtext("{https://wiki.freecad.org/Package_Metadata}version")
 BOX = (40.0, 20.0, 20.0)
 XY_PLANE = 3  # index in the origin features of a Body
+FIN_SHIFT = 1.5  # how far a fin is moved along the face by hand, in mm
 XZ_PLANE = 4  # index in the origin features of a Body
 # A T standing on its stem, in sketch coordinates: stem 10 wide and 20 high,
 # arms reaching 10 to each side.
@@ -239,7 +240,7 @@ def edit_fins(doc):
     doc.recompute()
     expect(fins.ResultFinCount == 2 and list(fins.FinTags) == ["main:1", "main:3"],
            "the removed fin is gone, the others stay")
-    feature.restore_fins(fins)
+    feature.reset_fins(fins)
     doc.recompute()
     expect(fins.ResultFinCount == 3, "removed fins come back")
     from freecad.finsnap.i18n import translate
@@ -247,8 +248,25 @@ def edit_fins(doc):
     fins.FinCount = 2
     doc.recompute()
     expect(fins.ResultFinCount == 2 and not feature.removed(fins, feature.MAIN)
-           and translate("FinSnap", feature.NOTE_REMOVED_DROPPED) in fins.Warnings,
+           and translate("FinSnap", feature.NOTE_EDITS_DROPPED) in fins.Warnings,
            "with another number of fins the removed ones come back, and a note says so")
+    fins.FinCount = 3
+    doc.recompute()
+    before = fins.Shape.Solids[0].BoundBox
+    feature.shift_fin(fins, feature.MAIN, 1, FIN_SHIFT)
+    feature.set_fin_height(fins, feature.MAIN, 3, fins.Shape.Solids[2].BoundBox.ZLength / 2)
+    doc.recompute()
+    after = fins.Shape.Solids[0].BoundBox
+    expect(fins.ResultFinCount == 3 and abs(after.Center.sub(before.Center).Length - FIN_SHIFT) < d.TOLERANCE,
+           "a fin moved by hand stands that far along the face")
+    expect(feature.edits(fins, feature.MAIN)[2].keys() == {3}, "a fin keeps a height of its own: %s"
+           % (feature.edits(fins, feature.MAIN),))
+    feature.shift_fin(fins, feature.MAIN, 1, -FIN_SHIFT)
+    expect(not feature.edits(fins, feature.MAIN)[1], "moved back to where it was planned, the shift is gone")
+    fins.FinCount = 2
+    doc.recompute()
+    expect(feature.edits(fins, feature.MAIN) == ([], {}, {}),
+           "with another number of fins the heights of their own are dropped as well")
     fins.FinCount = 3
     doc.recompute()
     feature.add_counter(fins)

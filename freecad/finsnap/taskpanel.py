@@ -13,10 +13,12 @@ from PySide import QtCore, QtGui, QtWidgets
 
 from . import defaults as d
 from . import feature
+from . import geometry
+from . import handles
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
-from .paths import ICON_COUNTER, ICON_REMOVE_COUNTER, ICON_REMOVE_FIN, ICON_RESTORE_FINS, SIDE_VIEW, TOP_VIEW
+from .paths import ICON_COUNTER, ICON_REMOVE_COUNTER, ICON_REMOVE_FIN, ICON_RESET_FINS, SIDE_VIEW, TOP_VIEW
 from .shapes import FACE_PREFIX
 from .version import application
 
@@ -30,6 +32,13 @@ LENGTH_SUFFIX = " mm"
 # Pause after the last change before the preview is rebuilt, so typing a
 # number does not rebuild the fins at every keystroke.
 PREVIEW_DELAY_MS = 400
+# Pause after the last move of a handle before the preview for it is built.
+DRAG_PREVIEW_MS = 150
+# How far one press of an arrow button moves a fin or changes its height (mm).
+FIN_STEP = 0.5
+NOTE_CLICK_FIN = QT_TRANSLATE_NOOP("FinSnap", "Click a fin of these fins in the 3D view first.")
+SIDES = {feature.MAIN: QT_TRANSLATE_NOOP("FinSnap", "Main fin"),
+         feature.COUNTER: QT_TRANSLATE_NOOP("FinSnap", "Counter fin")}
 # FinParams field of the layer height, the step of the fields on the layer grid.
 LAYER_FIELD = "layer_height"
 # Notes below the result: warnings in amber, a refusal in red, each in a framed
@@ -149,10 +158,12 @@ class FinSnapTaskPanel:
         self.layer_prop = next(prop for prop in feature.PROPERTIES if prop.field == LAYER_FIELD)
         # Every change is written to the object at once; Cancel puts these back.
         self.original = {prop.name: feature.value_of(obj, prop.name) for prop in feature.PROPERTIES}
-        # And what Edit fins changes: the removed fins and the counter face.
-        # A property the fins do not have yet counts as empty: nothing removed.
+        # And what Edit fins changes: the fins removed, moved or set to a height
+        # of their own, and the counter face. A property the fins do not have
+        # yet counts as empty: nothing changed.
         self.original_edits = {name: getattr(obj, name, empty) for names, empty in
-                               ((feature.REMOVED.values(), []), (feature.REMOVED_OF.values(), 0))
+                               ((feature.REMOVED.values(), []), (feature.SHIFTS.values(), {}),
+                                (feature.HEIGHTS.values(), {}), (feature.EDITED_OF.values(), 0))
                                for name in names}
         self.original_counter = obj.CounterFace
 
@@ -163,6 +174,16 @@ class FinSnapTaskPanel:
         self.timer.setSingleShot(True)
         self.timer.setInterval(PREVIEW_DELAY_MS)
         self.timer.timeout.connect(self.preview)
+        self.drag_timer = QtCore.QTimer(self.form)
+        self.drag_timer.setSingleShot(True)
+        self.drag_timer.setInterval(DRAG_PREVIEW_MS)
+        self.drag_timer.timeout.connect(self.preview_drag)
+        # The fin with the handles on it, as (MAIN or COUNTER, number), and
+        # the handle being dragged with how far, as (kind, mm).
+        self.handled = None
+        self.dragged = None
+        self.handles = handles.Handles(obj.ViewObject.RootNode, self.handle_moved, self.handle_done)
+        Gui.Selection.addObserver(self)
         self.form.setWindowTitle("%s (%s)" % (translate("FinSnap", "FinSnap parameters"), application()))
         layout = QtWidgets.QVBoxLayout(self.form)
         intro = QtWidgets.QLabel(translate(
@@ -213,18 +234,38 @@ class FinSnapTaskPanel:
         edit_info = QtWidgets.QLabel(translate(
             "FinSnap", "To remove one fin, click it in the 3D view and press Remove selected fin, or the "
             "Delete key. The counter fin goes on the face leaning the other way, or on a face of the part "
-            "you select."))
+            "you select. A fin clicked gets handles: drag them to move it along the face or to change its "
+            "height, or use the arrow buttons. Reset fins undoes every change by hand."))
         edit_info.setWordWrap(True)
         edit_layout.addWidget(edit_info, 0, 0, 1, 2)
         for column, row, icon, text, action in (
                 (0, 1, ICON_REMOVE_FIN, QT_TRANSLATE_NOOP("FinSnap", "Remove selected fin"), self.remove_selected),
-                (1, 1, ICON_RESTORE_FINS, QT_TRANSLATE_NOOP("FinSnap", "Bring removed fins back"), self.restore),
+                (1, 1, ICON_RESET_FINS, QT_TRANSLATE_NOOP("FinSnap", "Reset fins"), self.reset),
                 (0, 2, ICON_COUNTER, QT_TRANSLATE_NOOP("FinSnap", "Add counter fin"), self.add_counter),
                 (1, 2, ICON_REMOVE_COUNTER, QT_TRANSLATE_NOOP("FinSnap", "Remove counter fin"),
                  self.remove_counter)):
             button = _icon_button(icon, translate("FinSnap", text))
             button.clicked.connect(action)
             edit_layout.addWidget(button, row, column)
+        self.fin_label = QtWidgets.QLabel(translate("FinSnap", NOTE_CLICK_FIN))
+        self.fin_label.setWordWrap(True)
+        edit_layout.addWidget(self.fin_label, 3, 0, 1, 2)
+        arrows = QtWidgets.QHBoxLayout()
+        for arrow, text, kind, sign in (
+                (QtCore.Qt.LeftArrow, QT_TRANSLATE_NOOP("FinSnap", "Move fin left"), handles.ALONG, -1),
+                (QtCore.Qt.RightArrow, QT_TRANSLATE_NOOP("FinSnap", "Move fin right"), handles.ALONG, 1),
+                (QtCore.Qt.DownArrow, QT_TRANSLATE_NOOP("FinSnap", "Lower fin"), handles.UP, -1),
+                (QtCore.Qt.UpArrow, QT_TRANSLATE_NOOP("FinSnap", "Raise fin"), handles.UP, 1)):
+            button = QtWidgets.QToolButton()
+            button.setArrowType(arrow)
+            button.setAccessibleName(translate("FinSnap", text))
+            button.setToolTip(_wrapped(translate("FinSnap", text), translate(
+                "FinSnap", "%.1f mm per press; left and right as seen from outside, looking at the face.")
+                % FIN_STEP))
+            button.clicked.connect(functools.partial(self.step_fin, kind, sign * FIN_STEP))
+            arrows.addWidget(button)
+        arrows.addStretch()
+        edit_layout.addLayout(arrows, 4, 0, 1, 2)
         layout.addWidget(edit)
 
         standard_buttons = QtWidgets.QHBoxLayout()
@@ -317,6 +358,7 @@ class FinSnapTaskPanel:
         """After a fin or the counter fin was removed or added: rebuild and show it."""
         self.update_enabled()
         self.preview()
+        self.place_handles()
 
     def remove_selected(self):
         if self.obj.Connection == d.CONNECTION_MERGED:
@@ -328,14 +370,14 @@ class FinSnapTaskPanel:
         fins = [fin for fin in fins if fin]
         if not fins:
             self.show_notes(translate("FinSnap", "Nothing removed"),
-                            [translate("FinSnap", "Click a fin of these fins in the 3D view first.")], WARNING_COLOR)
+                            [translate("FinSnap", NOTE_CLICK_FIN)], WARNING_COLOR)
             return
         for which, number in set(fins):
             feature.remove_fin(self.obj, which, number)
         self.edited()
 
-    def restore(self):
-        feature.restore_fins(self.obj)
+    def reset(self):
+        feature.reset_fins(self.obj)
         self.edited()
 
     def add_counter(self):
@@ -378,6 +420,123 @@ class FinSnapTaskPanel:
         self.notes.setStyleSheet(NOTE_STYLE % color)
         self.notes.show()
 
+    def addSelection(self, doc, name, sub, point):  # noqa: N802 - FreeCAD API
+        """A fin picked in the 3D view gets the handles."""
+        try:
+            mine = doc == self.obj.Document.Name and name == self.obj.Name
+        except ReferenceError:
+            # The fins were deleted with the panel still listening; it stops
+            # once FreeCAD is through with the selection.
+            QtCore.QTimer.singleShot(0, functools.partial(Gui.Selection.removeObserver, self))
+            return
+        if not mine:
+            return
+        fin = feature.fin_at(self.obj, sub)
+        if fin:
+            self.handled = fin
+            self.place_handles()
+
+    def handled_result(self):
+        """The last build of the side of the fin with the handles, and the
+        index of that fin in it; None while no fin built has them."""
+        if self.handled is None:
+            return None
+        which, number = self.handled
+        result = getattr(self.obj.Proxy, "results", {}).get(which)
+        if result is None or number not in result.numbers:
+            return None
+        return result, result.numbers.index(number)
+
+    def place_handles(self):
+        found = self.handled_result()
+        if found is None:
+            self.handles.hide()
+            self.fin_label.setText(translate("FinSnap", NOTE_CLICK_FIN))
+            return
+        result, index = found
+        which, number = self.handled
+        box = result.bodies[index].BoundBox
+        self.handles.show(App.Vector(box.Center.x, box.Center.y, box.ZMax), result.along)
+        shift = feature.edits(self.obj, which)[1].get(number, 0.0)
+        self.fin_label.setText(translate("FinSnap", "%s %d: moved %+.2f mm along the face, %.2f mm high")
+                               % (translate("FinSnap", SIDES[which]), number, shift, result.heights[number]))
+
+    def trial(self, kind, mm):
+        """The fins of the side of the handled fin, built with it moved `mm`
+        more (ALONG) or `mm` higher (UP): (result, None), or (None, error)."""
+        which, number = self.handled
+        result = self.handled_result()[0]
+        left, shifts, heights = feature.edits(self.obj, which)
+        if kind == handles.ALONG:
+            shifts[number] = shifts.get(number, 0.0) + mm
+        else:
+            heights[number] = result.heights[number] + mm
+        try:
+            built = feature.builder(self.obj, which)[1](left, shifts, heights)
+        except (geometry.FinError, ValueError) as error:
+            return None, error
+        if number not in built.numbers:
+            return None, geometry.FinError(translate("FinSnap", "no tine of the fin finds the face there"))
+        return built, None
+
+    def handle_moved(self, kind, mm):
+        self.dragged = (kind, mm)
+        self.drag_timer.start()
+
+    def preview_drag(self):
+        """Show the dragged fin see-through: green where it can stand, red where not."""
+        if self.dragged is None or self.handled_result() is None:
+            return
+        kind, mm = self.dragged
+        number = self.handled[1]
+        built, error = self.trial(kind, mm)
+        if built is not None:
+            self.handles.show_preview([built.fins.childShapes()[built.numbers.index(number)]], True,
+                                      built.dropped)
+            return
+        result, index = self.handled_result()
+        fin = result.fins.childShapes()[index].copy()
+        if kind == handles.ALONG:
+            fin.translate(result.along * mm)
+        self.handles.show_preview([fin], False)
+        self.refuse(error)
+
+    def handle_done(self, kind, mm):
+        # Coin still handles the drag here; rebuilding would take the handle
+        # away under it, so the change is made once the event is through.
+        self.drag_timer.stop()
+        self.dragged = None
+        QtCore.QTimer.singleShot(0, functools.partial(self.change_fin, kind, mm))
+
+    def step_fin(self, kind, mm, *_clicked):
+        if self.handled_result() is None:
+            self.show_notes(translate("FinSnap", "Nothing changed"), [translate("FinSnap", NOTE_CLICK_FIN)],
+                            WARNING_COLOR)
+            return
+        self.change_fin(kind, mm)
+
+    def change_fin(self, kind, mm):
+        """Move the handled fin `mm` along the face or make it `mm` higher, if
+        the fins can be built so; otherwise say why and leave it."""
+        if self.handled_result() is None:
+            return
+        built, error = self.trial(kind, mm)
+        if built is None:
+            self.refuse(error)
+            self.place_handles()
+            return
+        which, number = self.handled
+        if kind == handles.ALONG:
+            feature.shift_fin(self.obj, which, number, mm)
+        else:
+            feature.set_fin_height(self.obj, which, number, built.heights[number])
+        self.edited()
+
+    def release_handles(self):
+        self.drag_timer.stop()
+        Gui.Selection.removeObserver(self)
+        self.handles.remove()
+
     def refuse(self, error):
         self.status.setText("")
         self.show_notes(translate("FinSnap", "Not possible"), [str(error)], ERROR_COLOR)
@@ -401,12 +560,14 @@ class FinSnapTaskPanel:
         except ValueError as error:
             self.refuse(error)
             return False
+        self.release_handles()
         Gui.Control.closeDialog()
         App.ActiveDocument.recompute()
         return True
 
     def reject(self):
         self.timer.stop()
+        self.release_handles()
         Gui.Control.closeDialog()
         if self.created:
             App.ActiveDocument.removeObject(self.obj.Name)

@@ -8,7 +8,9 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Added
 
-- Single fins can be removed: click one in the 3D view and press Delete, or Remove selected fin in the task panel; Bring removed fins back restores them
+- Single fins can be removed: click one in the 3D view and press Delete, or Remove selected fin in the task panel
+- Single fins can be moved along the face and given a height of their own: a fin clicked while the task panel is open gets two handles in the 3D view, or the arrow buttons under Edit fins move it in steps. While a handle is dragged, a see-through preview shows the fin green where it can stand and red where it cannot, with the tines that find no face in red
+- Reset fins in the task panel undoes every change by hand: removed fins come back, moved fins and fin heights of their own are undone. With another number of fins the changes by hand are undone as well, and a note says so
 - The task panel adds and removes the counter fin; its Edit fins buttons show icons
 - A face split by a groove across it is supported together with the piece beyond the groove: the fin reaches over the gap, the tines over it are left out and named
 - Quick fins: select an edge, and the part stands on it with one fin under its largest leaning face; or select a face, and the part is turned so that it leans 45 degrees over the bed with one fin under it. A face with one of its edges, or with a chamfer or fillet beside it, sets what the part stands on; a fillet alone or the two faces beside it carry it too. A counter fin, where wanted, is added in the task panel

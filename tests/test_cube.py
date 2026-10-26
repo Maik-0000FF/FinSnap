@@ -37,6 +37,7 @@ GROOVE_DEPTH = 2.0     # a groove across the front of a box, splitting it
 GROOVE_WIDTH = 2.0
 GROOVE_FROM = 8.0
 WIDE_BOX = 60.0          # long enough for a U profile with legs of a third each
+SHIFT = 1.5           # how far a fin is moved along the face by hand, in mm
 UP = V(0, 0, 1)
 BOX_SIDE = 20.0
 EDGE_ROUND = 3.0       # size of the chamfer or radius of the fillet on a box edge
@@ -499,10 +500,10 @@ def check_split_face():
     # selected face alone and carry only that one.
     reaching = geometry._build
 
-    def running_into_part(part, face, support, p, tine_count, left_out):
+    def running_into_part(part, face, support, p, tine_count, left_out, shifts, heights):
         if support is not face:
             raise geometry.FinError("runs into the part")
-        return reaching(part, face, support, p, tine_count, left_out)
+        return reaching(part, face, support, p, tine_count, left_out, shifts, heights)
 
     geometry._build = running_into_part
     try:
@@ -627,6 +628,34 @@ def check_left_out(cube, face):
         expect("every fin is removed" in str(error), "removing every fin is refused: %s" % error)
     else:
         raise AssertionError("fins were built with every fin removed")
+
+
+def check_moved_fins(cube, face):
+    """Fins moved along the face and set to their own height by hand."""
+    three = FinParams(placement=d.PLACEMENT_DISTRIBUTED, fin_count=3)
+    whole = geometry.build(cube, face, three)
+    moved_one = geometry.build(cube, face, three, shifts={1: SHIFT})
+    expect(abs(moved_one.starts[1] - (whole.starts[1] + SHIFT)) < d.TOLERANCE
+           and moved_one.starts[2] == whole.starts[2],
+           "a fin moved by hand moves alone, the others stay")
+    try:
+        gap = whole.starts[2] - whole.starts[1]
+        geometry.build(cube, face, three, shifts={1: gap})
+    except geometry.FinError as error:
+        expect("closer than" in str(error), "a fin moved onto its neighbour is refused: %s" % error)
+    else:
+        raise AssertionError("a fin was moved onto its neighbour")
+    low = whole.tine_z[0] + FinParams().tine_height
+    lowered = geometry.build(cube, face, three, heights={2: low})
+    middle = lowered.bodies[1].BoundBox
+    expect(abs(middle.ZMax - low) < d.TOLERANCE and abs(lowered.bodies[0].BoundBox.ZMax - whole.height) < d.TOLERANCE,
+           "a fin set lower by hand stands at its own height, the others keep theirs")
+    try:
+        geometry.build(cube, face, three, heights={2: whole.tine_z[0] / 2})
+    except geometry.FinError as error:
+        expect("lower than its first tine" in str(error), "a fin below its first tine is refused: %s" % error)
+    else:
+        raise AssertionError("a fin lower than its first tine was built")
 
 
 def check_recesses(cube, face):
@@ -823,6 +852,7 @@ def main():
     check_quick_fins()
     check_quick_plan()
     check_left_out(cube, face)
+    check_moved_fins(cube, face)
     print("all checks passed", file=sys.__stdout__)
 
 
