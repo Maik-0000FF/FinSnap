@@ -10,6 +10,7 @@ from PySide import QtWidgets
 
 from . import defaults as d
 from . import export_3mf
+from . import export_step
 from . import feature
 from . import mesh_input
 from . import orient
@@ -24,6 +25,7 @@ ICON_WORKBENCH = os.path.join(ICONS, "finsnap.svg")
 ICON_ADD = os.path.join(ICONS, "add_fins.svg")
 ICON_MESH = os.path.join(ICONS, "mesh_to_solid.svg")
 ICON_EXPORT = os.path.join(ICONS, "export_3mf.svg")
+ICON_EXPORT_STEP = os.path.join(ICONS, "export_step.svg")
 ICON_TILT = os.path.join(ICONS, "tilt.svg")
 ICON_LAY_FLAT = os.path.join(ICONS, "lay_flat.svg")
 ICON_COUNTER = os.path.join(ICONS, "counter_fin.svg")
@@ -34,8 +36,12 @@ CAMERA_AXES = "ZYX"
 # Direction FreeCAD's isometric view looks along.
 ISOMETRIC = App.Vector(-1, 1, -1).normalize()
 
-FILE_FILTER = QT_TRANSLATE_NOOP("FinSnap", "3MF files (*.3mf)")
-FILE_EXTENSION = ".3mf"
+# File types of the exports: the filter of the save dialog, and the endings
+# it accepts; the first is added to a name that has none of them.
+FILTER_3MF = QT_TRANSLATE_NOOP("FinSnap", "3MF files (*.3mf)")
+EXTENSIONS_3MF = (".3mf",)
+FILTER_STEP = QT_TRANSLATE_NOOP("FinSnap", "STEP files (*.step *.stp)")
+EXTENSIONS_STEP = (".step", ".stp")
 PREF_LINEAR = "MeshLinearDeflection"
 PREF_ANGULAR = "MeshAngularDeflection"
 MESH_LINEAR_RANGE = (0.001, 1.0)
@@ -130,8 +136,7 @@ class ViewProviderFinSnap:
         obj = vobj.Object
         if obj.Base:
             owner = outermost(obj.Base[0])
-            others = [o for o in obj.Document.Objects
-                      if o is not obj and feature.is_fins(o) and o.Base and outermost(o.Base[0]) is owner]
+            others = [o for o in feature.fins_of(owner, obj.Document) if o is not obj]
             if not others:
                 orient.lay_back(owner)
             for other in others:
@@ -237,6 +242,9 @@ class TiltOntoEdge:
         owner = outermost(obj)
         orient.remember_flat(owner)
         owner.Placement = change.multiply(owner.Placement)
+        # Fins kept while the part lay flat are built anew for the new stand.
+        for fins in feature.fins_of(owner, doc):
+            feature.stand_again(fins)
         doc.commitTransaction()
         doc.recompute()
         _show_on_bed(orient.side_direction(change, edge, chosen if len(chosen) == 2 else ()))
@@ -298,21 +306,56 @@ class LayFlat:
                 "ToolTip": QT_TRANSLATE_NOOP(
                     "FinSnap_LayFlat",
                     "Puts a part stood on an edge back as it lay before. Select the part or its fins. "
-                    "Deleting the last fins of a part does the same.")}
+                    "If the part has fins, it asks whether to delete them; kept fins move along with the "
+                    "part and are rebuilt when it stands again. Deleting the last fins of a part lays it "
+                    "flat as well.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
         return bool(Gui.Selection.getSelection())
 
     def Activated(self):  # noqa: N802 - FreeCAD API
+        """
+        SITUATIONS this has to withstand:
+          part without fins                     ->  laid flat, no question
+          part with fins, answer Yes            ->  fins deleted, part laid flat
+          part with fins, answer No             ->  part laid flat, fins moved along and kept
+          part with fins, answer Cancel         ->  nothing changed
+          part not stood with Stand on edge     ->  message, nothing changed
+        """
         doc = App.ActiveDocument
-        doc.openTransaction(translate("FinSnap", "Lay flat again"))
-        laid = [owner for owner in _owners(Gui.Selection.getSelection()) if orient.lay_back(owner)]
-        doc.commitTransaction()
-        if not laid:
+        owners = [owner for owner in _owners(Gui.Selection.getSelection())
+                  if orient.back_to_flat(owner) is not None]
+        if not owners:
             _message(translate("FinSnap", "The selection was not stood on an edge with Stand on edge."))
             return
+        delete = False
+        if any(feature.fins_of(owner, doc) for owner in owners):
+            answer = _ask_delete_fins()
+            if answer == QtWidgets.QMessageBox.Cancel:
+                return
+            delete = answer == QtWidgets.QMessageBox.Yes
+        doc.openTransaction(translate("FinSnap", "Lay flat again"))
+        for owner in owners:
+            change = orient.back_to_flat(owner)
+            for fins in feature.fins_of(owner, doc):
+                if delete:
+                    doc.removeObject(fins.Name)
+                else:
+                    feature.keep_laid_flat(fins, change)
+            orient.lay_back(owner)
+        doc.commitTransaction()
         doc.recompute()
         _show_on_bed()
+
+
+def _ask_delete_fins():
+    """Yes, No or Cancel: whether the fins of a part laid flat go with it."""
+    buttons = QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No | QtWidgets.QMessageBox.Cancel
+    return QtWidgets.QMessageBox.question(
+        Gui.getMainWindow(), NAME,
+        translate("FinSnap", "Delete the fins of the part as well? No keeps them, moved along with the part, "
+                             "and rebuilds them when it stands on its edge again."),
+        buttons, QtWidgets.QMessageBox.No)
 
 
 class AddFins:
@@ -424,6 +467,9 @@ def _export_list(objects):
     shapes = []
     seen = set()
     for obj in objects:
+        if feature.is_fins(obj) and feature.is_laid_flat(obj):
+            raise ValueError(translate("FinSnap", "the part of %s lies flat; stand it on its edge again before "
+                                                  "exporting") % obj.Label)
         if feature.is_fins(obj) and obj.Connection == d.CONNECTION_SEPARATE:
             base = obj.Base[0]
             if base.Name not in seen:
@@ -486,26 +532,65 @@ class Export3MF:
         return bool(_to_export())
 
     def Activated(self):  # noqa: N802 - FreeCAD API
-        try:
-            shapes = _export_list(_to_export())
-        except ValueError as error:
-            _message(str(error))
+        shapes = _shapes_to_export()
+        if shapes is None:
             return
         settings = _mesh_settings()
         if settings is None:
             return
-        path, _ = QtWidgets.QFileDialog.getSaveFileName(
-            Gui.getMainWindow(), translate("FinSnap", "Export 3MF"), "", translate("FinSnap", FILE_FILTER))
-        if not path:
+        path = _save_path(translate("FinSnap", "Export 3MF"), FILTER_3MF, EXTENSIONS_3MF)
+        if path:
+            _write(export_3mf.write, path, shapes, *settings)
+
+
+class ExportSTEP:
+    def GetResources(self):  # noqa: N802 - FreeCAD API
+        return {"Pixmap": ICON_EXPORT_STEP,
+                "MenuText": QT_TRANSLATE_NOOP("FinSnap_ExportSTEP", "Export STEP"),
+                "ToolTip": QT_TRANSLATE_NOOP(
+                    "FinSnap_ExportSTEP",
+                    "Export the selection to STEP, with exact surfaces instead of a mesh. The slicer "
+                    "loads it as one object with a part per body: split it into objects there, so part "
+                    "and fins are printed separately. With nothing selected, all fins of the document "
+                    "are exported together with their parts.")}
+
+    def IsActive(self):  # noqa: N802 - FreeCAD API
+        return bool(_to_export())
+
+    def Activated(self):  # noqa: N802 - FreeCAD API
+        shapes = _shapes_to_export()
+        if shapes is None:
             return
-        if not path.lower().endswith(FILE_EXTENSION):
-            path += FILE_EXTENSION
-        try:
-            export_3mf.write(path, shapes, *settings)
-        except (ValueError, OSError, Part.OCCError) as error:
-            _message(str(error))
-            return
-        App.Console.PrintMessage("FinSnap: %d objects written to %s\n" % (len(shapes), path))
+        path = _save_path(translate("FinSnap", "Export STEP"), FILTER_STEP, EXTENSIONS_STEP)
+        if path:
+            _write(export_step.write, path, shapes)
+
+
+def _shapes_to_export():
+    """The named shapes of the selection, or None after saying why there are none."""
+    try:
+        return _export_list(_to_export())
+    except ValueError as error:
+        _message(str(error))
+        return None
+
+
+def _save_path(title, file_filter, extensions):
+    """The file to write, ending in one of `extensions`; empty if the dialog was cancelled."""
+    path, _ = QtWidgets.QFileDialog.getSaveFileName(
+        Gui.getMainWindow(), title, "", translate("FinSnap", file_filter))
+    if path and not path.lower().endswith(extensions):
+        path += extensions[0]
+    return path
+
+
+def _write(writer, path, shapes, *settings):
+    try:
+        writer(path, shapes, *settings)
+    except (ValueError, OSError, Part.OCCError) as error:
+        _message(str(error))
+        return
+    App.Console.PrintMessage("FinSnap: %d objects written to %s\n" % (len(shapes), path))
 
 
 COMMANDS = (("FinSnap_Tilt", TiltOntoEdge()),
@@ -513,7 +598,8 @@ COMMANDS = (("FinSnap_Tilt", TiltOntoEdge()),
             ("FinSnap_AddFins", AddFins()),
             ("FinSnap_AddCounterFin", AddCounterFin()),
             ("FinSnap_MeshToSolid", MeshToSolid()),
-            ("FinSnap_Export3MF", Export3MF()))
+            ("FinSnap_Export3MF", Export3MF()),
+            ("FinSnap_ExportSTEP", ExportSTEP()))
 
 
 def register():

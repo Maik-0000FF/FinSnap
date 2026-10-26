@@ -4,6 +4,7 @@ INPUTS this has to withstand (validate()):
   all defaults                          ->  valid
   any length <= 0 where a size is meant ->  ParamError naming the field
   gap <= 0                              ->  ParamError: fin and part would fuse
+  tine_clearance < 0                    ->  ParamError; 0 means touching
   bead_width < nozzle_diameter / 2      ->  ParamError: not a printable bead
   layer_height > nozzle_diameter        ->  ParamError: not printable
   tine_layers or tine_width_beads < 1   ->  ParamError
@@ -43,6 +44,7 @@ class FinParams:
     # Connection
     connection: str = d.CONNECTION
     gap: float = d.GAP
+    tine_clearance: float = d.TINE_CLEARANCE
     # Tines
     tine_spacing: float = d.TINE_SPACING
     tine_first: float = d.TINE_FIRST_AUTO
@@ -86,6 +88,8 @@ class FinParams:
             if getattr(self, name) < 0:
                 raise ParamError(translate("FinSnap", "%s must be 0 (automatic) or greater") % name)
 
+        if self.tine_clearance < 0:
+            raise ParamError(translate("FinSnap", "tine_clearance must be 0 (touching) or greater"))
         if self.foot_overhang < 0:
             raise ParamError(translate("FinSnap", "foot_overhang must be 0 or greater"))
         if self.bead_width < self.nozzle_diameter / 2:
@@ -113,6 +117,12 @@ class FinParams:
                              % (self.tine_width, self.fin_thickness))
 
     # Derived sizes, so no caller repeats the arithmetic.
+    @property
+    def fin_offset(self):
+        """Distance of the fin from the face: the gap the tines bridge, and the
+        tine clearance on top, so the tines keep their length."""
+        return self.gap + self.tine_clearance
+
     @property
     def tine_width(self):
         return self.tine_width_beads * self.bead_width

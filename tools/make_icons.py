@@ -142,15 +142,19 @@ def icons():
              '<polyline points="40,2 40,16 54,16" fill="none" stroke="%s" stroke-width="2" '
              'stroke-linejoin="round"/>' % BED]
     small = '<g transform="translate(6,8) scale(0.72)">%s</g>' % "".join(part_shape() + fin_shapes())
-    label = ('<text x="31" y="57" font-family="sans-serif" font-size="11" font-weight="bold" '
-             'text-anchor="middle" fill="%s">3MF</text>' % PART_LINE)
+
+    def label(text):
+        return ('<text x="31" y="57" font-family="sans-serif" font-size="11" font-weight="bold" '
+                'text-anchor="middle" fill="%s">%s</text>' % (PART_LINE, text))
+
     return {
         "finsnap.svg": workbench(),
         "add_fins.svg": workbench() + plus_badge(),
         "counter_fin.svg": bed() + part_shape() + fin_shapes() + fin_shapes(mirrored=True) + plus_badge(),
         "tilt.svg": bed() + [tilted_from] + part_shape() + tilt_arrow,
         "lay_flat.svg": bed() + tilted_outline + [laid_flat] + lay_arrow,
-        "export_3mf.svg": paper + [small, label],
+        "export_3mf.svg": paper + [small, label("3MF")],
+        "export_step.svg": paper + [small, label("STEP")],
     }
 
 

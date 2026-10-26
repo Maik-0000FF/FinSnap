@@ -31,6 +31,11 @@ CONNECTION = CONNECTION_SEPARATE
 #
 # Clearance between fin and supported face, measured along the face normal.
 GAP = 0.25
+# Clearance between the end of a tine and the face, along the face normal.
+# 0: the tine touches the face. A test print with touching tines left visible
+# marks; a clearance reduces them, but a bead swells a few hundredths of a
+# millimetre, so too much and the tine no longer holds. Find it by a test print.
+TINE_CLEARANCE = 0.0
 
 # --- Tines --------------------------------------------------------------------
 # Tines are horizontal, so each one is printed within its own layers.
@@ -44,9 +49,12 @@ TINE_INTO_FIN = 1.0
 
 # --- Fin body -----------------------------------------------------------------
 FIN_PLATEAU = 2.0           # flat top instead of a sharp tip
-FIN_MIN_BEADS = 3           # thinnest automatic fin, in beads
-FIN_THICKNESS_RATIO = 0.05  # automatic thickness as a share of fin height
-FIN_THICKNESS_AUTO = 0.0    # 0: from FIN_MIN_BEADS and FIN_THICKNESS_RATIO
+FIN_MIN_BEADS = 2           # thinnest automatic fin, in beads: one path out and one back
+# Automatic thickness, from a test print: 1 mm, two beads of 0.45, held parts
+# up to 100 mm high. Taller fins grow in proportion, 1 mm per 100 mm.
+FIN_THICKNESS_BASE = 1.0
+FIN_THICKNESS_BASE_HEIGHT = 100.0
+FIN_THICKNESS_AUTO = 0.0    # 0: from FIN_THICKNESS_BASE and the height, at least FIN_MIN_BEADS
 FIN_HEIGHT_AUTO = 0.0       # 0: the top tine defines the height
 # Distance kept from the top edge of the supported face, so the fin does not
 # reach into the edge or chamfer above it.
@@ -62,7 +70,13 @@ PLACEMENT_DISTRIBUTED = "distributed"
 # Two fins on the ends of the face: each tine lies whole on the face and ends
 # flush with its end, so its mark merges with that edge.
 PLACEMENT_CORNERS = "corners"
-PLACEMENTS = (PLACEMENT_AUTO, PLACEMENT_CENTER, PLACEMENT_ENDS, PLACEMENT_CORNERS, PLACEMENT_DISTRIBUTED)
+# One fin on one end of the face, tines as with "corners". Left and right as
+# seen from outside, looking at the face.
+PLACEMENT_CORNER_LEFT = "left corner"
+PLACEMENT_CORNER_RIGHT = "right corner"
+PLACEMENT_ONE_CORNER = (PLACEMENT_CORNER_LEFT, PLACEMENT_CORNER_RIGHT)
+PLACEMENTS = (PLACEMENT_AUTO, PLACEMENT_CENTER, PLACEMENT_ENDS, PLACEMENT_CORNERS, *PLACEMENT_ONE_CORNER,
+              PLACEMENT_DISTRIBUTED)
 PLACEMENT = PLACEMENT_AUTO
 FIN_COUNT = 3               # used by "distributed"
 END_INSET = 0.5             # distance of the outer fins from the face ends
@@ -76,7 +90,7 @@ FOOT_SHAPES = (FOOT_ELLIPSE, FOOT_RECTANGLE, FOOT_NONE)
 FOOT_SHAPE = FOOT_ELLIPSE
 FOOT_THICKNESS = 1.0        # thin enough to peel off without residue
 FOOT_OVERHANG = 0.0         # how far the foot reaches past the straight outer end of the fin
-FOOT_WIDTH_RATIO = 0.5      # foot width as a share of its length
+FOOT_WIDTH_RATIO = 0.2      # foot width as a share of its length; 0.2 held well in print
 FOOT_HALF_WIDTH_AUTO = 0.0  # 0: from FOOT_WIDTH_RATIO, limited by the neighbours
 # Minimum space left between the feet of neighbouring fins. On tall, narrow
 # parts the fins stand close together and the feet are narrowed to keep it.

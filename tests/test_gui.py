@@ -24,8 +24,10 @@ from support import STANDARD_THICKNESS, expect, lower_left_face, run, tilted_cub
 
 WORKBENCH = "FinSnapWorkbench"
 COMMANDS = ("FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCounterFin", "FinSnap_MeshToSolid",
-            "FinSnap_Export3MF")
+            "FinSnap_Export3MF", "FinSnap_ExportSTEP")
 DIALOG_ACCEPTED = 1
+# Answers to the questions commands ask, taken in order by answer_dialogs().
+ANSWERS = []
 FLAT_TILT = 30.0  # flatter than the overhang limit
 # Up on the screen, in the coordinates of the camera.
 SCREEN_UP = App.Vector(0, 1, 0)
@@ -51,6 +53,8 @@ def answer_dialogs(commands, save_path, angle):
     QtWidgets.QDialog.exec = lambda self: DIALOG_ACCEPTED
     QtWidgets.QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: (save_path, ""))
     QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (angle, True))
+    # Each question is answered from ANSWERS, in order; an unexpected one fails.
+    QtWidgets.QMessageBox.question = staticmethod(lambda *a, **k: ANSWERS.pop(0))
     commands._message = messages.append
     return messages
 
@@ -221,14 +225,41 @@ def main():
     doc.removeObject(carried.Name)
     doc.recompute()
 
-    # Laid flat, the fins cannot be built any more; the marks follow the part all the same.
+    # Lay flat again with fins. Cancel changes nothing; No keeps the fins, moved
+    # along with the part and not rebuilt; standing again rebuilds them; Yes
+    # deletes them.
+    from freecad.finsnap.i18n import translate
+    standing = box.Placement
+    ANSWERS.append(QtWidgets.QMessageBox.Cancel)
+    select(box)
+    Gui.runCommand("FinSnap_LayFlat")
+    expect(box.Placement.isSame(standing) and not feature.is_laid_flat(marked),
+           "Cancel leaves the part standing and its fins as they are")
+    ANSWERS.append(QtWidgets.QMessageBox.No)
     select(box)
     Gui.runCommand("FinSnap_LayFlat")
     doc.recompute()
-    expect(not marked.isValid() and marked.Overhangs == [] and marks.getNumChildren() == 0,
-           "when the fins fail, the marks still follow the part")
-    marked.ViewObject.Proxy.onDelete(marked.ViewObject, [])
-    doc.removeObject(marked.Name)
+    expect(box.Placement.isIdentity() and marked.isValid() and feature.is_laid_flat(marked)
+           and marked.Overhangs == [] and marks.getNumChildren() == 0
+           and translate("FinSnap", feature.NOTE_LAID_FLAT) in marked.Warnings,
+           "No lays the part flat and keeps its fins, marked as laid flat, without overhang marks")
+    expect(marked.Shape.distToShape(box.Shape)[0] < d.TOLERANCE, "the kept fins moved along with the part")
+    select(marked)
+    Gui.runCommand("FinSnap_Export3MF")
+    expect(len(messages) == 1 and not os.path.exists(target + ".3mf"),
+           "fins of a part laid flat are not exported: %s" % messages)
+    del messages[:]
+    select(box, "Edge%d" % bottom)
+    Gui.runCommand("FinSnap_Tilt")
+    doc.recompute()
+    expect(not feature.is_laid_flat(marked) and marked.isValid() and marked.Overhangs == hanging,
+           "standing the part again rebuilds the kept fins")
+    ANSWERS.append(QtWidgets.QMessageBox.Yes)
+    select(box)
+    Gui.runCommand("FinSnap_LayFlat")
+    doc.recompute()
+    expect(box.Placement.isIdentity() and marked.Name not in [o.Name for o in doc.Objects],
+           "Yes lays the part flat and deletes its fins")
     QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (d.TILT_ANGLE, True))
 
     # Add fins: selecting a leaning face creates the object and opens the panel.
@@ -358,6 +389,19 @@ def main():
     with zipfile.ZipFile(written) as archive:
         model = archive.read("3D/3dmodel.model").decode()
     expect(model.count("<object ") == 2, "the file holds part and fins as two objects")
+
+    # STEP: the same selection, exact surfaces, part and fins under their names.
+    QtWidgets.QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: (target, ""))
+    Gui.runCommand("FinSnap_ExportSTEP")
+    stepped = target + ".step"
+    expect(not messages and os.path.exists(stepped), "STEP export writes the file and adds .step")
+    import Import
+    reread = App.newDocument("StepReread", hidden=True, temp=True)
+    Import.insert(stepped, reread.Name)
+    names = sorted(o.Label for o in reread.Objects if o.TypeId == "Part::Feature")
+    App.closeDocument(reread.Name)
+    expect(names == sorted([cube.Label, cube.Label + commands.FINS_SUFFIX]),
+           "the STEP file holds part and fins under their names: %s" % names)
 
     # Export with nothing selected: every fin object of the document with its part.
     Gui.Selection.clearSelection()
