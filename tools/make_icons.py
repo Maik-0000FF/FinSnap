@@ -30,6 +30,9 @@ FIN_LINE = "#8a5512"
 BED = "#5c6670"
 ADD_FILL = "#3fa34d"
 ADD_LINE = "#1d5e26"
+# The badge of removing: a minus on red.
+REMOVE_FILL = "#d03b3b"
+REMOVE_LINE = "#7a1d1d"
 # The badge of Quick fins: a lightning bolt on yellow, one step instead of several.
 QUICK_FILL = "#f2c230"
 QUICK_LINE = "#8a6d12"
@@ -113,6 +116,20 @@ def plus_badge():
             '<line x1="52" y1="7" x2="52" y2="17"/><line x1="47" y1="12" x2="57" y2="12"/></g>']
 
 
+def minus_badge():
+    return ['<circle cx="52" cy="12" r="10" fill="%s" stroke="%s" stroke-width="2"/>' % (REMOVE_FILL, REMOVE_LINE),
+            '<line x1="47" y1="12" x2="57" y2="12" stroke="%s" stroke-width="3.5" stroke-linecap="round"/>'
+            % WHITE]
+
+
+def back_badge():
+    """A curved arrow pointing back, on green: what was removed comes back."""
+    return ['<circle cx="52" cy="12" r="10" fill="%s" stroke="%s" stroke-width="2"/>' % (ADD_FILL, ADD_LINE),
+            '<path d="M57 13 A5 5 0 1 0 52 18" fill="none" stroke="%s" stroke-width="2.5" stroke-linecap="round"/>'
+            % WHITE,
+            '<polygon points="54,14 58,9 60,15" fill="%s"/>' % WHITE]
+
+
 def bolt_badge():
     bolt = "53,4 45,13 50,13 48,20 57,10 52,10 54,4"
     return ['<circle cx="52" cy="12" r="10" fill="%s" stroke="%s" stroke-width="2"/>' % (QUICK_FILL, QUICK_LINE),
@@ -162,6 +179,9 @@ def icons():
         "add_fins.svg": workbench() + plus_badge(),
         "quick_fins.svg": workbench() + bolt_badge(),
         "counter_fin.svg": bed() + part_shape() + fin_shapes() + fin_shapes(mirrored=True) + plus_badge(),
+        "remove_fin.svg": workbench() + minus_badge(),
+        "restore_fins.svg": workbench() + back_badge(),
+        "remove_counter.svg": bed() + part_shape() + fin_shapes() + fin_shapes(mirrored=True) + minus_badge(),
         "tilt.svg": bed() + [tilted_from] + part_shape() + tilt_arrow,
         "lay_flat.svg": bed() + tilted_outline + [laid_flat] + lay_arrow,
         "export_3mf.svg": paper + [small, label("3MF")],

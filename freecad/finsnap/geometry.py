@@ -728,15 +728,18 @@ def quick_plan(shape, edges, faces, p, angle_deg):
 
 def is_chamfer(shape, face):
     """Whether planar `face` sits between two planar faces of `shape` like a
-    chamfer: its normal halfway between theirs.
+    chamfer: its normal turned part of the way from one neighbour's normal to
+    the other's, whatever the angle or the two widths of the chamfer.
 
     INPUTS this has to withstand:
-      chamfer on the edge of a box, wide or
-        narrow                              ->  True
-      side of a box                         ->  False: its neighbours are square to it
-      side of an octagon prism              ->  True: it bisects its neighbours too;
-                                                to put fins under it, select it with one
-                                                of its edges
+      chamfer on the edge of a box, equal or
+        unequal widths, wide or narrow      ->  True
+      chamfer at another angle than 45      ->  True
+      side of a box                         ->  False: no two neighbours with its
+                                                normal between theirs
+      side of an octagon prism              ->  True: it lies between its neighbours
+                                                too; to put fins under it, select it
+                                                with one of its edges
       rounded face                          ->  False
     """
     if face.findPlane() is None:
@@ -747,9 +750,12 @@ def is_chamfer(shape, face):
               and any(edge.isSame(mine) for edge in other.Edges for mine in face.Edges)]
     for i, first in enumerate(beside):
         for second in beside[i + 1:]:
-            between = first + second
-            if between.Length > d.TOLERANCE and between.normalize().getAngle(normal) < d.TOLERANCE \
-                    and first.getAngle(second) > d.TOLERANCE:
+            apart = first.getAngle(second)
+            # Between them: in their plane, and the two angles to it adding up
+            # to the angle between them, neither of them zero.
+            in_between = abs(first.getAngle(normal) + normal.getAngle(second) - apart) < d.TOLERANCE
+            if d.TOLERANCE < apart < math.pi - d.TOLERANCE and in_between \
+                    and min(first.getAngle(normal), second.getAngle(normal)) > d.TOLERANCE:
                 return True
     return False
 

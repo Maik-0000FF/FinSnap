@@ -75,8 +75,9 @@ Prop = namedtuple("Prop", "name kind group label tip field choices step", defaul
 
 # Steps of the fields, each sized to what the value is: hundredths for the
 # print profile and the gap, whole millimetres only for the fin height.
-# STEP_LAYER: heights on the layer grid step by the layer height entered,
-# so every step lands on the next layer.
+# STEP_LAYER: heights on the layer grid step by the layer height entered; a
+# value already on the grid steps to the next layer, and params rounds any
+# other value onto it.
 STEP_PROFILE = 0.05
 STEP_CLEARANCE = 0.01
 STEP_LAYER = "layer height"

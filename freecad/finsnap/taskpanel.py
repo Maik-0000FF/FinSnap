@@ -44,6 +44,12 @@ MODIFIED_COLOR = "#e07000"
 MODIFIED_STYLE = "QLabel { color: %s; font-weight: bold; }" % MODIFIED_COLOR
 RESET_SIGN = "↺"
 IMAGES = os.path.join(os.path.dirname(__file__), "images")
+ICONS = os.path.join(os.path.dirname(__file__), "icons")
+# Icons of the Edit fins buttons; the counter fin one is the command's as well.
+ICON_COUNTER = os.path.join(ICONS, "counter_fin.svg")
+ICON_REMOVE_FIN = os.path.join(ICONS, "remove_fin.svg")
+ICON_RESTORE_FINS = os.path.join(ICONS, "restore_fins.svg")
+ICON_REMOVE_COUNTER = os.path.join(ICONS, "remove_counter.svg")
 DRAWINGS = (
     (os.path.join(IMAGES, "side_view.svg"), QT_TRANSLATE_NOOP("FinSnap", "Side view")),
     (os.path.join(IMAGES, "top_view.svg"), QT_TRANSLATE_NOOP("FinSnap", "Top view")),
@@ -192,24 +198,26 @@ class FinSnapTaskPanel:
             "you select."))
         edit_info.setWordWrap(True)
         edit_layout.addWidget(edit_info, 0, 0, 1, 2)
-        for column, row, text, action in (
-                (0, 1, QT_TRANSLATE_NOOP("FinSnap", "Remove selected fin"), self.remove_selected),
-                (1, 1, QT_TRANSLATE_NOOP("FinSnap", "Bring removed fins back"), self.restore),
-                (0, 2, QT_TRANSLATE_NOOP("FinSnap", "Add counter fin"), self.add_counter),
-                (1, 2, QT_TRANSLATE_NOOP("FinSnap", "Remove counter fin"), self.remove_counter)):
-            button = QtWidgets.QPushButton(translate("FinSnap", text))
+        for column, row, icon, text, action in (
+                (0, 1, ICON_REMOVE_FIN, QT_TRANSLATE_NOOP("FinSnap", "Remove selected fin"), self.remove_selected),
+                (1, 1, ICON_RESTORE_FINS, QT_TRANSLATE_NOOP("FinSnap", "Bring removed fins back"), self.restore),
+                (0, 2, ICON_COUNTER, QT_TRANSLATE_NOOP("FinSnap", "Add counter fin"), self.add_counter),
+                (1, 2, ICON_REMOVE_COUNTER, QT_TRANSLATE_NOOP("FinSnap", "Remove counter fin"),
+                 self.remove_counter)):
+            button = QtWidgets.QPushButton(QtGui.QIcon(icon), translate("FinSnap", text))
             button.clicked.connect(action)
             edit_layout.addWidget(button, row, column)
         layout.addWidget(edit)
 
         standard_buttons = QtWidgets.QHBoxLayout()
         save = QtWidgets.QPushButton(translate("FinSnap", "Save as standard"))
-        save.setToolTip(_wrapped(translate("FinSnap", "New fins start with these values. Fields that differ from the "
-                                             "standard are marked, and their button puts the standard back.")))
+        save.setToolTip(_wrapped(translate("FinSnap", "New fins start with these values. Fields that differ from "
+                                                      "the standard are marked, and their button puts the "
+                                                      "standard back.")))
         save.clicked.connect(self.save_standard)
         factory = QtWidgets.QPushButton(translate("FinSnap", "Factory settings"))
         factory.setToolTip(_wrapped(translate("FinSnap", "Forget the saved standard and set every field to the "
-                                                "built-in value.")))
+                                                         "built-in value.")))
         factory.clicked.connect(self.factory_settings)
         standard_buttons.addWidget(save)
         standard_buttons.addWidget(factory)

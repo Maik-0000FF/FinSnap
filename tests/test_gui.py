@@ -300,10 +300,10 @@ def main():
         Gui.runCommand("FinSnap_QuickFins")
         made = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick]
         expect(not messages and len(made) == 1 and made[0].isValid() and made[0].Shape.Solids
-               and made[0].CounterFace and made[0].ResultFinCount == 1
+               and not made[0].CounterFace and made[0].ResultFinCount == 1
                and made[0].FinPlacement == d.PLACEMENT_CENTER and not quick.Placement.isIdentity()
                and Gui.Control.activeDialog(),
-               "Quick fins on %s stands the part, adds one fin with a counter fin and opens the panel: %s"
+               "Quick fins on %s stands the part, adds the main fin alone and opens the panel: %s"
                % (what, messages))
         if what == "a face":
             leaning = quick.Shape.Faces[facing - 1].normalAt(0, 0).z

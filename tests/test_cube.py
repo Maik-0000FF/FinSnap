@@ -594,6 +594,11 @@ def check_quick_plan():
            and abs(moved(chamfered, alone.change).Faces[bevel].normalAt(0, 0).z + 1) < 1e-6,
            "a chamfer alone, however wide, carries the part instead of taking the fins")
     expect(not geometry.is_chamfer(box, box.Faces[front]), "a side of a box is no chamfer")
+    uneven = box.makeChamfer(EDGE_ROUND, 2 * EDGE_ROUND, bottom_front)
+    slope = [f for f in uneven.Faces if f.findPlane() is not None and -0.99 < f.normalAt(0, 0).z < -0.01
+             and -0.99 < f.normalAt(0, 0).y < -0.01]
+    expect(len(slope) == 1 and geometry.is_chamfer(uneven, slope[0]),
+           "a chamfer of unequal widths, not at 45 degrees, is a chamfer too")
 
     filleted = box.makeFillet(EDGE_ROUND, bottom_front)
     fillet = [i for i, f in enumerate(filleted.Faces) if f.findPlane() is None][0]
