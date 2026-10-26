@@ -6,6 +6,8 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-10-26
+
 ### Added
 
 - Single fins can be removed: click one in the 3D view and press Delete, or Remove selected fin in the task panel; removing the last fins deletes the fins object, as deleting it in the tree does
@@ -95,7 +97,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.3.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.3.0
 [0.2.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.2.0
 [0.1.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.1.0
