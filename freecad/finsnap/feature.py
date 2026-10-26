@@ -28,6 +28,9 @@ OVERHANGS = "Overhangs"
 LAID_FLAT = "LaidFlat"
 # Where the part was laid flat; moved from there, the fins are rebuilt.
 LAID_FLAT_AT = "LaidFlatAt"
+# The faces of the part the fins were last built under, so overhang marks leave
+# out exactly those.
+CARRIED = "CarriedFaces"
 NOTE_LAID_FLAT = QT_TRANSLATE_NOOP(
     "FinSnap", "The part lies flat again: the fins keep their last shape until the part is moved, for example "
     "stood on its edge again; then they are rebuilt.")
@@ -303,20 +306,40 @@ def _face(link):
 
 
 def _supported(part_obj, document):
-    """Faces of `part_obj` that carry fins of any FinSnap object in `document`."""
+    """Faces of `part_obj` that carry fins of any FinSnap object in `document`:
+    the faces the fins were last built under, or else the faces they link to.
+
+    INPUTS this has to withstand:
+      fins built, faces recorded            ->  the recorded faces
+      fins never built, or built nothing    ->  the faces they link to
+      a face the part no longer has         ->  left out
+      part edited, faces numbered anew      ->  recorded names of other fins may
+                                                point to other faces until those are
+                                                rebuilt; FreeCAD renames links, not
+                                                these names. Accepted: it lasts one
+                                                recompute and only with several fin
+                                                objects on one part
+    """
     shape = global_shape(part_obj)
-    faces = []
+    names = []
     for other in document.Objects:
         if not is_fins(other):
             continue
+        carried = getattr(other, CARRIED, [])
+        if carried and other.Base and other.Base[0] is part_obj:
+            names.extend(carried)
+            continue
         for link in (other.Base, other.CounterFace):
             if link and link[0] is part_obj and link[1]:
-                try:
-                    faces.append(shape.getElement(link[1][0]))
-                except (ValueError, IndexError, Part.OCCError):
-                    # The part changed and lost this face; those fins report
-                    # it themselves, the others are still built.
-                    continue
+                names.append(link[1][0])
+    faces = []
+    for name in names:
+        try:
+            faces.append(shape.getElement(name))
+        except (ValueError, IndexError, Part.OCCError):
+            # The part changed and lost this face; those fins report it
+            # themselves, the others are still built.
+            continue
     return shape, faces
 
 
@@ -340,20 +363,35 @@ class FinSnapFeature:
             setattr(obj, OVERHANGS, [])
             obj.Warnings = [translate("FinSnap", NOTE_LAID_FLAT)]
             return
-        # The overhangs depend on the part alone; set first, so the marks
-        # follow the part even when the fins below cannot be built.
+        p = params_of(obj)
+        try:
+            part, face = _face(obj.Base)
+            result = geometry.build(part, face, p)
+            counter = None
+            if obj.CounterFace:
+                counter_part, counter_face = _face(obj.CounterFace)
+                counter = geometry.build(counter_part, counter_face, p,
+                                         tine_count=p.counter_tine_count or None)
+        except Exception:
+            # Built nothing, the fins carry no face; the overhang marks still
+            # follow the part.
+            hidden_property(obj, CARRIED, "App::PropertyStringList")
+            setattr(obj, CARRIED, [])
+            setattr(obj, OVERHANGS, overhangs_of(obj.Base[0], obj.Document))
+            raise
+        # Named on the shape each face was found on: the counter face comes from
+        # a shape of its own, even of the same part.
+        carried = [face_name_of(part, f) for f in result.carried]
+        if counter is not None and obj.CounterFace[0] is obj.Base[0]:
+            carried += [face_name_of(counter_part, f) for f in counter.carried]
+        hidden_property(obj, CARRIED, "App::PropertyStringList")
+        setattr(obj, CARRIED, carried)
         overhanging = overhangs_of(obj.Base[0], obj.Document)
         setattr(obj, OVERHANGS, overhanging)
-        p = params_of(obj)
-        part, face = _face(obj.Base)
-        result = geometry.build(part, face, p)
         shapes = [result.fins]
         # Each warning says which fin it is about, the main or the counter fin.
         warnings = [translate("FinSnap", "Main fin: %s") % w for w in result.warnings]
-        if obj.CounterFace:
-            counter_part, counter_face = _face(obj.CounterFace)
-            counter = geometry.build(counter_part, counter_face, p,
-                                     tine_count=p.counter_tine_count or None)
+        if counter is not None:
             shapes.append(counter.fins)
             warnings += [translate("FinSnap", "Counter fin: %s") % w for w in counter.warnings]
         if overhanging:
@@ -449,6 +487,13 @@ def fins_of(owner, document):
             if is_fins(obj) and obj.Base and outermost(obj.Base[0]) is owner]
 
 
+def hidden_property(obj, name, kind):
+    """Add the hidden result property `name` to `obj` if it has none yet."""
+    if name not in obj.PropertiesList:
+        obj.addProperty(kind, name, GROUP_RESULT, "", 1)
+        obj.setEditorMode(name, EDITOR_HIDDEN)
+
+
 def is_laid_flat(obj):
     return bool(getattr(obj, LAID_FLAT, False))
 
@@ -461,10 +506,8 @@ def keep_laid_flat(obj, change):
       fins of a standing part               ->  moved with it, marked, not rebuilt
       fins already laid flat                ->  moved once more, still marked
     """
-    for name, kind in ((LAID_FLAT, "App::PropertyBool"), (LAID_FLAT_AT, "App::PropertyPlacement")):
-        if name not in obj.PropertiesList:
-            obj.addProperty(kind, name, GROUP_RESULT, "", 1)
-            obj.setEditorMode(name, EDITOR_HIDDEN)
+    hidden_property(obj, LAID_FLAT, "App::PropertyBool")
+    hidden_property(obj, LAID_FLAT_AT, "App::PropertyPlacement")
     owner = outermost(obj.Base[0])
     shape = obj.Shape.copy()
     shape.Placement = change.multiply(shape.Placement)

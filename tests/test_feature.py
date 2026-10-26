@@ -33,7 +33,9 @@ XZ_PLANE = 4  # index in the origin features of a Body
 T_PROFILE = [V(10, 0, 0), V(20, 0, 0), V(20, 20, 0), V(30, 20, 0), V(30, 30, 0), V(0, 30, 0),
              V(0, 20, 0), V(10, 20, 0)]
 T_DEPTH = 10.0
-T_TILT = 30.0  # flatter than the overhang limit, so the stem overhangs too
+# Flatter than the overhang limit: the stem of the T overhangs too, and of a
+# box stood on an edge one face overhangs.
+FLAT_TILT = 30.0
 TAPER_SQUARE = 20.0
 TAPER_HEIGHT = 15.0
 TAPER_ANGLE = -20.0  # negative: the Pad widens
@@ -118,14 +120,14 @@ def t_profile_in_part(doc):
 
     edge = [e for e in shape.Edges if e.BoundBox.ZMax < d.TOLERANCE and abs(e.Length - T_DEPTH) < d.TOLERANCE][0]
     owner = outermost(pad)
-    owner.Placement = orient.stand(shape, edge, T_TILT).multiply(owner.Placement)
+    owner.Placement = orient.stand(shape, edge, FLAT_TILT).multiply(owner.Placement)
     doc.recompute()
     expect(owner is container, "tilting a nested Pad moves the outermost container")
     tilted = global_shape(pad)
     expect(abs(tilted.BoundBox.ZMin) < d.TOLERANCE, "the nested part rests on the bed after the tilt")
 
     hanging = feature.overhangs_of(pad, doc)
-    expect(len(hanging) == 3, "tilted by %.0f degrees the stem and both arms overhang: %s" % (T_TILT, hanging))
+    expect(len(hanging) == 3, "tilted by %.0f degrees the stem and both arms overhang: %s" % (FLAT_TILT, hanging))
     stem = min(hanging, key=lambda name: tilted.getElement(name).BoundBox.ZMin)
     fins = feature.create(pad, stem)
     doc.recompute()
@@ -192,6 +194,31 @@ def lost_face(doc):
     expect(kept.isValid() and kept.Shape.Solids and not lost.isValid(),
            "fins on a face the part no longer has fail alone, the others are still built")
     for obj in (lost, kept, part):
+        doc.removeObject(obj.Name)
+
+
+def marks_without_face(doc):
+    """Fins that lose their face still mark the overhangs of the part as it is now."""
+    part = doc.addObject("Part::Feature", "MarkedPart")
+    box = Part.makeBox(*BOX)
+    edge = [e for e in box.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.Length == BOX[0]][0]
+
+    def standing(angle):
+        shape = box.copy()
+        shape.Placement = orient.tilt(box, edge, angle).multiply(shape.Placement)
+        return shape
+
+    part.Shape = standing(FLAT_TILT)
+    steep = [i for i, f in enumerate(part.Shape.Faces, 1) if -0.6 < f.normalAt(0, 0).z < -0.4][0]
+    fins = feature.create(part, "Face%d" % steep)
+    doc.recompute()
+    expect(fins.Overhangs, "tilted flat, the other face overhangs: %s" % fins.Overhangs)
+    part.Shape = standing(d.TILT_ANGLE)
+    fins.Base = (part, ["Face%d" % (len(part.Shape.Faces) + 1)])
+    doc.recompute()
+    expect(not fins.isValid() and fins.Overhangs == [],
+           "with its face lost the fins fail, and the marks follow the part: %s" % fins.Overhangs)
+    for obj in (fins, part):
         doc.removeObject(obj.Name)
 
 
@@ -308,6 +335,7 @@ def main():
     t_profile_in_part(doc)
     saved_standard(doc)
     lost_face(doc)
+    marks_without_face(doc)
     tapered_pad(doc)
     warnings_and_old_files(doc)
     step_with_offset_curves()

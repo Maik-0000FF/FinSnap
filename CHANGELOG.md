@@ -8,6 +8,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Added
 
+- A face split by a groove across it is supported together with the piece beyond the groove: the fin reaches over the gap, the tines over it are left out and named
 - Stand on edge takes an edge between two flat faces at a right angle alone and stands the part on it at 45 degrees
 - Export STEP: exact surfaces instead of a mesh, every body under its own name; split the object into objects in the slicer
 - Tine clearance: the tines end short of the face, and the fin moves out by as much, so the tines keep their length
