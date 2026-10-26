@@ -88,6 +88,7 @@ def main():
 
     from freecad.finsnap import defaults as d
     from freecad.finsnap import feature
+    from freecad.finsnap import orient
     from freecad.finsnap.commands import ISOMETRIC
     from freecad.finsnap.taskpanel import FinSnapTaskPanel
 
@@ -288,11 +289,14 @@ def main():
     Gui.runCommand("FinSnap_Tilt")
     doc.recompute()
     ANSWERS.append(QtWidgets.QMessageBox.Yes)
+    open_on_marked = FinSnapTaskPanel(marked)
+    marked.ViewObject.Proxy.panel = open_on_marked
     select(box)
     Gui.runCommand("FinSnap_LayFlat")
     doc.recompute()
-    expect(box.Placement.isIdentity() and marked.Name not in [o.Name for o in doc.Objects],
-           "Yes lays the part flat and deletes its fins")
+    expect(box.Placement.isIdentity() and marked.Name not in [o.Name for o in doc.Objects]
+           and open_on_marked.released,
+           "Yes lays the part flat and deletes its fins, closing a panel open on them first")
     QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (d.TILT_ANGLE, True))
 
     # Quick fins: an edge stands the part and adds fins; a face turns the part
@@ -316,6 +320,13 @@ def main():
         if what == "a face":
             leaning = quick.Shape.Faces[facing - 1].normalAt(0, 0).z
             expect(abs(leaning + math.sqrt(0.5)) < d.TOLERANCE, "the chosen face leans 45 degrees over the bed")
+        if what == "an edge":
+            # Cancel undoes Quick fins whole: the fins go, the part lies as before.
+            made[0].ViewObject.Proxy.panel.reject()
+            expect(made[0].Name not in [o.Name for o in doc.Objects] and quick.Placement.isIdentity()
+                   and orient.FLAT_PLACEMENT not in quick.PropertiesList,
+                   "Cancel after Quick fins deletes the fins and lays the part back as it was")
+            continue
         Gui.Control.closeDialog()
         doc.removeObject(made[0].Name)
         quick.Placement = App.Placement()
@@ -610,6 +621,21 @@ def main():
     expect(not getattr(lined.ViewObject.Proxy, "created", False),
            "fins opened while another dialog is open are not taken as just made")
     Gui.Control.closeDialog()
+    # No 3D view to show the fins in: double click says so instead of failing.
+    from freecad.finsnap import handles as handles_module
+    real_handles = handles_module.Handles
+
+    def no_view(*args):
+        raise RuntimeError("no 3D view")
+
+    handles_module.Handles = no_view
+    try:
+        opened = lined.ViewObject.Proxy.setEdit(lined.ViewObject)
+    finally:
+        handles_module.Handles = real_handles
+    expect(opened is False and messages and "no 3D view" in messages[-1] and not Gui.Control.activeDialog(),
+           "without a 3D view no panel opens, and a message says why: %s" % messages)
+    del messages[:]
     expect(lined.ViewObject.Proxy.onDelete(lined.ViewObject, ["Vertex1"]) is False
            and lined.Name in [o.Name for o in doc.Objects], "a pick that is no fin deletes nothing")
     # The whole object deleted in the tree while its panel is open: the panel closes first.

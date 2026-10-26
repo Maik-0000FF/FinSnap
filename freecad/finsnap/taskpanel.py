@@ -154,9 +154,11 @@ def _same_mm(a, b):
 
 
 class FinSnapTaskPanel:
-    def __init__(self, obj, created=False):
+    def __init__(self, obj, created=False, on_cancel=None):
         self.obj = obj
+        # Fins just made: Cancel deletes them, then calls on_cancel, if any.
         self.created = created
+        self.on_cancel = on_cancel
         self.widgets = {}
         self.labels = {}
         self.resets = {}
@@ -735,6 +737,9 @@ class FinSnapTaskPanel:
         self.leave_edit()
         if self.created:
             App.ActiveDocument.removeObject(self.obj.Name)
+            if self.on_cancel is not None:
+                self.on_cancel()
+            App.ActiveDocument.recompute()
         else:
             for name, value in self.original.items():
                 setattr(self.obj, name, value)

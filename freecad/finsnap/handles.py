@@ -246,13 +246,9 @@ class Handles:
             switch.addChild(node)
         switch.whichChild.setValue(coin.SO_SWITCH_ALL if nodes else coin.SO_SWITCH_NONE)
 
-    def show_preview(self, shapes, valid, dropped=()):
-        """Show `shapes` see-through, green if `valid`, else red, and the tines
-        in `dropped` red."""
-        nodes = [shaded(shapes, VALID_COLOR if valid else INVALID_COLOR, PREVIEW_TRANSPARENCY)]
-        if dropped:
-            nodes.append(shaded(dropped, INVALID_COLOR, PREVIEW_TRANSPARENCY))
-        self._fill(self.preview, *nodes)
+    def show_preview(self, shapes, valid):
+        """Show `shapes` see-through, green if `valid`, else red."""
+        self._fill(self.preview, shaded(shapes, VALID_COLOR if valid else INVALID_COLOR, PREVIEW_TRANSPARENCY))
 
     def show_dropped(self, tines):
         """Mark the tines in `tines`, which find no face, red until shown again."""

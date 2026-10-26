@@ -5,6 +5,8 @@ INPUTS this has to withstand (validate()):
   any length <= 0 where a size is meant ->  ParamError naming the field
   gap <= 0                              ->  ParamError: fin and part would fuse
   tine_clearance < 0                    ->  ParamError; 0 means touching
+  tine_clearance > 0, merged fins       ->  valid; not applied (clearance is 0), merged
+                                            fins need their tines on the face
   bead_width < nozzle_diameter / 2      ->  ParamError: not a printable bead
   layer_height > nozzle_diameter        ->  ParamError: not printable
   tine_layers or tine_width_beads < 1   ->  ParamError
@@ -118,10 +120,17 @@ class FinParams:
 
     # Derived sizes, so no caller repeats the arithmetic.
     @property
+    def clearance(self):
+        """The tine clearance applied: none for fins merged into the part,
+        which reach it through their tines; short of the face, they would be
+        loose bodies in the merged shape."""
+        return 0.0 if self.connection == d.CONNECTION_MERGED else self.tine_clearance
+
+    @property
     def fin_offset(self):
         """Distance of the fin from the face: the gap the tines bridge, and the
         tine clearance on top, so the tines keep their length."""
-        return self.gap + self.tine_clearance
+        return self.gap + self.clearance
 
     @property
     def tine_width(self):
