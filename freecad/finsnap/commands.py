@@ -29,6 +29,10 @@ ICON_LAY_FLAT = os.path.join(ICONS, "lay_flat.svg")
 ICON_COUNTER = os.path.join(ICONS, "counter_fin.svg")
 EDGE_PREFIX = "Edge"
 TILT_DECIMALS = 1
+# Order in which App.Rotation keeps the given camera axes exact.
+CAMERA_AXES = "ZYX"
+# Direction FreeCAD's isometric view looks along.
+ISOMETRIC = App.Vector(-1, 1, -1).normalize()
 
 FILE_FILTER = QT_TRANSLATE_NOOP("FinSnap", "3MF files (*.3mf)")
 FILE_EXTENSION = ".3mf"
@@ -160,6 +164,9 @@ class TiltOntoEdge:
 
     SELECTIONS this has to withstand:
       one edge on the bed                   ->  turned about it by the asked angle
+      one edge off the bed between two flat
+        faces at a right angle              ->  stands on it at 45 degrees, no angle asked
+      one edge off the bed, other faces     ->  message, nothing changed
       one edge and one of its faces         ->  face laid down, then turned about the edge
       one face alone (a chamfer)            ->  face laid onto the bed, no angle asked
       two faces (beside a fillet)           ->  part stands on what joins them, both
@@ -179,10 +186,11 @@ class TiltOntoEdge:
                     "Select an edge of the part and the face of that edge that is to lie on the bed. "
                     "The face is laid onto the bed, the part is turned about the edge by the tilt angle "
                     "and set back onto the bed, standing on the edge. For an edge already on the bed, "
-                    "the edge alone is enough. A face alone, a chamfer or a fillet, is laid onto the bed "
-                    "and carries the part: a chamfer lies flat on it, a fillet touches it along its "
-                    "middle. Two faces alone, such as the two beside a fillet, stand the part on what "
-                    "joins them, both equally steep.")}
+                    "the edge alone is enough; so it is for an edge between two flat faces at a right "
+                    "angle, on which the part stands at 45 degrees. A face alone, a chamfer or a fillet, "
+                    "is laid onto the bed and carries the part: a chamfer lies flat on it, a fillet "
+                    "touches it along its middle. Two faces alone, such as the two beside a fillet, "
+                    "stand the part on what joins them, both equally steep.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
         return App.ActiveDocument is not None
@@ -204,15 +212,21 @@ class TiltOntoEdge:
             shape = global_shape(obj)
             chosen = [shape.getElement(name) for _, name in faces]
             face = chosen[0] if chosen else None
+            edge = None
             if len(chosen) == 2:
                 change = orient.rest_between(shape, *chosen)
             elif edges:
-                angle, ok = QtWidgets.QInputDialog.getDouble(
-                    Gui.getMainWindow(), translate("FinSnap", "Stand on edge"),
-                    translate("FinSnap", "Tilt angle (degrees):"), d.TILT_ANGLE, 1.0, 89.0, TILT_DECIMALS)
-                if not ok:
-                    return
-                change = orient.stand(shape, shape.getElement(edges[0][1]), angle, face)
+                edge = shape.getElement(edges[0][1])
+                if face is None and not orient.on_bed(shape, edge):
+                    # The angle is fixed by the right angle between its faces.
+                    change = orient.stand(shape, edge, orient.RIGHT_ANGLE_TILT)
+                else:
+                    angle, ok = QtWidgets.QInputDialog.getDouble(
+                        Gui.getMainWindow(), translate("FinSnap", "Stand on edge"),
+                        translate("FinSnap", "Tilt angle (degrees):"), d.TILT_ANGLE, 1.0, 89.0, TILT_DECIMALS)
+                    if not ok:
+                        return
+                    change = orient.stand(shape, edge, angle, face)
             else:
                 change = orient.lay_flat(shape, face)
         except orient.OrientError as error:
@@ -225,7 +239,31 @@ class TiltOntoEdge:
         owner.Placement = change.multiply(owner.Placement)
         doc.commitTransaction()
         doc.recompute()
+        _show_on_bed(orient.side_direction(change, edge, chosen if len(chosen) == 2 else ()))
         _report_overhangs(obj)
+
+
+def _show_on_bed(direction=None):
+    """Look at the turned part with the bed below, all of it in view.
+
+    Along `direction`, the line the part stands on, the view shows the tilt
+    angle in profile; without one it is isometric. The camera does not follow a
+    placement change, so the part would otherwise turn away under it.
+
+    The orientation is set on the camera node itself: setCameraOrientation()
+    and viewIsometric() only start an animation when navigation animations are
+    on, and fitAll() would then fit the part to where the camera started from.
+    """
+    view = Gui.ActiveDocument.ActiveView if Gui.ActiveDocument else None
+    # The active view may be a spreadsheet or a drawing, which has no camera.
+    if view is None or not hasattr(view, "getCameraNode"):
+        return
+    # The camera looks along its -Z with +Y up: -Z onto the line of sight, +Y
+    # towards the vertical, +X to the right of both.
+    back = -(direction if direction is not None else ISOMETRIC)
+    turn = App.Rotation(orient.UP.cross(back), orient.UP, back, CAMERA_AXES)
+    view.getCameraNode().orientation.setValue(coin.SbRotation(*turn.Q))
+    view.fitAll()
 
 
 def _report_overhangs(obj):
@@ -274,6 +312,7 @@ class LayFlat:
             _message(translate("FinSnap", "The selection was not stood on an edge with Stand on edge."))
             return
         doc.recompute()
+        _show_on_bed()
 
 
 class AddFins:
