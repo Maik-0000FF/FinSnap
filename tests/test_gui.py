@@ -29,6 +29,8 @@ DIALOG_ACCEPTED = 1
 FLAT_TILT = 30.0  # flatter than the overhang limit
 # Up on the screen, in the coordinates of the camera.
 SCREEN_UP = App.Vector(0, 1, 0)
+ALONG_X = App.Vector(1, 0, 0)
+UP = App.Vector(0, 0, 1)
 CHAMFER = 3.0
 
 
@@ -115,8 +117,8 @@ def main():
     # The top edge runs along X: the view looks along it, the bed below.
     view = Gui.ActiveDocument.ActiveView
     up = view.getCameraOrientation().multVec(SCREEN_UP)
-    expect(view.getViewDirection().getAngle(App.Vector(1, 0, 0)) < d.TOLERANCE
-           and up.getAngle(App.Vector(0, 0, 1)) < d.TOLERANCE, "the view looks along the edge, the bed below")
+    expect(view.getViewDirection().getAngle(ALONG_X) < d.TOLERANCE
+           and up.getAngle(UP) < d.TOLERANCE, "the view looks along the edge, the bed below")
     select(box)
     Gui.runCommand("FinSnap_LayFlat")
     doc.recompute()

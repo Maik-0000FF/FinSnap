@@ -119,7 +119,7 @@ The file is a ZIP archive; the content above sits in `3D/3dmodel.model`. A slice
 ## Parameters
 
 | Group | Parameter | Automatic | Meaning |
-|---|---|---|
+|---|---|---|---|
 | Slicer | Nozzle diameter, bead width, layer height, first layer height | | Values of the print profile |
 | Connection | Connection | separate | separate or merged |
 | | Gap | 0.25 mm | Clearance between fin and face, along the face normal |

@@ -726,58 +726,58 @@
         <translation>das Netz ist nicht geschlossen</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="132"/>
+        <location filename="../orient.py" line="133"/>
         <source>the tilt angle must lie between 0 and 90 degrees</source>
         <translation>der Kippwinkel muss zwischen 0 und 90 Grad liegen</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="138"/>
+        <location filename="../orient.py" line="139"/>
         <source>the edge is curved; select a straight edge</source>
         <translation>die Kante ist gekrümmt; wähle eine gerade Kante</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="140"/>
+        <location filename="../orient.py" line="141"/>
         <source>the edge is not horizontal</source>
         <translation>die Kante liegt nicht waagerecht</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="142"/>
-        <location filename="../orient.py" line="216"/>
+        <location filename="../orient.py" line="143"/>
+        <location filename="../orient.py" line="217"/>
         <source>the edge does not lie on the bed</source>
         <translation>die Kante liegt nicht auf dem Bett; wähle zusätzlich die Fläche, die auf das Bett soll</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="152"/>
+        <location filename="../orient.py" line="153"/>
         <source>the part cannot stand on this edge</source>
         <translation>das Teil kann nicht auf dieser Kante stehen</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="170"/>
+        <location filename="../orient.py" line="171"/>
         <source>the part cannot rest on this face</source>
         <translation>das Teil kann nicht auf dieser Fläche liegen, andere Teile davon reichen tiefer</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="184"/>
+        <location filename="../orient.py" line="185"/>
         <source>the two faces point in opposite directions</source>
         <translation>die beiden Flächen zeigen in entgegengesetzte Richtungen</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="202"/>
+        <location filename="../orient.py" line="203"/>
         <source>the part cannot rest between these faces</source>
         <translation>das Teil kann nicht zwischen diesen Flächen aufliegen, andere Teile davon reichen tiefer</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="218"/>
+        <location filename="../orient.py" line="219"/>
         <source>an edge alone stands the part only at 45 degrees; for another angle select the face that is to lie on the bed</source>
         <translation>eine Kante allein stellt das Teil nur bei 45 Grad auf; für einen anderen Winkel wähle zusätzlich die Fläche, die auf das Bett soll</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="222"/>
+        <location filename="../orient.py" line="223"/>
         <source>the edge is not an edge of the selected face</source>
         <translation>die Kante gehört nicht zur gewählten Fläche</translation>
     </message>
     <message>
-        <location filename="../orient.py" line="224"/>
+        <location filename="../orient.py" line="225"/>
         <source>a rounded face does not lie on the bed with its edge; select it alone, or the two faces beside it</source>
         <translation>eine gewölbte Fläche liegt nicht mit ihrer Kante auf dem Bett; wähle sie allein oder die beiden Flächen daneben</translation>
     </message>

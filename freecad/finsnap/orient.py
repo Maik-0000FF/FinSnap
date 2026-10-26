@@ -66,7 +66,7 @@ INPUTS this has to withstand (side_direction()):
   two faces (sharp edge or fillet)      ->  the line joining them after the change
   face alone, turned                    ->  the axis of the turn
   face alone, already on the bed        ->  None
-  line pointing to -Y, or along -X      ->  reversed, so the view comes from the front
+  line pointing to -Y, or along -X      ->  reversed, so a line is always seen from one side
 
 INPUTS this has to withstand (remember_flat(), lay_back()):
   first tilt                            ->  placement kept
@@ -116,7 +116,8 @@ def on_bed(shape, edge):
 
 
 def right_angle_faces(shape, edge):
-    """The two faces of `edge` if both are flat and meet at a right angle, else None."""
+    """The two faces of `edge` if both are flat and meet at a right angle, within
+    RIGHT_ANGLE_TOLERANCE, else None."""
     faces = shape.ancestorsOfType(edge, Part.Face)
     if len(faces) != 2 or any(face.findPlane() is None for face in faces):
         return None
@@ -234,7 +235,8 @@ def side_direction(change, edge=None, faces=()):
     The line is the edge, or what joins two faces (its direction is the cross
     product of their normals), or for a face alone the axis the part was turned
     about. Of the two senses the one pointing to +Y (or +X for a line along X)
-    is returned, so the view is taken from the front, as FreeCAD's front view.
+    is returned, so the same line is always seen from the same side: for a
+    line along Y that is FreeCAD's front view, for one along X the view from the left.
     None if the part was not turned, a face that already lay on the bed.
     """
     if edge is not None:
