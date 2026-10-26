@@ -1,5 +1,6 @@
 """Workbench commands and the view provider of the FinSnap object."""
 
+import dataclasses
 import os
 from collections import namedtuple
 
@@ -13,11 +14,13 @@ from . import defaults as d
 from . import export_3mf
 from . import export_step
 from . import feature
+from . import geometry
 from . import mesh_input
 from . import orient
+from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .presets import PREFERENCES
-from .shapes import FACE_PREFIX, global_shape, outermost
+from .shapes import FACE_PREFIX, face_name, global_shape, moved, outermost
 from .taskpanel import LENGTH_SUFFIX, FinSnapTaskPanel
 from .version import NAME
 
@@ -27,6 +30,7 @@ ICON_ADD = os.path.join(ICONS, "add_fins.svg")
 ICON_MESH = os.path.join(ICONS, "mesh_to_solid.svg")
 ICON_EXPORT = os.path.join(ICONS, "export_3mf.svg")
 ICON_EXPORT_STEP = os.path.join(ICONS, "export_step.svg")
+ICON_QUICK = os.path.join(ICONS, "quick_fins.svg")
 ICON_TILT = os.path.join(ICONS, "tilt.svg")
 ICON_LAY_FLAT = os.path.join(ICONS, "lay_flat.svg")
 ICON_COUNTER = os.path.join(ICONS, "counter_fin.svg")
@@ -204,10 +208,7 @@ class TiltOntoEdge:
         return App.ActiveDocument is not None
 
     def Activated(self):  # noqa: N802 - FreeCAD API
-        picked = [(sel.Object, name) for sel in Gui.Selection.getSelectionEx()
-                  for name in sel.SubElementNames if name.startswith((EDGE_PREFIX, FACE_PREFIX))]
-        edges = [(o, n) for o, n in picked if n.startswith(EDGE_PREFIX)]
-        faces = [(o, n) for o, n in picked if n.startswith(FACE_PREFIX)]
+        picked, edges, faces = _picked()
         valid = (picked and len({id(o) for o, _ in picked}) == 1
                  and ((len(edges) == 1 and len(faces) <= 1) or (not edges and len(faces) <= 2)))
         if not valid:
@@ -242,13 +243,26 @@ class TiltOntoEdge:
             return
         doc = App.ActiveDocument
         doc.openTransaction(translate("FinSnap", "Stand on edge"))
-        owner = outermost(obj)
-        orient.remember_flat(owner)
-        owner.Placement = change.multiply(owner.Placement)
+        _stand(obj, change)
         doc.commitTransaction()
         doc.recompute()
         _show_on_bed(orient.side_direction(change, edge, chosen if len(chosen) == 2 else ()))
         _report_overhangs(obj)
+
+
+def _picked():
+    """The selected edges and faces: (all, edges, faces), each as (object, name)."""
+    picked = [(sel.Object, name) for sel in Gui.Selection.getSelectionEx()
+              for name in sel.SubElementNames if name.startswith((EDGE_PREFIX, FACE_PREFIX))]
+    return (picked, [(o, n) for o, n in picked if n.startswith(EDGE_PREFIX)],
+            [(o, n) for o, n in picked if n.startswith(FACE_PREFIX)])
+
+
+def _stand(obj, change):
+    """Turn the part of `obj` by `change`, keeping where it lay for Lay flat again."""
+    owner = outermost(obj)
+    orient.remember_flat(owner)
+    owner.Placement = change.multiply(owner.Placement)
 
 
 def _show_on_bed(direction=None):
@@ -356,6 +370,71 @@ def _ask_delete_fins():
         translate("FinSnap", "Delete the fins of the part as well? No keeps them, moved along with the part, "
                              "and rebuilds them once it is moved again, for example stood on its edge."),
         buttons, QtWidgets.QMessageBox.No)
+
+
+class QuickFins:
+    """Stand a part up and add its fins in one step.
+
+    The selections it takes are those of geometry.quick_plan(); faces count in
+    the order selected.
+
+    SELECTIONS this has to withstand:
+      what quick_plan() takes               ->  stood, fins added, panel opened
+      nothing, or elements of two parts     ->  message, nothing changed
+      what quick_plan() refuses             ->  message naming why, nothing changed
+    """
+
+    def GetResources(self):  # noqa: N802 - FreeCAD API
+        return {"Pixmap": ICON_QUICK,
+                "MenuText": QT_TRANSLATE_NOOP("FinSnap_QuickFins", "Quick fins"),
+                "ToolTip": QT_TRANSLATE_NOOP(
+                    "FinSnap_QuickFins",
+                    "Stands the part up and adds one fin in the middle of a face in one step, then opens "
+                    "the panel to adjust it. "
+                    "Select the edge the part is to stand on: the fins go under the largest face that "
+                    "leans over the bed. Or select the face the fins are to support: the part is turned "
+                    "so that it leans 45 degrees over the bed, on its longest edge; select one of its "
+                    "edges as well to stand on that one, or, after the face, a chamfer or fillet to rest "
+                    "on. A fillet alone, or the two faces beside it, carry the part as well. A counter "
+                    "fin is added on the opposite face where one fits.")}
+
+    def IsActive(self):  # noqa: N802 - FreeCAD API
+        return App.ActiveDocument is not None
+
+    def Activated(self):  # noqa: N802 - FreeCAD API
+        picked, edges, faces = _picked()
+        if not picked or len({id(o) for o, _ in picked}) != 1:
+            _message(translate("FinSnap", "Select an edge or a face of one part."))
+            return
+        obj = picked[0][0]
+        # One fin in the middle of the face; the panel can spread more along it.
+        p = dataclasses.replace(presets.standard(), placement=d.PLACEMENT_CENTER)
+        try:
+            shape = global_shape(obj)
+            plan = geometry.quick_plan(
+                shape, [(shape.getElement(n), None) for _, n in edges],
+                [(shape.getElement(n), int(n[len(FACE_PREFIX):]) - 1) for _, n in faces], p, d.TILT_ANGLE)
+        except (orient.OrientError, geometry.FinError) as error:
+            _message(str(error))
+            return
+        standing = moved(shape, plan.change)
+        counter = geometry.opposite_face(standing, standing.Faces[plan.number])
+        if counter is not None:
+            try:
+                geometry.build(standing, counter, p, tine_count=p.counter_tine_count or None)
+                counter = (obj, feature.face_name_of(standing, counter))
+            except geometry.FinError:
+                counter = None
+        doc = App.ActiveDocument
+        doc.openTransaction(translate("FinSnap", "Quick fins"))
+        _stand(obj, plan.change)
+        fins = feature.create(obj, face_name(plan.number + 1), counter)
+        fins.FinPlacement = p.placement
+        ViewProviderFinSnap(fins.ViewObject)
+        doc.commitTransaction()
+        doc.recompute()
+        _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside))
+        Gui.Control.showDialog(FinSnapTaskPanel(fins, created=True))
 
 
 class AddFins:
@@ -607,7 +686,8 @@ def _write(writer, path, export, *settings):
                                       "export these fins.") % ", ".join(export.left_out))
 
 
-COMMANDS = (("FinSnap_Tilt", TiltOntoEdge()),
+COMMANDS = (("FinSnap_QuickFins", QuickFins()),
+            ("FinSnap_Tilt", TiltOntoEdge()),
             ("FinSnap_LayFlat", LayFlat()),
             ("FinSnap_AddFins", AddFins()),
             ("FinSnap_AddCounterFin", AddCounterFin()),

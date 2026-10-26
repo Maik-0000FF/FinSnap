@@ -84,7 +84,7 @@ import Part
 
 from . import defaults as d
 from .i18n import QT_TRANSLATE_NOOP, translate
-from .shapes import bounds, middle_normal, middle_of
+from .shapes import bounds, middle_normal, middle_of, moved
 
 V = App.Vector
 DOWN = V(0, 0, -1)
@@ -104,12 +104,6 @@ RIGHT_ANGLE_TILT = 45.0
 
 class OrientError(ValueError):
     """The part cannot be tilted onto this edge."""
-
-
-def _moved(shape, change):
-    moved = shape.copy()
-    moved.Placement = change.multiply(moved.Placement)
-    return moved
 
 
 def on_bed(shape, edge):
@@ -149,7 +143,7 @@ def tilt(shape, edge, angle_deg):
     # instead of pushing it through the bed.
     for sign in (1, -1):
         turn = App.Placement(V(0, 0, 0), App.Rotation(axis, sign * angle_deg), start)
-        lowest = bounds(_moved(shape, turn)).ZMin
+        lowest = bounds(moved(shape, turn)).ZMin
         if lowest >= start.z - d.TOLERANCE:
             lift = App.Placement(V(0, 0, start.z - lowest), App.Rotation())
             return lift.multiply(turn)
@@ -168,7 +162,7 @@ def lay_flat(shape, face):
     normal = face.normalAt(*middle)
     contact = face.valueAt(*middle)
     turn = App.Placement(V(0, 0, 0), App.Rotation(normal, DOWN), contact)
-    lowest = bounds(_moved(shape, turn)).ZMin
+    lowest = bounds(moved(shape, turn)).ZMin
     # The part rests on the face only if nothing reaches below that point.
     if contact.z > lowest + d.TOLERANCE:
         raise OrientError(translate("FinSnap", "the part cannot rest on this face"))
@@ -188,7 +182,7 @@ def rest_between(shape, first, second):
         raise OrientError(translate("FinSnap", "the two faces point in opposite directions"))
     middle.normalize()
     turn = App.Placement(V(0, 0, 0), App.Rotation(middle, DOWN), first.CenterOfMass)
-    turned = _moved(shape, turn)
+    turned = moved(shape, turn)
     bed_z = bounds(turned).ZMin
     # Only the two faces and what joins them may touch the bed. A copy keeps
     # the order of the faces but not their identity, so they are compared by
@@ -228,7 +222,7 @@ def stand(shape, edge, angle_deg, face=None):
         raise OrientError(translate("FinSnap", "a rounded face does not lie on the bed with its edge; select "
                                                "it alone, or the two faces beside it"))
     flat = lay_flat(shape, face)
-    return tilt(_moved(shape, flat), _moved(edge, flat), angle_deg).multiply(flat)
+    return tilt(moved(shape, flat), moved(edge, flat), angle_deg).multiply(flat)
 
 
 def side_direction(change, edge=None, faces=()):

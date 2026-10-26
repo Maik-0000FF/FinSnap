@@ -9,6 +9,7 @@ All notable changes to FinSnap are listed here. The format follows
 ### Added
 
 - A face split by a groove across it is supported together with the piece beyond the groove: the fin reaches over the gap, the tines over it are left out and named
+- Quick fins: select an edge, and the part stands on it with one fin under its largest leaning face; or select a face, and the part is turned so that it leans 45 degrees over the bed with one fin under it. A face with one of its edges, or with a chamfer or fillet beside it, sets what the part stands on; a fillet alone or the two faces beside it carry it too. A counter fin is added opposite where one fits
 - Stand on edge takes an edge between two flat faces at a right angle alone and stands the part on it at 45 degrees
 - Export STEP: exact surfaces instead of a mesh, every body under its own name; split the object into objects in the slicer
 - Tine clearance: the tines end short of the face, and the fin moves out by as much, so the tines keep their length
