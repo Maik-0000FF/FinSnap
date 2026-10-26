@@ -678,7 +678,12 @@ class FinSnapTaskPanel:
         if self.released:
             return
         self.released = True
-        self.drag_timer.stop()
+        # Closed by FreeCAD first, the panel's form and its timers are gone already.
+        for timer in (self.timer, self.drag_timer):
+            try:
+                timer.stop()
+            except RuntimeError:
+                pass
         Gui.Selection.removeObserver(self)
         self.handles.remove()
         self.obj.Proxy.editing = False
