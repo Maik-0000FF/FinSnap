@@ -461,6 +461,37 @@ def main():
     editing.reject()
     expect(lined.ResultFinCount == 2 and not lined.CounterFace and feature.removed(lined, feature.MAIN) == [2],
            "Cancel puts back the fins as they were when the panel opened")
+    # Through the Delete command itself, as the key runs it: one step undoes it.
+    feature.restore_fins(lined)
+    doc.recompute()
+    select(lined, face_of_fin(2))
+    Gui.runCommand("Std_Delete")
+    doc.recompute()
+    removed_by_key = lined.ResultFinCount
+    doc.undo()
+    doc.recompute()
+    expect(removed_by_key == 2 and lined.ResultFinCount == 3,
+           "Delete on a fin removes it, and Undo brings it back in one step")
+    # Merged into the part, single fins cannot be picked: a message, nothing deleted.
+    lined.Connection = d.CONNECTION_MERGED
+    doc.recompute()
+    kept = lined.ViewObject.Proxy.onDelete(lined.ViewObject, ["Face1"])
+    expect(kept is False and len(messages) == 1 and lined.Name in [o.Name for o in doc.Objects],
+           "merged fins refuse to lose a single fin, with a message: %s" % messages)
+    del messages[:]
+    lined.Connection = d.CONNECTION_SEPARATE
+    doc.recompute()
+    # Removed for the first time in the panel, then Cancel: nothing stays removed.
+    feature.restore_fins(lined)
+    lined.removeProperty(feature.REMOVED[feature.MAIN])
+    lined.removeProperty(feature.REMOVED_OF[feature.MAIN])
+    doc.recompute()
+    fresh = FinSnapTaskPanel(lined)
+    select(lined, face_of_fin(0))
+    fresh.remove_selected()
+    fresh.reject()
+    expect(lined.ResultFinCount == 3 and not feature.removed(lined, feature.MAIN),
+           "Cancel also forgets a fin removed for the first time in the panel")
     for obj in (lined, row):
         doc.removeObject(obj.Name)
 

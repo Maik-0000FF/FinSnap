@@ -145,10 +145,14 @@ class ViewProviderFinSnap:
 
         SITUATIONS this has to withstand:
           face or edge of one fin selected      ->  that fin left out, object kept
-          sub-elements of no fin (merged fins)  ->  as deleting the object
+          sub-elements of merged fins           ->  message, nothing deleted
           object selected in the tree           ->  deleted; the last fins lay the part flat
         """
         obj = vobj.Object
+        if subelements and obj.Connection == d.CONNECTION_MERGED:
+            # Merged into the part, the fins are no solids of their own to pick.
+            _message(translate("FinSnap", feature.NOTE_MERGED_SINGLE))
+            return False
         fins = [feature.fin_at(obj, sub) for sub in subelements or ()]
         if fins and all(fins):
             obj.Document.openTransaction(translate("FinSnap", "Remove fin"))

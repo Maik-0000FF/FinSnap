@@ -36,14 +36,18 @@ CARRIED = "CarriedFaces"
 # "main:2" or "counter:1", so a face picked in the 3D view finds its fin.
 REMOVED = {"main": "RemovedFins", "counter": "RemovedCounterFins"}
 FIN_TAGS = "FinTags"
-# How many fins the face was planned for when a fin of it was removed.
 # How many fins the face was planned for at the last build.
 PLANNED = {"main": "PlannedFins", "counter": "PlannedCounterFins"}
+# How many fins the face was planned for when a fin of it was removed.
 REMOVED_OF = {"main": "RemovedFinsOf", "counter": "RemovedCounterFinsOf"}
 NOTE_REMOVED_DROPPED = QT_TRANSLATE_NOOP(
     "FinSnap", "The number of fins changed, so the fins removed by hand are back; remove them again where "
     "needed.")
 MAIN, COUNTER = "main", "counter"
+# Said when a single fin is to be removed from fins merged into the part.
+NOTE_MERGED_SINGLE = QT_TRANSLATE_NOOP(
+    "FinSnap", "Single fins can be removed with the separate connection only; merged into the part they "
+    "have no body of their own. To delete all of them, select the fins in the tree.")
 NOTE_LAID_FLAT = QT_TRANSLATE_NOOP(
     "FinSnap", "The part lies flat again: the fins keep their last shape until the part is moved, for example "
     "stood on its edge again; then they are rebuilt.")

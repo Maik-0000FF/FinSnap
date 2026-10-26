@@ -114,7 +114,10 @@ class FinSnapTaskPanel:
         # Every change is written to the object at once; Cancel puts these back.
         self.original = {prop.name: feature.value_of(obj, prop.name) for prop in feature.PROPERTIES}
         # And what Edit fins changes: the removed fins and the counter face.
-        self.original_edits = {name: feature.removed(obj, which) for which, name in feature.REMOVED.items()}
+        # A property the fins do not have yet counts as empty: nothing removed.
+        self.original_edits = {name: getattr(obj, name, empty) for names, empty in
+                               ((feature.REMOVED.values(), []), (feature.REMOVED_OF.values(), 0))
+                               for name in names}
         self.original_counter = obj.CounterFace
 
         self.form = QtWidgets.QWidget()
@@ -272,6 +275,10 @@ class FinSnapTaskPanel:
         fins = [feature.fin_at(self.obj, sub) for sel in Gui.Selection.getSelectionEx()
                 if sel.Object is self.obj for sub in sel.SubElementNames]
         fins = [fin for fin in fins if fin]
+        if self.obj.Connection == d.CONNECTION_MERGED:
+            self.show_notes(translate("FinSnap", "Nothing removed"),
+                            [translate("FinSnap", feature.NOTE_MERGED_SINGLE)], WARNING_COLOR)
+            return
         if not fins:
             self.show_notes(translate("FinSnap", "Nothing removed"),
                             [translate("FinSnap", "Click a fin of these fins in the 3D view first.")], WARNING_COLOR)
