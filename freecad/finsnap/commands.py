@@ -31,6 +31,8 @@ EDGE_PREFIX = "Edge"
 TILT_DECIMALS = 1
 # Order in which App.Rotation keeps the given camera axes exact.
 CAMERA_AXES = "ZYX"
+# Direction FreeCAD's isometric view looks along.
+ISOMETRIC = App.Vector(-1, 1, -1).normalize()
 
 FILE_FILTER = QT_TRANSLATE_NOOP("FinSnap", "3MF files (*.3mf)")
 FILE_EXTENSION = ".3mf"
@@ -247,19 +249,22 @@ def _show_on_bed(direction=None):
     Along `direction`, the line the part stands on, the view shows the tilt
     angle in profile; without one it is isometric. The camera does not follow a
     placement change, so the part would otherwise turn away under it.
+
+    The orientation is set on the camera node itself: setCameraOrientation()
+    and viewIsometric() only start an animation when navigation animations are
+    on, and fitAll() would then fit the part to where the camera started from.
     """
     view = Gui.ActiveDocument.ActiveView if Gui.ActiveDocument else None
     # The active view may be a spreadsheet or a drawing, which has no camera.
-    if view is None or not hasattr(view, "setCameraOrientation"):
+    if view is None or not hasattr(view, "getCameraNode"):
         return
-    if direction is None:
-        view.viewIsometric()
-    else:
-        # The camera looks along its -Z with +Y up: -Z onto the line, +Y onto
-        # the vertical, +X to the right of both.
-        back = -direction
-        view.setCameraOrientation(App.Rotation(orient.UP.cross(back), orient.UP, back, CAMERA_AXES))
+    # The camera looks along its -Z with +Y up: -Z onto the line of sight, +Y
+    # towards the vertical, +X to the right of both.
+    back = -(direction if direction is not None else ISOMETRIC)
+    turn = App.Rotation(orient.UP.cross(back), orient.UP, back, CAMERA_AXES)
+    view.getCameraNode().orientation.setValue(coin.SbRotation(*turn.Q))
     view.fitAll()
+
 
 
 def _report_overhangs(obj):

@@ -31,6 +31,8 @@ FLAT_TILT = 30.0  # flatter than the overhang limit
 SCREEN_UP = App.Vector(0, 1, 0)
 ALONG_X = App.Vector(1, 0, 0)
 UP = App.Vector(0, 0, 1)
+# Direction FreeCAD's isometric view looks along.
+ISOMETRIC = App.Vector(-1, 1, -1)
 VIEW_SETTINGS = "User parameter:BaseApp/Preferences/View"
 NAVIGATION_ANIMATIONS = "UseNavigationAnimations"
 CHAMFER = 3.0
@@ -107,29 +109,33 @@ def main():
     ask_angle = QtWidgets.QInputDialog.getDouble
     QtWidgets.QInputDialog.getDouble = staticmethod(lambda *a, **k: (_ for _ in ()).throw(
         AssertionError("a right-angled edge alone must not ask for an angle")))
-    # With navigation animations on, the camera only starts turning when the
-    # command returns; the check below would read where it started from.
+    # Navigation animations on, as by default: the view has to be right when
+    # the command returns, not only once an animation has run. The start view
+    # is set without animation, so no turn of its own is still running.
+    view = Gui.ActiveDocument.ActiveView
     view_settings = App.ParamGet(VIEW_SETTINGS)
     animated = view_settings.GetBool(NAVIGATION_ANIMATIONS, True)
     view_settings.SetBool(NAVIGATION_ANIMATIONS, False)
-    Gui.ActiveDocument.ActiveView.viewTop()
+    view.viewTop()
+    view_settings.SetBool(NAVIGATION_ANIMATIONS, True)
     select(box, "Edge%d" % top)
     try:
         Gui.runCommand("FinSnap_Tilt")
         doc.recompute()
+        QtWidgets.QInputDialog.getDouble = ask_angle
+        expect(not messages and abs(box.Shape.BoundBox.ZMin) < d.TOLERANCE
+               and box.Shape.BoundBox.ZMax > 20 + d.TOLERANCE, "Stand on edge takes a right-angled top edge alone")
+        # The top edge runs along X: the view looks along it, the bed below.
+        up = view.getCameraOrientation().multVec(SCREEN_UP)
+        expect(view.getViewDirection().getAngle(ALONG_X) < d.TOLERANCE
+               and up.getAngle(UP) < d.TOLERANCE, "the view looks along the edge, the bed below")
+        select(box)
+        Gui.runCommand("FinSnap_LayFlat")
+        doc.recompute()
+        expect(view.getViewDirection().getAngle(ISOMETRIC) < d.TOLERANCE, "Lay flat again shows the part isometric")
     finally:
         QtWidgets.QInputDialog.getDouble = ask_angle
         view_settings.SetBool(NAVIGATION_ANIMATIONS, animated)
-    expect(not messages and abs(box.Shape.BoundBox.ZMin) < d.TOLERANCE
-           and box.Shape.BoundBox.ZMax > 20 + d.TOLERANCE, "Stand on edge takes a right-angled top edge alone")
-    # The top edge runs along X: the view looks along it, the bed below.
-    view = Gui.ActiveDocument.ActiveView
-    up = view.getCameraOrientation().multVec(SCREEN_UP)
-    expect(view.getViewDirection().getAngle(ALONG_X) < d.TOLERANCE
-           and up.getAngle(UP) < d.TOLERANCE, "the view looks along the edge, the bed below")
-    select(box)
-    Gui.runCommand("FinSnap_LayFlat")
-    doc.recompute()
     select(box, "Edge%d" % top, "Face%d" % front)
     Gui.runCommand("FinSnap_Tilt")
     doc.recompute()
