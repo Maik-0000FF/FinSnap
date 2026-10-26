@@ -66,6 +66,8 @@ INPUTS this has to withstand (build()):
     part higher up                      ->  fins under the selected face alone,
                                             warning naming why
   every tine of every fin over a recess ->  FinError
+  fins removed by hand (left_out)       ->  not built, the others where they were
+  every fin removed by hand             ->  FinError
   fin overlaps the part (separate mode) ->  FinError
   tine shorter than TINE_MIN_LENGTH_BEADS
     beads                               ->  warning in FinResult, no error
@@ -136,6 +138,11 @@ class FinResult:
     # The faces the fins stand under: the selected one, and the pieces beyond a
     # groove across it when the fins reach over it.
     carried: list = field(default_factory=list)
+    # The number of each fin built, from the left, seen from outside: what
+    # left_out of build() refers to.
+    numbers: list = field(default_factory=list)
+    # How many fins the face was planned for, before any was removed or left out.
+    planned: int = 0
 
 
 def support_of(part, face):
@@ -452,9 +459,11 @@ def check(p, part, fins, bodies):
                            % (distance, p.fin_offset))
 
 
-def build(part, face, p, tine_count=None):
+def build(part, face, p, tine_count=None, left_out=()):
     """Fins under `face` of `part`, reaching over a groove to the pieces beyond
-    it. tine_count overrides p.tine_count (counter fin).
+    it. tine_count overrides p.tine_count (counter fin); left_out names fins
+    removed by hand, by their number from the left, seen from outside, looking
+    at the face, counting from 1.
 
     The fins over a groove are taller, and where the part reaches out in front
     of the face higher up they would run into it. Then they stand under the
@@ -463,18 +472,18 @@ def build(part, face, p, tine_count=None):
     p.validate()
     support = support_of(part, face)
     if support is face:
-        return _build(part, face, face, p, tine_count)
+        return _build(part, face, face, p, tine_count, left_out)
     try:
-        return _build(part, face, support, p, tine_count)
+        return _build(part, face, support, p, tine_count, left_out)
     except FinError as error:
         reason = str(error)
-    alone = _build(part, face, face, p, tine_count)
+    alone = _build(part, face, face, p, tine_count, left_out)
     alone.warnings.append(translate("FinSnap", "fins under the selected face alone, not reaching over the "
                                                "groove: %s") % reason)
     return alone
 
 
-def _build(part, face, support, p, tine_count):
+def _build(part, face, support, p, tine_count, left_out):
     frame = frame_of(part, face, support)
     count = p.tine_count if tine_count is None else tine_count
     all_z, height = tine_heights(p, frame, count)
@@ -506,7 +515,10 @@ def _build(part, face, support, p, tine_count):
     gap_heights = set(gap_z)
     fins_left_out = []
     fin_heights = []
-    for t0 in positions:
+    numbers = []
+    for number, t0 in enumerate(positions, 1):
+        if number in left_out:
+            continue
         start = tine_start(p, t0, thickness)
         # A tine wholly or partly over a recess or a hole in the face would hang
         # free there; it is left out, and a fin without any tine left with it.
@@ -522,12 +534,18 @@ def _build(part, face, support, p, tine_count):
         body, kept = one_fin(p, frame, t0, fin_height, thickness, half_foot, kept_z)
         fin_heights.append(fin_height)
         built.append(t0)
+        numbers.append(number)
         bodies.append(body)
         all_tines.extend(kept)
         # One general fuse instead of one tine after the other: the lowest tine
         # sits on the top of the foot, where foot, flank and tine share an edge,
         # and fusing them pairwise fails on that edge.
         pieces.append(body.multiFuse(kept).removeSplitter())
+    if all(number in left_out for number in range(1, len(positions) + 1)):
+        error = FinError(translate("FinSnap", "every fin is removed; delete the fins instead, or bring them back"))
+        # The caller compares it with the count the fins were removed from.
+        error.planned = len(positions)
+        raise error
     if not built:
         raise FinError(translate("FinSnap", "no tine finds the face; it has a recess or hole at every tine"))
 
@@ -555,7 +573,8 @@ def _build(part, face, support, p, tine_count):
 
     return FinResult(fins=fins, bodies=bodies, tines=all_tines, height=max(fin_heights),
                      thickness=thickness, tine_z=tine_z, positions=built,
-                     foot_half_width=half_foot, warnings=warnings, carried=support.Faces)
+                     foot_half_width=half_foot, warnings=warnings, carried=support.Faces,
+                     numbers=numbers, planned=len(positions))
 
 
 def merged(part, *fin_shapes):

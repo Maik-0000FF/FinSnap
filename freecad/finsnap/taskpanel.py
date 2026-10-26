@@ -17,6 +17,7 @@ from . import feature
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
+from .shapes import FACE_PREFIX
 from .version import application
 
 # Upper limits of the input fields; generous, the geometry rejects nonsense.
@@ -112,6 +113,12 @@ class FinSnapTaskPanel:
         self.standard = presets.standard()
         # Every change is written to the object at once; Cancel puts these back.
         self.original = {prop.name: feature.value_of(obj, prop.name) for prop in feature.PROPERTIES}
+        # And what Edit fins changes: the removed fins and the counter face.
+        # A property the fins do not have yet counts as empty: nothing removed.
+        self.original_edits = {name: getattr(obj, name, empty) for names, empty in
+                               ((feature.REMOVED.values(), []), (feature.REMOVED_OF.values(), 0))
+                               for name in names}
+        self.original_counter = obj.CounterFace
 
         self.form = QtWidgets.QWidget()
         # A child of the form, so it goes with the panel and never fires on a
@@ -164,6 +171,24 @@ class FinSnapTaskPanel:
             self.widgets[prop.name] = widget
             self.resets[prop.name] = reset
             _changed_signal(widget).connect(self.changed)
+
+        edit = QtWidgets.QGroupBox(translate("FinSnap", "Edit fins"))
+        edit_layout = QtWidgets.QGridLayout(edit)
+        edit_info = QtWidgets.QLabel(translate(
+            "FinSnap", "To remove one fin, click it in the 3D view and press Remove selected fin, or the "
+            "Delete key. The counter fin goes on the face leaning the other way, or on a face of the part "
+            "you select."))
+        edit_info.setWordWrap(True)
+        edit_layout.addWidget(edit_info, 0, 0, 1, 2)
+        for column, row, text, action in (
+                (0, 1, QT_TRANSLATE_NOOP("FinSnap", "Remove selected fin"), self.remove_selected),
+                (1, 1, QT_TRANSLATE_NOOP("FinSnap", "Bring removed fins back"), self.restore),
+                (0, 2, QT_TRANSLATE_NOOP("FinSnap", "Add counter fin"), self.add_counter),
+                (1, 2, QT_TRANSLATE_NOOP("FinSnap", "Remove counter fin"), self.remove_counter)):
+            button = QtWidgets.QPushButton(translate("FinSnap", text))
+            button.clicked.connect(action)
+            edit_layout.addWidget(button, row, column)
+        layout.addWidget(edit)
 
         standard_buttons = QtWidgets.QHBoxLayout()
         save = QtWidgets.QPushButton(translate("FinSnap", "Save as standard"))
@@ -241,6 +266,47 @@ class FinSnapTaskPanel:
             self.back_to_standard(prop)
         self.update_marks()
 
+    def edited(self):
+        """After a fin or the counter fin was removed or added: rebuild and show it."""
+        self.update_enabled()
+        self.preview()
+
+    def remove_selected(self):
+        if self.obj.Connection == d.CONNECTION_MERGED:
+            self.show_notes(translate("FinSnap", "Nothing removed"),
+                            [translate("FinSnap", feature.NOTE_MERGED_SINGLE)], WARNING_COLOR)
+            return
+        fins = [feature.fin_at(self.obj, sub) for sel in Gui.Selection.getSelectionEx()
+                if sel.Object is self.obj for sub in sel.SubElementNames]
+        fins = [fin for fin in fins if fin]
+        if not fins:
+            self.show_notes(translate("FinSnap", "Nothing removed"),
+                            [translate("FinSnap", "Click a fin of these fins in the 3D view first.")], WARNING_COLOR)
+            return
+        for which, number in set(fins):
+            feature.remove_fin(self.obj, which, number)
+        self.edited()
+
+    def restore(self):
+        feature.restore_fins(self.obj)
+        self.edited()
+
+    def add_counter(self):
+        part = self.obj.Base[0]
+        faces = [name for sel in Gui.Selection.getSelectionEx() if sel.Object is part
+                 for name in sel.SubElementNames if name.startswith(FACE_PREFIX)]
+        found = feature.add_counter(self.obj, part, faces[0]) if faces else feature.add_counter(self.obj)
+        if found is None:
+            self.show_notes(translate("FinSnap", "No counter fin"),
+                            [translate("FinSnap", "The part has no face leaning the other way. Select one "
+                                                  "yourself.")], WARNING_COLOR)
+            return
+        self.edited()
+
+    def remove_counter(self):
+        feature.remove_counter(self.obj)
+        self.edited()
+
     def changed(self):
         self.update_enabled()
         self.update_marks()
@@ -299,5 +365,9 @@ class FinSnapTaskPanel:
         else:
             for name, value in self.original.items():
                 setattr(self.obj, name, value)
+            for name, value in self.original_edits.items():
+                if name in self.obj.PropertiesList:
+                    setattr(self.obj, name, value)
+            self.obj.CounterFace = self.original_counter
             self.obj.recompute()
         return True

@@ -222,6 +222,46 @@ def marks_without_face(doc):
         doc.removeObject(obj.Name)
 
 
+def edit_fins(doc):
+    """Single fins are picked by a face, removed, brought back; the counter fin
+    is added and removed."""
+    part = doc.addObject("Part::Feature", "EditedPart")
+    part.Shape = tilted_cube()
+    fins = feature.create(part, face_name(part.Shape, lower_left_face(part.Shape)))
+    fins.FinPlacement = d.PLACEMENT_DISTRIBUTED
+    fins.FinCount = 3
+    doc.recompute()
+    expect(list(fins.FinTags) == ["main:1", "main:2", "main:3"], "each fin solid knows its fin: %s" % fins.FinTags)
+    middle = fins.Shape.Solids[1].Faces[0]
+    picked = [i for i, f in enumerate(fins.Shape.Faces, 1) if f.isSame(middle)][0]
+    expect(feature.fin_at(fins, "Face%d" % picked) == (feature.MAIN, 2), "a face picked on the middle fin finds it")
+    feature.remove_fin(fins, feature.MAIN, 2)
+    doc.recompute()
+    expect(fins.ResultFinCount == 2 and list(fins.FinTags) == ["main:1", "main:3"],
+           "the removed fin is gone, the others stay")
+    feature.restore_fins(fins)
+    doc.recompute()
+    expect(fins.ResultFinCount == 3, "removed fins come back")
+    from freecad.finsnap.i18n import translate
+    feature.remove_fin(fins, feature.MAIN, 2)
+    fins.FinCount = 2
+    doc.recompute()
+    expect(fins.ResultFinCount == 2 and not feature.removed(fins, feature.MAIN)
+           and translate("FinSnap", feature.NOTE_REMOVED_DROPPED) in fins.Warnings,
+           "with another number of fins the removed ones come back, and a note says so")
+    fins.FinCount = 3
+    doc.recompute()
+    feature.add_counter(fins)
+    doc.recompute()
+    expect(any(tag.startswith(feature.COUNTER) for tag in fins.FinTags), "a counter fin is added and tagged")
+    feature.remove_counter(fins)
+    doc.recompute()
+    expect(not fins.CounterFace and not any(tag.startswith(feature.COUNTER) for tag in fins.FinTags),
+           "the counter fin is removed")
+    for obj in (fins, part):
+        doc.removeObject(obj.Name)
+
+
 def saved_standard(doc):
     """The standard for new fins: saved values, built-in ones, and what does not fit."""
     expect(presets.standard() == FinParams(), "without a saved standard new fins start with the built-in values")
@@ -336,6 +376,7 @@ def main():
     saved_standard(doc)
     lost_face(doc)
     marks_without_face(doc)
+    edit_fins(doc)
     tapered_pad(doc)
     warnings_and_old_files(doc)
     step_with_offset_curves()

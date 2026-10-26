@@ -139,8 +139,28 @@ class ViewProviderFinSnap:
         return []
 
     def onDelete(self, vobj, subelements):  # noqa: N802 - FreeCAD API
-        """Deleting the last fins of a part stood on an edge lays the part flat again."""
+        """Deleting a face or edge of one fin removes that fin alone; deleting
+        the object deletes all of them, and the last fins of a part stood on an
+        edge lay it flat again.
+
+        SITUATIONS this has to withstand:
+          face or edge of one fin selected      ->  that fin left out, object kept
+          sub-elements of merged fins           ->  message, nothing deleted
+          object selected in the tree           ->  deleted; the last fins lay the part flat
+        """
         obj = vobj.Object
+        if subelements and obj.Connection == d.CONNECTION_MERGED:
+            # Merged into the part, the fins are no solids of their own to pick.
+            _message(translate("FinSnap", feature.NOTE_MERGED_SINGLE))
+            return False
+        fins = [feature.fin_at(obj, sub) for sub in subelements or ()]
+        if fins and all(fins):
+            obj.Document.openTransaction(translate("FinSnap", "Remove fin"))
+            for which, number in set(fins):
+                feature.remove_fin(obj, which, number)
+            obj.Document.commitTransaction()
+            obj.Document.recompute()
+            return False
         if obj.Base:
             owner = outermost(obj.Base[0])
             others = [o for o in feature.fins_of(owner, obj.Document) if o is not obj]

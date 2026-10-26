@@ -8,6 +8,8 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Added
 
+- Single fins can be removed: click one in the 3D view and press Delete, or Remove selected fin in the task panel; Bring removed fins back restores them
+- The task panel adds and removes the counter fin
 - A face split by a groove across it is supported together with the piece beyond the groove: the fin reaches over the gap, the tines over it are left out and named
 - Quick fins: select an edge, and the part stands on it with one fin under its largest leaning face; or select a face, and the part is turned so that it leans 45 degrees over the bed with one fin under it. A face with one of its edges, or with a chamfer or fillet beside it, sets what the part stands on; a fillet alone or the two faces beside it carry it too. A counter fin is added opposite where one fits
 - Stand on edge takes an edge between two flat faces at a right angle alone and stands the part on it at 45 degrees

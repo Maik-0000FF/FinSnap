@@ -499,10 +499,10 @@ def check_split_face():
     # selected face alone and carry only that one.
     reaching = geometry._build
 
-    def running_into_part(part, face, support, p, tine_count):
+    def running_into_part(part, face, support, p, tine_count, left_out):
         if support is not face:
             raise geometry.FinError("runs into the part")
-        return reaching(part, face, support, p, tine_count)
+        return reaching(part, face, support, p, tine_count, left_out)
 
     geometry._build = running_into_part
     try:
@@ -601,6 +601,22 @@ def check_quick_plan():
     plan = geometry.quick_plan(filleted, [], [(filleted.Faces[i], i) for i in beside], p, d.TILT_ANGLE)
     expect(len(plan.beside) == 2 and abs(resting_height(moved(filleted, plan.change))) < d.TOLERANCE,
            "the two faces beside a fillet carry the part")
+
+
+def check_left_out(cube, face):
+    """Fins removed by hand are not built; the others stay where they were."""
+    three = FinParams(placement=d.PLACEMENT_DISTRIBUTED, fin_count=3)
+    whole = geometry.build(cube, face, three)
+    middle_gone = geometry.build(cube, face, three, left_out=(2,))
+    expect(whole.numbers == [1, 2, 3] and middle_gone.numbers == [1, 3]
+           and middle_gone.positions == [whole.positions[0], whole.positions[2]],
+           "the middle fin removed by hand leaves the outer two where they were")
+    try:
+        geometry.build(cube, face, three, left_out=(1, 2, 3))
+    except geometry.FinError as error:
+        expect("every fin is removed" in str(error), "removing every fin is refused: %s" % error)
+    else:
+        raise AssertionError("fins were built with every fin removed")
 
 
 def check_recesses(cube, face):
@@ -796,6 +812,7 @@ def main():
     check_split_face()
     check_quick_fins()
     check_quick_plan()
+    check_left_out(cube, face)
     print("all checks passed", file=sys.__stdout__)
 
 

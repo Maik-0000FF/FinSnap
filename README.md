@@ -38,6 +38,7 @@ How much each effect matters depends on the material, the printer and the part.
 - Oval, rectangular or no foot, narrowed automatically so neighbouring feet never touch
 - Counter fin on the opposite face, added with the fins or afterwards; the opposite face is found automatically
 - Every automatic value can be overridden by hand
+- Single fins removed by hand, and the counter fin added or removed, right in the task panel
 - Works on STEP and FreeCAD bodies; STL meshes are converted to solids first
 - 3MF export with every body as its own object, mesh fineness adjustable; STEP export with exact surfaces
 - English and German user interface
@@ -92,7 +93,7 @@ For a quick start, select the edge the part is to stand on, or the face the fins
 5. Enter the slicer settings of your print profile: nozzle diameter, bead width, layer height, first layer height.
 6. Adjust any value and confirm with **OK**. Every change shows in the 3D view right away. Fields that have no effect with the current choices are greyed out, and their tooltip says why. A field that differs from the standard for new fins is marked in orange, and the button beside it puts the standard back. **Save as standard** makes the current values the start of every new fin; **Factory settings** goes back to the built-in values. The letters next to the fields point to the side view and top view drawn in the panel.
 7. Check the overhangs: faces that lie flatter than 45 degrees over the bed and carry no fins are marked red and listed under the warnings of the fins. Add fins or a counter fin there, or plan support in the slicer. Stand on edge already selects such faces after the tilt.
-8. For a counter fin against tipping away, select the fins and click **Add counter fin**. The face leaning the other way is found automatically; select a face of the part as well to choose it yourself.
+8. For a counter fin against tipping away, select the fins and click **Add counter fin**. The face leaning the other way is found automatically; select a face of the part as well to choose it yourself. The task panel does the same with **Add counter fin** and **Remove counter fin** under **Edit fins**. To leave out a single fin, for example one over a hole, click it in the 3D view and press Delete, or **Remove selected fin** in the task panel. **Bring removed fins back** restores them.
 9. Click **Export 3MF**, or **Export STEP**. With nothing selected, all fins of the document are exported together with their parts; otherwise the selection is exported. Selecting the fins alone also brings their part along.
 
 An STL file is imported first, then turned into a solid with **Mesh to solid**. Fins can be added to its planar faces.
