@@ -17,6 +17,7 @@ env:
   PYTHON_VERSION: '3.12'
   RUFF_VERSION: '0.9.5'
   PYSIDE_VERSION: '6.8.1'
+  SHAPELY_VERSION: '2.1.2'
 
 jobs:
   version:
@@ -29,6 +30,17 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: python tools/check_version.py "$GITHUB_REF_NAME"
       - run: python tests/test_version.py
+
+  gcode-check:
+    # The G-code check of tools/, on small hand-written G-code files.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install "shapely==${SHAPELY_VERSION}"
+      - run: python tests/test_check_gcode.py
 
   lint:
     runs-on: ubuntu-24.04
