@@ -31,8 +31,6 @@ FLAT_TILT = 30.0  # flatter than the overhang limit
 SCREEN_UP = App.Vector(0, 1, 0)
 ALONG_X = App.Vector(1, 0, 0)
 UP = App.Vector(0, 0, 1)
-# Direction FreeCAD's isometric view looks along.
-ISOMETRIC = App.Vector(-1, 1, -1)
 VIEW_SETTINGS = "User parameter:BaseApp/Preferences/View"
 NAVIGATION_ANIMATIONS = "UseNavigationAnimations"
 CHAMFER = 3.0
@@ -80,6 +78,7 @@ def main():
 
     from freecad.finsnap import defaults as d
     from freecad.finsnap import feature
+    from freecad.finsnap.commands import ISOMETRIC
     from freecad.finsnap.taskpanel import FinSnapTaskPanel
 
     folder = tempfile.mkdtemp()
@@ -122,7 +121,6 @@ def main():
     try:
         Gui.runCommand("FinSnap_Tilt")
         doc.recompute()
-        QtWidgets.QInputDialog.getDouble = ask_angle
         expect(not messages and abs(box.Shape.BoundBox.ZMin) < d.TOLERANCE
                and box.Shape.BoundBox.ZMax > 20 + d.TOLERANCE, "Stand on edge takes a right-angled top edge alone")
         # The top edge runs along X: the view looks along it, the bed below.

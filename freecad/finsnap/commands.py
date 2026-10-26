@@ -266,7 +266,6 @@ def _show_on_bed(direction=None):
     view.fitAll()
 
 
-
 def _report_overhangs(obj):
     """Select the faces that overhang after the tilt and say so in the status bar.
     Faces that already carry fins are left out."""
