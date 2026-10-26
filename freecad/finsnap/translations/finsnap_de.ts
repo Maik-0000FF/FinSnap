@@ -1119,12 +1119,12 @@
 <context>
     <name>Workbench</name>
     <message>
-        <location filename="../init_gui.py" line="13"/>
+        <location filename="../init_gui.py" line="12"/>
         <source>FinSnap</source>
         <translation>FinSnap</translation>
     </message>
     <message>
-        <location filename="../init_gui.py" line="14"/>
+        <location filename="../init_gui.py" line="13"/>
         <source>Breakaway fins for parts printed standing on an edge</source>
         <translation>Abbrechbare Finnen für Bauteile, die auf einer Kante stehend gedruckt werden</translation>
     </message>

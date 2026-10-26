@@ -18,10 +18,10 @@ from . import mesh_input
 from . import orient
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
-from .presets import PREFERENCES
-from .shapes import FACE_PREFIX, face_name, global_shape, outermost
 from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_LAY_FLAT, ICON_MESH,
                     ICON_QUICK, ICON_TILT)
+from .presets import PREFERENCES
+from .shapes import FACE_PREFIX, face_name, global_shape, outermost
 from .taskpanel import LENGTH_SUFFIX, FinSnapTaskPanel
 from .version import NAME
 

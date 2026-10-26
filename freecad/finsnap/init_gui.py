@@ -1,6 +1,5 @@
 """Registers the FinSnap workbench. FreeCAD loads this file by its name."""
 
-
 import FreeCADGui as Gui
 
 from .i18n import QT_TRANSLATE_NOOP, translate
