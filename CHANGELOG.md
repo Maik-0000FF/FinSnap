@@ -11,6 +11,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- The README shows how to install FinSnap through the Addon Manager as a custom repository, from a ZIP without git, and in which folder on Windows, macOS and Linux
+
 ## [0.5.0] - 2026-10-27
 
 ### Added
