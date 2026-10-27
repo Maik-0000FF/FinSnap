@@ -364,7 +364,8 @@ def main():
     select(cube, face_name(cube, lower_left_face(cube.Shape)))
     Gui.runCommand("FinSnap_AddFins")
     created = [o for o in doc.Objects if o.TypeId == "Part::FeaturePython"]
-    expect(len(created) == 1 and Gui.Control.activeDialog(), "Add fins creates the object and opens the panel")
+    expect(len(created) == 1 and Gui.Control.activeDialog() and not Gui.Selection.getSelection(),
+           "Add fins creates the object and opens the panel, the selection that made it used up")
     Gui.Control.closeDialog()
     fins = created[0]
     doc.recompute()
@@ -496,10 +497,26 @@ def main():
     editing.remove_selected()
     editing.add_counter()
     expect(lined.ResultFinCount == 2 and lined.CounterFace, "the panel removes the selected fin and adds a counter fin")
-    editing.handled = editing.built_fins()[0]
-    editing.step_fin(-1)
-    expect(editing.handled == editing.built_fins()[-1] and editing.handled[0] == feature.COUNTER,
-           "Previous fin from the first main fin goes round to the counter fin, behind the part")
+    editing.fin_list.setCurrentRow(editing.fin_list.count() - 1)
+    expect(editing.listed_fins[-1][0] == feature.COUNTER and editing.handled == editing.listed_fins[-1]
+           and editing.selected_fins() == [editing.handled],
+           "the list names the counter fins last; one picked there gets the arrows and is selected: %s"
+           % editing.listed_fins)
+    gone_before = feature.removed(lined, feature.MAIN)
+    editing.fin_list.setCurrentRow(0)
+    picked = editing.handled
+    editing.remove_selected()
+    expect(picked[0] == feature.MAIN and feature.removed(lined, feature.MAIN) == sorted(gone_before + [picked[1]]),
+           "Remove selected fin takes the fin picked in the list")
+    # A face lying on the bed, selected for the counter fin, is refused with a
+    # note, and the counter fin stays where it was.
+    counter_face = lined.CounterFace
+    on_bed = [f for f in row.Shape.Faces if f.BoundBox.ZLength < d.TOLERANCE][0]
+    select(row, face_name(row, on_bed))
+    editing.add_counter()
+    expect(lined.CounterFace == counter_face and not editing.notes.isHidden()
+           and taskpanel.WARNING_COLOR in editing.notes.styleSheet(),
+           "a face on the bed is refused for the counter fin, with a note: %s" % editing.notes.text())
     editing.reject()
     expect(lined.ResultFinCount == 2 and not lined.CounterFace and feature.removed(lined, feature.MAIN) == [2],
            "Cancel puts back the fins as they were when the panel opened")
@@ -546,13 +563,12 @@ def main():
            "the fins are see-through while the panel is open")
     select(lined, face_of_fin(2))
     expect(moving.handled == (feature.MAIN, 3), "a fin clicked gets the handles")
-    moving.step_fin(1)
-    expect(moving.handled == (feature.MAIN, 1), "Next fin goes round from the last fin to the first")
-    moving.step_fin(-1)
-    moving.step_fin(-1)
+    expect(moving.fin_list.count() == 3 and moving.fin_list.currentRow() == 2,
+           "the list shows the fins one below the other and marks the one clicked in the 3D view")
+    moving.fin_list.setCurrentRow(1)
     expect(moving.handled == (feature.MAIN, 2) and moving.fin_label.text().endswith("2")
-           and all(button.isEnabled() for button in moving.fin_steps.values()),
-           "Previous fin steps back, and the name of the fin follows")
+           and moving.selected_fins() == [(feature.MAIN, 2)],
+           "a fin picked in the list gets the arrows, its name and the selection")
     select(lined, face_of_fin(0))
     before = lined.Shape.Solids[0].BoundBox.Center
     held = dict(moving.handles.draggers)

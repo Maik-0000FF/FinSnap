@@ -13,7 +13,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Added
 
-- Previous fin and Next fin in the task panel put the arrows on every fin in turn, the counter fin included, also on one behind the part
+- A list of fins in the task panel, one below the other, the counter fins included: a fin picked there gets the arrows and is selected, also one behind the part
 
 ### Changed
 
@@ -23,6 +23,10 @@ All notable changes to FinSnap are listed here. The format follows
 - The arrows on a fin are double arrows standing just outside it, so the fin no longer covers the arrow up; an end is left out where the fin cannot go
 - A fin let go where it cannot stand goes as far towards there as it can, to the corner of the face or next to its neighbour, instead of staying at its last place
 - While a fin cannot stand where its arrow is, all fins turn red, so the red preview no longer mixes with green
+
+### Fixed
+
+- Add counter fin no longer takes a face still selected from making the fins, such as the chamfer Quick fins stood the part on; a face chosen by hand that cannot take fins is refused with a note, and the counter fin stays as it was
 
 ## [0.4.1] - 2026-10-27
 

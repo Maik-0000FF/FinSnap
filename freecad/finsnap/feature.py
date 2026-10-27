@@ -40,6 +40,7 @@ CARRIED = "CarriedFaces"
 # "main:2" or "counter:1", so a face picked in the 3D view finds its fin.
 REMOVED = {"main": "RemovedFins", "counter": "RemovedCounterFins"}
 FIN_TAGS = "FinTags"
+TAG_SEPARATOR = ":"
 # How many fins the face was planned for at the last build.
 PLANNED = {"main": "PlannedFins", "counter": "PlannedCounterFins"}
 # Fins moved along the face and fins with a height of their own, by number: mm.
@@ -57,6 +58,8 @@ MAIN, COUNTER = "main", "counter"
 NOTE_MERGED_SINGLE = QT_TRANSLATE_NOOP(
     "FinSnap", "Single fins can be removed with the separate connection only; merged into the part they "
     "have no body of their own. To delete all of them, select the fins in the tree.")
+# Said when a face chosen for the counter fin cannot take fins; %s says why.
+NOTE_NO_COUNTER_ON_FACE = QT_TRANSLATE_NOOP("FinSnap", "No counter fin on this face: %s")
 NOTE_LAID_FLAT = QT_TRANSLATE_NOOP(
     "FinSnap", "The part lies flat again: the fins keep their last shape until the part is moved, for example "
     "stood on its edge again; then they are rebuilt.")
@@ -453,9 +456,9 @@ class FinSnapFeature:
             warnings.append(translate("FinSnap", "%d faces of %s overhang flatter than %.0f degrees without fins: %s")
                             % (len(overhanging), obj.Base[0].Label, d.OVERHANG_ANGLE, ", ".join(overhanging)))
 
-        tags = ["%s:%d" % (MAIN, n) for n in result.numbers]
+        tags = [fin_tag(MAIN, n) for n in result.numbers]
         if counter is not None:
-            tags += ["%s:%d" % (COUNTER, n) for n in counter.numbers]
+            tags += [fin_tag(COUNTER, n) for n in counter.numbers]
         if p.connection == d.CONNECTION_MERGED:
             obj.Shape = geometry.merged(part, *shapes)
             tags = []
@@ -521,6 +524,14 @@ def add_counter(obj, base=None, face_ref=None):
     face_ref is the name of the face ("Face3"). Without it, the face of the
     same part that leans the other way is searched. Returns the face name, or
     None if there is no such face.
+
+    INPUTS this has to withstand:
+      no face, one leans the other way         ->  that face, counter fin set
+      no face, none leans the other way        ->  None, nothing changed
+      a face that leans over the bed           ->  that face, counter fin set
+      a face lying flat, facing up or sideways,
+        or not planar, such as one still
+        selected from standing the part        ->  FinError saying why, nothing changed
     """
     if face_ref is None:
         base = obj.Base[0]
@@ -529,6 +540,9 @@ def add_counter(obj, base=None, face_ref=None):
         if found is None:
             return None
         face_ref = face_name_of(shape, found)
+    else:
+        # A face chosen by hand has to take fins, or the next build fails.
+        geometry.frame_of(*_face((base, [face_ref])))
     # Changes by hand to a counter fin on another face would name other fins.
     if obj.CounterFace != (base, [face_ref]):
         reset_fins(obj, COUNTER)
@@ -677,8 +691,33 @@ def fin_at(obj, sub):
         return None
     for tag, solid in zip(tags, obj.Shape.Solids):
         if any(element.isSame(candidate) for candidate in solid.Faces + solid.Edges):
-            which, number = tag.split(":")
-            return which, int(number)
+            return tag_fin(tag)
+    return None
+
+
+def fin_tag(which, number):
+    """The tag of fin `number` of `which` among FIN_TAGS: "main:2"."""
+    return "%s%s%d" % (which, TAG_SEPARATOR, number)
+
+
+def tag_fin(tag):
+    """(MAIN or COUNTER, number) of a tag among FIN_TAGS."""
+    which, number = tag.split(TAG_SEPARATOR)
+    return which, int(number)
+
+
+def fin_face(obj, which, number):
+    """The name of a face of fin `number` of `which` ("Face12"), to select the
+    fin by; None for a fin not built, or for fins merged into the part, which
+    have no solids of their own."""
+    tags = list(getattr(obj, FIN_TAGS, []))
+    tag = fin_tag(which, number)
+    if tag not in tags:
+        return None
+    target = obj.Shape.Solids[tags.index(tag)].Faces[0]
+    for number_of_face, candidate in enumerate(obj.Shape.Faces, 1):
+        if candidate.isSame(target):
+            return face_name(number_of_face)
     return None
 
 
@@ -765,8 +804,8 @@ def remove_fins(obj, fins):
     picked = set(fins)
     built = {MAIN: set(), COUNTER: set()}
     for tag in getattr(obj, FIN_TAGS, []):
-        which, number = tag.split(":")
-        built[which].add(int(number))
+        which, number = tag_fin(tag)
+        built[which].add(number)
     gone = {which: {n for w, n in picked if w == which} for which in built}
     if built[MAIN] and built[MAIN] <= gone[MAIN]:
         return True

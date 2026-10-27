@@ -40,6 +40,8 @@ LENGTH_SUFFIX = " mm"
 PREVIEW_DELAY_MS = 400
 # Pause after the last move of a handle before the preview for it is built.
 DRAG_PREVIEW_MS = 150
+# Rows the list of fins shows at most; more fins scroll.
+FIN_LIST_ROWS = 6
 # Pause after the arrows are put on a fin before trying where it can go, so a
 # run of rebuilds tries only once, after the last.
 ENDS_DELAY_MS = 300
@@ -270,8 +272,8 @@ class FinSnapTaskPanel:
             "FinSnap", "To remove one fin, click it in the 3D view and press Remove selected fin, or the "
             "Delete key. The counter fin goes on the face leaning the other way, or on a face of the part "
             "you select. Drag the two arrows on a fin to move it along the face or to change its height, "
-            "or type the values below; click another fin, or step through the fins with the buttons beside "
-            "its name, to put the arrows there. Reset fins undoes every change by hand."))
+            "or type the values below; click another fin, or pick it in the list of fins, to put the arrows "
+            "there. Reset fins undoes every change by hand."))
         edit_info.setWordWrap(True)
         edit_layout.addWidget(edit_info, 0, 0, 1, 2)
         for column, row, icon, text, action in (
@@ -283,31 +285,24 @@ class FinSnapTaskPanel:
             button = _icon_button(icon, translate("FinSnap", text))
             button.clicked.connect(action)
             edit_layout.addWidget(button, row, column)
-        # The fin with the arrows, between buttons to step to the fin before and after.
-        picker = QtWidgets.QHBoxLayout()
-        self.fin_steps = {}
-        for step, arrow, tip in ((-1, QtCore.Qt.LeftArrow, QT_TRANSLATE_NOOP("FinSnap", "Previous fin")),
-                                 (1, QtCore.Qt.RightArrow, QT_TRANSLATE_NOOP("FinSnap", "Next fin"))):
-            button = QtWidgets.QToolButton()
-            button.setArrowType(arrow)
-            button.setToolTip(translate("FinSnap", tip))
-            button.setAccessibleName(button.toolTip())
-            button.clicked.connect(functools.partial(self.step_fin, step))
-            self.fin_steps[step] = button
+        # Every fin built, one below the other; the one with the arrows is marked.
+        # Picking one also reaches a fin behind the part.
+        self.fin_list = QtWidgets.QListWidget()
+        self.fin_list.setToolTip(_wrapped(translate("FinSnap", "The fins, the main fins from the left, then the "
+                                                    "counter fins. Pick one to put the arrows on it and select it.")))
+        self.fin_list.currentRowChanged.connect(self.pick_fin)
+        self.listed_fins = []
+        edit_layout.addWidget(self.fin_list, 3, 0, 1, 2)
         self.fin_label = QtWidgets.QLabel(translate("FinSnap", NOTE_CLICK_FIN))
         self.fin_label.setWordWrap(True)
-        self.fin_label.setAlignment(QtCore.Qt.AlignCenter)
-        picker.addWidget(self.fin_steps[-1])
-        picker.addWidget(self.fin_label, 1)
-        picker.addWidget(self.fin_steps[1])
-        edit_layout.addLayout(picker, 3, 0, 1, 2)
+        edit_layout.addWidget(self.fin_label, 4, 0, 1, 2)
         # Where the fin with the arrows stands, to read or to type in; Enter moves it.
         self.fin_fields = {}
         for row, kind, text, tip in (
-                (4, handles.ALONG, QT_TRANSLATE_NOOP("FinSnap", "Place on the face"),
+                (5, handles.ALONG, QT_TRANSLATE_NOOP("FinSnap", "Place on the face"),
                  QT_TRANSLATE_NOOP("FinSnap", "Distance of the middle of the fin from the left end of the face, "
                                    "seen from outside. Type a value and press Enter to move the fin.")),
-                (5, handles.UP, QT_TRANSLATE_NOOP("FinSnap", "Height"),
+                (6, handles.UP, QT_TRANSLATE_NOOP("FinSnap", "Height"),
                  QT_TRANSLATE_NOOP("FinSnap", "Height of this fin alone. Type a value and press Enter to set "
                                    "it; Reset fins gives it the height of the others again."))):
             label = QtWidgets.QLabel(translate("FinSnap", text))
@@ -471,7 +466,12 @@ class FinSnapTaskPanel:
         part = self.obj.Base[0]
         faces = [name for sel in Gui.Selection.getSelectionEx() if sel.Object is part
                  for name in sel.SubElementNames if name.startswith(FACE_PREFIX)]
-        found = feature.add_counter(self.obj, part, faces[0]) if faces else feature.add_counter(self.obj)
+        try:
+            found = feature.add_counter(self.obj, part, faces[0]) if faces else feature.add_counter(self.obj)
+        except geometry.FinError as error:
+            self.show_notes(translate("FinSnap", "No counter fin"),
+                            [translate("FinSnap", feature.NOTE_NO_COUNTER_ON_FACE) % error], WARNING_COLOR)
+            return
         if found is None:
             self.show_notes(translate("FinSnap", "No counter fin"),
                             [translate("FinSnap", "The part has no face leaning the other way. Select one "
@@ -529,23 +529,41 @@ class FinSnapTaskPanel:
 
     def built_fins(self):
         """Every fin built, as (MAIN or COUNTER, number): the main fins from
-        the left, then the counter fin."""
+        the left, then the counter fins."""
         results = getattr(self.obj.Proxy, "results", {})
         return [(which, number) for which in (feature.MAIN, feature.COUNTER) if results.get(which)
                 for number in results[which].numbers]
 
-    def step_fin(self, step):
-        """Put the arrows on the fin after (step 1) or before (step -1) the one
-        that has them, round from the last to the first: also a fin behind
-        the part is reached without turning the view."""
+    def fin_name(self, fin):
+        """The name of `fin`, (MAIN or COUNTER, number), as the panel shows it: "Main fin 2"."""
+        which, number = fin
+        return translate("FinSnap", "%s %d") % (translate("FinSnap", SIDES[which]), number)
+
+    def list_fins(self):
+        """Show every fin built in the list, the one with the arrows marked."""
         fins = self.built_fins()
-        if self.handles.held or not fins:
+        self.fin_list.blockSignals(True)
+        if fins != self.listed_fins:
+            self.fin_list.clear()
+            self.fin_list.addItems([self.fin_name(fin) for fin in fins])
+            self.listed_fins = fins
+            # As high as its rows, up to FIN_LIST_ROWS; more scroll.
+            rows = min(len(fins), FIN_LIST_ROWS)
+            self.fin_list.setFixedHeight(self.fin_list.sizeHintForRow(0) * rows + 2 * self.fin_list.frameWidth())
+            self.fin_list.setVisible(bool(fins))
+        self.fin_list.setCurrentRow(fins.index(self.handled) if self.handled in fins else -1)
+        self.fin_list.blockSignals(False)
+
+    def pick_fin(self, row):
+        """A fin picked in the list: it gets the arrows and is selected, so
+        Remove selected fin and the Delete key take this fin."""
+        if row < 0 or row >= len(self.listed_fins) or self.handles.held:
             return
-        if self.handled in fins:
-            index = (fins.index(self.handled) + step) % len(fins)
-        else:
-            index = 0 if step > 0 else len(fins) - 1
-        self.handled = fins[index]
+        self.handled = self.listed_fins[row]
+        Gui.Selection.clearSelection()
+        face = feature.fin_face(self.obj, *self.handled)
+        if face:
+            Gui.Selection.addSelection(self.obj, face)
         self.place_handles()
 
     def handled_result(self):
@@ -586,8 +604,7 @@ class FinSnapTaskPanel:
         enabled = found is not None
         for box in self.fin_fields.values():
             box.setEnabled(enabled)
-        for button in self.fin_steps.values():
-            button.setEnabled(len(self.built_fins()) > 1)
+        self.list_fins()
         if not enabled:
             self.handles.hide()
             self.fin_label.setText(translate("FinSnap", NOTE_CLICK_FIN))
@@ -603,7 +620,7 @@ class FinSnapTaskPanel:
                     self.handles.show_ends(kind, (handles.BACK, handles.FORTH))
             self.ends_timer.start()
         self.show_fin_values(self.fin_values())
-        self.fin_label.setText(translate("FinSnap", "%s %d") % (translate("FinSnap", SIDES[which]), number))
+        self.fin_label.setText(self.fin_name(self.handled))
 
     def show_fin_values(self, values):
         """Show `values` in the fields of the handled fin, without taking them as typed."""
