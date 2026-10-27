@@ -31,6 +31,8 @@ from .taskpanel import LENGTH_SUFFIX, FinSnapTaskPanel, discard_created
 from .version import NAME
 
 EDGE_PREFIX = "Edge"
+# Containers that move what they hold: App::Part, PartDesign::Body.
+GROUP_EXTENSION = "App::GeoFeatureGroupExtension"
 TILT_DECIMALS = 1
 # Order in which App.Rotation keeps the given camera axes exact.
 CAMERA_AXES = "ZYX"
@@ -70,10 +72,6 @@ def _shown(obj):
             return False
         obj = obj.getParentGeoFeatureGroup()
     return True
-
-
-# Containers that move what they hold: App::Part, PartDesign::Body.
-GROUP_EXTENSION = "App::GeoFeatureGroupExtension"
 
 
 def _holds(obj, part):
