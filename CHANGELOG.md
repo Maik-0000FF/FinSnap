@@ -11,6 +11,8 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.1] - 2026-10-27
+
 ### Changed
 
 - The README shows how to install FinSnap through the Addon Manager as a custom repository, from a ZIP without git, and in which folder on Windows, macOS and Linux
@@ -145,7 +147,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.5.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.5.1...HEAD
+[0.5.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.5.1
 [0.5.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.5.0
 [0.4.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.4.0
