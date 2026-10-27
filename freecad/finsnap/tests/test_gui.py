@@ -43,6 +43,10 @@ FIN_SHIFT = 1.5  # how far a handle moves a fin along the face, in mm
 TOO_MANY_FINS = 50  # more fins than the face takes, so the build fails
 AXIS_Z_RGB = (0.2, 0.2, 0.8)  # FreeCAD's standard colour of the z axis
 COLOR_TOLERANCE = 0.01
+BUILD_STEP = 0.5  # how far a fin moves at each step of a counted drag, in mm
+# Shares of the step between two tines a fin is dragged down, short of and past half of it.
+SHORT_OF_HALF_STEP = 0.4
+PAST_HALF_STEP = 0.6
 TOO_HIGH = 100.0  # how far an arrow is dragged up, far above any face of the tests, in mm
 GERMAN = "FinSnap_de.ts"  # written by freecad/finsnap/tools/update_translations.sh
 
@@ -78,13 +82,13 @@ def rgb_close(color, wanted):
     return all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(color[:3], wanted))
 
 
-def fin_tinted(obj, fin):
-    """Whether the faces of `fin` are red and every other face green."""
+def fin_tinted(obj, fin, tint=None):
+    """Whether the faces of `fin` are in `tint`, red without, and every other face green."""
     from freecad.finsnap import feature, handles
-    red = set(feature.fin_faces(obj, *fin))
+    own = set(feature.fin_faces(obj, *fin))
     colors = [material.DiffuseColor for material in obj.ViewObject.ShapeAppearance]
-    return bool(red) and len(colors) == len(obj.Shape.Faces) and all(
-        rgb_close(color, handles.INVALID_COLOR if index in red else handles.VALID_COLOR)
+    return bool(own) and len(colors) == len(obj.Shape.Faces) and all(
+        rgb_close(color, (tint or handles.INVALID_COLOR) if index in own else handles.VALID_COLOR)
         for index, color in enumerate(colors))
 
 
@@ -638,21 +642,48 @@ def main():
     expect(all(switch.whichChild.getValue() == coin.SO_SWITCH_NONE
                for halves in moving.handles.halves[handles.ALONG].values() for end, switch in halves.items()
                if end == handles.FORTH), "the end left out is hidden, at rest and held")
-    # Dragged up above the face, the fin is shown red as high as dragged, and
-    # let go, it is as high as the face lets it.
+    # Dragged up or down, the fin follows the arrow: near a tine it is built
+    # ending with it, green; between tines it is built as high as the arrow,
+    # yellow, with no second fin over it; far above the face, where it cannot
+    # stand, it stays and is red. Let go, it goes to the nearest tine.
+    tops = moving.tine_tops()
     high = moving.built_value(handles.UP)
+    pitch = tops[-1] - tops[-2]
+    between = tops[-2] + pitch / 2
     moving.handle_started(handles.UP)
+    moving.handle_moved(handles.UP, between - high)
+    moving.drag_step()
+    expect(len(tops) > 1 and fin_tinted(lined, moving.handled, handles.BETWEEN_COLOR)
+           and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_NONE
+           and abs(moving.built_value(handles.UP) - between) < d.TOLERANCE,
+           "dragged between two tines, the fin is built as high as the arrow, yellow, alone: %s" % tops)
+    moving.handle_moved(handles.UP, tops[-2] + taskpanel.HEIGHT_REACH / 2 - high)
+    moving.drag_step()
+    expect(abs(moving.built_value(handles.UP) - tops[-2]) < d.TOLERANCE
+           and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_NONE
+           and len(lined.ViewObject.ShapeAppearance) == 1,
+           "dragged near a tine, the fin is built ending with it, green")
     moving.handle_moved(handles.UP, TOO_HIGH)
     moving.drag_step()
-    stretched = moving.handles.preview.getChild(0) if moving.handles.preview.getNumChildren() else None
-    expect(stretched is not None and fin_tinted(lined, moving.handled),
-           "a fin dragged above the face is previewed red, and it alone turns red")
+    expect(fin_tinted(lined, moving.handled) and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_ALL
+           and abs(moving.built_value(handles.UP) - tops[-2]) < d.TOLERANCE,
+           "dragged far above the face, the fin stays at its last place, red")
     moving.finish_drag(handles.UP, TOO_HIGH)
     tallest = moving.built_value(handles.UP)
-    expect(tallest > high and not moving.can_stand(handles.UP, tallest + taskpanel.SNAP_RESOLUTION),
-           "let go above the face, the fin is as high as it can be: %.3f mm" % tallest)
+    expect(abs(tallest - tops[-1]) < d.TOLERANCE and len(lined.ViewObject.ShapeAppearance) == 1,
+           "let go far above the face, the fin ends with its highest tine, green: %.3f mm" % tallest)
     moving.update_ends()
-    expect(moving.handles.ends[handles.UP] == (handles.BACK,), "at its highest, the arrow up shows no end up")
+    expect(moving.handles.ends[handles.UP] == (handles.BACK,), "at its highest tine, the arrow up shows no end up")
+    moving.handle_started(handles.UP)
+    moving.finish_drag(handles.UP, -SHORT_OF_HALF_STEP * pitch)
+    kept = moving.built_value(handles.UP)
+    moving.handle_started(handles.UP)
+    moving.finish_drag(handles.UP, -PAST_HALF_STEP * pitch)
+    expect(abs(kept - tops[-1]) < d.TOLERANCE and abs(moving.built_value(handles.UP) - tops[-2]) < d.TOLERANCE,
+           "let go less than half a step down the height stays, more than half it ends with the tine below")
+    moving.update_ends()
+    expect(moving.handles.ends[handles.UP] == ((handles.BACK, handles.FORTH) if len(tops) > 2 else (handles.FORTH,)),
+           "between its tines, the arrow up shows both ends")
     # Dragged over the corner of the face, let go it stands at the corner.
     moving.handle_started(handles.ALONG)
     moving.handle_moved(handles.ALONG, -TOO_HIGH)
@@ -672,14 +703,85 @@ def main():
     moving.field_entered(handles.UP)
     lowered = lined.Proxy.results[feature.MAIN]
     expect(abs(lowered.heights[1] - lower) < d.TOLERANCE, "a height typed into the field sets the fin's height")
+    moving.handle_started(handles.UP)
+    moving.finish_drag(handles.UP, 0.0)
+    expect(abs(moving.built_value(handles.UP) - lower) < d.TOLERANCE,
+           "a click on the arrow up keeps a height typed by hand, off the tines")
     moving.fin_fields[handles.ALONG].setValue(place)
     moving.field_entered(handles.ALONG)
     expect(not feature.edits(lined, feature.MAIN)[1], "a place typed into the field moves the fin there")
     lowered = lined.Proxy.results[feature.MAIN]
-    off_edge = lowered.out * (lowered.heights[1] * handles.ARROW_SHARE * handles.CLEARANCE)
+    off_edge = App.Vector(*moving.handles.offsets[handles.UP].translation.getValue().getValue())
     expect(App.Vector(*moving.handles.places[handles.UP].translation.getValue().getValue())
-           .sub(lowered.edges[1] + off_edge).Length < d.TOLERANCE,
+           .sub(lowered.edges[1]).Length < d.TOLERANCE
+           and abs(off_edge.Length - handles.CLEARANCE) < d.TOLERANCE,
            "the arrows follow to the upright outer edge of the fin, just outside it")
+    # A drag builds each place once: the trial of a step serves its real
+    # build, and nothing is built twice. Afterwards every build is new, and
+    # the arrow ends are tried once for each place of the fin.
+    from freecad.finsnap import geometry
+    real_build = geometry.build
+    builds = []
+
+    def counting(*args, **kwargs):
+        builds.append(args)
+        return real_build(*args, **kwargs)
+
+    geometry.build = counting
+    try:
+        moving.handle_started(handles.ALONG)
+        steps = []
+        for step in (1, 2):
+            moving.handle_moved(handles.ALONG, step * BUILD_STEP)
+            del builds[:]
+            moving.drag_step()
+            steps.append(len(builds))
+        moving.finish_drag(handles.ALONG, 2 * BUILD_STEP)
+        reuse_after = lined.Proxy.reuse
+        del builds[:]
+        moving.update_ends()
+        first_ends = len(builds)
+        del builds[:]
+        moving.update_ends()
+        same_ends = len(builds)
+        tine_count = moving.widgets["TineCount"]
+        tine_count.setValue(tine_count.value() + 1)
+        moving.preview()
+        del builds[:]
+        moving.update_ends()
+        changed_ends = len(builds)
+        tine_count.setValue(tine_count.value() - 1)
+        moving.preview()
+    finally:
+        geometry.build = real_build
+    expect(steps == [1, 1], "each step of a drag builds once, not as trial and again for real: %s" % steps)
+    expect(reuse_after is None, "after the drag, every build is made afresh")
+    expect(first_ends == len(handles.KINDS) * 2 and same_ends == 0 and changed_ends > 0,
+           "the arrow ends are tried once for each place, again after a parameter changed: %d, %d, %d"
+           % (first_ends, same_ends, changed_ends))
+    # A drag that fails on letting go still ends: every later build is made afresh.
+    real_drag_to = moving.drag_to
+
+    def failing(*args):
+        raise RuntimeError("a drag failing on purpose")
+
+    moving.drag_to = failing
+    moving.handle_started(handles.ALONG)
+    try:
+        moving.finish_drag(handles.ALONG, BUILD_STEP)
+    except RuntimeError:
+        pass
+    moving.drag_to = real_drag_to
+    expect(lined.Proxy.reuse is None, "a drag that fails on letting go still ends, nothing is kept")
+    # A value typed just before an arrow is grabbed is built first.
+    tines = moving.widgets["TineCount"]
+    typed = tines.value() + 1
+    tines.setValue(typed)
+    moving.handle_started(handles.ALONG)
+    moving.finish_drag(handles.ALONG, 0.0)
+    expect(lined.TineCount == typed, "a value typed just before an arrow is grabbed is built first")
+    tines.setValue(typed - 1)
+    moving.preview()
     # A click on an arrow without a move, and a field left as it is, change nothing.
     feature.reset_fins(lined)
     lined.recompute()
