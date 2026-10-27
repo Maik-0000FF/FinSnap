@@ -15,7 +15,6 @@ dragged down and up again from tine to tine, then the fin is moved along the
 face past its corner, where it stops, and back under the middle.
 """
 
-import dataclasses
 import math
 import os
 import shutil
@@ -115,8 +114,7 @@ def drag(panel, kind, targets):
 
 
 def main():
-    from freecad.finsnap import commands, feature, geometry, handles, presets
-    from freecad.finsnap import defaults as d
+    from freecad.finsnap import commands, feature, geometry, handles
     from freecad.finsnap.shapes import global_shape, moved, outermost
 
     model, part_name, face_name = (os.environ.get(name, "") for name in ("DEMO_MODEL", "DEMO_PART", "DEMO_FACE"))
@@ -124,8 +122,8 @@ def main():
         raise ValueError("set DEMO_MODEL, DEMO_PART, DEMO_FACE (FaceN) and DEMO_FRAMES")
     os.makedirs(frames, exist_ok=True)
     Gui.activateWorkbench("FinSnapWorkbench")
-    # FreeCAD runs with a user data directory of its own (make_demo.sh): this
-    # setting stays there. A camera animation would wait on itself here; a
+    # FreeCAD runs with a home of its own (make_demo.sh): this setting stays
+    # there. A camera animation would wait on itself here; a
     # message is said instead of waiting for a click.
     App.ParamGet(VIEW_SETTINGS).SetBool(NAVIGATION_ANIMATIONS, False)
     commands._message = lambda text: say("message:", text)
@@ -134,13 +132,11 @@ def main():
     doc = App.openDocument(model)
     part = doc.getObject(part_name)
     part.ViewObject.ShapeColor = PART_COLOR
-    # Where Quick fins will stand the part, worked out as the command does,
-    # to show the tilt as a movement and to look at the fin from outside.
-    shape = global_shape(part)
-    number = int(face_name[len(FACE_PREFIX):]) - 1
-    quick = dataclasses.replace(presets.standard(), placement=d.PLACEMENT_CENTER)
-    plan = geometry.quick_plan(shape, [], [(shape.Faces[number], number)], quick, d.TILT_ANGLE)
-    standing = moved(shape, plan.change)
+    # Where Quick fins will stand the part, worked out by the command's own
+    # plan, to show the tilt as a movement that ends where the command stands
+    # it, and to look at the fin from outside.
+    plan = commands.quick_plan(part, [], [face_name])
+    standing = moved(global_shape(part), plan.change)
     face_frame = geometry.frame_of(standing, standing.Faces[plan.number])
     owner = outermost(part)
     lying = App.Placement(owner.Placement)
@@ -163,8 +159,10 @@ def main():
     doc.recompute()
     Gui.Selection.clearSelection()
     Gui.Selection.addSelection(part, face_name)
+    already = {o.Name for o in doc.Objects}
     Gui.runCommand("FinSnap_QuickFins")
-    fins = [o for o in doc.Objects if feature.is_fins(o)][0]
+    # The fins Quick fins made, also in a document that has fins already.
+    fins = [o for o in doc.Objects if feature.is_fins(o) and o.Name not in already][0]
     panel = fins.ViewObject.Proxy.panel
     panels.append(panel)
     # Quick fins turns the view; the part stands as when the camera was fitted.

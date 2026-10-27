@@ -508,13 +508,9 @@ class QuickFins:
             _message(translate("FinSnap", "Select an edge or a face of one part."))
             return
         obj = picked[0][0]
-        # One fin in the middle of the face; the panel can spread more along it.
-        p = dataclasses.replace(presets.standard(), placement=d.PLACEMENT_CENTER)
+        p = quick_params()
         try:
-            shape = global_shape(obj)
-            plan = geometry.quick_plan(
-                shape, [(shape.getElement(n), None) for _, n in edges],
-                [(shape.getElement(n), int(n[len(FACE_PREFIX):]) - 1) for _, n in faces], p, d.TILT_ANGLE)
+            plan = quick_plan(obj, [n for _, n in edges], [n for _, n in faces])
         except (orient.OrientError, geometry.FinError) as error:
             _message(str(error))
             return
@@ -534,6 +530,22 @@ class QuickFins:
         _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside))
         # Cancel deletes the fins and stands the part as it stood before.
         _edit_new(fins, functools.partial(_put_back_quick, owner, before, laid_flat))
+
+
+def quick_params():
+    """The parameters Quick fins makes fins with: the standard, with one fin
+    in the middle of the face; the panel can spread more along it."""
+    return dataclasses.replace(presets.standard(), placement=d.PLACEMENT_CENTER)
+
+
+def quick_plan(obj, edge_names, face_names):
+    """How Quick fins stands `obj` for its edges and faces named ("Edge3",
+    "Face12"), faces in the order selected: geometry.quick_plan() on its
+    global shape. OrientError or FinError where it cannot."""
+    shape = global_shape(obj)
+    return geometry.quick_plan(
+        shape, [(shape.getElement(n), None) for n in edge_names],
+        [(shape.getElement(n), int(n[len(FACE_PREFIX):]) - 1) for n in face_names], quick_params(), d.TILT_ANGLE)
 
 
 def _put_back_quick(owner, before, laid_flat):

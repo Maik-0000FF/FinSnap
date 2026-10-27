@@ -35,7 +35,7 @@ Default values belong in [`freecad/finsnap/defaults.py`](freecad/finsnap/default
 
 Icons, logo and the drawings of the task panel are written by `python3 -m freecad.finsnap.tools.make_icons` and `python3 -m freecad.finsnap.tools.make_drawings`. Change the scripts and run them, not the SVG files.
 
-The demo GIF of the README, `docs/assets/demo.gif`, is rendered by `freecad/finsnap/tools/make_demo.sh <document.FCStd> <part name> <FaceN>` from a part of your own, with Quick fins standing it on face FaceN. It needs FreeCAD, `xvfb-run` and `ffmpeg`; FreeCAD runs on a virtual screen with a user data directory of its own, so nothing shows and your settings stay as they are, and the document is not saved.
+The demo GIF of the README, `docs/assets/demo.gif`, is rendered by `freecad/finsnap/tools/make_demo.sh <document.FCStd> <part name> <FaceN>` from a part of your own, with Quick fins standing it on face FaceN. It needs FreeCAD, `xvfb-run` and `ffmpeg`; FreeCAD runs on a virtual screen with a home of its own for its settings and addons, so nothing shows and your settings are neither read nor changed, and the document is not saved.
 
 ## Versioning
 

@@ -7,9 +7,9 @@
 #   freecad/finsnap/tools/make_demo.sh <document.FCStd> <part name> <FaceN>
 # FaceN is the face Quick fins stands the part on. Needs FreeCAD (FREECAD
 # overrides the command, for example with freecad-weekly), xvfb-run and ffmpeg.
-# FreeCAD runs on a virtual screen, in English, with a user data directory of
-# its own holding only this checkout, so nothing shows and none of your
-# settings change.
+# FreeCAD runs on a virtual screen, in English, with a home of its own for its
+# settings and addons (FREECAD_USER_HOME) holding only this checkout, so
+# nothing shows and none of your settings are read or changed.
 set -eu
 
 [ $# -eq 3 ] || { echo "usage: $0 <document.FCStd> <part name> <FaceN>" >&2; exit 64; }
@@ -25,8 +25,10 @@ trap 'rm -rf "$WORK"' EXIT
 mkdir -p "$WORK/user/Mod"
 ln -s "$ROOT" "$WORK/user/Mod/FinSnap"
 
+# FREECAD_QT_QPA_PLATFORM is read by the starter of the FreeCAD AppImage,
+# which sets QT_QPA_PLATFORM itself; QT_QPA_PLATFORM serves other builds.
 env -u WAYLAND_DISPLAY -u DISPLAY LANG=en_US.UTF-8 LC_ALL=en_US.UTF-8 LANGUAGE=en \
-    QT_QPA_PLATFORM=xcb FREECAD_QT_QPA_PLATFORM=xcb FREECAD_USER_DATA="$WORK/user" \
+    QT_QPA_PLATFORM=xcb FREECAD_QT_QPA_PLATFORM=xcb FREECAD_USER_HOME="$WORK/user" \
     DEMO_MODEL="$1" DEMO_PART="$2" DEMO_FACE="$3" DEMO_FRAMES="$WORK/frames" \
     xvfb-run -a -s "-screen 0 $SCREEN" "${FREECAD:-freecad}" "$TOOLS/make_demo.py"
 
