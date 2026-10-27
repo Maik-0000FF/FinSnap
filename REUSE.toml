@@ -11,9 +11,10 @@ path = ["freecad/finsnap/icons/*.svg", "freecad/finsnap/images/*.svg", "docs/ass
 SPDX-FileCopyrightText = "2026 Maik-0000FF"
 SPDX-License-Identifier = "GPL-3.0-or-later"
 
-# Pictures carry no comments: screenshots of FinSnap in a running FreeCAD.
+# Pictures carry no comments: screenshots of FinSnap in a running FreeCAD,
+# and the demo rendered from it.
 [[annotations]]
-path = "docs/assets/*.png"
+path = ["docs/assets/*.png", "docs/assets/*.gif"]
 SPDX-FileCopyrightText = "2026 Maik-0000FF"
 SPDX-License-Identifier = "GPL-3.0-or-later"
 
