@@ -12,6 +12,7 @@ import html
 
 import FreeCAD as App
 import FreeCADGui as Gui
+import Part
 from PySide import QtCore, QtGui, QtWidgets
 
 from . import defaults as d
@@ -39,6 +40,12 @@ LENGTH_SUFFIX = " mm"
 PREVIEW_DELAY_MS = 400
 # Pause after the last move of a handle before the preview for it is built.
 DRAG_PREVIEW_MS = 150
+# Pause after the arrows are put on a fin before trying where it can go, so a
+# run of rebuilds tries only once, after the last.
+ENDS_DELAY_MS = 300
+# How close a fin let go beyond where it can stand comes to that limit, and
+# how far an arrow end looks ahead before it is left out (mm).
+SNAP_RESOLUTION = 0.1
 NOTE_CLICK_FIN = QT_TRANSLATE_NOOP("FinSnap", "Click a fin of these fins in the 3D view first.")
 SIDES = {feature.MAIN: QT_TRANSLATE_NOOP("FinSnap", "Main fin"),
          feature.COUNTER: QT_TRANSLATE_NOOP("FinSnap", "Counter fin")}
@@ -190,6 +197,10 @@ class FinSnapTaskPanel:
         self.drag_timer.setSingleShot(True)
         self.drag_timer.setInterval(DRAG_PREVIEW_MS)
         self.drag_timer.timeout.connect(self.drag_step)
+        self.ends_timer = QtCore.QTimer(self.form)
+        self.ends_timer.setSingleShot(True)
+        self.ends_timer.setInterval(ENDS_DELAY_MS)
+        self.ends_timer.timeout.connect(self.update_ends)
         # The fin with the handles on it, as (MAIN or COUNTER, number); the
         # arrow being dragged with how far, as (kind, mm); and the shift and
         # height of the fin, and the values in its fields, when it was grabbed.
@@ -542,7 +553,8 @@ class FinSnapTaskPanel:
         which, number = self.handled
         # A held arrow stays where it was grabbed; only the numbers follow it.
         if not self.handles.held:
-            self.handles.show(result.edges[number], result.heights[number], result.along)
+            self.handles.show(result.edges[number], result.heights[number], result.along, result.out)
+            self.ends_timer.start()
         self.show_fin_values(self.fin_values())
         self.fin_label.setText(translate("FinSnap", "%s %d") % (translate("FinSnap", SIDES[which]), number))
 
@@ -592,9 +604,69 @@ class FinSnapTaskPanel:
         self.refuse(error)
         return False
 
+    def built_value(self, kind):
+        """What the handled fin is built with: its shift along the face (ALONG)
+        or its height (UP), in mm."""
+        if kind == handles.ALONG:
+            return self.own_value(kind) or 0.0
+        return self.handled_result()[0].heights[self.handled[1]]
+
+    def can_stand(self, kind, value):
+        """Whether the handled fin can stand with the shift along the face
+        (ALONG) or the height (UP) `value`, tried with a build alone: the
+        object is left as it is.
+
+        INPUTS this has to withstand:
+          value where the fin stands                  ->  True
+          shift onto or past a neighbour              ->  False
+          shift where no tine of the fin finds the
+            face, beyond a corner or over a recess    ->  False: the fin is left out
+          height above the face or below the first
+            tine                                      ->  False
+          the build fails in OpenCASCADE              ->  False
+        """
+        which, number = self.handled
+        part_and_build = feature.builder(self.obj, which)
+        if part_and_build is None:
+            return False
+        left, shifts, heights = feature.edits(self.obj, which)
+        tried = dict(shifts if kind == handles.ALONG else heights)
+        tried[number] = value
+        if kind == handles.ALONG:
+            shifts = tried
+        else:
+            heights = tried
+        try:
+            result = part_and_build[1](left, shifts, heights)
+        except (ValueError, Part.OCCError):
+            return False
+        return number in result.numbers
+
+    def nearest_standing(self, kind, good, bad):
+        """The value between `good`, where the handled fin stands, and `bad`,
+        where it does not, nearest to `bad` where it still stands: the limit
+        it reaches, found to SNAP_RESOLUTION by halving the way."""
+        while abs(bad - good) > SNAP_RESOLUTION:
+            middle = (good + bad) / 2
+            if self.can_stand(kind, middle):
+                good = middle
+            else:
+                bad = middle
+        return good
+
+    def update_ends(self):
+        """Leave out each end of an arrow where the handled fin cannot go."""
+        if self.handles.held or self.handled_result() is None:
+            return
+        for kind in (handles.ALONG, handles.UP):
+            value = self.built_value(kind)
+            self.handles.show_ends(kind, [end for end in (handles.BACK, handles.FORTH)
+                                          if self.can_stand(kind, value + end * SNAP_RESOLUTION)])
+
     def handle_started(self, kind):
         """An arrow grabbed: note where the fin stands and what it has by hand;
         the drag starts from there."""
+        self.ends_timer.stop()
         # Nothing of an earlier drag carries over; without a fin the drag is passed over.
         self.drag_base, self.drag_own, self.drag_values = {}, {}, {}
         if self.handled_result() is None:
@@ -625,8 +697,9 @@ class FinSnapTaskPanel:
 
     def drag_step(self):
         """While an arrow is held, the fins are built with the fin where the
-        arrow is. Where it cannot stand, it stays at its last place, and a red
-        preview shows it where the arrow is."""
+        arrow is. Where it cannot stand, it stays at its last place, the fins
+        turn red, and a red preview shows the fin where the arrow is, moved or
+        as high."""
         if self.dragged is None or self.handled_result() is None or self.dragged[0] not in self.drag_base:
             return
         kind, mm = self.dragged
@@ -635,9 +708,20 @@ class FinSnapTaskPanel:
             return
         result, index = self.handled_result()
         fin = result.fins.childShapes()[index].copy()
+        wanted = self.drag_base[kind] + mm
         if kind == handles.ALONG:
-            built_shift = self.own_value(handles.ALONG) or 0.0
-            fin.translate(result.along * (self.drag_base[kind] + mm - built_shift))
+            fin.translate(result.along * (wanted - self.built_value(kind)))
+        else:
+            # Stretched up or down from the bed to the height dragged to: what
+            # the fin would look like, as near as a preview needs.
+            bed = fin.BoundBox.ZMin
+            stretch = App.Matrix()
+            stretch.move(App.Vector(0, 0, -bed))
+            stretch.scale(1, 1, max(wanted, SNAP_RESOLUTION) / self.built_value(kind))
+            stretch.move(App.Vector(0, 0, bed))
+            fin = fin.transformGeometry(stretch)
+        # The fins red as well: a red preview over a green fin would mix to neither.
+        self.handles.tint(False)
         self.handles.show_preview([fin], False)
 
     def handle_done(self, kind, mm):
@@ -648,13 +732,17 @@ class FinSnapTaskPanel:
         QtCore.QTimer.singleShot(0, functools.partial(self.finish_drag, kind, mm))
 
     def finish_drag(self, kind, mm):
-        """An arrow let go: the fin goes where it is, or stays at its last place
-        where it could stand; the arrows return onto it, and its field takes
-        the keyboard, so a value can be typed right away."""
+        """An arrow let go: the fin goes where it is, or, where it cannot stand
+        there, as far towards it as it can; the arrows return onto it, and its
+        field takes the keyboard, so a value can be typed right away."""
         if self.handled_result() is None or kind not in self.drag_base:
             self.place_handles()
             return
-        self.drag_to(kind, mm)
+        if not self.drag_to(kind, mm) and self.handled_result() is not None:
+            last = self.built_value(kind)
+            limit = self.nearest_standing(kind, last, self.drag_base[kind] + mm)
+            if abs(limit - last) >= d.TOLERANCE:
+                self.set_fin(kind, limit)
         self.handles.clear_preview()
         self.place_handles()
         box = self.fin_fields[kind]
@@ -682,7 +770,7 @@ class FinSnapTaskPanel:
             return
         self.released = True
         # Closed by FreeCAD first, the panel's form and its timers are gone already.
-        for timer in (self.timer, self.drag_timer):
+        for timer in (self.timer, self.drag_timer, self.ends_timer):
             try:
                 timer.stop()
             except RuntimeError:

@@ -43,6 +43,7 @@ FIN_SHIFT = 1.5  # how far a handle moves a fin along the face, in mm
 TOO_MANY_FINS = 50  # more fins than the face takes, so the build fails
 AXIS_Z_RGB = (0.2, 0.2, 0.8)  # FreeCAD's standard colour of the z axis
 COLOR_TOLERANCE = 0.01
+TOO_HIGH = 100.0  # how far an arrow is dragged up, far above any face of the tests, in mm
 GERMAN = "FinSnap_de.ts"  # written by freecad/finsnap/tools/update_translations.sh
 
 
@@ -70,6 +71,11 @@ def face_name(obj, face):
         if candidate.isSame(face):
             return "Face%d" % i
     raise AssertionError("face not found")
+
+
+def _rgb_close(color, wanted):
+    """Whether `color`, with or without alpha, is `wanted` in red, green and blue."""
+    return all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(color[:3], wanted))
 
 
 def select(obj, *subs):
@@ -565,10 +571,52 @@ def main():
            and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_ALL
            and taskpanel.ERROR_COLOR in moving.notes.styleSheet(),
            "a fin dragged onto its neighbour stays at its last place, shown red where the arrow is")
+    expect(_rgb_close(lined.ViewObject.ShapeColor, handles.INVALID_COLOR),
+           "while the fin cannot stand where the arrow is, the fins are red, not mixed with green")
     moving.finish_drag(handles.ALONG, onto_neighbour)
-    expect(feature.edits(lined, feature.MAIN)[1] == {1: FIN_SHIFT}
-           and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_NONE,
-           "let go there, it stays at its last place")
+    snapped = feature.edits(lined, feature.MAIN)[1].get(1, 0.0)
+    # The drag started with the fin moved by FIN_SHIFT already.
+    nearest = FIN_SHIFT + onto_neighbour - result.thickness - d.FOOT_CLEARANCE
+    expect(nearest - taskpanel.SNAP_RESOLUTION - d.TOLERANCE <= snapped <= nearest + d.TOLERANCE
+           and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_NONE
+           and _rgb_close(lined.ViewObject.ShapeColor, handles.VALID_COLOR),
+           "let go there, it goes as near to its neighbour as it can stand, green again: %.3f of %.3f mm"
+           % (snapped, nearest))
+    moving.update_ends()
+    expect(moving.handles.ends[handles.ALONG] == (handles.BACK,),
+           "at its neighbour, the arrow along the face shows no end towards it")
+    expect(all(switch.whichChild.getValue() == coin.SO_SWITCH_NONE
+               for halves in moving.handles.halves[handles.ALONG].values() for end, switch in halves.items()
+               if end == handles.FORTH), "the end left out is hidden, at rest and held")
+    # Dragged up above the face, the fin is shown red as high as dragged, and
+    # let go, it is as high as the face lets it.
+    high = moving.built_value(handles.UP)
+    moving.handle_started(handles.UP)
+    moving.handle_moved(handles.UP, TOO_HIGH)
+    moving.drag_step()
+    stretched = moving.handles.preview.getChild(0) if moving.handles.preview.getNumChildren() else None
+    expect(stretched is not None and _rgb_close(lined.ViewObject.ShapeColor, handles.INVALID_COLOR),
+           "a fin dragged above the face is previewed red, and the fins turn red")
+    moving.finish_drag(handles.UP, TOO_HIGH)
+    tallest = moving.built_value(handles.UP)
+    expect(tallest > high and not moving.can_stand(handles.UP, tallest + taskpanel.SNAP_RESOLUTION),
+           "let go above the face, the fin is as high as it can be: %.3f mm" % tallest)
+    moving.update_ends()
+    expect(moving.handles.ends[handles.UP] == (handles.BACK,), "at its highest, the arrow up shows no end up")
+    # Dragged over the corner of the face, let go it stands at the corner.
+    moving.handle_started(handles.ALONG)
+    moving.handle_moved(handles.ALONG, -TOO_HIGH)
+    moving.finish_drag(handles.ALONG, -TOO_HIGH)
+    cornered = moving.built_value(handles.ALONG)
+    expect(cornered < FIN_SHIFT and not moving.can_stand(handles.ALONG, cornered - taskpanel.SNAP_RESOLUTION),
+           "let go beyond the corner of the face, the fin stands at the corner: %.3f mm" % cornered)
+    moving.update_ends()
+    expect(moving.handles.ends[handles.ALONG] == (handles.FORTH,),
+           "at the corner, the arrow along the face shows no end beyond it")
+    moving.fin_fields[handles.ALONG].setValue(place + FIN_SHIFT)
+    moving.field_entered(handles.ALONG)
+    moving.fin_fields[handles.UP].setValue(high)
+    moving.field_entered(handles.UP)
     lower = result.heights[1] - FIN_SHIFT
     moving.fin_fields[handles.UP].setValue(lower)
     moving.field_entered(handles.UP)
@@ -578,9 +626,10 @@ def main():
     moving.field_entered(handles.ALONG)
     expect(not feature.edits(lined, feature.MAIN)[1], "a place typed into the field moves the fin there")
     lowered = lined.Proxy.results[feature.MAIN]
+    off_edge = lowered.out * (lowered.heights[1] * handles.ARROW_SHARE * handles.CLEARANCE)
     expect(App.Vector(*moving.handles.places[handles.UP].translation.getValue().getValue())
-           .sub(lowered.edges[1]).Length < d.TOLERANCE,
-           "the arrows follow to the upright outer edge of the fin")
+           .sub(lowered.edges[1] + off_edge).Length < d.TOLERANCE,
+           "the arrows follow to the upright outer edge of the fin, just outside it")
     # A click on an arrow without a move, and a field left as it is, change nothing.
     feature.reset_fins(lined)
     lined.recompute()

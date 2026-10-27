@@ -164,6 +164,8 @@ class FinResult:
     heights: dict = field(default_factory=dict)
     # The middle of the upright outer edge of each fin built, by number.
     edges: dict = field(default_factory=dict)
+    # The direction away from the part, level with the bed: the outer edges face it.
+    out: App.Vector = None
     # Where the face starts along it (mm, as starts): fins are placed from there.
     face_start: float = 0.0
 
@@ -641,7 +643,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
                      thickness=thickness, tine_z=tine_z, positions=built,
                      foot_half_width=half_foot, warnings=warnings, carried=support.Faces,
                      numbers=numbers, planned=len(positions),
-                     dropped=dropped, starts={n: starts[n] for n in numbers}, along=frame.along,
+                     dropped=dropped, starts={n: starts[n] for n in numbers}, along=frame.along, out=frame.out,
                      heights=dict(zip(numbers, fin_heights)), edges=dict(zip(numbers, edges)),
                      face_start=face_start)
 
