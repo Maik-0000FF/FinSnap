@@ -43,7 +43,7 @@ FIN_SHIFT = 1.5  # how far a handle moves a fin along the face, in mm
 TOO_MANY_FINS = 50  # more fins than the face takes, so the build fails
 AXIS_Z_RGB = (0.2, 0.2, 0.8)  # FreeCAD's standard colour of the z axis
 COLOR_TOLERANCE = 0.01
-GERMAN = "FinSnap_de.ts"  # written by tools/update_translations.sh
+GERMAN = "FinSnap_de.ts"  # written by freecad/finsnap/tools/update_translations.sh
 
 
 def load_workbench():

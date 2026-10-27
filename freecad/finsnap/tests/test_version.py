@@ -22,7 +22,7 @@ ENTRY = "- an entry for the next release"
 
 def copy():
     folder = tempfile.mkdtemp()
-    for name in (cv.PACKAGE_NAME, cv.CHANGELOG_NAME):
+    for name in (cv.PACKAGE_XML_NAME, cv.CHANGELOG_NAME):
         shutil.copy(os.path.join(ROOT, name), folder)
     return folder
 

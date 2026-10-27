@@ -36,10 +36,8 @@ import sys
 # Audited: Parses only package.xml of this repository.
 import xml.etree.ElementTree as ET  # nosec B405
 
-from freecad.finsnap.paths import ROOT
+from freecad.finsnap.paths import CHANGELOG_NAME, PACKAGE_XML_NAME, ROOT
 
-PACKAGE_NAME = "package.xml"
-CHANGELOG_NAME = "CHANGELOG.md"
 NAMESPACE = {"p": "https://wiki.freecad.org/Package_Metadata"}
 SEMVER = re.compile(r"^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)$")
 TAG_PREFIX = "v"
@@ -61,7 +59,7 @@ def release_link(repository, version):
 def read(root=ROOT):
     """(version, date, repository URL, changelog text) or raises OSError / ParseError."""
     # Audited: package.xml of this repository.
-    package = ET.parse(os.path.join(root, PACKAGE_NAME)).getroot()  # nosec B314
+    package = ET.parse(os.path.join(root, PACKAGE_XML_NAME)).getroot()  # nosec B314
     with open(os.path.join(root, CHANGELOG_NAME), encoding="utf-8") as handle:
         changelog = handle.read()
     version = (package.findtext("p:version", default="", namespaces=NAMESPACE) or "").strip()

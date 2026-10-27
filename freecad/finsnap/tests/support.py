@@ -47,6 +47,28 @@ def expect(condition, message):
     print("ok  ", message, file=sys.__stdout__)
 
 
+def require_checkout(main):
+    """Refuse to test another copy of FinSnap than the one the test `main` lies in.
+
+    FreeCAD imports freecad.finsnap from whichever copy it finds installed; a
+    copy from the Addon Manager beside a linked checkout would be tested in its
+    place, and pass, without anyone noticing.
+
+    INPUTS this has to withstand:
+      test and package from the same checkout                ->  passes
+      the same, one of them reached through a symbolic link  ->  passes
+      test started by a path relative to the current folder  ->  passes
+      package imported from another installed copy           ->  AssertionError naming both
+    """
+    import freecad.finsnap
+    tested = os.path.dirname(os.path.realpath(freecad.finsnap.__file__))
+    # The test lies in tests/ of the package it is meant for.
+    wanted = os.path.dirname(os.path.dirname(os.path.realpath(main.__code__.co_filename)))
+    if tested != wanted:
+        raise AssertionError("FreeCAD loaded FinSnap from %s, not from the checkout of this test, %s; "
+                             "remove or unlink the other copy from the Mod folder" % (tested, wanted))
+
+
 def run(main, gui=False):
     """Run a test and leave FreeCAD with its result. FreeCAD swallows tracebacks
     and drops buffered output on sys.exit, so both are handled here. With the
@@ -59,6 +81,7 @@ def run(main, gui=False):
     presets.STANDARD_GROUP = TEST_STANDARD_GROUP
     presets.reset()
     try:
+        require_checkout(main)
         main()
         result = 0
     except Exception as error:

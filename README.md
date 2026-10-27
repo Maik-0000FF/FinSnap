@@ -65,10 +65,10 @@ FinSnap is not yet listed in the FreeCAD Addon Manager. Until then, install it m
 Clone the repository into the `Mod` folder of your FreeCAD user data directory and restart FreeCAD:
 
 ```bash
-git clone https://github.com/Maik-0000FF/FinSnap.git ~/.local/share/FreeCAD/Mod/FinSnap
+git clone https://github.com/Maik-0000FF/FinSnap.git ~/.local/share/FreeCAD/v1-1/Mod/FinSnap
 ```
 
-The folder differs by system and version; FreeCAD shows it under **Tools → Addon manager → Settings** and in the Python console with `App.getUserAppDataDir()`.
+The path above is the one of FreeCAD 1.1 on Linux. The folder differs by system and version; FreeCAD shows it under **Tools → Addon manager → Settings** and in the Python console with `App.getUserAppDataDir()`.
 
 ## Commands
 

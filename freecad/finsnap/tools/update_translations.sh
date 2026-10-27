@@ -31,7 +31,10 @@ fi
 # crashes FreeCAD at its next translated text. The new file is written beside
 # it and renamed, so FreeCAD keeps reading the old one until it restarts.
 for ts in "$TRANSLATIONS/${NAME}"_*.ts; do
-    language=${ts##*_}
+    # Without any language the pattern stays as it is, naming no file.
+    [ -e "$ts" ] || continue
+    # Cut after the fixed prefix: a code may hold an underscore itself (pt_BR).
+    language=${ts##*/"${NAME}"_}
     collect "$ts" -target-language "${language%.ts}"
     qm="${ts%.ts}.qm"
     "${LRELEASE:-lrelease}" "$ts" -qm "$qm.tmp"

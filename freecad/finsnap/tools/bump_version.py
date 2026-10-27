@@ -60,7 +60,7 @@ def bump(root, new, date):
     changelog = changelog.replace(cv.unreleased_link(repository, old),
                                   cv.unreleased_link(repository, new) + "\n" + cv.release_link(repository, new), 1)
 
-    package_path = os.path.join(root, cv.PACKAGE_NAME)
+    package_path = os.path.join(root, cv.PACKAGE_XML_NAME)
     with open(package_path, encoding="utf-8") as handle:
         package = handle.read()
     package = re.sub(r"<version>[^<]*</version>", "<version>%s</version>" % new, package, count=1)

@@ -15,8 +15,10 @@ TRANSLATIONS = os.path.join(PACKAGE, "translations")
 # The root of the repository, two levels above the package: package.xml,
 # CHANGELOG.md and the pictures of the README lie there.
 ROOT = os.path.dirname(os.path.dirname(PACKAGE))
-PACKAGE_XML = os.path.join(ROOT, "package.xml")
-CHANGELOG = os.path.join(ROOT, "CHANGELOG.md")
+# The names alone as well: the version tools also work on copies elsewhere.
+PACKAGE_XML_NAME = "package.xml"
+CHANGELOG_NAME = "CHANGELOG.md"
+PACKAGE_XML = os.path.join(ROOT, PACKAGE_XML_NAME)
 LOGO = os.path.join(ROOT, "docs", "assets", "logo.svg")
 
 # Icons of the commands.
