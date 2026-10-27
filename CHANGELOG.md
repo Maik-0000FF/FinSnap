@@ -13,7 +13,8 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Added
 
-- The arrow up steps the height of a fin from tine to tine, so a tine always ends the fin on top, without a piece standing out above it; a tine over a recess is passed over, up to the next one that finds the face
+- The arrow up takes the height of a fin from tine to tine, so a tine always ends the fin on top, without a piece standing out above it: near a tine the fin goes there, between tines, also over a recess, it is built as high as the arrow and shown yellow, and goes to the nearest tine that finds the face when let go
+- The arrows on a fin keep their size on the screen, also on small fins and when zoomed out
 - A list of fins in the task panel, one below the other, the counter fins included: a fin picked there gets the arrows and is selected, also one behind the part
 
 ### Changed

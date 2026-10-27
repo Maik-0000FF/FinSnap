@@ -43,6 +43,10 @@ DRAG_PREVIEW_MS = 150
 # Places of fins whose arrow ends are kept while the panel is open; beyond
 # these the oldest goes.
 ENDS_KEPT = 32
+# How near a tine a fin dragged up or down goes to it (mm); farther from
+# every tine, it is shown yellow where it is dragged and goes to the nearest
+# when let go.
+HEIGHT_REACH = 1.0
 # Rows the list of fins shows at most; more fins scroll.
 FIN_LIST_ROWS = 6
 # Pause after the arrows are put on a fin before trying where it can go, so a
@@ -624,7 +628,7 @@ class FinSnapTaskPanel:
         which, number = self.handled
         # A held arrow stays where it was grabbed; only the numbers follow it.
         if not self.handles.held:
-            self.handles.show(result.edges[number], result.heights[number], result.along, result.out)
+            self.handles.show(result.edges[number], result.along, result.out)
             # On another fin, both ends until tried, rather than those of the fin before.
             if self.handled != self.ends_of:
                 for kind in handles.KINDS:
@@ -809,14 +813,20 @@ class FinSnapTaskPanel:
         tine_height = feature.params_of(self.obj).tine_height
         return [z + tine_height for z in result.touching_z.get(self.handled[1], [])]
 
-    def dragged_mm(self, kind, mm):
-        """`mm` from where an arrow was grabbed, as the fin follows it: along
-        the face as dragged; up to the nearest height that ends with a tine."""
+    def dragged_mm(self, kind, mm, reach=None):
+        """Where the fin goes for an arrow dragged `mm` from where it was
+        grabbed, as (mm, True), or (mm, False) where it goes nowhere yet:
+        along the face as dragged; up to the nearest height that ends with a
+        tine, if one lies within `reach` (any, without). A click without a
+        move goes nowhere: a height typed by hand is kept."""
         tops = self.tine_tops() if kind == handles.UP else []
-        if not tops:
-            return mm
+        if not tops or abs(mm) < d.TOLERANCE:
+            return mm, True
         wanted = self.drag_base[kind] + mm
-        return min(tops, key=lambda top: abs(top - wanted)) - self.drag_base[kind]
+        nearest = min(tops, key=lambda top: abs(top - wanted))
+        if reach is not None and abs(nearest - wanted) > reach:
+            return mm, False
+        return nearest - self.drag_base[kind], True
 
     def standing_step(self, last, limit):
         """The height that ends with a tine nearest to `limit` on the way from
@@ -843,7 +853,6 @@ class FinSnapTaskPanel:
     def handle_moved(self, kind, mm):
         if kind not in self.drag_base:
             return
-        mm = self.dragged_mm(kind, mm)
         self.dragged = (kind, mm)
         self.show_fin_values({kind: self.drag_values[kind] + mm})
         self.drag_timer.start()
@@ -861,15 +870,33 @@ class FinSnapTaskPanel:
 
     def drag_step(self):
         """While an arrow is held, the fins are built with the fin where the
-        arrow is. Where it cannot stand, it stays at its last place, the fins
-        turn red, and a red preview shows the fin where the arrow is, moved or
-        as high."""
+        arrow is. Up, near a tine the fin is built ending with it, green;
+        between tines, also over a recess, it is built as high as the arrow
+        and shown yellow, as it goes to the nearest tine when let go. Where it
+        cannot stand, it stays at its last place, red, with a red preview."""
         if self.dragged is None or self.handled_result() is None or self.dragged[0] not in self.drag_base:
             return
-        kind, mm = self.dragged
+        kind, raw = self.dragged
+        mm, on_step = self.dragged_mm(kind, raw, HEIGHT_REACH)
         if self.drag_to(kind, mm):
             self.handles.clear_preview()
+            if not on_step:
+                self.tint_handled(handles.BETWEEN_COLOR)
             return
+        self.show_dragged(kind, mm, handles.INVALID_COLOR)
+
+    def tint_handled(self, color):
+        """The handled fin in `color`, the other fins green; the whole object
+        for merged fins, which have no faces of their own."""
+        faces = feature.fin_faces(self.obj, *self.handled)
+        if faces:
+            self.handles.tint_faces(set(faces), color)
+        else:
+            self.handles.tint_all(color)
+
+    def show_dragged(self, kind, mm, color):
+        """Show the handled fin `mm` from where its arrow was grabbed as a
+        preview, and the fin itself, in `color`; the other fins stay green."""
         result, index = self.handled_result()
         fin = result.fins.childShapes()[index].copy()
         wanted = self.drag_base[kind] + mm
@@ -884,14 +911,10 @@ class FinSnapTaskPanel:
             stretch.scale(1, 1, max(wanted, MIN_PREVIEW_HEIGHT) / self.built_value(kind))
             stretch.move(App.Vector(0, 0, bed))
             fin = fin.transformGeometry(stretch)
-        # The dragged fin red as well, the others green: a red preview over a
-        # green fin would mix to neither. Merged fins have no faces of their own.
-        faces = feature.fin_faces(self.obj, *self.handled)
-        if faces:
-            self.handles.tint_faces(set(faces))
-        else:
-            self.handles.tint(False)
-        self.handles.show_preview([fin], False)
+        # The fin in the colour as well: a preview over a green fin would mix
+        # to neither.
+        self.tint_handled(color)
+        self.handles.show_preview([fin], color)
 
     def handle_done(self, kind, mm):
         # Coin still handles the drag here; rebuilding would move the arrow
@@ -908,7 +931,8 @@ class FinSnapTaskPanel:
             if self.handled_result() is None or kind not in self.drag_base:
                 self.place_handles()
                 return
-            mm = self.dragged_mm(kind, mm)
+            # Let go between tines, the fin goes to the nearest.
+            mm = self.dragged_mm(kind, mm)[0]
             if not self.drag_to(kind, mm) and self.handled_result() is not None:
                 last = self.built_value(kind)
                 limit = self.nearest_standing(kind, last, self.drag_base[kind] + mm)
@@ -917,11 +941,12 @@ class FinSnapTaskPanel:
                 if abs(limit - last) >= d.TOLERANCE:
                     self.set_fin(kind, limit)
         finally:
-            # The drag is over, also after an error: every build is made afresh.
+            # The drag is over, also after an error: every build is made afresh,
+            # and nothing failing was built into the object, so the colours of
+            # the drag go.
             self.obj.Proxy.reuse = None
-        # Nothing failing was built into the object; the red of the drag goes.
-        self.handles.tint(True)
-        self.handles.clear_preview()
+            self.handles.tint(True)
+            self.handles.clear_preview()
         self.place_handles()
         box = self.fin_fields[kind]
         box.setFocus()
