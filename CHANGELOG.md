@@ -22,10 +22,11 @@ All notable changes to FinSnap are listed here. The format follows
 - Tests and tools lie in the package, `freecad/finsnap/tests/` and `freecad/finsnap/tools/`, and come with the addon; run them as described in CONTRIBUTING.md
 - The arrows on a fin are double arrows standing just outside it, so the fin no longer covers the arrow up; an end is left out where the fin cannot go
 - A fin let go where it cannot stand goes as far towards there as it can, to the corner of the face or next to its neighbour, instead of staying at its last place
-- While a fin cannot stand where its arrow is, all fins turn red, so the red preview no longer mixes with green
+- While a fin cannot stand where its arrow is, it alone turns red and the other fins stay green, so the red preview no longer mixes with green
 
 ### Fixed
 
+- A fin dragged where it cannot stand is tried first and never built there, so the object stays valid and the report view gets no traceback at every step of the drag
 - Add counter fin no longer takes a face still selected from making the fins, such as the chamfer Quick fins stood the part on; a face chosen by hand that cannot take fins is refused with a note, and the counter fin stays as it was
 
 ## [0.4.1] - 2026-10-27

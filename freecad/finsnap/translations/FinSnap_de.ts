@@ -315,7 +315,7 @@
     </message>
     <message>
         <location filename="../commands.py" line="596"/>
-        <location filename="../taskpanel.py" line="477"/>
+        <location filename="../taskpanel.py" line="480"/>
         <source>The part has no face leaning the other way. Select one yourself.</source>
         <translation>Das Bauteil hat keine Fläche, die zur anderen Seite geneigt ist. Bitte selbst eine auswählen.</translation>
     </message>
@@ -695,84 +695,84 @@
         <translation>Die Finnen, erst die Hauptfinnen von links, dann die Gegenfinnen. Wähle eine aus, um die Pfeile auf sie zu setzen und sie auszuwählen.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="302"/>
+        <location filename="../taskpanel.py" line="305"/>
         <source>Place on the face</source>
         <translation>Lage auf der Fläche</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="303"/>
+        <location filename="../taskpanel.py" line="306"/>
         <source>Distance of the middle of the fin from the left end of the face, seen from outside. Type a value and press Enter to move the fin.</source>
         <translation>Abstand der Finnenmitte vom linken Ende der Fläche, von außen gesehen. Tippe einen Wert ein und drücke Enter, um die Finne zu versetzen.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="305"/>
+        <location filename="../taskpanel.py" line="308"/>
         <source>Height</source>
         <translation>Höhe</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="306"/>
+        <location filename="../taskpanel.py" line="309"/>
         <source>Height of this fin alone. Type a value and press Enter to set it; Reset fins gives it the height of the others again.</source>
         <translation>Höhe dieser einen Finne. Tippe einen Wert ein und drücke Enter, um sie zu setzen; „Finnen zurücksetzen“ gibt ihr wieder die Höhe der anderen.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="323"/>
+        <location filename="../taskpanel.py" line="326"/>
         <source>Save as standard</source>
         <translation>Als Standard speichern</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="324"/>
+        <location filename="../taskpanel.py" line="327"/>
         <source>New fins start with these values. Fields that differ from the standard are marked, and their button puts the standard back.</source>
         <translation>Neue Finnen starten mit diesen Werten. Felder, die vom Standard abweichen, sind markiert, und ihr Knopf stellt den Standard wieder her.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="328"/>
-        <location filename="../taskpanel.py" line="398"/>
+        <location filename="../taskpanel.py" line="331"/>
+        <location filename="../taskpanel.py" line="401"/>
         <source>Factory settings</source>
         <translation>Werkseinstellungen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="329"/>
+        <location filename="../taskpanel.py" line="332"/>
         <source>Forget the saved standard and set every field to the built-in value.</source>
         <translation>Den gespeicherten Standard verwerfen und jedes Feld auf den eingebauten Wert setzen.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="380"/>
+        <location filename="../taskpanel.py" line="383"/>
         <source>Back to the standard: %s</source>
         <translation>Zurück auf den Standard: %s</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="399"/>
+        <location filename="../taskpanel.py" line="402"/>
         <source>Forget the saved standard and set every field to the built-in value?</source>
         <translation>Den gespeicherten Standard verwerfen und jedes Feld auf den eingebauten Wert setzen?</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="427"/>
-        <location filename="../taskpanel.py" line="431"/>
+        <location filename="../taskpanel.py" line="430"/>
+        <location filename="../taskpanel.py" line="434"/>
         <source>Nothing removed</source>
         <translation>Nichts entfernt</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="438"/>
+        <location filename="../taskpanel.py" line="441"/>
         <source>Delete the fins?</source>
         <translation>Finnen löschen?</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="439"/>
+        <location filename="../taskpanel.py" line="442"/>
         <source>These are the last fins. Delete the fins object? A part stood on an edge for these fins alone is laid flat again.</source>
         <translation>Das sind die letzten Finnen. Das Finnen-Objekt löschen? Ein Teil, das nur für diese Finnen auf eine Kante gestellt wurde, wird wieder flach gelegt.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="455"/>
+        <location filename="../taskpanel.py" line="458"/>
         <source>Delete fins</source>
         <translation>Finnen löschen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="540"/>
+        <location filename="../taskpanel.py" line="543"/>
         <source>%s %d</source>
         <translation>%s %d</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="908"/>
+        <location filename="../taskpanel.py" line="931"/>
         <source>Cancel fins</source>
         <translation>Finnen abbrechen</translation>
     </message>
@@ -787,28 +787,28 @@
         <translation>Finnen zurücksetzen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="472"/>
-        <location filename="../taskpanel.py" line="476"/>
+        <location filename="../taskpanel.py" line="475"/>
+        <location filename="../taskpanel.py" line="479"/>
         <source>No counter fin</source>
         <translation>Keine Gegenfinne</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="661"/>
+        <location filename="../taskpanel.py" line="707"/>
         <source>no tine of the fin finds the face there</source>
         <translation>dort trifft keine Zinke der Finne die Fläche</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="866"/>
+        <location filename="../taskpanel.py" line="889"/>
         <source>Not possible</source>
         <translation>Nicht möglich</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="889"/>
+        <location filename="../taskpanel.py" line="912"/>
         <source>Notes</source>
         <translation>Hinweise</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="886"/>
+        <location filename="../taskpanel.py" line="909"/>
         <source>%d fin(s), %.2f mm high, %.2f mm thick</source>
         <translation>%d Finne(n), %.2f mm hoch, %.2f mm dick</translation>
     </message>
@@ -1108,7 +1108,7 @@
         <translation>%s hat keine Form</translation>
     </message>
     <message>
-        <location filename="../handles.py" line="177"/>
+        <location filename="../handles.py" line="179"/>
         <source>No 3D view of %s is open to edit the fins in.</source>
         <translation>Von %s ist keine 3D-Ansicht offen, in der die Finnen bearbeitet werden können.</translation>
     </message>

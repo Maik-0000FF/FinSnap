@@ -706,19 +706,25 @@ def tag_fin(tag):
     return which, int(number)
 
 
-def fin_face(obj, which, number):
-    """The name of a face of fin `number` of `which` ("Face12"), to select the
-    fin by; None for a fin not built, or for fins merged into the part, which
-    have no solids of their own."""
+def fin_faces(obj, which, number):
+    """The indices among the faces of `obj`, from 0, of fin `number` of
+    `which`; empty for a fin not built, or for fins merged into the part,
+    which have no solids of their own."""
     tags = list(getattr(obj, FIN_TAGS, []))
     tag = fin_tag(which, number)
     if tag not in tags:
-        return None
-    target = obj.Shape.Solids[tags.index(tag)].Faces[0]
-    for number_of_face, candidate in enumerate(obj.Shape.Faces, 1):
-        if candidate.isSame(target):
-            return face_name(number_of_face)
-    return None
+        return []
+    own = obj.Shape.Solids[tags.index(tag)].Faces
+    return [index for index, candidate in enumerate(obj.Shape.Faces)
+            if any(candidate.isSame(face) for face in own)]
+
+
+def fin_face(obj, which, number):
+    """The name of a face of fin `number` of `which` ("Face12"), to select the
+    fin by; None where fin_faces() finds none."""
+    faces = fin_faces(obj, which, number)
+    # Face names count from 1.
+    return face_name(faces[0] + 1) if faces else None
 
 
 def edits(obj, which):

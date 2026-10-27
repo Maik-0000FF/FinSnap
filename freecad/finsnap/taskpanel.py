@@ -290,7 +290,10 @@ class FinSnapTaskPanel:
         self.fin_list = QtWidgets.QListWidget()
         self.fin_list.setToolTip(_wrapped(translate("FinSnap", "The fins, the main fins from the left, then the "
                                                     "counter fins. Pick one to put the arrows on it and select it.")))
+        # A changed row, by mouse or keyboard, and a click on the row already
+        # marked, to pick that fin again once the selection went elsewhere.
         self.fin_list.currentRowChanged.connect(self.pick_fin)
+        self.fin_list.itemClicked.connect(lambda item: self.pick_fin(self.fin_list.row(item)))
         self.listed_fins = []
         edit_layout.addWidget(self.fin_list, 3, 0, 1, 2)
         self.fin_label = QtWidgets.QLabel(translate("FinSnap", NOTE_CLICK_FIN))
@@ -559,6 +562,9 @@ class FinSnapTaskPanel:
         Remove selected fin and the Delete key take this fin."""
         if row < 0 or row >= len(self.listed_fins) or self.handles.held:
             return
+        # A click on a new row comes as a changed row as well; once is enough.
+        if self.listed_fins[row] == self.handled and self.selected_fins() == [self.handled]:
+            return
         self.handled = self.listed_fins[row]
         Gui.Selection.clearSelection()
         face = feature.fin_face(self.obj, *self.handled)
@@ -646,25 +652,27 @@ class FinSnapTaskPanel:
 
     def set_fin(self, kind, value):
         """Give the handled fin the shift along the face (ALONG) or the height
-        (UP) `value` and build the fins, once. Where they cannot be built so,
-        or the fin finds no face there, it gets back what it had, the panel
-        says why, and False is returned."""
-        before = self.own_value(kind)
-        self.write_fin(kind, value)
-        error = None
-        try:
-            self.apply()
-        except ValueError as failed:
-            error = failed
-        else:
-            if self.handled_result() is None:
-                error = geometry.FinError(translate("FinSnap", "no tine of the fin finds the face there"))
+        (UP) `value` and build the fins, once. Where it cannot stand so, the
+        panel says why, the object is left as it was, and False is returned.
+
+        Tried first with a build alone: written and then taken back, a place
+        that fails would mark the object broken and fill FreeCAD's report
+        with a traceback at every step of a drag."""
+        error = self.stand_error(kind, value)
+        if error is None:
+            before = self.own_value(kind)
+            self.write_fin(kind, value)
+            try:
+                self.apply()
+            except ValueError as failed:
+                # The other side may still fail with this one changed.
+                error = failed
+                self.write_fin(kind, before)
+                self.preview()
         if error is None:
             self.update_enabled()
             self.show_result()
             return True
-        self.write_fin(kind, before)
-        self.preview()
         self.refuse(error)
         return False
 
@@ -677,22 +685,30 @@ class FinSnapTaskPanel:
 
     def can_stand(self, kind, value):
         """Whether the handled fin can stand with the shift along the face
-        (ALONG) or the height (UP) `value`, tried with a build alone: the
-        object is left as it is.
+        (ALONG) or the height (UP) `value`; see stand_error()."""
+        return self.stand_error(kind, value) is None
+
+    def stand_error(self, kind, value):
+        """Why the handled fin cannot stand with the shift along the face
+        (ALONG) or the height (UP) `value`, or None where it can. Tried with a
+        build of its side alone: the object is left as it is, so a place where
+        the fin cannot stand is never built into it.
 
         INPUTS this has to withstand:
-          value where the fin stands                  ->  True
-          shift onto or past a neighbour              ->  False
+          value where the fin stands                  ->  None
+          shift onto or past a neighbour              ->  the error saying so
           shift where no tine of the fin finds the
-            face, beyond a corner or over a recess    ->  False: the fin is left out
+            face, beyond a corner or over a recess    ->  error: no tine finds the face there
           height above the face or below the first
-            tine                                      ->  False
-          the build fails in OpenCASCADE              ->  False
+            tine                                      ->  the error saying so
+          the build fails in OpenCASCADE              ->  that error
+          its side has no fins (counter fin removed)  ->  error: no tine finds the face there
         """
+        nowhere = geometry.FinError(translate("FinSnap", "no tine of the fin finds the face there"))
         which, number = self.handled
         part_and_build = feature.builder(self.obj, which)
         if part_and_build is None:
-            return False
+            return nowhere
         left, shifts, heights = feature.edits(self.obj, which)
         tried = dict(shifts if kind == handles.ALONG else heights)
         tried[number] = value
@@ -702,9 +718,9 @@ class FinSnapTaskPanel:
             heights = tried
         try:
             result = part_and_build[1](left, shifts, heights)
-        except (ValueError, Part.OCCError):
-            return False
-        return number in result.numbers
+        except (ValueError, Part.OCCError) as error:
+            return error
+        return None if number in result.numbers else nowhere
 
     def nearest_standing(self, kind, good, bad):
         """A limit between `good`, where the handled fin stands, and `bad`,
@@ -795,8 +811,13 @@ class FinSnapTaskPanel:
             stretch.scale(1, 1, max(wanted, MIN_PREVIEW_HEIGHT) / self.built_value(kind))
             stretch.move(App.Vector(0, 0, bed))
             fin = fin.transformGeometry(stretch)
-        # The fins red as well: a red preview over a green fin would mix to neither.
-        self.handles.tint(False)
+        # The dragged fin red as well, the others green: a red preview over a
+        # green fin would mix to neither. Merged fins have no faces of their own.
+        faces = feature.fin_faces(self.obj, *self.handled)
+        if faces:
+            self.handles.tint_faces(set(faces))
+        else:
+            self.handles.tint(False)
         self.handles.show_preview([fin], False)
 
     def handle_done(self, kind, mm):
@@ -818,6 +839,8 @@ class FinSnapTaskPanel:
             limit = self.nearest_standing(kind, last, self.drag_base[kind] + mm)
             if abs(limit - last) >= d.TOLERANCE:
                 self.set_fin(kind, limit)
+        # Nothing failing was built into the object; the red of the drag goes.
+        self.handles.tint(True)
         self.handles.clear_preview()
         self.place_handles()
         box = self.fin_fields[kind]

@@ -78,6 +78,16 @@ def rgb_close(color, wanted):
     return all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(color[:3], wanted))
 
 
+def fin_tinted(obj, fin):
+    """Whether the faces of `fin` are red and every other face green."""
+    from freecad.finsnap import feature, handles
+    red = set(feature.fin_faces(obj, *fin))
+    colors = [material.DiffuseColor for material in obj.ViewObject.ShapeAppearance]
+    return bool(red) and len(colors) == len(obj.Shape.Faces) and all(
+        rgb_close(color, handles.INVALID_COLOR if index in red else handles.VALID_COLOR)
+        for index, color in enumerate(colors))
+
+
 def select(obj, *subs):
     Gui.Selection.clearSelection()
     if subs:
@@ -569,6 +579,10 @@ def main():
     expect(moving.handled == (feature.MAIN, 2) and moving.fin_label.text().endswith("2")
            and moving.selected_fins() == [(feature.MAIN, 2)],
            "a fin picked in the list gets the arrows, its name and the selection")
+    Gui.Selection.clearSelection()
+    moving.fin_list.itemClicked.emit(moving.fin_list.item(1))
+    expect(moving.selected_fins() == [(feature.MAIN, 2)],
+           "a click on the row already marked selects its fin again")
     select(lined, face_of_fin(0))
     before = lined.Shape.Solids[0].BoundBox.Center
     held = dict(moving.handles.draggers)
@@ -598,8 +612,9 @@ def main():
            and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_ALL
            and taskpanel.ERROR_COLOR in moving.notes.styleSheet(),
            "a fin dragged onto its neighbour stays at its last place, shown red where the arrow is")
-    expect(rgb_close(lined.ViewObject.ShapeColor, handles.INVALID_COLOR),
-           "while the fin cannot stand where the arrow is, the fins are red, not mixed with green")
+    expect(fin_tinted(lined, moving.handled), "while the fin cannot stand where the arrow is, it alone is "
+           "red, not mixed with green; the other fins stay green")
+    expect(lined.isValid(), "a place where the fin cannot stand is never built into the object")
     moving.finish_drag(handles.ALONG, onto_neighbour)
     snapped = feature.edits(lined, feature.MAIN)[1].get(1, 0.0)
     # The drag started with the fin moved by FIN_SHIFT already.
@@ -622,8 +637,8 @@ def main():
     moving.handle_moved(handles.UP, TOO_HIGH)
     moving.drag_step()
     stretched = moving.handles.preview.getChild(0) if moving.handles.preview.getNumChildren() else None
-    expect(stretched is not None and rgb_close(lined.ViewObject.ShapeColor, handles.INVALID_COLOR),
-           "a fin dragged above the face is previewed red, and the fins turn red")
+    expect(stretched is not None and fin_tinted(lined, moving.handled),
+           "a fin dragged above the face is previewed red, and it alone turns red")
     moving.finish_drag(handles.UP, TOO_HIGH)
     tallest = moving.built_value(handles.UP)
     expect(tallest > high and not moving.can_stand(handles.UP, tallest + taskpanel.SNAP_RESOLUTION),

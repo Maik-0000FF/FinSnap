@@ -37,6 +37,8 @@ from .i18n import translate
 VALID_COLOR = (0.0, 1.0, 0.6)
 INVALID_COLOR = (1.0, 0.0, 0.0)
 PREVIEW_TRANSPARENCY = 1.0 - 0.2
+# What a material of a face carries besides its colour, kept when one face is tinted.
+MATERIAL_FIELDS = ("AmbientColor", "SpecularColor", "EmissiveColor", "Shininess", "Transparency")
 # Transparency of a view object is set in percent.
 PERCENT = 100
 # Largest deviation of drawn faces from the true faces (mm).
@@ -237,6 +239,22 @@ class Handles:
     def tint(self, valid):
         """Colour the object green while its fins can be built, red while not."""
         self.vobj.ShapeColor = VALID_COLOR if valid else INVALID_COLOR
+
+    def tint_faces(self, red):
+        """Colour the faces with the indices in `red` red and every other face
+        green: one fin that cannot stand among fins that do. Each face gets a
+        material of its own, alike but for the colour, so the object stays as
+        see-through as it is."""
+        self.tint(True)
+        look = self.vobj.ShapeAppearance[0]
+        materials = []
+        for index in range(len(self.vobj.Object.Shape.Faces)):
+            material = App.Material()
+            for name in MATERIAL_FIELDS:
+                setattr(material, name, getattr(look, name))
+            material.DiffuseColor = INVALID_COLOR if index in red else VALID_COLOR
+            materials.append(material)
+        self.vobj.ShapeAppearance = materials
 
     def _look(self, kind, part, color):
         """Give the arrow of `kind` a look in `color` as its `part`, at rest
