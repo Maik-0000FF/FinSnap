@@ -11,6 +11,8 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.2] - 2026-10-27
+
 ### Added
 
 - A link to the FreeCAD forum thread for questions and test results, in the README and as the discussion URL in package.xml
@@ -155,7 +157,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.5.1...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.5.2...HEAD
+[0.5.2]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.5.2
 [0.5.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.5.1
 [0.5.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.5.0
 [0.4.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.4.1
