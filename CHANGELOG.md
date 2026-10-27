@@ -11,6 +11,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A link to the FreeCAD forum thread for questions and test results, in the README and as the discussion URL in package.xml
+
 ## [0.5.1] - 2026-10-27
 
 ### Added
