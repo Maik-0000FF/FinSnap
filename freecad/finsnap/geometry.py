@@ -108,8 +108,8 @@ INPUTS this has to withstand (build()):
 
 import math
 from collections import namedtuple
-from functools import partial
 from dataclasses import dataclass, field, replace
+from functools import partial
 
 import FreeCAD as App
 import Part
@@ -124,6 +124,9 @@ UP = V(0, 0, 1)
 DOWN = V(0, 0, -1)
 # A side that wraps all the way round the axis, not a fillet of part of a turn.
 FULL_TURN = 2 * math.pi
+# The order rims_on_axis() tries rims in: a chamfered one, then one of the
+# side itself, then any other on the axis, which a part rarely stands on.
+RIM_CHAMFERED, RIM_OWN, RIM_OTHER = range(3)
 
 
 class FinError(ValueError):
@@ -275,9 +278,10 @@ def rims_on_axis(shape, side):
     """The rims of `shape` the round side `side` can stand on, best first.
 
     A rim counts where a flat face ends in a whole circle on the axis of the
-    side. One that is no edge of the side, where a chamfer lies between them,
-    comes first: the chamfer then gives the part more hold on the bed. Larger
-    rims come before smaller ones.
+    side. One that a chamfer joins to the side, a cone touching it, comes
+    first: the chamfer gives the part more hold on the bed. The rims of the
+    side itself come next, then any other on the axis, the bore of a tube or
+    a smaller step of a shaft. Larger rims come before smaller ones.
 
     INPUTS this has to withstand:
       plain cylinder                        ->  both rims of the side
@@ -287,11 +291,15 @@ def rims_on_axis(shape, side):
                                                 rims of the side end in no flat face
       tube                                  ->  its outer rims, then its inner ones,
                                                 on which it cannot stand
+      shaft with a smaller step on the axis ->  the rims of the side before those of
+                                                the step
       circle off the axis (a hole in the
         end face beside it)                 ->  not a rim of the side
     """
     surface = side.Surface
     axis = V(surface.Axis).normalize()
+    chamfers = [face for face in shape.Faces if isinstance(face.Surface, Part.Cone)
+                and any(edge.isSame(mine) for edge in face.Edges for mine in side.Edges)]
     found = []
     for edge in shape.Edges:
         if not orient.is_rim(edge):
@@ -301,10 +309,17 @@ def rims_on_axis(shape, side):
         on_axis = (abs(abs(V(circle.Axis).normalize().dot(axis)) - 1) < d.TOLERANCE
                    and (offset - axis * offset.dot(axis)).Length < d.TOLERANCE)
         flat = any(face.findPlane() is not None for face in shape.ancestorsOfType(edge, Part.Face))
-        if on_axis and flat:
-            own = any(edge.isSame(mine) for mine in side.Edges)
-            found.append((own, -edge.Length, len(found), edge))
+        if not (on_axis and flat):
+            continue
+        if any(edge.isSame(mine) for chamfer in chamfers for mine in chamfer.Edges):
+            rank = RIM_CHAMFERED
+        elif any(edge.isSame(mine) for mine in side.Edges):
+            rank = RIM_OWN
+        else:
+            rank = RIM_OTHER
+        found.append((rank, -edge.Length, len(found), edge))
     return [edge for *_, edge in sorted(found)]
+
 
 
 def _lowest(face):

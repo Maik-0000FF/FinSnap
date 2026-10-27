@@ -696,6 +696,12 @@ def check_round_side():
                and min(f.BoundBox.ZMin for f in cones) < d.TOLERANCE and leans_by(stood, side, d.TILT_ANGLE),
                "a cylinder chamfered on %d rim(s), its side chosen: it stands on a chamfer" % chamfered_ends)
 
+    shaft = rod.fuse(Part.makeCylinder(BORE_RADIUS, ROD_RADIUS, V(0, 0, ROD_HEIGHT))).removeSplitter()
+    for name, shape in (("a tube", tube), ("a shaft with a smaller step", shaft)):
+        radii = [e.Curve.Radius for e in geometry.rims_on_axis(shape, shape.Faces[round_side_of(shape)])]
+        expect(radii[:2] == [ROD_RADIUS, ROD_RADIUS] and radii[-1] == BORE_RADIUS,
+               "%s tries the rims of its side before the smaller ones on its axis: %s" % (name, radii))
+
     arched = Part.Arc(V(0, 0, 0), V(ROD_RADIUS / 2, 0, ROD_RADIUS / 2), V(ROD_RADIUS, 0, 0)).toShape()
     flat_box = Part.makeBox(ROD_RADIUS, ROD_RADIUS, ROD_RADIUS)
     box_bottom = [e for e in flat_box.Edges if e.BoundBox.ZMax < d.TOLERANCE][0]

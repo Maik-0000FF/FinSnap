@@ -357,10 +357,13 @@ def _picked():
 
 
 def _stand(obj, change):
-    """Turn the part of `obj` by `change`, keeping where it lay for Lay flat again."""
+    """Turn the part of `obj` by `change`, keeping where it lay for Lay flat again.
+    Fins under a round side forget how far the part was turned about it."""
     owner = outermost(obj)
     orient.remember_flat(owner)
     owner.Placement = change.multiply(owner.Placement)
+    for fins in feature.fins_of(owner, owner.Document):
+        feature.forget_turn(fins)
 
 
 def _show_on_bed(direction=None):

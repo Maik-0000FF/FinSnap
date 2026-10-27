@@ -147,6 +147,12 @@ def turned_tube(doc):
     reopened.reject()
     expect(abs(turn() - TUBE_TURN) < 1e-6 and feature.round_shift(fins) == TUBE_TURN,
            "Cancel turns the tube back to where the panel found it")
+    rim = [i for i, e in enumerate(tube.Shape.Edges, 1) if isinstance(e.Curve, Part.Circle)
+           and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE][0]
+    select(tube, "Edge%d" % rim)
+    Gui.runCommand("FinSnap_Tilt")
+    doc.recompute()
+    expect(not feature.round_shift(fins), "stood anew, the fin forgets how far the tube was turned")
     doc.removeObject(fins.Name)
     doc.removeObject(tube.Name)
     doc.recompute()

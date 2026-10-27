@@ -639,8 +639,7 @@ def keep_laid_flat(obj, change):
         about it by hand                    ->  the turn goes with the placement laid
                                                 back, so the fin keeps no shift
     """
-    if round_shift(obj) and on_round_side(obj):
-        set_fin_shift(obj, MAIN, 1, 0.0)
+    forget_turn(obj)
     hidden_property(obj, LAID_FLAT, "App::PropertyBool")
     hidden_property(obj, LAID_FLAT_AT, "App::PropertyPlacement")
     owner = outermost(obj.Base[0])
@@ -885,6 +884,14 @@ def round_shift(obj):
     """How far the part of `obj` was turned about its round side by hand, as
     the shift of its main fin (mm round the side); 0 if not."""
     return edits(obj, MAIN)[1].get(1, 0.0)
+
+
+def forget_turn(obj):
+    """Drop how far the part of `obj` was turned about its round side, once
+    the part is laid flat or stood anew: the turn went with its placement,
+    and the fin starts from where it stands then."""
+    if round_shift(obj) and on_round_side(obj):
+        set_fin_shift(obj, MAIN, 1, 0.0)
 
 
 def set_round_shift(obj, mm):
