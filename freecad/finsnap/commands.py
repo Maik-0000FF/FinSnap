@@ -515,6 +515,9 @@ def _edit_new(fins, on_cancel=None):
     fins, then calls `on_cancel` to undo what the command did besides."""
     proxy = fins.ViewObject.Proxy
     proxy.created, proxy.on_cancel = True, on_cancel
+    # What was selected to make the fins is used up; left selected, the panel
+    # would take a face of it for a counter fin, such as one now on the bed.
+    Gui.Selection.clearSelection()
     try:
         Gui.ActiveDocument.setEdit(fins)
     finally:
@@ -579,10 +582,15 @@ class AddCounterFin:
                                           "stand under."))
             return
         doc.openTransaction(translate("FinSnap", "Add counter fin"))
-        if faces:
-            found = feature.add_counter(fins[0], faces[0][0], faces[0][1])
-        else:
-            found = feature.add_counter(fins[0])
+        try:
+            if faces:
+                found = feature.add_counter(fins[0], faces[0][0], faces[0][1])
+            else:
+                found = feature.add_counter(fins[0])
+        except geometry.FinError as error:
+            doc.abortTransaction()
+            _message(translate("FinSnap", feature.NOTE_NO_COUNTER_ON_FACE) % error)
+            return
         doc.commitTransaction()
         if found is None:
             _message(translate("FinSnap", "The part has no face leaning the other way. Select one yourself."))

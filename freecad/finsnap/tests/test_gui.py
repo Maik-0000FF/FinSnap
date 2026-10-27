@@ -78,6 +78,16 @@ def rgb_close(color, wanted):
     return all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(color[:3], wanted))
 
 
+def fin_tinted(obj, fin):
+    """Whether the faces of `fin` are red and every other face green."""
+    from freecad.finsnap import feature, handles
+    red = set(feature.fin_faces(obj, *fin))
+    colors = [material.DiffuseColor for material in obj.ViewObject.ShapeAppearance]
+    return bool(red) and len(colors) == len(obj.Shape.Faces) and all(
+        rgb_close(color, handles.INVALID_COLOR if index in red else handles.VALID_COLOR)
+        for index, color in enumerate(colors))
+
+
 def select(obj, *subs):
     Gui.Selection.clearSelection()
     if subs:
@@ -364,7 +374,8 @@ def main():
     select(cube, face_name(cube, lower_left_face(cube.Shape)))
     Gui.runCommand("FinSnap_AddFins")
     created = [o for o in doc.Objects if o.TypeId == "Part::FeaturePython"]
-    expect(len(created) == 1 and Gui.Control.activeDialog(), "Add fins creates the object and opens the panel")
+    expect(len(created) == 1 and Gui.Control.activeDialog() and not Gui.Selection.getSelection(),
+           "Add fins creates the object and opens the panel, the selection that made it used up")
     Gui.Control.closeDialog()
     fins = created[0]
     doc.recompute()
@@ -496,6 +507,26 @@ def main():
     editing.remove_selected()
     editing.add_counter()
     expect(lined.ResultFinCount == 2 and lined.CounterFace, "the panel removes the selected fin and adds a counter fin")
+    editing.fin_list.setCurrentRow(editing.fin_list.count() - 1)
+    expect(editing.listed_fins[-1][0] == feature.COUNTER and editing.handled == editing.listed_fins[-1]
+           and editing.selected_fins() == [editing.handled],
+           "the list names the counter fins last; one picked there gets the arrows and is selected: %s"
+           % editing.listed_fins)
+    gone_before = feature.removed(lined, feature.MAIN)
+    editing.fin_list.setCurrentRow(0)
+    picked = editing.handled
+    editing.remove_selected()
+    expect(picked[0] == feature.MAIN and feature.removed(lined, feature.MAIN) == sorted(gone_before + [picked[1]]),
+           "Remove selected fin takes the fin picked in the list")
+    # A face lying on the bed, selected for the counter fin, is refused with a
+    # note, and the counter fin stays where it was.
+    counter_face = lined.CounterFace
+    on_bed = [f for f in row.Shape.Faces if f.BoundBox.ZLength < d.TOLERANCE][0]
+    select(row, face_name(row, on_bed))
+    editing.add_counter()
+    expect(lined.CounterFace == counter_face and not editing.notes.isHidden()
+           and taskpanel.WARNING_COLOR in editing.notes.styleSheet(),
+           "a face on the bed is refused for the counter fin, with a note: %s" % editing.notes.text())
     editing.reject()
     expect(lined.ResultFinCount == 2 and not lined.CounterFace and feature.removed(lined, feature.MAIN) == [2],
            "Cancel puts back the fins as they were when the panel opened")
@@ -542,6 +573,16 @@ def main():
            "the fins are see-through while the panel is open")
     select(lined, face_of_fin(2))
     expect(moving.handled == (feature.MAIN, 3), "a fin clicked gets the handles")
+    expect(moving.fin_list.count() == 3 and moving.fin_list.currentRow() == 2,
+           "the list shows the fins one below the other and marks the one clicked in the 3D view")
+    moving.fin_list.setCurrentRow(1)
+    expect(moving.handled == (feature.MAIN, 2) and moving.fin_label.text().endswith("2")
+           and moving.selected_fins() == [(feature.MAIN, 2)],
+           "a fin picked in the list gets the arrows, its name and the selection")
+    Gui.Selection.clearSelection()
+    moving.fin_list.itemClicked.emit(moving.fin_list.item(1))
+    expect(moving.selected_fins() == [(feature.MAIN, 2)],
+           "a click on the row already marked selects its fin again")
     select(lined, face_of_fin(0))
     before = lined.Shape.Solids[0].BoundBox.Center
     held = dict(moving.handles.draggers)
@@ -571,8 +612,17 @@ def main():
            and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_ALL
            and taskpanel.ERROR_COLOR in moving.notes.styleSheet(),
            "a fin dragged onto its neighbour stays at its last place, shown red where the arrow is")
-    expect(rgb_close(lined.ViewObject.ShapeColor, handles.INVALID_COLOR),
-           "while the fin cannot stand where the arrow is, the fins are red, not mixed with green")
+    expect(fin_tinted(lined, moving.handled), "while the fin cannot stand where the arrow is, it alone is "
+           "red, not mixed with green; the other fins stay green")
+    expect(lined.isValid(), "a place where the fin cannot stand is never built into the object")
+    # After one fin alone was red, the whole object turns red and green again
+    # with one material, whatever number of faces it has by then.
+    moving.handles.tint(False)
+    red_once = list(lined.ViewObject.ShapeAppearance)
+    moving.handles.tint(True)
+    expect(len(red_once) == 1 and rgb_close(red_once[0].DiffuseColor, handles.INVALID_COLOR)
+           and len(lined.ViewObject.ShapeAppearance) == 1, "after one fin alone was red, the whole object can turn red")
+    moving.drag_step()
     moving.finish_drag(handles.ALONG, onto_neighbour)
     snapped = feature.edits(lined, feature.MAIN)[1].get(1, 0.0)
     # The drag started with the fin moved by FIN_SHIFT already.
@@ -595,8 +645,8 @@ def main():
     moving.handle_moved(handles.UP, TOO_HIGH)
     moving.drag_step()
     stretched = moving.handles.preview.getChild(0) if moving.handles.preview.getNumChildren() else None
-    expect(stretched is not None and rgb_close(lined.ViewObject.ShapeColor, handles.INVALID_COLOR),
-           "a fin dragged above the face is previewed red, and the fins turn red")
+    expect(stretched is not None and fin_tinted(lined, moving.handled),
+           "a fin dragged above the face is previewed red, and it alone turns red")
     moving.finish_drag(handles.UP, TOO_HIGH)
     tallest = moving.built_value(handles.UP)
     expect(tallest > high and not moving.can_stand(handles.UP, tallest + taskpanel.SNAP_RESOLUTION),

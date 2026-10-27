@@ -87,6 +87,19 @@ The workbench adds one toolbar and a **FinSnap** menu with these commands, in th
 
 Every button shows a tooltip with these explanations when the pointer rests on it.
 
+## Task panel
+
+The task panel opens with **Add fins**, **Quick fins** or a double-click on the fins in the tree. Under **Edit fins** it changes single fins:
+
+| Button | What it does |
+|---|---|
+| ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/remove_fin.svg)<br>**Remove selected fin** | Removes the fin clicked in the 3D view, as the Delete key does. Removing the last fins deletes the fins object. |
+| ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/reset_fins.svg)<br>**Reset fins** | Undoes every change by hand: removed fins come back, moved fins and fin heights of their own are undone. |
+| ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/counter_fin.svg)<br>**Add counter fin** | Adds the counter fin on the face leaning the other way, or on a face of the part selected. |
+| ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/remove_counter.svg)<br>**Remove counter fin** | Removes the counter fin. |
+
+Below the buttons, the list of fins names every fin, one below the other: the main fins from the left, then the counter fins. Pick one to put the arrows on it and select it, so **Remove selected fin** and the Delete key take that fin; a fin behind the part is reached this way without turning the view. The fin with the arrows is marked in the list. Below it, **Place on the face** and **Height** show where that fin stands; type a value and press Enter to move it. The double arrows on the fin do the same by dragging, see step 8 under [Usage](#usage).
+
 ## Usage
 
 For a quick start, select the edge the part is to stand on, or the face the fins are to support, and click **Quick fins**. The steps below do the same one at a time.
@@ -98,7 +111,7 @@ For a quick start, select the edge the part is to stand on, or the face the fins
 5. Enter the slicer settings of your print profile: nozzle diameter, bead width, layer height, first layer height.
 6. Adjust any value and confirm with **OK**. Every change shows in the 3D view right away. Fields that have no effect with the current choices are greyed out, and their tooltip says why. A field that differs from the standard for new fins is marked in orange, and the button beside it puts the standard back. **Save as standard** makes the current values the start of every new fin; **Factory settings** goes back to the built-in values. The letters next to the fields point to the side view and top view drawn in the panel.
 7. Check the overhangs: faces that lie flatter than 45 degrees over the bed and carry no fins are marked red and listed under the warnings of the fins. Add fins or a counter fin there, or plan support in the slicer. Stand on edge already selects such faces after the tilt.
-8. For a counter fin against tipping away, select the fins and click **Add counter fin**. The face leaning the other way is found automatically; select a face of the part as well to choose it yourself. The task panel does the same with **Add counter fin** and **Remove counter fin** under **Edit fins**. To leave out a single fin, for example one over a hole, click it in the 3D view and press Delete, or **Remove selected fin** in the task panel. With the task panel open, two double arrows stand just outside the upright outer edge of the first fin; click another fin to put them there. Drag them to move the fin along the face or to change its height; the fin follows. An arrow shows no end where the fin cannot go further. Where it cannot stand, all fins turn red; let go there, the fin goes as far as it can, to the corner of the face, next to its neighbour or to the highest it can be. **Place on the face** and **Height** under **Edit fins** show the values; type one and press Enter to move the fin. The fins are see-through while editing, and tines that find no face are marked red. **Reset fins** undoes every change by hand.
+8. For a counter fin against tipping away, select the fins and click **Add counter fin**. The face leaning the other way is found automatically; select a face of the part as well to choose it yourself. The task panel does the same with **Add counter fin** and **Remove counter fin** under **Edit fins**. To leave out a single fin, for example one over a hole, click it in the 3D view and press Delete, or **Remove selected fin** in the task panel. With the task panel open, two double arrows stand just outside the upright outer edge of the first fin; click another fin to put them there. Drag them to move the fin along the face or to change its height; the fin follows. An arrow shows no end where the fin cannot go further. Where it cannot stand, it turns red, the other fins stay green; let go there, the fin goes as far as it can, to the corner of the face, next to its neighbour or to the highest it can be. **Place on the face** and **Height** under **Edit fins** show the values; type one and press Enter to move the fin. The fins are see-through while editing, and tines that find no face are marked red. **Reset fins** undoes every change by hand.
 9. Click **Export 3MF**, or **Export STEP**. With nothing selected, all fins of the document are exported together with their parts; otherwise the selection is exported. Selecting the fins alone also brings their part along.
 
 An STL file is imported first, then turned into a solid with **Mesh to solid**. Fins can be added to its planar faces.
