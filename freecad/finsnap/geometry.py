@@ -321,7 +321,6 @@ def rims_on_axis(shape, side):
     return [edge for *_, edge in sorted(found)]
 
 
-
 def _lowest(face):
     """The direction from the axis of the round side `face` to its lowest line,
     square to the axis and pointing down the most: the side lies lowest there,
