@@ -236,25 +236,30 @@ class Handles:
         self.viewer.setupEditingRoot(self.root, App.Matrix())
         self.attached = True
 
+    def _material(self, color):
+        """A material like the object's first, but for its colour `color`."""
+        look = self.vobj.ShapeAppearance[0]
+        material = App.Material()
+        for name in MATERIAL_FIELDS:
+            setattr(material, name, getattr(look, name))
+        material.DiffuseColor = color
+        return material
+
     def tint(self, valid):
-        """Colour the object green while its fins can be built, red while not."""
-        self.vobj.ShapeColor = VALID_COLOR if valid else INVALID_COLOR
+        """Colour the object green while its fins can be built, red while not.
+
+        One material for the whole object, also after tint_faces(): FreeCAD
+        applies a list of materials only while it has one per face, and the
+        number of faces changes with every fin added or removed."""
+        self.vobj.ShapeAppearance = [self._material(VALID_COLOR if valid else INVALID_COLOR)]
 
     def tint_faces(self, red):
         """Colour the faces with the indices in `red` red and every other face
         green: one fin that cannot stand among fins that do. Each face gets a
         material of its own, alike but for the colour, so the object stays as
         see-through as it is."""
-        self.tint(True)
-        look = self.vobj.ShapeAppearance[0]
-        materials = []
-        for index in range(len(self.vobj.Object.Shape.Faces)):
-            material = App.Material()
-            for name in MATERIAL_FIELDS:
-                setattr(material, name, getattr(look, name))
-            material.DiffuseColor = INVALID_COLOR if index in red else VALID_COLOR
-            materials.append(material)
-        self.vobj.ShapeAppearance = materials
+        self.vobj.ShapeAppearance = [self._material(INVALID_COLOR if index in red else VALID_COLOR)
+                                     for index in range(len(self.vobj.Object.Shape.Faces))]
 
     def _look(self, kind, part, color):
         """Give the arrow of `kind` a look in `color` as its `part`, at rest

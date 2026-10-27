@@ -27,6 +27,7 @@ All notable changes to FinSnap are listed here. The format follows
 ### Fixed
 
 - A fin dragged where it cannot stand is tried first and never built there, so the object stays valid and the report view gets no traceback at every step of the drag
+- The report view shows the warnings of the fins when they change, instead of again at every rebuild, such as at each step of a drag
 - Add counter fin no longer takes a face still selected from making the fins, such as the chamfer Quick fins stood the part on; a face chosen by hand that cannot take fins is refused with a note, and the counter fin stays as it was
 
 ## [0.4.1] - 2026-10-27

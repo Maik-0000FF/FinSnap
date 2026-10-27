@@ -615,6 +615,14 @@ def main():
     expect(fin_tinted(lined, moving.handled), "while the fin cannot stand where the arrow is, it alone is "
            "red, not mixed with green; the other fins stay green")
     expect(lined.isValid(), "a place where the fin cannot stand is never built into the object")
+    # After one fin alone was red, the whole object turns red and green again
+    # with one material, whatever number of faces it has by then.
+    moving.handles.tint(False)
+    red_once = list(lined.ViewObject.ShapeAppearance)
+    moving.handles.tint(True)
+    expect(len(red_once) == 1 and rgb_close(red_once[0].DiffuseColor, handles.INVALID_COLOR)
+           and len(lined.ViewObject.ShapeAppearance) == 1, "after one fin alone was red, the whole object can turn red")
+    moving.drag_step()
     moving.finish_drag(handles.ALONG, onto_neighbour)
     snapped = feature.edits(lined, feature.MAIN)[1].get(1, 0.0)
     # The drag started with the fin moved by FIN_SHIFT already.

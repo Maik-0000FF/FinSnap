@@ -470,9 +470,13 @@ class FinSnapFeature:
         obj.ResultHeight = result.height
         obj.ResultThickness = result.thickness
         obj.ResultFinCount = len(result.positions)
+        # Into the report view only when they changed: every rebuild, as at
+        # each step of a drag, would repeat them there otherwise. Warnings
+        # keeps them all the time.
+        if list(obj.Warnings) != warnings:
+            for warning in warnings:
+                App.Console.PrintWarning("FinSnap: %s\n" % warning)
         obj.Warnings = warnings
-        for warning in warnings:
-            App.Console.PrintWarning("FinSnap: %s\n" % warning)
 
     def onDocumentRestored(self, obj):  # noqa: N802 - FreeCAD API
         obj.Proxy = self
