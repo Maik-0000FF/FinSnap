@@ -49,6 +49,10 @@ SHORT_OF_HALF_STEP = 0.4
 PAST_HALF_STEP = 0.6
 TOO_HIGH = 100.0  # how far an arrow is dragged up, far above any face of the tests, in mm
 GERMAN = "FinSnap_de.ts"  # written by freecad/finsnap/tools/update_translations.sh
+TUBE_RADIUS = 10.0
+TUBE_BORE = 6.0
+TUBE_HEIGHT = 40.0
+TUBE_TURN = 5.0  # how far the fin under the side of a tube is moved in the panel, in mm round it
 
 
 def load_workbench():
@@ -99,6 +103,53 @@ def select(obj, *subs):
             Gui.Selection.addSelection(obj, sub)
     else:
         Gui.Selection.addSelection(obj)
+
+
+def turned_tube(doc):
+    """Quick fins on the side of a tube: moving the fin along the face in the
+    panel turns the tube about its axis, the fin stays under the lowest line;
+    Reset fins and Cancel turn it back."""
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, handles
+    tube = doc.addObject("Part::Feature", "Tube")
+    tube.Shape = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
+    side = [i for i, f in enumerate(tube.Shape.Faces, 1) if isinstance(f.Surface, Part.Cylinder)
+            and f.Surface.Radius == TUBE_RADIUS][0]
+    select(tube, "Face%d" % side)
+    Gui.runCommand("FinSnap_QuickFins")
+    fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is tube][0]
+    panel = fins.ViewObject.Proxy.panel
+    standing = App.Placement(tube.Placement)
+    fin_middle = fins.Shape.BoundBox.Center
+
+    def turn():
+        return tube.Placement.multiply(standing.inverse()).Rotation.Angle * TUBE_RADIUS
+
+    expect(panel.turns_part(), "the fin under the side of a tube turns the tube when moved")
+    panel.fin_fields[handles.ALONG].setValue(TUBE_TURN)
+    panel.field_entered(handles.ALONG)
+    expect(abs(turn() - TUBE_TURN) < 1e-6 and fins.Shape.BoundBox.Center.isEqual(fin_middle, d.TOLERANCE)
+           and abs(panel.fin_values()[handles.ALONG] - TUBE_TURN) < d.TOLERANCE,
+           "a place typed for the fin turns the tube that far round its side, the fin stays")
+    panel.handle_started(handles.ALONG)
+    panel.handle_moved(handles.ALONG, TUBE_TURN)
+    panel.finish_drag(handles.ALONG, TUBE_TURN)
+    expect(abs(turn() - 2 * TUBE_TURN) < 1e-6, "dragging the arrow along turns the tube further")
+    panel.reset()
+    expect(tube.Placement.isSame(standing, d.TOLERANCE), "Reset fins turns the tube back")
+    panel.fin_fields[handles.ALONG].setValue(TUBE_TURN)
+    panel.field_entered(handles.ALONG)
+    panel.accept()
+    Gui.ActiveDocument.setEdit(fins)
+    reopened = fins.ViewObject.Proxy.panel
+    reopened.fin_fields[handles.ALONG].setValue(2 * TUBE_TURN)
+    reopened.field_entered(handles.ALONG)
+    reopened.reject()
+    expect(abs(turn() - TUBE_TURN) < 1e-6 and feature.round_shift(fins) == TUBE_TURN,
+           "Cancel turns the tube back to where the panel found it")
+    doc.removeObject(fins.Name)
+    doc.removeObject(tube.Name)
+    doc.recompute()
 
 
 def main():
@@ -1017,6 +1068,8 @@ def main():
     with zipfile.ZipFile(whole) as archive:
         model = archive.read("3D/3dmodel.model").decode()
     expect(model.count("<object ") == 2, "export without a selection takes all fins with their parts")
+    turned_tube(doc)
+
     empty = doc.addObject("Part::Feature", "Empty")
     select(empty)
     Gui.runCommand("FinSnap_Export3MF")

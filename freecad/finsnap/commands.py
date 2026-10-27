@@ -274,6 +274,9 @@ class TiltOntoEdge:
         faces at a right angle              ->  stands on it at 45 degrees, no angle asked
       one edge off the bed, other faces     ->  message, nothing changed
       one edge and one of its faces         ->  face laid down, then turned about the edge
+      one rim of a cylinder or tube         ->  stands on it, leaning to the front by the
+                                                asked angle
+      one rim and its curved side           ->  the same, the side leaning by the angle
       one face alone (a chamfer)            ->  face laid onto the bed, no angle asked
       two faces (beside a fillet)           ->  part stands on what joins them, both
                                                 faces equally steep, no angle asked
@@ -296,7 +299,8 @@ class TiltOntoEdge:
                     "angle, on which the part stands at 45 degrees. A face alone, a chamfer or a fillet, "
                     "is laid onto the bed and carries the part: a chamfer lies flat on it, a fillet "
                     "touches it along its middle. Two faces alone, such as the two beside a fillet, "
-                    "stand the part on what joins them, both equally steep.")}
+                    "stand the part on what joins them, both equally steep. The rim of a cylinder or tube stands "
+                    "it on that rim, leaning to the front.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
         return App.ActiveDocument is not None
@@ -320,7 +324,7 @@ class TiltOntoEdge:
                 change = orient.rest_between(shape, *chosen)
             elif edges:
                 edge = shape.getElement(edges[0][1])
-                if face is None and not orient.on_bed(shape, edge):
+                if face is None and not orient.on_bed(shape, edge) and not orient.is_rim(edge):
                     # The angle is fixed by the right angle between its faces.
                     change = orient.stand(shape, edge, orient.RIGHT_ANGLE_TILT)
                 else:
@@ -497,7 +501,8 @@ class QuickFins:
                     "so that it leans 45 degrees over the bed, on its longest edge; select one of its "
                     "edges as well to stand on that one, or, after the face, a chamfer or fillet to rest "
                     "on. A chamfer or fillet alone, or the two faces beside a fillet, carry the part as "
-                    "well. A counter fin, where wanted, is added in the panel.")}
+                    "well. The rim or the curved side of a cylinder or tube stands it on its rim, with one fin "
+                    "under its lowest line. A counter fin, where wanted, is added in the panel.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
         return App.ActiveDocument is not None

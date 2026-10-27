@@ -47,6 +47,10 @@ FLOOR_DEPTH = 100.0
 FRUSTUM_BASE = 40.0
 FRUSTUM_TOP = 20.0
 FRUSTUM_HEIGHT = 15.0  # sides at 56 degrees against the base
+ROD_RADIUS = 10.0      # a cylinder standing on its rim
+ROD_HEIGHT = 40.0
+BORE_RADIUS = 6.0      # the hole that makes it a tube
+ROUND_TURN = 5.0       # how far the fin under a round side is moved by hand, in mm round it
 
 # Thin horizontal slices through the fin, to measure it layer by layer.
 SLICE_SIZE = 1000.0
@@ -633,6 +637,112 @@ def check_quick_plan():
            "the two faces beside a fillet carry the part")
 
 
+def round_side_of(shape, radius=ROD_RADIUS):
+    """The number of the curved side of `shape` with `radius`."""
+    return [i for i, f in enumerate(shape.Faces) if geometry.is_round_side(f) and f.Surface.Radius == radius][0]
+
+
+def leans_by(shape, number, degrees):
+    """Whether face `number` of `shape`, flat or round, leans `degrees` against the bed."""
+    frame = geometry.frame_of(shape, shape.Faces[number])
+    return abs(frame.n_z + math.cos(math.radians(degrees))) < 1e-6
+
+
+def check_round_side():
+    """A cylinder or tube stands on its rim, one fin under the lowest line of its curved side."""
+    p = FinParams(placement=d.PLACEMENT_CENTER)
+    rod = Part.makeCylinder(ROD_RADIUS, ROD_HEIGHT)
+    tube = rod.cut(Part.makeCylinder(BORE_RADIUS, ROD_HEIGHT))
+    lying = rod.copy()
+    lying.rotate(V(0, 0, 0), V(1, 0, 0), 90)
+    lying.translate(V(0, 0, ROD_RADIUS))
+
+    box = Part.makeBox(BOX_SIDE, BOX_SIDE, BOX_SIDE)
+    filleted = box.makeFillet(EDGE_ROUND, box.Edges[:1])
+    expect(geometry.is_round_side(rod.Faces[round_side_of(rod)])
+           and not any(geometry.is_round_side(f) for f in filleted.Faces),
+           "the side of a cylinder is a round side, a fillet is not")
+
+    for name, shape in (("cylinder", rod), ("tube", tube), ("cylinder on its side", lying)):
+        side = round_side_of(shape)
+        rim = [e for e in shape.Faces[side].Edges if orient.is_rim(e)][0]
+        for chosen, edges, faces in (("its rim", [(rim, None)], []), ("its side", [], [(shape.Faces[side], side)]),
+                                     ("rim and side", [(rim, None)], [(shape.Faces[side], side)])):
+            plan = geometry.quick_plan(shape, edges, faces, p, d.TILT_ANGLE)
+            stood = moved(shape, plan.change)
+            result = geometry.build(stood, stood.Faces[plan.number], p)
+            expect(plan.number == side and leans_by(stood, side, d.TILT_ANGLE)
+                   and abs(resting_height(stood)) < d.TOLERANCE,
+                   "%s, %s chosen: it stands on the rim, the side leaning 45 degrees" % (name, chosen))
+            expect(len(result.positions) == 1 and len(result.tines) > 1
+                   and max(t.distToShape(stood)[0] for t in result.tines) < d.TOLERANCE
+                   and result.fins.common(stood).Volume < d.TOLERANCE,
+                   "%s, %s chosen: one fin, every tine ends on the side, none in it" % (name, chosen))
+            expect(any("rim" in w for w in result.warnings),
+                   "%s, %s chosen: a note gives the rim more hold on the bed" % (name, chosen))
+        line = orient.side_direction(plan.change, rim)
+        expect(line is not None and abs(abs(line.x) - 1) < 1e-6, "%s: seen from the side along its rim" % name)
+
+    side = round_side_of(rod)
+    rim = [e for e in rod.Faces[side].Edges if orient.is_rim(e)][0]
+    stood = moved(rod, orient.stand(rod, rim, ODD_TILT))
+    expect(leans_by(stood, side, 90 - ODD_TILT), "a rim alone lifts its flat face by the tilt angle")
+    stood = moved(rod, orient.stand(rod, rim, ODD_TILT, rod.Faces[side]))
+    expect(leans_by(stood, side, ODD_TILT), "a rim with the side it bounds leans the side by the tilt angle")
+    spread = geometry.build(stood, stood.Faces[side], FinParams(placement=d.PLACEMENT_ENDS))
+    expect(len(spread.positions) == 1, "a round side takes one fin, whatever the placement")
+
+    outside = round_side_of(tube)
+    leaning_tube = moved(tube, geometry.quick_plan(tube, [], [(tube.Faces[outside], outside)], p, d.TILT_ANGLE).change)
+    for shape, number, why, label in ((rod, side, "does not lean", "an upright cylinder"),
+                                      (lying, round_side_of(lying), "flat", "a cylinder on its side"),
+                                      (leaning_tube, round_side_of(tube, BORE_RADIUS), "inward",
+                                       "the inside of a tube")):
+        try:
+            geometry.frame_of(shape, shape.Faces[number])
+        except geometry.FinError as error:
+            expect(why in str(error), "%s takes no fins: %s" % (label, error))
+        else:
+            raise AssertionError("%s took fins" % label)
+
+    inner = [e for e in tube.Faces[round_side_of(tube, BORE_RADIUS)].Edges if orient.is_rim(e)][0]
+    try:
+        orient.stand(tube, inner, d.TILT_ANGLE)
+    except orient.OrientError as error:
+        expect("cannot stand" in str(error), "a tube cannot stand on its inner rim: %s" % error)
+    else:
+        raise AssertionError("a tube stood on its inner rim")
+
+    plan = geometry.quick_plan(rod, [], [(rod.Faces[side], side)], p, d.TILT_ANGLE)
+    stood = moved(rod, plan.change)
+    frame = geometry.frame_of(stood, stood.Faces[side])
+    whole = geometry.build(stood, stood.Faces[side], p)
+    middle_z = whole.tine_z[len(whole.tine_z) // 2]
+    middle_tine = frame.bed_z + middle_z + p.tine_height / 2
+    middle = (frame.along_min + frame.along_max) / 2
+    on_side = frame.point(middle, frame.s_face(middle_tine), middle_tine)
+    normal = frame.normal()
+    bored = stood.cut(Part.makeCylinder(RECESS_RADIUS, 2 * RECESS_RADIUS, on_side - normal * RECESS_RADIUS, normal))
+    pitted = geometry.build(bored, bored.Faces[round_side_of(bored)], p)
+    expect(len(pitted.tines) == len(whole.tines) - 1 and any("%.1f mm" % middle_z in w for w in pitted.warnings),
+           "the tine over a hole in the side is left out, with a warning: %s" % pitted.warnings)
+
+    # Moved by hand, the fin stays under the lowest line and the part turns
+    # under it: the hole goes the other way round, away from the fin.
+    hole = [f for f in bored.Faces if isinstance(f.Surface, Part.Cylinder) and f.Surface.Radius == RECESS_RADIUS][0]
+    turned = moved(bored, geometry.turn_of(bored.Faces[round_side_of(bored)], ROUND_TURN))
+    turned_hole = [f for f in turned.Faces if isinstance(f.Surface, Part.Cylinder)
+                   and f.Surface.Radius == RECESS_RADIUS][0]
+    went = (turned_hole.CenterOfMass - hole.CenterOfMass).dot(frame.along)
+    shifted = geometry.build(turned, turned.Faces[round_side_of(turned)], p, shifts={1: ROUND_TURN})
+    expect(went < -ROUND_TURN / 2 and len(shifted.tines) == len(whole.tines),
+           "the part turns under the fin moved %.0f mm, the hole goes %.1f mm the other way" % (ROUND_TURN, went))
+    shown = shifted.starts[1] + shifted.thickness / 2 - shifted.face_start
+    expect(abs(shown - ROUND_TURN) < d.TOLERANCE and shifted.radius == ROD_RADIUS
+           and shifted.fins.BoundBox.isInside(whole.fins.BoundBox.Center),
+           "the fin stays under the lowest line, its place on the face shows the turn")
+
+
 def check_left_out(cube, face):
     """Fins removed by hand are not built; the others stay where they were."""
     three = FinParams(placement=d.PLACEMENT_DISTRIBUTED, fin_count=3)
@@ -786,9 +896,16 @@ def check_overhangs(cube, face):
     try:
         geometry.build(lying, lying.Faces[curved[0] - 1], FinParams())
     except geometry.FinError as error:
-        expect("not planar" in str(error), "fins under a curved face are refused: %s" % error)
+        expect("flat" in str(error), "fins under a cylinder resting on its side are refused: %s" % error)
     else:
-        raise AssertionError("fins were built under a curved face")
+        raise AssertionError("fins were built under a cylinder resting on its side")
+    ball = Part.makeSphere(ROD_RADIUS)
+    try:
+        geometry.build(ball, ball.Faces[0], FinParams())
+    except geometry.FinError as error:
+        expect("not planar" in str(error), "fins under a curved face other than a cylinder are refused: %s" % error)
+    else:
+        raise AssertionError("fins were built under a sphere")
     try:
         orient.tilt(upright, upright.Edges[0], d.TILT_ANGLE)
     except orient.OrientError as error:
@@ -904,6 +1021,7 @@ def main():
     check_split_face()
     check_quick_fins()
     check_quick_plan()
+    check_round_side()
     check_left_out(cube, face)
     check_moved_fins(cube, face)
     check_merged_clearance(cube, face)

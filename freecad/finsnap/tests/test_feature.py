@@ -52,6 +52,10 @@ POCKET_ELLIPSE = (8.0, 4.0)
 POCKET_OFFSET = 1.5
 POCKET_DEPTH = 4.0
 STEP_VOLUME_TOLERANCE = 1e-3  # mm3, what reading the file back may differ by
+TUBE_RADIUS = 10.0
+TUBE_BORE = 6.0
+TUBE_HEIGHT = 40.0
+TUBE_TURN = 5.0  # how far the fin under the side of a tube is moved by hand, in mm round it
 
 
 def face_name(shape, face):
@@ -422,6 +426,39 @@ def step_with_offset_curves():
                "the STEP export brings the pocketed block back whole%s" % after)
 
 
+def turned_tube(doc):
+    """A fin under the side of a tube moved by hand turns the tube about its
+    axis; the fin stays under the lowest line, and the turn is undone again."""
+    tube = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
+    side = [i for i, f in enumerate(tube.Faces) if geometry.is_round_side(f) and f.Surface.Radius == TUBE_RADIUS][0]
+    plan = geometry.quick_plan(tube, [], [(tube.Faces[side], side)], FinParams(), d.TILT_ANGLE)
+    part = doc.addObject("Part::Feature", "Tube")
+    part.Shape = tube
+    part.Placement = plan.change
+    fins = feature.create(part, "Face%d" % (side + 1))
+    doc.recompute()
+    standing = App.Placement(part.Placement)
+    fin_box = fins.Shape.BoundBox
+    expect(fins.ResultFinCount == 1 and feature.on_round_side(fins), "a tube stood on its rim takes one fin")
+
+    feature.set_round_shift(fins, TUBE_TURN)
+    doc.recompute()
+    turned = part.Placement.multiply(standing.inverse()).Rotation.Angle
+    expect(abs(turned - TUBE_TURN / TUBE_RADIUS) < 1e-6 and feature.round_shift(fins) == TUBE_TURN,
+           "moving the fin %.0f mm turns the tube by that much round its side" % TUBE_TURN)
+    expect(fins.Shape.BoundBox.isInside(fin_box.Center) and abs(fins.Shape.BoundBox.XLength - fin_box.XLength)
+           < d.TOLERANCE and abs(fins.Shape.BoundBox.YLength - fin_box.YLength) < d.TOLERANCE,
+           "the fin stays under the lowest line")
+    feature.set_round_shift(fins, 0.0)
+    doc.recompute()
+    expect(part.Placement.isSame(standing, d.TOLERANCE) and not feature.round_shift(fins),
+           "moved back, the tube stands as before")
+
+    feature.set_round_shift(fins, TUBE_TURN)
+    feature.keep_laid_flat(fins, App.Placement())
+    expect(not feature.round_shift(fins), "laid flat, the fin keeps no turn of the tube")
+
+
 def main():
     doc = App.newDocument("FinSnapTest")
     cube = doc.addObject("Part::Feature", "Cube")
@@ -457,6 +494,7 @@ def main():
     lost_face(doc)
     marks_without_face(doc)
     edit_fins(doc)
+    turned_tube(doc)
     tapered_pad(doc)
     warnings_and_old_files(doc)
     step_with_offset_curves()

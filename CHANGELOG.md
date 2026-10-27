@@ -11,6 +11,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Quick fins and Stand on edge stand a cylinder or tube on its rim, leaning to the front; Quick fins puts one fin under the lowest line of its curved side, and a note suggests a chamfer on the rim and a brim in the slicer; moving that fin in the task panel turns the part about its axis, so the fin can sit anywhere round it (#36)
+
 ### Fixed
 
 - The README names the Addon Manager menu as FreeCAD shows it and no longer implies that FreeCAD 26.3 is already released

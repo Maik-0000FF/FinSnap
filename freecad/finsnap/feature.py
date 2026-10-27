@@ -635,7 +635,12 @@ def keep_laid_flat(obj, change):
     INPUTS this has to withstand:
       fins of a standing part               ->  moved with it, marked, not rebuilt
       fins already laid flat                ->  moved once more, still marked
+      fins under a round side, part turned
+        about it by hand                    ->  the turn goes with the placement laid
+                                                back, so the fin keeps no shift
     """
+    if round_shift(obj) and on_round_side(obj):
+        set_fin_shift(obj, MAIN, 1, 0.0)
     hidden_property(obj, LAID_FLAT, "App::PropertyBool")
     hidden_property(obj, LAID_FLAT_AT, "App::PropertyPlacement")
     owner = outermost(obj.Base[0])
@@ -857,6 +862,36 @@ def set_fin_height(obj, which, number, mm):
     """Give fin `number` of `which` a height of its own, or with None the height of the others again."""
     _set_mm(obj, HEIGHTS[which], number, mm)
     _edited(obj, which)
+
+
+def turn_part(obj, mm):
+    """Turn the part of `obj` about the axis of the round side its main fin
+    stands under, so the fin comes to stand `mm` further along the side; see
+    geometry.turn_of(). Inside a Body, the whole Body is turned."""
+    change = geometry.turn_of(_face(obj.Base)[1], mm)
+    owner = outermost(obj.Base[0])
+    owner.Placement = change.multiply(owner.Placement)
+
+
+def on_round_side(obj):
+    """Whether the main fin of `obj` stands under the round side of a cylinder or tube."""
+    try:
+        return geometry.is_round_side(_face(obj.Base)[1])
+    except (geometry.FinError, ValueError, Part.OCCError):
+        return False
+
+
+def round_shift(obj):
+    """How far the part of `obj` was turned about its round side by hand, as
+    the shift of its main fin (mm round the side); 0 if not."""
+    return edits(obj, MAIN)[1].get(1, 0.0)
+
+
+def set_round_shift(obj, mm):
+    """Turn the part so its main fin stands `mm` round its round side from
+    where it was stood, and keep that as the shift of the fin."""
+    turn_part(obj, mm - round_shift(obj))
+    set_fin_shift(obj, MAIN, 1, mm)
 
 
 def reset_fins(obj, which=None):
