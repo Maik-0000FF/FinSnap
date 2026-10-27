@@ -11,6 +11,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Quick fins and Stand on edge stand a cylinder or tube on its rim, with one fin under its side (#36)
+
 ### Fixed
 
 - The README names the Addon Manager menu as FreeCAD shows it and no longer implies that FreeCAD 26.3 is already released

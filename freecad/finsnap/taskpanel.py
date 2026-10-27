@@ -215,6 +215,8 @@ class FinSnapTaskPanel:
                                 (feature.HEIGHTS.values(), {}), (feature.EDITED_OF.values(), 0))
                                for name in names}
         self.original_counter = obj.CounterFace
+        # How far the part was turned about a round side by hand; Cancel turns it back.
+        self.original_turn = feature.round_shift(obj)
 
         self.form = QtWidgets.QWidget()
         # A child of the form, so it goes with the panel and never fires on a
@@ -489,6 +491,8 @@ class FinSnapTaskPanel:
         doc.recompute()
 
     def reset(self):
+        if feature.on_round_side(self.obj):
+            feature.set_round_shift(self.obj, 0.0)
         feature.reset_fins(self.obj)
         self.edited()
 
@@ -662,6 +666,13 @@ class FinSnapTaskPanel:
             self.fin_fields[kind].setValue(value)
         self.filling_fields = False
 
+    def turns_part(self):
+        """Whether moving the handled fin along the face turns the part instead:
+        the main fin under the round side of a cylinder or tube stays under its
+        lowest line, and the part turns about its axis."""
+        found = self.handled_result()
+        return found is not None and self.handled[0] == feature.MAIN and found[0].radius > 0
+
     def own_value(self, kind):
         """What the handled fin has by hand now: its shift along the face
         (ALONG) or its own height (UP), in mm, or None."""
@@ -673,6 +684,9 @@ class FinSnapTaskPanel:
         handled fin; None takes it away."""
         which, number = self.handled
         if kind == handles.ALONG:
+            if self.turns_part():
+                feature.set_round_shift(self.obj, value or 0.0)
+                return
             feature.set_fin_shift(self.obj, which, number, value or 0.0)
         else:
             feature.set_fin_height(self.obj, which, number, value)
@@ -732,6 +746,10 @@ class FinSnapTaskPanel:
           its side has no fins (counter fin removed)  ->  error: no tine finds the face there
         """
         nowhere = geometry.FinError(translate("FinSnap", "no tine of the fin finds the face there"))
+        # Moving the fin on a round side turns the part, which stands on its rim at
+        # any turn; a turn that fails is taken back by set_fin().
+        if kind == handles.ALONG and self.turns_part():
+            return None
         which, number = self.handled
         part_and_build = self.obj.Proxy.side_builder(self.obj, which)
         if part_and_build is None:
@@ -810,8 +828,9 @@ class FinSnapTaskPanel:
         # parameters from before it.
         if self.timer.isActive():
             self.preview()
-        # While the drag lasts, builds with the same changes by hand are made once.
-        self.obj.Proxy.reuse = {}
+        # While the drag lasts, builds with the same changes by hand are made once;
+        # not while the part turns about a round side, as the builds keep the part.
+        self.obj.Proxy.reuse = None if kind == handles.ALONG and self.turns_part() else {}
         # Nothing of an earlier drag carries over; without a fin the drag is passed over.
         self.drag_base, self.drag_own, self.drag_values = {}, {}, {}
         if self.handled_result() is None:
@@ -918,7 +937,7 @@ class FinSnapTaskPanel:
         result, index = self.handled_result()
         fin = result.fins.childShapes()[index].copy()
         wanted = self.drag_base[kind] + mm
-        if kind == handles.ALONG:
+        if kind == handles.ALONG and not self.turns_part():
             fin.translate(result.along * (wanted - self.built_value(kind)))
         else:
             # Stretched up or down from the bed to the height dragged to: what
@@ -1051,6 +1070,8 @@ class FinSnapTaskPanel:
         if self.created:
             discard_created(self.obj, self.on_cancel)
         else:
+            if feature.on_round_side(self.obj):
+                feature.set_round_shift(self.obj, self.original_turn)
             for name, value in self.original.items():
                 setattr(self.obj, name, value)
             for name, value in self.original_edits.items():

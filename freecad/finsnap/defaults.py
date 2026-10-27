@@ -134,6 +134,13 @@ TINE_MIN_LENGTH_BEADS = 0.75
 # it is left out.
 TINE_MIN_CONTACT = 1.0
 
+# --- Round sides --------------------------------------------------------------
+# A cylinder or tube stands on its rim, and its fin under the lowest line of its
+# curved side, built on the plane touching the side there. Off that line the
+# side falls away behind the plane; a tine still ends on it where it lies no
+# further behind than this (mm), a fifth of the gap.
+ROUND_SIDE_MAX_DROP = 0.05
+
 # --- Checks -------------------------------------------------------------------
 TOLERANCE = 1e-4
 # Layer positions are rounded to this many decimals, so that 5 x 1.2 is 6.0.
