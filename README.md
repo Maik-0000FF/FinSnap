@@ -82,7 +82,7 @@ FinSnap goes into a folder named `FinSnap` in the `Mod` folder of your FreeCAD u
 
 The `v1-1` part names the FreeCAD version: `v26-3` for FreeCAD 26.3, `v27-1` for the current weekly builds. A FreeCAD that shares its configuration with an older version keeps using the older folder; a FreeCAD 1.1 that still shares its configuration with 1.0 uses `FreeCAD/Mod` without a version. A FreeCAD that copied the configuration of an older version on its first start has its own copy of FinSnap, which is updated separately.
 
-**Without git:** download the [ZIP of the `main` branch](https://github.com/Maik-0000FF/FinSnap/archive/refs/heads/main.zip), extract it into the `Mod` folder and rename the extracted `FinSnap-main` folder to `FinSnap`. Extracting on Windows can put a second `FinSnap-main` folder inside the first; in that case move the inner one into `Mod` as `FinSnap` and delete the empty outer one. `Mod/FinSnap/package.xml` has to exist; then restart FreeCAD.
+**Without git:** download the [ZIP of the `main` branch](https://github.com/Maik-0000FF/FinSnap/archive/refs/heads/main.zip), extract it outside the `Mod` folder, for example where it was downloaded, and move the `FinSnap-main` folder that holds `package.xml` into the `Mod` folder as `FinSnap`, so that `Mod/FinSnap/package.xml` exists. Windows can extract it into a second `FinSnap-main` folder; the inner one is then the one to move. Restart FreeCAD.
 
 **With git:** clone the repository into the `Mod` folder and restart FreeCAD. On Linux:
 
