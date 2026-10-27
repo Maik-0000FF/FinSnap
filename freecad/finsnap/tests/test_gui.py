@@ -244,6 +244,45 @@ def main():
     expect(marks.whichChild.getValue() == coin.SO_SWITCH_NONE, "hiding the part hides the marks on it")
     box.ViewObject.Visibility = True
     expect(marks.whichChild.getValue() == coin.SO_SWITCH_ALL, "showing the part shows them again")
+    # A part inside containers: hiding the container it lies in, or the one
+    # around that, hides its marks as well.
+    outer = doc.addObject("App::Part", "Outer")
+    inner = doc.addObject("App::Part", "Inner")
+    outer.addObject(inner)
+    held = doc.addObject("Part::Feature", "Held")
+    held.Shape = box.Shape.copy()
+    held.Placement = box.Placement
+    inner.addObject(held)
+    nested = feature.create(held, "Face%d" % steep[0])
+    commands.ViewProviderFinSnap(nested.ViewObject)
+    doc.recompute()
+    nested_marks = nested.ViewObject.Proxy.marks
+    for container in (inner, outer):
+        container.ViewObject.Visibility = False
+        hidden = nested_marks.whichChild.getValue() == coin.SO_SWITCH_NONE
+        container.ViewObject.Visibility = True
+        expect(hidden and nested_marks.whichChild.getValue() == coin.SO_SWITCH_ALL,
+               "hiding %s, which holds the part, hides its marks, showing it shows them" % container.Label)
+    # Shown or hidden, an object no fins depend on is not checked against
+    # every object of the document.
+    checked = []
+    real_is_fins = feature.is_fins
+
+    def counting_is_fins(obj):
+        checked.append(obj)
+        return real_is_fins(obj)
+
+    lone = doc.addObject("Part::Feature", "Lone")
+    lone.Shape = Part.makeBox(1, 1, 1)
+    doc.recompute()
+    feature.is_fins = counting_is_fins
+    try:
+        lone.ViewObject.Visibility = False
+    finally:
+        feature.is_fins = real_is_fins
+    expect(not checked, "hiding an object no fins depend on checks no other object: %d" % len(checked))
+    for name in (lone.Name, nested.Name, held.Name, inner.Name, outer.Name):
+        doc.removeObject(name)
 
     # Fins under the overhanging face as well: the report after a tilt leaves it out.
     carried = feature.create(box, hanging[0])
@@ -356,6 +395,54 @@ def main():
         doc.removeObject(made[0].Name)
         quick.Placement = App.Placement()
         doc.recompute()
+    # Fins of the part laid flat keep their mark and shape over a Quick fins
+    # cancelled: standing the part rebuilt them, Cancel gives them back.
+    select(quick, "Edge%d" % on_bed)
+    Gui.runCommand("FinSnap_QuickFins")
+    kept = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick][0]
+    kept.ViewObject.Proxy.panel.accept()
+    # Laid flat keeping its fins, as Lay flat again does with No.
+    feature.keep_laid_flat(kept, orient.back_to_flat(quick))
+    orient.lay_back(quick)
+    doc.recompute()
+    flat_box = kept.Shape.BoundBox
+    # Over the opposite edge on the bed: the face over the first is carried already.
+    bounds = quick.Shape.BoundBox
+    opposite = [i for i, e in enumerate(quick.Shape.Edges, 1) if e.BoundBox.ZMax < bounds.ZMin + d.TOLERANCE
+                and e.BoundBox.YMin > bounds.YMax - d.TOLERANCE]
+    expect(opposite, "the part lies flat again, with an edge on the bed opposite the first")
+    opposite = opposite[0]
+    select(quick, "Edge%d" % opposite)
+    Gui.runCommand("FinSnap_QuickFins")
+    rebuilt = not feature.is_laid_flat(kept)
+    others = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick and o is not kept]
+    expect(others, "Quick fins runs again on the part with fins laid flat: %s" % messages)
+    second = others[0]
+    second.ViewObject.Proxy.panel.reject()
+    expect(rebuilt and feature.is_laid_flat(kept) and kept.Shape.BoundBox.isInside(flat_box)
+           and flat_box.isInside(kept.Shape.BoundBox) and quick.Placement.isIdentity(),
+           "Cancel after Quick fins leaves other fins laid flat as they were, mark and shape")
+    doc.removeObject(kept.Name)
+    doc.recompute()
+    # Without a 3D view the panel cannot open, so there is no Cancel: the
+    # fins go again and the part lies as before, at once, with a message.
+    from freecad.finsnap import handles as handles_module
+    real_handles = handles_module.Handles
+
+    def without_view(*args):
+        raise handles_module.NoView("no 3D view")
+
+    handles_module.Handles = without_view
+    try:
+        select(quick, "Edge%d" % on_bed)
+        Gui.runCommand("FinSnap_QuickFins")
+    finally:
+        handles_module.Handles = real_handles
+    left = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick]
+    expect(not left and quick.Placement.isIdentity() and messages and "no 3D view" in messages[-1]
+           and not Gui.Control.activeDialog(),
+           "Quick fins without a 3D view leaves no fins and the part as it lay: %s" % messages)
+    del messages[:]
     doc.removeObject(quick.Name)
     # An edge off the bed between faces not at a right angle: Quick fins points to Stand on edge.
     beveled = doc.addObject("Part::Feature", "Beveled")
@@ -823,9 +910,18 @@ def main():
     Gui.Control.showDialog(blocker)
     expect(lined.ViewObject.Proxy.setEdit(lined.ViewObject) is False and lined.ViewObject.Transparency == look[1],
            "with another task dialog open no panel opens, and the fins keep their look")
-    commands._edit_new(lined)
-    expect(not getattr(lined.ViewObject.Proxy, "created", False),
-           "fins opened while another dialog is open are not taken as just made")
+    # Fins just made cannot be edited then: they go again, with a message,
+    # as there would be no Cancel for them.
+    del messages[:]
+    blocked = feature.create(row, face_name(row, lower_left_face(row.Shape)))
+    commands.ViewProviderFinSnap(blocked.ViewObject)
+    doc.recompute()
+    blocked_name = blocked.Name
+    commands._edit_new(blocked)
+    expect(blocked_name not in [o.Name for o in doc.Objects] and len(messages) == 1
+           and App.Qt.translate("FinSnap", commands.NOTE_BUSY) in messages[0],
+           "new fins that cannot be edited while another task panel is open go again, with a message")
+    del messages[:]
     Gui.Control.closeDialog()
     # No 3D view to show the fins in: double click says so instead of failing.
     from freecad.finsnap import handles as handles_module

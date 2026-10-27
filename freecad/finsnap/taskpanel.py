@@ -84,6 +84,24 @@ DRAWINGS = (
 )
 
 
+def discard_created(obj, on_cancel=None):
+    """Delete the fins `obj` a command just made, then call `on_cancel` to undo
+    what the command did besides: Cancel in the panel, and a panel that could
+    not open. One step on the undo stack, after the one that made the fins; a
+    failure in between leaves no transaction open for the next action."""
+    doc = obj.Document
+    doc.openTransaction(translate("FinSnap", "Cancel fins"))
+    try:
+        doc.removeObject(obj.Name)
+        if on_cancel is not None:
+            on_cancel()
+    except Exception:
+        doc.abortTransaction()
+        raise
+    doc.commitTransaction()
+    doc.recompute()
+
+
 def _icon_button(icon, text):
     """A button with its icon and text side by side, flush left, a fixed gap
     between them, so the buttons of a group line up."""
@@ -1031,19 +1049,7 @@ class FinSnapTaskPanel:
     def reject(self):
         self.close()
         if self.created:
-            # One step on the undo stack, after the one that made the fins;
-            # a failure in between leaves no transaction open for the next action.
-            doc = self.obj.Document
-            doc.openTransaction(translate("FinSnap", "Cancel fins"))
-            try:
-                doc.removeObject(self.obj.Name)
-                if self.on_cancel is not None:
-                    self.on_cancel()
-            except Exception:
-                doc.abortTransaction()
-                raise
-            doc.commitTransaction()
-            doc.recompute()
+            discard_created(self.obj, self.on_cancel)
         else:
             for name, value in self.original.items():
                 setattr(self.obj, name, value)
