@@ -13,6 +13,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Added
 
+- The arrow up steps the height of a fin from tine to tine, so a tine always ends the fin on top, without a piece standing out above it; a tine over a recess is passed over, up to the next one that finds the face
 - A list of fins in the task panel, one below the other, the counter fins included: a fin picked there gets the arrows and is selected, also one behind the part
 
 ### Changed
@@ -23,7 +24,6 @@ All notable changes to FinSnap are listed here. The format follows
 - The arrows on a fin are double arrows standing just outside it, so the fin no longer covers the arrow up; an end is left out where the fin cannot go
 - A fin let go where it cannot stand goes as far towards there as it can, to the corner of the face or next to its neighbour, instead of staying at its last place
 - While a fin cannot stand where its arrow is, it alone turns red and the other fins stay green, so the red preview no longer mixes with green
-
 - Dragging a fin is about three times as fast: each place is built once, and what the drag does not change, the other fins and the overhangs of the part, is built once per drag; the arrow ends are tried once per place of the fin
 
 ### Fixed

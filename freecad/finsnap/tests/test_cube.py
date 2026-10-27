@@ -717,6 +717,16 @@ def check_recesses(cube, face):
     left_out = result.dropped[0].BoundBox.Center.z if len(result.dropped) == 1 else None
     expect(left_out is not None and abs(left_out - middle_tine) < FinParams().tine_height,
            "the tine left out is handed back as a shape, for the red mark")
+    # The tine over the hole is no step for the height of the fin; the one
+    # beyond it is, also while the fin stands lower than the hole.
+    zs = result.tine_z
+    number = result.numbers[0]
+    expect(result.touching_z[number] == [zs[0], zs[2]],
+           "the heights a fin can end with a tine leave out the tine over the hole: %s" % result.touching_z)
+    lower = geometry.build(pitted, lower_left_face(pitted), FinParams(),
+                           heights={number: zs[0] + FinParams().tine_height})
+    expect(lower.touching_z[number] == [zs[0], zs[2]],
+           "a fin lower than the hole still names the tine beyond it as a step: %s" % lower.touching_z)
 
     # A hole under only half of the tine: it would hang free there, so it is left out too.
     beside = frame.point(middle + RECESS_RADIUS, frame.s_face(middle_tine), middle_tine)

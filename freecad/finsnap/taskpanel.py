@@ -40,6 +40,9 @@ LENGTH_SUFFIX = " mm"
 PREVIEW_DELAY_MS = 400
 # Pause after the last move of a handle before the preview for it is built.
 DRAG_PREVIEW_MS = 150
+# Places of fins whose arrow ends are kept while the panel is open; beyond
+# these the oldest goes.
+ENDS_KEPT = 32
 # Rows the list of fins shows at most; more fins scroll.
 FIN_LIST_ROWS = 6
 # Pause after the arrows are put on a fin before trying where it can go, so a
@@ -768,9 +771,11 @@ class FinSnapTaskPanel:
         self.ends_of = self.handled
         key = self.ends_key()
         if key not in self.known_ends:
+            while len(self.known_ends) >= ENDS_KEPT:
+                self.known_ends.pop(next(iter(self.known_ends)))
             self.known_ends[key] = {
-                kind: tuple(end for end in (handles.BACK, handles.FORTH)
-                            if self.can_stand(kind, self.built_value(kind) + end * SNAP_RESOLUTION))
+                kind: tuple(end for end, value in self.next_values(kind, self.built_value(kind))
+                            if self.can_stand(kind, value))
                 for kind in handles.KINDS}
         for kind, ends in self.known_ends[key].items():
             self.handles.show_ends(kind, ends)
@@ -779,6 +784,10 @@ class FinSnapTaskPanel:
         """An arrow grabbed: note where the fin stands and what it has by hand;
         the drag starts from there."""
         self.ends_timer.stop()
+        # A value typed just before is built first, or the drag would keep the
+        # parameters from before it.
+        if self.timer.isActive():
+            self.preview()
         # While the drag lasts, builds with the same changes by hand are made once.
         self.obj.Proxy.reuse = {}
         # Nothing of an earlier drag carries over; without a fin the drag is passed over.
@@ -791,9 +800,50 @@ class FinSnapTaskPanel:
         self.drag_own = {one: self.own_value(one) for one in handles.KINDS}
         self.drag_values = self.fin_values()
 
+    def tine_tops(self):
+        """The heights of the handled fin that end with a tine on top, from
+        the bed, lowest first: no fin stands above its last tine there. Only
+        tines that find the face count; a tine over a recess is passed over,
+        up to the next one beyond it."""
+        result, _ = self.handled_result()
+        tine_height = feature.params_of(self.obj).tine_height
+        return [z + tine_height for z in result.touching_z.get(self.handled[1], [])]
+
+    def dragged_mm(self, kind, mm):
+        """`mm` from where an arrow was grabbed, as the fin follows it: along
+        the face as dragged; up to the nearest height that ends with a tine."""
+        tops = self.tine_tops() if kind == handles.UP else []
+        if not tops:
+            return mm
+        wanted = self.drag_base[kind] + mm
+        return min(tops, key=lambda top: abs(top - wanted)) - self.drag_base[kind]
+
+    def standing_step(self, last, limit):
+        """The height that ends with a tine nearest to `limit` on the way from
+        `last`, where the handled fin stands; `last` where none does."""
+        low, high = sorted((last, limit))
+        steps = [top for top in self.tine_tops() if low - d.TOLERANCE <= top <= high + d.TOLERANCE]
+        for top in sorted(steps, key=lambda top: abs(top - limit)):
+            if self.can_stand(handles.UP, top):
+                return top
+        return last
+
+    def next_values(self, kind, value):
+        """Where the handled fin would go one step back and one step forth from
+        `value`, as (BACK, value) and (FORTH, value): along the face a little
+        either way; up and down to the next height that ends with a tine,
+        none where there is no such height."""
+        if kind == handles.ALONG:
+            return [(end, value + end * SNAP_RESOLUTION) for end in (handles.BACK, handles.FORTH)]
+        tops = self.tine_tops()
+        lower = [top for top in tops if top < value - d.TOLERANCE]
+        higher = [top for top in tops if top > value + d.TOLERANCE]
+        return ([(handles.BACK, lower[-1])] if lower else []) + ([(handles.FORTH, higher[0])] if higher else [])
+
     def handle_moved(self, kind, mm):
         if kind not in self.drag_base:
             return
+        mm = self.dragged_mm(kind, mm)
         self.dragged = (kind, mm)
         self.show_fin_values({kind: self.drag_values[kind] + mm})
         self.drag_timer.start()
@@ -854,17 +904,21 @@ class FinSnapTaskPanel:
         """An arrow let go: the fin goes where it is, or, where it cannot stand
         there, as far towards it as it can; the arrows return onto it, and its
         field takes the keyboard, so a value can be typed right away."""
-        if self.handled_result() is None or kind not in self.drag_base:
+        try:
+            if self.handled_result() is None or kind not in self.drag_base:
+                self.place_handles()
+                return
+            mm = self.dragged_mm(kind, mm)
+            if not self.drag_to(kind, mm) and self.handled_result() is not None:
+                last = self.built_value(kind)
+                limit = self.nearest_standing(kind, last, self.drag_base[kind] + mm)
+                if kind == handles.UP:
+                    limit = self.standing_step(last, limit)
+                if abs(limit - last) >= d.TOLERANCE:
+                    self.set_fin(kind, limit)
+        finally:
+            # The drag is over, also after an error: every build is made afresh.
             self.obj.Proxy.reuse = None
-            self.place_handles()
-            return
-        if not self.drag_to(kind, mm) and self.handled_result() is not None:
-            last = self.built_value(kind)
-            limit = self.nearest_standing(kind, last, self.drag_base[kind] + mm)
-            if abs(limit - last) >= d.TOLERANCE:
-                self.set_fin(kind, limit)
-        # The drag is over: from here on, every build is made afresh.
-        self.obj.Proxy.reuse = None
         # Nothing failing was built into the object; the red of the drag goes.
         self.handles.tint(True)
         self.handles.clear_preview()
