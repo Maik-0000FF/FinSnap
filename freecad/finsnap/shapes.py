@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Shapes in global coordinates, wherever the object sits in the tree.
 
 A feature inside a PartDesign Body (a Pad, a Pocket) keeps its shape in the

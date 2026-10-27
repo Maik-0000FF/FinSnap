@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Write shapes to a STEP file, one named object per shape.
 
 The other way into the slicer, beside 3MF: STEP keeps the exact surfaces

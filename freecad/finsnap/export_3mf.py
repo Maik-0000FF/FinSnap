@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Write shapes to a 3MF file, one named object per shape.
 
 Written by hand instead of through the mesh exporter so that every shape is
@@ -23,7 +26,8 @@ own profile.
 import datetime
 import math
 import zipfile
-from xml.sax.saxutils import escape, quoteattr
+# Audited: Only escapes text written out, parses nothing.
+from xml.sax.saxutils import escape, quoteattr  # nosec B406
 
 import MeshPart
 

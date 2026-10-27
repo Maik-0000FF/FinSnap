@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Licence annotations for files that cannot carry their own header.
+version = 1
+
+# Written by freecad/finsnap/tools/make_icons.py and make_drawings.py, which
+# would drop a header on every run.
+[[annotations]]
+path = ["freecad/finsnap/icons/*.svg", "freecad/finsnap/images/*.svg", "docs/assets/logo.svg"]
+SPDX-FileCopyrightText = "2026 Maik-0000FF"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+# Pictures carry no comments: screenshots of FinSnap in a running FreeCAD.
+[[annotations]]
+path = "docs/assets/*.png"
+SPDX-FileCopyrightText = "2026 Maik-0000FF"
+SPDX-License-Identifier = "GPL-3.0-or-later"
+
+# Rewritten by lupdate on every run, which would drop a header each time; the
+# .qm files are compiled from them.
+[[annotations]]
+path = ["freecad/finsnap/translations/*.ts", "freecad/finsnap/translations/*.qm"]
+SPDX-FileCopyrightText = "2026 Maik-0000FF"
+SPDX-License-Identifier = "GPL-3.0-or-later"

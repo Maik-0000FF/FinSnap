@@ -1,19 +1,19 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Version check and bump on copies of package.xml and CHANGELOG.md.
 
 Run with plain Python, no FreeCAD needed:
-    python3 tests/test_version.py
+    python3 -m freecad.finsnap.tests.test_version
 """
 
 import os
 import shutil
-import sys
 import tempfile
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "tools"))
-
-import bump_version  # noqa: E402
-import check_version as cv  # noqa: E402
+from freecad.finsnap.paths import ROOT
+from freecad.finsnap.tools import bump_version
+from freecad.finsnap.tools import check_version as cv
 
 NEW = "9.9.9"
 DATE = "2030-01-31"

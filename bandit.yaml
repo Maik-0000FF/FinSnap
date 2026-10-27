@@ -1,0 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+# Security scan, as the FreeCAD Addon Index runs it: assert (B101) is how the
+# tests check, and try/except/pass (B110) is a deliberate fallback.
+skips: ["B101", "B110"]

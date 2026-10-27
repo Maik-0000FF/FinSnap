@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Check that the version is consistent everywhere it appears.
 
 package.xml is the single source of the version; the Addon Manager reads it
@@ -5,7 +8,7 @@ from there, and the workbench reads it at run time. Only CHANGELOG.md repeats
 it, because its format asks for it. This check makes sure every place agrees.
 
 Usage:
-    python3 tools/check_version.py [tag]
+    python3 -m freecad.finsnap.tools.check_version [tag]
 
 WHERE THE VERSION APPEARS, all checked here:
   package.xml   <version>, <date>, and the repository URL the links are built from
@@ -30,9 +33,11 @@ INPUTS this has to withstand:
 import os
 import re
 import sys
-import xml.etree.ElementTree as ET
+# Audited: Parses only package.xml of this repository.
+import xml.etree.ElementTree as ET  # nosec B405
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+from freecad.finsnap.paths import ROOT
+
 PACKAGE_NAME = "package.xml"
 CHANGELOG_NAME = "CHANGELOG.md"
 NAMESPACE = {"p": "https://wiki.freecad.org/Package_Metadata"}
@@ -55,7 +60,8 @@ def release_link(repository, version):
 
 def read(root=ROOT):
     """(version, date, repository URL, changelog text) or raises OSError / ParseError."""
-    package = ET.parse(os.path.join(root, PACKAGE_NAME)).getroot()
+    # Audited: package.xml of this repository.
+    package = ET.parse(os.path.join(root, PACKAGE_NAME)).getroot()  # nosec B314
     with open(os.path.join(root, CHANGELOG_NAME), encoding="utf-8") as handle:
         changelog = handle.read()
     version = (package.findtext("p:version", default="", namespaces=NAMESPACE) or "").strip()

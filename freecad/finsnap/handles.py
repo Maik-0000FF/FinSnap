@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Handles in the 3D view to move a fin along its face and to set its height.
 
 While the task panel is open the fins are shown see-through, green while they

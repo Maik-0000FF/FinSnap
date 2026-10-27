@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Maik-0000FF
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
 # Changelog
 
 All notable changes to FinSnap are listed here. The format follows

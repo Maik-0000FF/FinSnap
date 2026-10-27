@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Faces of a part that overhang the bed too flatly to print without support.
 
 A face overhangs where its outward normal points down. The flatter it lies,

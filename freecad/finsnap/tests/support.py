@@ -1,4 +1,7 @@
-"""Shared fixtures of the tests: the package path, the reference cube, checks.
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
+"""Shared fixtures of the tests: the reference cube, checks.
 
 The reference cube is the test print: 20 mm, 1 mm chamfer on every edge,
 tilted 45 degrees onto its bottom chamfer.
@@ -9,12 +12,6 @@ import sys
 
 import FreeCAD as App
 import Part
-
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-import freecad  # noqa: E402
-
-# Let the namespace package find this checkout as well as installed addons.
-freecad.__path__.insert(0, os.path.join(ROOT, "freecad"))
 
 EDGE = 20.0
 # Group of FreeCAD's user parameters that stands in for the saved standard of new fins.

@@ -1,6 +1,11 @@
+<!--
+SPDX-FileCopyrightText: 2026 Maik-0000FF
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
 # FinSnap | Breakaway fins for FreeCAD
 
-<p align="center"><img height="128" src="docs/assets/logo.svg" alt="FinSnap"></p>
+![FinSnap](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/docs/assets/logo.svg)
 
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-blue.svg)](https://www.gnu.org/licenses/gpl-3.0)
 [![FreeCAD 1.1+](https://img.shields.io/badge/FreeCAD-1.1%2B-418FDE?logo=freecad&logoColor=white)](https://www.freecad.org/)
@@ -12,7 +17,7 @@
 
 Printing a part tilted by 45 degrees puts the layer lines diagonal to the load and gives every side the same surface finish, with no bottom face and no top face. A part standing on an edge has almost no grip on the bed, though. FinSnap adds thin fins next to it that hold it upright. The fins touch the part only with small horizontal tines, so they snap off without leaving marks.
 
-![FinSnap in FreeCAD: a tilted 40 mm cube with a fin and the task panel](docs/assets/screenshot.png)
+![FinSnap in FreeCAD: a tilted 40 mm cube with a fin and the task panel](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/docs/assets/screenshot.png)
 
 ## Why print standing on an edge
 
@@ -47,7 +52,7 @@ How much each effect matters depends on the material, the printer and the part.
 
 The fin's inner edge runs parallel to the supported face. Horizontal tines bridge the gap between them and end on the face, or the tine clearance short of it (see [Tine clearance](#tine-clearance)). In the separate mode the slicer prints the fin and the part as two objects: the tine lies against the part and sticks to it, without an extrusion path crossing over.
 
-![Fin with foot and tines under a tilted part](docs/assets/fin_detail.png)
+![Fin with foot and tines under a tilted part](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/docs/assets/fin_detail.png)
 
 ## Installation
 
@@ -71,14 +76,14 @@ The workbench adds one toolbar and a **FinSnap** menu with these commands, in th
 
 | Command | What it does | How to use it |
 |---|---|---|
-| <img src="freecad/finsnap/icons/quick_fins.svg" width="32" alt=""><br>**Quick fins** | Stands the part up and adds one fin in the middle of a face in one step, then opens the task panel to adjust it; a counter fin, where wanted, is added there; Fin placement there spreads more fins along the face. | Select the edge the part is to stand on: it stands on it at 45 degrees (or on the right angle of its faces), and the fins go under the largest face leaning over the bed. Or select the face the fins are to support: the part is turned so that this face leans 45 degrees over the bed, standing on the longest edge of the face that works. To choose what it stands on, select one of the face's edges as well, or, after the face, a chamfer or fillet beside it to rest on. A chamfer or fillet alone, or the two faces beside a fillet, carry the part too, with the fins under the largest leaning face. To put fins under a chamfer itself, select it with one of its edges. |
-| <img src="freecad/finsnap/icons/tilt.svg" width="32" alt=""><br>**Stand on edge** | Lays one face of the part onto the bed, turns the part about an edge of that face by the tilt angle and sets it back onto the bed, standing on that edge. Inside a Body, the whole Body is turned. Afterwards the view looks along the edge from the side, so the tilt angle shows, and fits the part. | Select the edge and the face of that edge that is to lie on the bed, click the button and enter the angle (45 degrees by default). For an edge already on the bed, the edge alone is enough. So it is for an edge between two flat faces at a right angle: the part stands on it at 45 degrees, without asking for an angle. A chamfer or a fillet selected alone is laid onto the bed and carries the part, without asking for an angle. Two faces selected alone, such as the two beside a fillet, stand the part on what joins them, both equally steep. |
-| <img src="freecad/finsnap/icons/lay_flat.svg" width="32" alt=""><br>**Lay flat again** | Puts a part stood on an edge back as it lay before and shows it isometric. Deleting the last fins of a part does the same. | Select the part or its fins and click the button. If the part has fins, it asks whether to delete them. **No** keeps them, moved along with the part; they keep their last shape and are rebuilt once the part is moved again, by Stand on edge or by hand. While the part lies flat, its fins are left out of an export, and a message names them. |
-| <img src="freecad/finsnap/icons/add_fins.svg" width="32" alt=""><br>**Add fins** | Creates the fins under a face that leans over the bed and opens the task panel with automatic values. | Select the leaning face, click the button, adjust the values in the panel, which shows every change right away, and click **OK** to keep them. Select a second face on the opposite side as well to get a counter fin straight away. Double-click the fins in the tree to open the panel again. |
-| <img src="freecad/finsnap/icons/counter_fin.svg" width="32" alt=""><br>**Add counter fin** | Adds a fin on the opposite side of existing fins, against tipping away, as large as the main fin. Fewer counter tines in the panel make it smaller. | Select the fins and click the button: the face leaning the other way is found automatically. To choose it yourself, select a face of the part as well. To remove the counter fin, clear its face in the property view. |
-| <img src="freecad/finsnap/icons/mesh_to_solid.svg" width="32" alt=""><br>**Mesh to solid** | Turns an imported STL mesh into a solid with planar faces, so fins can be added to it. | Import the STL, select the mesh object and click the button. The mesh is hidden, the solid appears next to it. |
-| <img src="freecad/finsnap/icons/export_3mf.svg" width="32" alt=""><br>**Export 3MF** | Writes a 3MF file for the slicer, every body as its own object, see [What the 3MF file contains](#what-the-3mf-file-contains). | Click the button with nothing selected to export all fins with their parts, or select what to export. Selecting the fins alone brings their part along. Set the mesh fineness, then choose the file. |
-| <img src="freecad/finsnap/icons/export_step.svg" width="32" alt=""><br>**Export STEP** | Writes a STEP file with exact surfaces instead of a mesh, every body under its own name, see [STEP instead of 3MF](#step-instead-of-3mf). | Selection as with Export 3MF, then choose the file. In the slicer, split the object into objects. |
+| ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/quick_fins.svg)<br>**Quick fins** | Stands the part up and adds one fin in the middle of a face in one step, then opens the task panel to adjust it; a counter fin, where wanted, is added there; Fin placement there spreads more fins along the face. | Select the edge the part is to stand on: it stands on it at 45 degrees (or on the right angle of its faces), and the fins go under the largest face leaning over the bed. Or select the face the fins are to support: the part is turned so that this face leans 45 degrees over the bed, standing on the longest edge of the face that works. To choose what it stands on, select one of the face's edges as well, or, after the face, a chamfer or fillet beside it to rest on. A chamfer or fillet alone, or the two faces beside a fillet, carry the part too, with the fins under the largest leaning face. To put fins under a chamfer itself, select it with one of its edges. |
+| ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/tilt.svg)<br>**Stand on edge** | Lays one face of the part onto the bed, turns the part about an edge of that face by the tilt angle and sets it back onto the bed, standing on that edge. Inside a Body, the whole Body is turned. Afterwards the view looks along the edge from the side, so the tilt angle shows, and fits the part. | Select the edge and the face of that edge that is to lie on the bed, click the button and enter the angle (45 degrees by default). For an edge already on the bed, the edge alone is enough. So it is for an edge between two flat faces at a right angle: the part stands on it at 45 degrees, without asking for an angle. A chamfer or a fillet selected alone is laid onto the bed and carries the part, without asking for an angle. Two faces selected alone, such as the two beside a fillet, stand the part on what joins them, both equally steep. |
+| ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/lay_flat.svg)<br>**Lay flat again** | Puts a part stood on an edge back as it lay before and shows it isometric. Deleting the last fins of a part does the same. | Select the part or its fins and click the button. If the part has fins, it asks whether to delete them. **No** keeps them, moved along with the part; they keep their last shape and are rebuilt once the part is moved again, by Stand on edge or by hand. While the part lies flat, its fins are left out of an export, and a message names them. |
+| ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/add_fins.svg)<br>**Add fins** | Creates the fins under a face that leans over the bed and opens the task panel with automatic values. | Select the leaning face, click the button, adjust the values in the panel, which shows every change right away, and click **OK** to keep them. Select a second face on the opposite side as well to get a counter fin straight away. Double-click the fins in the tree to open the panel again. |
+| ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/counter_fin.svg)<br>**Add counter fin** | Adds a fin on the opposite side of existing fins, against tipping away, as large as the main fin. Fewer counter tines in the panel make it smaller. | Select the fins and click the button: the face leaning the other way is found automatically. To choose it yourself, select a face of the part as well. To remove the counter fin, clear its face in the property view. |
+| ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/mesh_to_solid.svg)<br>**Mesh to solid** | Turns an imported STL mesh into a solid with planar faces, so fins can be added to it. | Import the STL, select the mesh object and click the button. The mesh is hidden, the solid appears next to it. |
+| ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/export_3mf.svg)<br>**Export 3MF** | Writes a 3MF file for the slicer, every body as its own object, see [What the 3MF file contains](#what-the-3mf-file-contains). | Click the button with nothing selected to export all fins with their parts, or select what to export. Selecting the fins alone brings their part along. Set the mesh fineness, then choose the file. |
+| ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/export_step.svg)<br>**Export STEP** | Writes a STEP file with exact surfaces instead of a mesh, every body under its own name, see [STEP instead of 3MF](#step-instead-of-3mf). | Selection as with Export 3MF, then choose the file. In the slicer, split the object into objects. |
 
 Every button shows a tooltip with these explanations when the pointer rests on it.
 
@@ -208,18 +213,18 @@ The file is a ZIP archive; the content above sits in `3D/3dmodel.model`. A slice
 
 ## Development
 
-The tests run in FreeCAD's console:
+Tests and tools live in the package, under `freecad/finsnap/tests/` and `freecad/finsnap/tools/`. The tests run in FreeCAD, with the checkout installed as described under [Manual](#manual), from the repository root:
 
 ```bash
-freecad --console tests/test_cube.py
-freecad --console tests/test_feature.py
-QT_QPA_PLATFORM=offscreen freecad tests/test_gui.py
-python3 tests/test_version.py
+freecad --console freecad/finsnap/tests/test_cube.py
+freecad --console freecad/finsnap/tests/test_feature.py
+QT_QPA_PLATFORM=offscreen freecad freecad/finsnap/tests/test_gui.py
+python3 -m freecad.finsnap.tests.test_version
 ```
 
-The CI checks every push: lint with ruff, complete translations, and the tests against the stable FreeCAD release.
+The CI checks every push: lint with ruff, a security scan with Bandit, licence information with REUSE, complete translations, and the tests against the stable FreeCAD release.
 
-`tools/check_gcode.py` checks a sliced G-code file: no path may run from a fin into its part, and every tine has to reach the part.
+`python3 -m freecad.finsnap.tools.check_gcode <file.gcode>` checks a sliced G-code file: no path may run from a fin into its part, and every tine has to reach the part.
 
 ## Contributing
 

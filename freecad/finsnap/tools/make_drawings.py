@@ -1,6 +1,9 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Draw the two explanatory drawings of the task panel.
 
-    python3 tools/make_drawings.py
+    python3 -m freecad.finsnap.tools.make_drawings
 
 writes freecad/finsnap/images/side_view.svg and top_view.svg. The drawings are
 schematic, not to scale. Dimensions follow drawing practice: thin extension
@@ -12,11 +15,8 @@ Arrowheads are drawn as polygons: Qt renders SVG Tiny, which has no markers.
 
 import math
 import os
-import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
-from freecad.finsnap import paths  # noqa: E402
+from freecad.finsnap import paths
 
 IMAGES = paths.IMAGES
 
@@ -96,7 +96,8 @@ def letter(text, at):
 def svg(width, height, comment, body):
     head = ('<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d" %s>'
             % (round(width * SCALE), round(height * SCALE), width, height, FONT))
-    note = "  <!-- %s Written by tools/make_drawings.py; change the script, not this file. -->" % comment
+    note = ("  <!-- %s Written by freecad/finsnap/tools/make_drawings.py; change the script, not this file. -->"
+            % comment)
     background = '<rect width="%d" height="%d" rx="%d" fill="%s"/>' % (width, height, BACKGROUND_RADIUS, BACKGROUND)
     body = [background] + body
     return "\n".join([head, note] + ["  " + element for element in body] + ["</svg>", ""])

@@ -1,7 +1,10 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """The G-code check on small hand-written G-code files.
 
 Run with Python and shapely 2.0 or newer, no FreeCAD needed:
-    python3 tests/test_check_gcode.py
+    python3 -m freecad.finsnap.tests.test_check_gcode
 
 Every case is one square part 10 mm wide with a fin beside it, in two layers.
 
@@ -22,13 +25,9 @@ CASES this has to withstand:
 import contextlib
 import io
 import os
-import sys
 import tempfile
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, os.path.join(ROOT, "tools"))
-
-import check_gcode as cg  # noqa: E402
+from freecad.finsnap.tools import check_gcode as cg
 
 BEAD = 0.45
 # The part: a square, left edge at PART_LEFT. A tine ends TOUCHING away from it

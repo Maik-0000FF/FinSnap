@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """The values new fins start with: the built-in ones, or the user's own.
 
 The values of the task panel can be saved as the standard for new fins, and
