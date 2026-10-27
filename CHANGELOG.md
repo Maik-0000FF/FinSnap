@@ -16,6 +16,9 @@ All notable changes to FinSnap are listed here. The format follows
 - Shorter description in the Addon Manager, which also shows the README with its pictures now
 - The translation files are named `FinSnap_<language>.ts`, with the template `FinSnap.ts` as the start of a new language
 - Tests and tools lie in the package, `freecad/finsnap/tests/` and `freecad/finsnap/tools/`, and come with the addon; run them as described in CONTRIBUTING.md
+- The arrows on a fin are double arrows standing just outside it, so the fin no longer covers the arrow up; an end is left out where the fin cannot go
+- A fin let go where it cannot stand goes as far towards there as it can, to the corner of the face or next to its neighbour, instead of staying at its last place
+- While a fin cannot stand where its arrow is, all fins turn red, so the red preview no longer mixes with green
 
 ## [0.4.1] - 2026-10-27
 
