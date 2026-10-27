@@ -644,6 +644,28 @@ def keep_laid_flat(obj, change):
     obj.Shape = moved(obj.Shape, change)
 
 
+def laid_flat_marks(owner, document):
+    """The fins of `owner` laid flat, by name, with the place their part lay
+    at and the shape they kept, for put_back_laid_flat()."""
+    return [(obj.Name, App.Placement(getattr(obj, LAID_FLAT_AT)), obj.Shape.copy())
+            for obj in fins_of(owner, document) if is_laid_flat(obj)]
+
+
+def put_back_laid_flat(document, marks):
+    """Mark the fins in `marks`, from laid_flat_marks(), laid flat again with
+    the shapes they kept, once their part lies where it did: a command that
+    stood the part and was cancelled leaves them as they were, rather than
+    rebuilt for a part they no longer stand under. Fins deleted since are
+    passed over."""
+    for name, laid_at, shape in marks:
+        obj = document.getObject(name)
+        if obj is None:
+            continue
+        setattr(obj, LAID_FLAT_AT, laid_at)
+        setattr(obj, LAID_FLAT, True)
+        obj.Shape = shape
+
+
 def still_laid_flat(obj):
     """Whether the part of the fins `obj` still lies where it was laid flat. Moved
     since, by Stand on edge or by hand, the fins are rebuilt: the marker is cleared.

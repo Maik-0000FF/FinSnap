@@ -27,10 +27,12 @@ from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_
                     ICON_QUICK, ICON_TILT)
 from .presets import PREFERENCES
 from .shapes import FACE_PREFIX, face_name, global_shape, outermost
-from .taskpanel import LENGTH_SUFFIX, FinSnapTaskPanel
+from .taskpanel import LENGTH_SUFFIX, FinSnapTaskPanel, discard_created
 from .version import NAME
 
 EDGE_PREFIX = "Edge"
+# Containers that move what they hold: App::Part, PartDesign::Body.
+GROUP_EXTENSION = "App::GeoFeatureGroupExtension"
 TILT_DECIMALS = 1
 # Order in which App.Rotation keeps the given camera axes exact.
 CAMERA_AXES = "ZYX"
@@ -42,6 +44,8 @@ ISOMETRIC = App.Vector(-1, 1, -1).normalize()
 FILTER_3MF = QT_TRANSLATE_NOOP("FinSnap", "3MF files (*.3mf)")
 EXTENSIONS_3MF = (".3mf",)
 FILTER_STEP = QT_TRANSLATE_NOOP("FinSnap", "STEP files (*.step *.stp)")
+# Said when new fins cannot be edited because another task panel is open.
+NOTE_BUSY = QT_TRANSLATE_NOOP("FinSnap", "Another task panel is open. Close it first, then make the fins again.")
 EXTENSIONS_STEP = (".step", ".stp")
 PREF_LINEAR = "MeshLinearDeflection"
 PREF_ANGULAR = "MeshAngularDeflection"
@@ -79,6 +83,27 @@ def _holds(obj, part):
     return False
 
 
+def _fins_under(obj):
+    """The FinSnap objects whose part `obj` is or may hold, found through what
+    links to it instead of through the whole document: fins link their part
+    (Base) and its outermost container (Container); a container in between
+    holds the part, so its contents are asked as well.
+
+    INPUTS this has to withstand:
+      the part of fins                      ->  those fins, through Base
+      the outermost container of the part   ->  those fins, through Container
+      a container between the two           ->  those fins, through the part it holds
+      an object no fins depend on           ->  none, after its own few links
+    """
+    held = [obj] + (obj.OutListRecursive if obj.hasExtension(GROUP_EXTENSION) else [])
+    found = {}
+    for one in held:
+        for user in one.InList:
+            if feature.is_fins(user):
+                found[user.Name] = user
+    return list(found.values())
+
+
 class PartVisibility:
     """Document observer: when a part or a container of it is shown or hidden,
     the overhang marks of its fins follow."""
@@ -86,8 +111,8 @@ class PartVisibility:
     def slotChangedObject(self, obj, prop):  # noqa: N802 - FreeCAD API
         if prop != "Visibility" or obj.Document is None:
             return
-        for fins in obj.Document.Objects:
-            if (feature.is_fins(fins) and fins.Base and _holds(obj, fins.Base[0])
+        for fins in _fins_under(obj):
+            if (fins.Base and _holds(obj, fins.Base[0])
                     and isinstance(getattr(fins.ViewObject, "Proxy", None), ViewProviderFinSnap)):
                 fins.ViewObject.Proxy.show_marks()
 
@@ -497,6 +522,8 @@ class QuickFins:
         doc.openTransaction(translate("FinSnap", "Quick fins"))
         owner = outermost(obj)
         before = orient.snapshot(owner)
+        # Standing the part rebuilds its other fins laid flat; Cancel gives them back.
+        laid_flat = feature.laid_flat_marks(owner, doc)
         _stand(obj, plan.change)
         # The main fin only; a counter fin is added in the panel or with Add counter fin.
         fins = feature.create(obj, face_name(plan.number + 1))
@@ -506,7 +533,14 @@ class QuickFins:
         doc.recompute()
         _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside))
         # Cancel deletes the fins and stands the part as it stood before.
-        _edit_new(fins, functools.partial(orient.put_back, owner, before))
+        _edit_new(fins, functools.partial(_put_back_quick, owner, before, laid_flat))
+
+
+def _put_back_quick(owner, before, laid_flat):
+    """Undo what Quick fins did besides making the fins: the part stands as
+    before, and its other fins laid flat keep their marks and shapes."""
+    orient.put_back(owner, before)
+    feature.put_back_laid_flat(owner.Document, laid_flat)
 
 
 def _edit_new(fins, on_cancel=None):
@@ -515,14 +549,23 @@ def _edit_new(fins, on_cancel=None):
     fins, then calls `on_cancel` to undo what the command did besides."""
     proxy = fins.ViewObject.Proxy
     proxy.created, proxy.on_cancel = True, on_cancel
+    # Another task panel open keeps the fins' panel from opening; said below,
+    # as FreeCAD says nothing then.
+    busy = Gui.Control.activeDialog()
     # What was selected to make the fins is used up; left selected, the panel
     # would take a face of it for a counter fin, such as one now on the bed.
     Gui.Selection.clearSelection()
     try:
-        Gui.ActiveDocument.setEdit(fins)
+        opened = Gui.ActiveDocument.setEdit(fins)
     finally:
         # Only for this opening: a later Cancel must not delete fins long kept.
         proxy.created, proxy.on_cancel = False, None
+    # Without a panel there is no Cancel: what the command did is undone at
+    # once, as Cancel would. Without a 3D view, setEdit has said why.
+    if not opened:
+        if busy:
+            _message(translate("FinSnap", NOTE_BUSY))
+        discard_created(fins, on_cancel)
 
 
 class AddFins:
