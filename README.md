@@ -58,7 +58,7 @@ The fin's inner edge runs parallel to the supported face. Horizontal tines bridg
 
 ## Installation
 
-FinSnap needs FreeCAD 1.1 or newer, which includes 26.3 and the weekly builds.
+FinSnap needs FreeCAD 1.1 or newer and is tested with the stable release and the weekly builds.
 
 ### Addon Manager
 
@@ -66,7 +66,7 @@ FinSnap is not yet listed in the FreeCAD Addon Manager. Until then, the Addon Ma
 
 1. Open **Edit → Preferences → Addon Manager**.
 2. Under **Custom repositories**, add an entry with the repository URL `https://github.com/Maik-0000FF/FinSnap` and the branch `main`. FreeCAD 1.1 needs the branch, since it takes `master` when none is given; newer versions find it themselves.
-3. Open **Tools → Addon manager**, find FinSnap, install it and restart FreeCAD.
+3. Open **Tools → Addon Manager**, find FinSnap, install it and restart FreeCAD.
 
 ### Manual
 
