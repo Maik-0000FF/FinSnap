@@ -46,6 +46,9 @@ ENDS_DELAY_MS = 300
 # How close a fin let go beyond where it can stand comes to that limit, and
 # how far an arrow end looks ahead before it is left out (mm).
 SNAP_RESOLUTION = 0.1
+# The lowest a fin dragged down is previewed, so the preview never flattens
+# to nothing or turns over (mm).
+MIN_PREVIEW_HEIGHT = 0.1
 NOTE_CLICK_FIN = QT_TRANSLATE_NOOP("FinSnap", "Click a fin of these fins in the 3D view first.")
 SIDES = {feature.MAIN: QT_TRANSLATE_NOOP("FinSnap", "Main fin"),
          feature.COUNTER: QT_TRANSLATE_NOOP("FinSnap", "Counter fin")}
@@ -205,6 +208,8 @@ class FinSnapTaskPanel:
         # arrow being dragged with how far, as (kind, mm); and the shift and
         # height of the fin, and the values in its fields, when it was grabbed.
         self.handled = None
+        # The fin the ends of the arrows were last tried on.
+        self.ends_of = None
         self.dragged = None
         self.drag_base, self.drag_own, self.drag_values = {}, {}, {}
         self.released = False
@@ -554,6 +559,10 @@ class FinSnapTaskPanel:
         # A held arrow stays where it was grabbed; only the numbers follow it.
         if not self.handles.held:
             self.handles.show(result.edges[number], result.heights[number], result.along, result.out)
+            # On another fin, both ends until tried, rather than those of the fin before.
+            if self.handled != self.ends_of:
+                for kind in (handles.ALONG, handles.UP):
+                    self.handles.show_ends(kind, (handles.BACK, handles.FORTH))
             self.ends_timer.start()
         self.show_fin_values(self.fin_values())
         self.fin_label.setText(translate("FinSnap", "%s %d") % (translate("FinSnap", SIDES[which]), number))
@@ -643,9 +652,19 @@ class FinSnapTaskPanel:
         return number in result.numbers
 
     def nearest_standing(self, kind, good, bad):
-        """The value between `good`, where the handled fin stands, and `bad`,
-        where it does not, nearest to `bad` where it still stands: the limit
-        it reaches, found to SNAP_RESOLUTION by halving the way."""
+        """A limit between `good`, where the handled fin stands, and `bad`,
+        where it does not: a value where it still stands, within
+        SNAP_RESOLUTION of one where it does not, found by halving the way.
+
+        INPUTS this has to withstand:
+          one limit on the way, a corner or a
+            neighbour                            ->  that limit
+          a recess on the way, the fin standing
+            again beyond it                      ->  one of the limits, before or beyond
+                                                     the recess, whichever the halving
+                                                     meets; the fin always stands there
+          good and bad closer than SNAP_RESOLUTION  ->  good
+        """
         while abs(bad - good) > SNAP_RESOLUTION:
             middle = (good + bad) / 2
             if self.can_stand(kind, middle):
@@ -658,6 +677,7 @@ class FinSnapTaskPanel:
         """Leave out each end of an arrow where the handled fin cannot go."""
         if self.handles.held or self.handled_result() is None:
             return
+        self.ends_of = self.handled
         for kind in (handles.ALONG, handles.UP):
             value = self.built_value(kind)
             self.handles.show_ends(kind, [end for end in (handles.BACK, handles.FORTH)
@@ -717,7 +737,7 @@ class FinSnapTaskPanel:
             bed = fin.BoundBox.ZMin
             stretch = App.Matrix()
             stretch.move(App.Vector(0, 0, -bed))
-            stretch.scale(1, 1, max(wanted, SNAP_RESOLUTION) / self.built_value(kind))
+            stretch.scale(1, 1, max(wanted, MIN_PREVIEW_HEIGHT) / self.built_value(kind))
             stretch.move(App.Vector(0, 0, bed))
             fin = fin.transformGeometry(stretch)
         # The fins red as well: a red preview over a green fin would mix to neither.

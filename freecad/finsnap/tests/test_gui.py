@@ -73,7 +73,7 @@ def face_name(obj, face):
     raise AssertionError("face not found")
 
 
-def _rgb_close(color, wanted):
+def rgb_close(color, wanted):
     """Whether `color`, with or without alpha, is `wanted` in red, green and blue."""
     return all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(color[:3], wanted))
 
@@ -571,7 +571,7 @@ def main():
            and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_ALL
            and taskpanel.ERROR_COLOR in moving.notes.styleSheet(),
            "a fin dragged onto its neighbour stays at its last place, shown red where the arrow is")
-    expect(_rgb_close(lined.ViewObject.ShapeColor, handles.INVALID_COLOR),
+    expect(rgb_close(lined.ViewObject.ShapeColor, handles.INVALID_COLOR),
            "while the fin cannot stand where the arrow is, the fins are red, not mixed with green")
     moving.finish_drag(handles.ALONG, onto_neighbour)
     snapped = feature.edits(lined, feature.MAIN)[1].get(1, 0.0)
@@ -579,7 +579,7 @@ def main():
     nearest = FIN_SHIFT + onto_neighbour - result.thickness - d.FOOT_CLEARANCE
     expect(nearest - taskpanel.SNAP_RESOLUTION - d.TOLERANCE <= snapped <= nearest + d.TOLERANCE
            and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_NONE
-           and _rgb_close(lined.ViewObject.ShapeColor, handles.VALID_COLOR),
+           and rgb_close(lined.ViewObject.ShapeColor, handles.VALID_COLOR),
            "let go there, it goes as near to its neighbour as it can stand, green again: %.3f of %.3f mm"
            % (snapped, nearest))
     moving.update_ends()
@@ -595,7 +595,7 @@ def main():
     moving.handle_moved(handles.UP, TOO_HIGH)
     moving.drag_step()
     stretched = moving.handles.preview.getChild(0) if moving.handles.preview.getNumChildren() else None
-    expect(stretched is not None and _rgb_close(lined.ViewObject.ShapeColor, handles.INVALID_COLOR),
+    expect(stretched is not None and rgb_close(lined.ViewObject.ShapeColor, handles.INVALID_COLOR),
            "a fin dragged above the face is previewed red, and the fins turn red")
     moving.finish_drag(handles.UP, TOO_HIGH)
     tallest = moving.built_value(handles.UP)
