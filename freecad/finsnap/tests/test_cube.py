@@ -1,25 +1,25 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Build fins on the reference cube and check the result.
 
-Run from the repository root:
-    freecad --console tests/test_cube.py
+Run in FreeCAD, with this checkout installed as an addon (see CONTRIBUTING.md):
+    freecad --console freecad/finsnap/tests/test_cube.py
 """
 
 import math
-import os
 import sys
 
 import Part
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from freecad.finsnap.tests.support import expect, lower_left_face, run, tilted_cube
+from freecad.finsnap import defaults as d
+from freecad.finsnap import geometry
+from freecad.finsnap import orient
+from freecad.finsnap import overhang
+from freecad.finsnap.params import FinParams, ParamError
 
-from support import expect, lower_left_face, run, tilted_cube  # noqa: E402
-from freecad.finsnap import defaults as d  # noqa: E402
-from freecad.finsnap import geometry  # noqa: E402
-from freecad.finsnap import orient  # noqa: E402
-from freecad.finsnap import overhang  # noqa: E402
-from freecad.finsnap.params import FinParams, ParamError  # noqa: E402
-
-import FreeCAD as App  # noqa: E402
+import FreeCAD as App
 
 V = App.Vector
 PYRAMID_BASE = 20.0

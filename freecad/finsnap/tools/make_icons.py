@@ -1,6 +1,9 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Draw the icons of the workbench and the logo.
 
-    python3 tools/make_icons.py
+    python3 -m freecad.finsnap.tools.make_icons
 
 writes freecad/finsnap/icons/*.svg and docs/assets/logo.svg. All icons share one picture of the part
 and its fin, the same one the drawings of the task panel use: the part standing
@@ -9,14 +12,11 @@ tines and a foot. Changing that picture here changes every icon.
 """
 
 import os
-import sys
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-sys.path.insert(0, ROOT)
-from freecad.finsnap import paths  # noqa: E402
+from freecad.finsnap import paths
 
 ICONS = paths.ICONS
-LOGO = os.path.join(ROOT, "docs", "assets", "logo.svg")
+LOGO = paths.LOGO
 # The mark of the logo is the workbench icon, scaled up; the name sits beside it.
 LOGO_SCALE = 2.6
 LOGO_FONT_SIZE = 72
@@ -144,7 +144,7 @@ def bolt_badge():
 def svg(body, width=SIZE, height=SIZE):
     return "\n".join(['<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">'
                       % (width, height, width, height),
-                      "  <!-- Written by tools/make_icons.py; change the script, not this file. -->"]
+                      "  <!-- Written by freecad/finsnap/tools/make_icons.py; change the script, not this file. -->"]
                      + ["  " + element for element in body] + ["</svg>", ""])
 
 
@@ -222,7 +222,7 @@ def main():
     os.makedirs(os.path.dirname(LOGO), exist_ok=True)
     with open(LOGO, "w", encoding="utf-8") as handle:
         handle.write(logo())
-    print("written", os.path.relpath(LOGO, ROOT))
+    print("written", os.path.relpath(LOGO, paths.ROOT))
 
 
 if __name__ == "__main__":

@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Maik-0000FF
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
 # Changelog
 
 All notable changes to FinSnap are listed here. The format follows
@@ -5,6 +10,12 @@ All notable changes to FinSnap are listed here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+### Changed
+
+- Shorter description in the Addon Manager, which also shows the README with its pictures now
+- The translation files are named `FinSnap_<language>.ts`, with the template `FinSnap.ts` as the start of a new language
+- Tests and tools lie in the package, `freecad/finsnap/tests/` and `freecad/finsnap/tools/`, and come with the addon; run them as described in CONTRIBUTING.md
 
 ## [0.4.1] - 2026-10-27
 

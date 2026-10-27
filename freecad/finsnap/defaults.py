@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Default values for fin generation, in one place.
 
 Every number the generator uses without being told otherwise lives here. The

@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Fin geometry for one supported face.
 
 The part stands tilted on the bed. A planar face of it leans outward over the

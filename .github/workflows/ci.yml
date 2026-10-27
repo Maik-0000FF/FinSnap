@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 name: CI
 
 on:
@@ -18,6 +21,7 @@ env:
   RUFF_VERSION: '0.9.5'
   PYSIDE_VERSION: '6.8.1'
   SHAPELY_VERSION: '2.1.2'
+  BANDIT_VERSION: '1.9.4'
 
 jobs:
   version:
@@ -28,11 +32,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-      - run: python tools/check_version.py "$GITHUB_REF_NAME"
-      - run: python tests/test_version.py
+      - run: python -m freecad.finsnap.tools.check_version "$GITHUB_REF_NAME"
+      - run: python -m freecad.finsnap.tests.test_version
 
   gcode-check:
-    # The G-code check of tools/, on small hand-written G-code files.
+    # The G-code check of the tools, on small hand-written G-code files.
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
@@ -40,7 +44,7 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: pip install "shapely==${SHAPELY_VERSION}"
-      - run: python tests/test_check_gcode.py
+      - run: python -m freecad.finsnap.tests.test_check_gcode
 
   lint:
     runs-on: ubuntu-24.04
@@ -51,6 +55,24 @@ jobs:
           python-version: ${{ env.PYTHON_VERSION }}
       - run: pip install "ruff==${RUFF_VERSION}"
       - run: ruff check .
+
+  security:
+    # Bandit, with the settings the FreeCAD Addon Index scans with.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - run: pip install "bandit==${BANDIT_VERSION}"
+      - run: bandit -c bandit.yaml -r .
+
+  reuse:
+    # Every file states its licence, in a header or in REUSE.toml.
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6.0.0
 
   translations:
     # Every text in the code has to be translated in every language file.
@@ -65,16 +87,13 @@ jobs:
         env:
           LUPDATE: pyside6-lupdate
           LRELEASE: pyside6-lrelease
-        run: |
-          for ts in freecad/finsnap/translations/finsnap_*.ts; do
-            language=${ts##*finsnap_}
-            sh tools/update_translations.sh "${language%.ts}"
-          done
+        run: sh freecad/finsnap/tools/update_translations.sh
       - name: Check that nothing is untranslated
+        # Only the languages, *_<language>.ts; the template is untranslated by design.
         run: |
           if grep -n 'type="unfinished"\|type="vanished"\|type="obsolete"' \
-              freecad/finsnap/translations/*.ts; then
-            echo "untranslated or stale texts, run tools/update_translations.sh"
+              freecad/finsnap/translations/*_*.ts; then
+            echo "untranslated or stale texts, run freecad/finsnap/tools/update_translations.sh"
             exit 1
           fi
       # UTF-8 read as Latin-1 or cp1252 and written again turns "ä" into "Ã¤" and
@@ -82,7 +101,7 @@ jobs:
       # character. Correct German or English text never has that.
       - name: Check that no text is encoded twice
         run: |
-          if LC_ALL=C git grep -nIP '\xC3[\x82\x83][\xC2-\xF4]' -- freecad '*.md' tests tools; then
+          if LC_ALL=C git grep -nIP '\xC3[\x82\x83][\xC2-\xF4]' -- freecad '*.md'; then
             echo "doubly encoded UTF-8, umlauts would show as Ã¤ and the like"
             exit 1
           fi
@@ -101,12 +120,22 @@ jobs:
           sha256sum -c sha256.txt
           chmod +x "$FREECAD_APPIMAGE"
           "./$FREECAD_APPIMAGE" --appimage-extract > /dev/null
+      - name: Install the checkout as an addon
+        # The tests import the workbench as FreeCAD finds an installed addon.
+        # FREECAD_USER_DATA gives FreeCAD a user data directory of its own.
+        run: |
+          data="$RUNNER_TEMP/freecad-user-data"
+          mkdir -p "$data/Mod"
+          ln -s "$GITHUB_WORKSPACE" "$data/Mod/FinSnap"
+          echo "FREECAD_USER_DATA=$data" >> "$GITHUB_ENV"
       - name: Fins on the reference cube
-        run: $RUNNER_TEMP/squashfs-root/AppRun freecadcmd tests/test_cube.py
+        run: |
+          "$RUNNER_TEMP/squashfs-root/AppRun" freecadcmd freecad/finsnap/tests/test_cube.py
       - name: Parametric object and 3MF export
-        run: $RUNNER_TEMP/squashfs-root/AppRun freecadcmd tests/test_feature.py
+        run: |
+          "$RUNNER_TEMP/squashfs-root/AppRun" freecadcmd freecad/finsnap/tests/test_feature.py
       - name: Commands as a user runs them
         # The AppImage forces the xcb platform, so the GUI runs on a virtual display.
         run: |
           sudo apt-get install -y --no-install-recommends xvfb
-          xvfb-run -a $RUNNER_TEMP/squashfs-root/AppRun freecad tests/test_gui.py
+          xvfb-run -a "$RUNNER_TEMP/squashfs-root/AppRun" freecad freecad/finsnap/tests/test_gui.py

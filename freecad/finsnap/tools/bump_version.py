@@ -1,10 +1,13 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Set a new version everywhere at once.
 
-    python3 tools/bump_version.py 0.2.0 [2026-11-01]
+    python3 -m freecad.finsnap.tools.bump_version 0.2.0 [2026-11-01]
 
 Sets <version> and <date> in package.xml, turns the entries under
 "[Unreleased]" in CHANGELOG.md into the new version's section, updates both
-link lines, and runs tools/check_version.py on the result. The date defaults to
+link lines, and runs check_version.py on the result. The date defaults to
 today. Commit and tag (v0.2.0) stay with you.
 
 INPUTS this has to withstand:
@@ -22,9 +25,7 @@ import os
 import re
 import sys
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-import check_version as cv  # noqa: E402
+from freecad.finsnap.tools import check_version as cv
 
 UNRELEASED_HEADING = "## [%s]" % cv.UNRELEASED
 
@@ -59,7 +60,7 @@ def bump(root, new, date):
     changelog = changelog.replace(cv.unreleased_link(repository, old),
                                   cv.unreleased_link(repository, new) + "\n" + cv.release_link(repository, new), 1)
 
-    package_path = os.path.join(root, cv.PACKAGE_NAME)
+    package_path = os.path.join(root, cv.PACKAGE_XML_NAME)
     with open(package_path, encoding="utf-8") as handle:
         package = handle.read()
     package = re.sub(r"<version>[^<]*</version>", "<version>%s</version>" % new, package, count=1)
@@ -74,7 +75,7 @@ def bump(root, new, date):
 
 def main(argv):
     if len(argv) not in (2, 3):
-        print("Usage: python3 tools/bump_version.py <new version> [<date>]")
+        print("Usage: python3 -m freecad.finsnap.tools.bump_version <new version> [<date>]")
         return 1
     date = argv[2] if len(argv) == 3 else datetime.date.today().isoformat()
     errors = bump(cv.ROOT, argv[1], date)

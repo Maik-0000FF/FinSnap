@@ -1,7 +1,10 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """The commands as a user runs them, in a FreeCAD with GUI but without a screen.
 
-Run from the repository root:
-    QT_QPA_PLATFORM=offscreen freecad tests/test_gui.py
+Run in FreeCAD, with this checkout installed as an addon (see CONTRIBUTING.md):
+    QT_QPA_PLATFORM=offscreen freecad freecad/finsnap/tests/test_gui.py
 
 Dialogs that would wait for a click are replaced by fixed answers; everything
 else, from the selection to the written file, runs as in FreeCAD.
@@ -13,14 +16,12 @@ import sys
 import tempfile
 import zipfile
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-import FreeCAD as App  # noqa: E402
-import FreeCADGui as Gui  # noqa: E402
-import Part  # noqa: E402
-from pivy import coin  # noqa: E402
-from PySide import QtWidgets  # noqa: E402
-from support import STANDARD_THICKNESS, expect, lower_left_face, run, tilted_cube  # noqa: E402
+import FreeCAD as App
+import FreeCADGui as Gui
+import Part
+from pivy import coin
+from PySide import QtWidgets
+from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left_face, run, tilted_cube
 
 WORKBENCH = "FinSnapWorkbench"
 COMMANDS = ("FinSnap_QuickFins", "FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCounterFin",
@@ -42,12 +43,11 @@ FIN_SHIFT = 1.5  # how far a handle moves a fin along the face, in mm
 TOO_MANY_FINS = 50  # more fins than the face takes, so the build fails
 AXIS_Z_RGB = (0.2, 0.2, 0.8)  # FreeCAD's standard colour of the z axis
 COLOR_TOLERANCE = 0.01
+GERMAN = "FinSnap_de.ts"  # written by freecad/finsnap/tools/update_translations.sh
 
 
 def load_workbench():
-    # Installed copies register themselves at start-up; a checkout does so on import.
-    if WORKBENCH not in Gui.listWorkbenches():
-        import freecad.finsnap.init_gui  # noqa: F401
+    # The installed addon registered the workbench when FreeCAD started.
     Gui.activateWorkbench(WORKBENCH)
     from freecad.finsnap import commands
     return commands
@@ -641,10 +641,12 @@ def main():
     expect(opened is False and messages and "no 3D view" in messages[-1] and not Gui.Control.activeDialog(),
            "without a 3D view no panel opens, and a message says why: %s" % messages)
     # Read from the German file itself: the language FreeCAD runs in may be English.
-    import xml.etree.ElementTree as ET
+    # Audited: Parses the German file of this repository.
+    import xml.etree.ElementTree as ET  # nosec B405
     from freecad.finsnap.paths import TRANSLATIONS
     no_view_text = "No 3D view of %s is open to edit the fins in."
-    german = ET.parse(os.path.join(TRANSLATIONS, "finsnap_de.ts")).getroot()
+    # Audited: File of this repository.
+    german = ET.parse(os.path.join(TRANSLATIONS, GERMAN)).getroot()  # nosec B314
     expect(any(m.findtext("source") == no_view_text and m.find("translation").get("type") is None
                and m.findtext("translation") for m in german.iter("message")),
            "the message without a 3D view has a German translation")

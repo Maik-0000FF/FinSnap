@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Task panel to tune the parameters of a FinSnap object.
 
 The form is generated from feature.PROPERTIES, one group box per property
