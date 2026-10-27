@@ -13,6 +13,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [0.5.1] - 2026-10-27
 
+### Added
+
+- The README shows a demo of FinSnap, rendered by `freecad/finsnap/tools/make_demo.sh` as described in CONTRIBUTING.md
+
 ### Changed
 
 - The README shows how to install FinSnap through the Addon Manager as a custom repository, from a ZIP without git, and in which folder on Windows, macOS and Linux
