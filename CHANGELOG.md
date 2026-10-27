@@ -11,6 +11,8 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-10-27
+
 ### Added
 
 - The arrow up takes the height of a fin from tine to tine, so a tine always ends the fin on top, without a piece standing out above it: near a tine the fin goes there, between tines, also over a recess, it is built as high as the arrow and shown yellow, and goes to the nearest tine that finds the face when let go
@@ -139,7 +141,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.5.0
 [0.4.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.3.0
