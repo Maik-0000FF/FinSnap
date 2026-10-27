@@ -270,8 +270,8 @@ class FinSnapTaskPanel:
             "FinSnap", "To remove one fin, click it in the 3D view and press Remove selected fin, or the "
             "Delete key. The counter fin goes on the face leaning the other way, or on a face of the part "
             "you select. Drag the two arrows on a fin to move it along the face or to change its height, "
-            "or type the values below; click another fin to put the arrows there. Reset fins undoes every "
-            "change by hand."))
+            "or type the values below; click another fin, or step through the fins with the buttons beside "
+            "its name, to put the arrows there. Reset fins undoes every change by hand."))
         edit_info.setWordWrap(True)
         edit_layout.addWidget(edit_info, 0, 0, 1, 2)
         for column, row, icon, text, action in (
@@ -283,9 +283,24 @@ class FinSnapTaskPanel:
             button = _icon_button(icon, translate("FinSnap", text))
             button.clicked.connect(action)
             edit_layout.addWidget(button, row, column)
+        # The fin with the arrows, between buttons to step to the fin before and after.
+        picker = QtWidgets.QHBoxLayout()
+        self.fin_steps = {}
+        for step, arrow, tip in ((-1, QtCore.Qt.LeftArrow, QT_TRANSLATE_NOOP("FinSnap", "Previous fin")),
+                                 (1, QtCore.Qt.RightArrow, QT_TRANSLATE_NOOP("FinSnap", "Next fin"))):
+            button = QtWidgets.QToolButton()
+            button.setArrowType(arrow)
+            button.setToolTip(translate("FinSnap", tip))
+            button.setAccessibleName(button.toolTip())
+            button.clicked.connect(functools.partial(self.step_fin, step))
+            self.fin_steps[step] = button
         self.fin_label = QtWidgets.QLabel(translate("FinSnap", NOTE_CLICK_FIN))
         self.fin_label.setWordWrap(True)
-        edit_layout.addWidget(self.fin_label, 3, 0, 1, 2)
+        self.fin_label.setAlignment(QtCore.Qt.AlignCenter)
+        picker.addWidget(self.fin_steps[-1])
+        picker.addWidget(self.fin_label, 1)
+        picker.addWidget(self.fin_steps[1])
+        edit_layout.addLayout(picker, 3, 0, 1, 2)
         # Where the fin with the arrows stands, to read or to type in; Enter moves it.
         self.fin_fields = {}
         for row, kind, text, tip in (
@@ -512,6 +527,27 @@ class FinSnapTaskPanel:
             self.handled = fin
             self.place_handles()
 
+    def built_fins(self):
+        """Every fin built, as (MAIN or COUNTER, number): the main fins from
+        the left, then the counter fin."""
+        results = getattr(self.obj.Proxy, "results", {})
+        return [(which, number) for which in (feature.MAIN, feature.COUNTER) if results.get(which)
+                for number in results[which].numbers]
+
+    def step_fin(self, step):
+        """Put the arrows on the fin after (step 1) or before (step -1) the one
+        that has them, round from the last to the first: also a fin behind
+        the part is reached without turning the view."""
+        fins = self.built_fins()
+        if self.handles.held or not fins:
+            return
+        if self.handled in fins:
+            index = (fins.index(self.handled) + step) % len(fins)
+        else:
+            index = 0 if step > 0 else len(fins) - 1
+        self.handled = fins[index]
+        self.place_handles()
+
     def handled_result(self):
         """The last build of the side of the fin with the handles, and the
         index of that fin in it; None while no fin built has them."""
@@ -550,6 +586,8 @@ class FinSnapTaskPanel:
         enabled = found is not None
         for box in self.fin_fields.values():
             box.setEnabled(enabled)
+        for button in self.fin_steps.values():
+            button.setEnabled(len(self.built_fins()) > 1)
         if not enabled:
             self.handles.hide()
             self.fin_label.setText(translate("FinSnap", NOTE_CLICK_FIN))

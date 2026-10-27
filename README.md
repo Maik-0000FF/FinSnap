@@ -87,6 +87,20 @@ The workbench adds one toolbar and a **FinSnap** menu with these commands, in th
 
 Every button shows a tooltip with these explanations when the pointer rests on it.
 
+## Task panel
+
+The task panel opens with **Add fins**, **Quick fins** or a double-click on the fins in the tree. Under **Edit fins** it changes single fins:
+
+| Button | What it does |
+|---|---|
+| ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/remove_fin.svg)<br>**Remove selected fin** | Removes the fin clicked in the 3D view, as the Delete key does. Removing the last fins deletes the fins object. |
+| ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/reset_fins.svg)<br>**Reset fins** | Undoes every change by hand: removed fins come back, moved fins and fin heights of their own are undone. |
+| ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/counter_fin.svg)<br>**Add counter fin** | Adds the counter fin on the face leaning the other way, or on a face of the part selected. |
+| ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/remove_counter.svg)<br>**Remove counter fin** | Removes the counter fin. |
+| **◀ ▶ Previous fin, Next fin** | Put the arrows on the fin before or after, round from the last fin to the first, the counter fin included. A fin behind the part is reached this way without turning the view. |
+
+The name of the fin with the arrows stands between the two buttons. Below it, **Place on the face** and **Height** show where that fin stands; type a value and press Enter to move it. The double arrows on the fin do the same by dragging, see step 8 under [Usage](#usage).
+
 ## Usage
 
 For a quick start, select the edge the part is to stand on, or the face the fins are to support, and click **Quick fins**. The steps below do the same one at a time.

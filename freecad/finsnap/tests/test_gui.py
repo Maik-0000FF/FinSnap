@@ -496,6 +496,10 @@ def main():
     editing.remove_selected()
     editing.add_counter()
     expect(lined.ResultFinCount == 2 and lined.CounterFace, "the panel removes the selected fin and adds a counter fin")
+    editing.handled = editing.built_fins()[0]
+    editing.step_fin(-1)
+    expect(editing.handled == editing.built_fins()[-1] and editing.handled[0] == feature.COUNTER,
+           "Previous fin from the first main fin goes round to the counter fin, behind the part")
     editing.reject()
     expect(lined.ResultFinCount == 2 and not lined.CounterFace and feature.removed(lined, feature.MAIN) == [2],
            "Cancel puts back the fins as they were when the panel opened")
@@ -542,6 +546,13 @@ def main():
            "the fins are see-through while the panel is open")
     select(lined, face_of_fin(2))
     expect(moving.handled == (feature.MAIN, 3), "a fin clicked gets the handles")
+    moving.step_fin(1)
+    expect(moving.handled == (feature.MAIN, 1), "Next fin goes round from the last fin to the first")
+    moving.step_fin(-1)
+    moving.step_fin(-1)
+    expect(moving.handled == (feature.MAIN, 2) and moving.fin_label.text().endswith("2")
+           and all(button.isEnabled() for button in moving.fin_steps.values()),
+           "Previous fin steps back, and the name of the fin follows")
     select(lined, face_of_fin(0))
     before = lined.Shape.Solids[0].BoundBox.Center
     held = dict(moving.handles.draggers)

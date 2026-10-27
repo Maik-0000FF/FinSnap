@@ -11,6 +11,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Previous fin and Next fin in the task panel put the arrows on every fin in turn, the counter fin included, also on one behind the part
+
 ### Changed
 
 - Shorter description in the Addon Manager, which also shows the README with its pictures now
