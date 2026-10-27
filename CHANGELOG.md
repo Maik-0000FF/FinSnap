@@ -1,3 +1,8 @@
+<!--
+SPDX-FileCopyrightText: 2026 Maik-0000FF
+SPDX-License-Identifier: GPL-3.0-or-later
+-->
+
 # Changelog
 
 All notable changes to FinSnap are listed here. The format follows
@@ -5,6 +10,33 @@ All notable changes to FinSnap are listed here. The format follows
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
+
+## [0.5.0] - 2026-10-27
+
+### Added
+
+- The arrow up takes the height of a fin from tine to tine, so a tine always ends the fin on top, without a piece standing out above it: near a tine the fin goes there, between tines, also over a recess, it is built as high as the arrow and shown yellow, and goes to the nearest tine that finds the face when let go
+- The arrows on a fin keep their size on the screen, also on small fins and when zoomed out
+- A list of fins in the task panel, one below the other, the counter fins included: a fin picked there gets the arrows and is selected, also one behind the part
+
+### Changed
+
+- Shorter description in the Addon Manager, which also shows the README with its pictures now
+- The translation files are named `FinSnap_<language>.ts`, with the template `FinSnap.ts` as the start of a new language
+- Tests and tools lie in the package, `freecad/finsnap/tests/` and `freecad/finsnap/tools/`, and come with the addon; run them as described in CONTRIBUTING.md
+- The arrows on a fin are double arrows standing just outside it, so the fin no longer covers the arrow up; an end is left out where the fin cannot go
+- A fin let go where it cannot stand goes as far towards there as it can, to the corner of the face or next to its neighbour, instead of staying at its last place
+- While a fin cannot stand where its arrow is, it alone turns red and the other fins stay green, so the red preview no longer mixes with green
+- Dragging a fin is about three times as fast: each place is built once, and what the drag does not change, the other fins and the overhangs of the part, is built once per drag; the arrow ends are tried once per place of the fin
+
+### Fixed
+
+- Cancel after Quick fins leaves other fins of the part laid flat as they were, with their mark and shape, instead of rebuilding them
+- Quick fins and Add fins without a 3D view, or with another task panel open, delete the new fins again, and Quick fins lays the part back, as there is no panel to cancel in
+- Showing or hiding an object asks only the fins linked to it whether their marks follow, instead of every object of the document
+- A fin dragged where it cannot stand is tried first and never built there, so the object stays valid and the report view gets no traceback at every step of the drag
+- The report view shows the warnings of the fins when they change, instead of again at every rebuild, such as at each step of a drag
+- Add counter fin no longer takes a face still selected from making the fins, such as the chamfer Quick fins stood the part on; a face chosen by hand that cannot take fins is refused with a note, and the counter fin stays as it was
 
 ## [0.4.1] - 2026-10-27
 
@@ -109,7 +141,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.4.1...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.5.0...HEAD
+[0.5.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.5.0
 [0.4.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.4.1
 [0.4.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.4.0
 [0.3.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.3.0

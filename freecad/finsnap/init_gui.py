@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Registers the FinSnap workbench. FreeCAD loads this file by its name."""
 
 import FreeCADGui as Gui

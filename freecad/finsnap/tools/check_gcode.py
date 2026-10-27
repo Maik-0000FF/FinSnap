@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Check a sliced G-code file for FinSnap fins.
 
 For every part exported together with its fins (objects "<name>" and
@@ -6,7 +9,7 @@ For every part exported together with its fins (objects "<name>" and
   - the tines have to reach the part in at least one layer.
 
 Usage (Python with shapely 2.0 or newer):
-    python3 tools/check_gcode.py <file.gcode>
+    python3 -m freecad.finsnap.tools.check_gcode <file.gcode>
 
 The G-code must be plain text (PrusaSlicer: binary_gcode = 0) and carry object
 labels (gcode_label_objects = firmware, i.e. M486).
@@ -222,7 +225,7 @@ def nearest_in_layer(paths, unlabelled):
 
 def main(argv):
     if len(argv) != 2:
-        print("Usage: python3 tools/check_gcode.py <file.gcode>")
+        print("Usage: python3 -m freecad.finsnap.tools.check_gcode <file.gcode>")
         return EXIT_UNUSABLE
     try:
         paths, unlabelled, width = read(argv[1])

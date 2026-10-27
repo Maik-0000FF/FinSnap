@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Turn an STL mesh into a solid that fins can be built on.
 
 A mesh has no exact faces, only triangles. Sewing them into a solid and

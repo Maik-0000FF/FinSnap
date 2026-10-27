@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """The parametric FinSnap object.
 
 One table, PROPERTIES, describes every parameter once: its property name, type,
@@ -37,6 +40,7 @@ CARRIED = "CarriedFaces"
 # "main:2" or "counter:1", so a face picked in the 3D view finds its fin.
 REMOVED = {"main": "RemovedFins", "counter": "RemovedCounterFins"}
 FIN_TAGS = "FinTags"
+TAG_SEPARATOR = ":"
 # How many fins the face was planned for at the last build.
 PLANNED = {"main": "PlannedFins", "counter": "PlannedCounterFins"}
 # Fins moved along the face and fins with a height of their own, by number: mm.
@@ -54,6 +58,8 @@ MAIN, COUNTER = "main", "counter"
 NOTE_MERGED_SINGLE = QT_TRANSLATE_NOOP(
     "FinSnap", "Single fins can be removed with the separate connection only; merged into the part they "
     "have no body of their own. To delete all of them, select the fins in the tree.")
+# Said when a face chosen for the counter fin cannot take fins; %s says why.
+NOTE_NO_COUNTER_ON_FACE = QT_TRANSLATE_NOOP("FinSnap", "No counter fin on this face: %s")
 NOTE_LAID_FLAT = QT_TRANSLATE_NOOP(
     "FinSnap", "The part lies flat again: the fins keep their last shape until the part is moved, for example "
     "stood on its edge again; then they are rebuilt.")
@@ -391,10 +397,49 @@ def overhangs_of(part_obj, document):
     return [face_name(number) for number in overhang.overhangs(shape, supported)]
 
 
+# Builds of one side kept during a drag; beyond these the oldest goes.
+REUSE_KEPT = 8
+
+
 class FinSnapFeature:
     def __init__(self, obj):
         obj.Proxy = self
         add_properties(obj)
+
+    def during_drag(self, name, make):
+        """make(), once while a drag in the task panel lasts, kept as `name`;
+        every time otherwise. What does not change while one fin is dragged."""
+        kept = getattr(self, "reuse", None)
+        if kept is None:
+            return make()
+        if name not in kept:
+            kept[name] = make()
+        return kept[name]
+
+    def side_builder(self, obj, which):
+        """builder(obj, which); while a drag in the task panel lasts, with the
+        same part throughout, and taking a result built before with the same
+        changes by hand, keeping each new one. The panel sets `reuse` to {}
+        then and back to None after. During a drag only the changes by hand
+        of the dragged fin differ from step to step, so the trial build of a
+        step serves its real build, and the other side is built once. The
+        part is kept as well: the faces of a result belong to it."""
+        if getattr(self, "reuse", None) is None:
+            return builder(obj, which)
+        found, side = self.during_drag(which, lambda: (builder(obj, which), {}))
+        if found is None:
+            return None
+        part, build_fn = found
+
+        def build(left, shifts, heights):
+            key = edits_key(left, shifts, heights)
+            if key not in side:
+                # The latest few are enough; a long drag would hold every step.
+                while len(side) >= REUSE_KEPT:
+                    side.pop(next(iter(side)))
+                side[key] = build_fn(left, shifts, heights)
+            return side[key]
+        return part, build
 
     def execute(self, obj):
         # The last build, for the arrows of an open task panel only: a failed
@@ -411,11 +456,11 @@ class FinSnapFeature:
         p = params_of(obj)
         try:
             notes = []
-            part, build_main = builder(obj, MAIN)
+            part, build_main = self.side_builder(obj, MAIN)
             result = build_keeping_edits(obj, MAIN, build_main, notes)
             counter = None
             if obj.CounterFace:
-                counter_part, build_counter = builder(obj, COUNTER)
+                counter_part, build_counter = self.side_builder(obj, COUNTER)
                 counter = build_keeping_edits(obj, COUNTER, build_counter, notes)
         except Exception:
             # Built nothing, the fins carry no face; the overhang marks still
@@ -437,7 +482,8 @@ class FinSnapFeature:
             if built is not None:
                 hidden_property(obj, PLANNED[which], "App::PropertyInteger")
                 setattr(obj, PLANNED[which], built.planned)
-        overhanging = overhangs_of(obj.Base[0], obj.Document)
+        # The faces the fins carry stay the same while one fin is dragged.
+        overhanging = self.during_drag(OVERHANGS, lambda: overhangs_of(obj.Base[0], obj.Document))
         setattr(obj, OVERHANGS, overhanging)
         shapes = [result.fins]
         # Each warning says which fin it is about, the main or the counter fin.
@@ -450,9 +496,9 @@ class FinSnapFeature:
             warnings.append(translate("FinSnap", "%d faces of %s overhang flatter than %.0f degrees without fins: %s")
                             % (len(overhanging), obj.Base[0].Label, d.OVERHANG_ANGLE, ", ".join(overhanging)))
 
-        tags = ["%s:%d" % (MAIN, n) for n in result.numbers]
+        tags = [fin_tag(MAIN, n) for n in result.numbers]
         if counter is not None:
-            tags += ["%s:%d" % (COUNTER, n) for n in counter.numbers]
+            tags += [fin_tag(COUNTER, n) for n in counter.numbers]
         if p.connection == d.CONNECTION_MERGED:
             obj.Shape = geometry.merged(part, *shapes)
             tags = []
@@ -464,9 +510,13 @@ class FinSnapFeature:
         obj.ResultHeight = result.height
         obj.ResultThickness = result.thickness
         obj.ResultFinCount = len(result.positions)
+        # Into the report view only when they changed: every rebuild, as at
+        # each step of a drag, would repeat them there otherwise. Warnings
+        # keeps them all the time.
+        if list(obj.Warnings) != warnings:
+            for warning in warnings:
+                App.Console.PrintWarning("FinSnap: %s\n" % warning)
         obj.Warnings = warnings
-        for warning in warnings:
-            App.Console.PrintWarning("FinSnap: %s\n" % warning)
 
     def onDocumentRestored(self, obj):  # noqa: N802 - FreeCAD API
         obj.Proxy = self
@@ -518,6 +568,14 @@ def add_counter(obj, base=None, face_ref=None):
     face_ref is the name of the face ("Face3"). Without it, the face of the
     same part that leans the other way is searched. Returns the face name, or
     None if there is no such face.
+
+    INPUTS this has to withstand:
+      no face, one leans the other way         ->  that face, counter fin set
+      no face, none leans the other way        ->  None, nothing changed
+      a face that leans over the bed           ->  that face, counter fin set
+      a face lying flat, facing up or sideways,
+        or not planar, such as one still
+        selected from standing the part        ->  FinError saying why, nothing changed
     """
     if face_ref is None:
         base = obj.Base[0]
@@ -526,6 +584,9 @@ def add_counter(obj, base=None, face_ref=None):
         if found is None:
             return None
         face_ref = face_name_of(shape, found)
+    else:
+        # A face chosen by hand has to take fins, or the next build fails.
+        geometry.frame_of(*_face((base, [face_ref])))
     # Changes by hand to a counter fin on another face would name other fins.
     if obj.CounterFace != (base, [face_ref]):
         reset_fins(obj, COUNTER)
@@ -581,6 +642,28 @@ def keep_laid_flat(obj, change):
     setattr(obj, LAID_FLAT_AT, change.multiply(owner.Placement))
     setattr(obj, LAID_FLAT, True)
     obj.Shape = moved(obj.Shape, change)
+
+
+def laid_flat_marks(owner, document):
+    """The fins of `owner` laid flat, by name, with the place their part lay
+    at and the shape they kept, for put_back_laid_flat()."""
+    return [(obj.Name, App.Placement(getattr(obj, LAID_FLAT_AT)), obj.Shape.copy())
+            for obj in fins_of(owner, document) if is_laid_flat(obj)]
+
+
+def put_back_laid_flat(document, marks):
+    """Mark the fins in `marks`, from laid_flat_marks(), laid flat again with
+    the shapes they kept, once their part lies where it did: a command that
+    stood the part and was cancelled leaves them as they were, rather than
+    rebuilt for a part they no longer stand under. Fins deleted since are
+    passed over."""
+    for name, laid_at, shape in marks:
+        obj = document.getObject(name)
+        if obj is None:
+            continue
+        setattr(obj, LAID_FLAT_AT, laid_at)
+        setattr(obj, LAID_FLAT, True)
+        obj.Shape = shape
 
 
 def still_laid_flat(obj):
@@ -674,9 +757,40 @@ def fin_at(obj, sub):
         return None
     for tag, solid in zip(tags, obj.Shape.Solids):
         if any(element.isSame(candidate) for candidate in solid.Faces + solid.Edges):
-            which, number = tag.split(":")
-            return which, int(number)
+            return tag_fin(tag)
     return None
+
+
+def fin_tag(which, number):
+    """The tag of fin `number` of `which` among FIN_TAGS: "main:2"."""
+    return "%s%s%d" % (which, TAG_SEPARATOR, number)
+
+
+def tag_fin(tag):
+    """(MAIN or COUNTER, number) of a tag among FIN_TAGS."""
+    which, number = tag.split(TAG_SEPARATOR)
+    return which, int(number)
+
+
+def fin_faces(obj, which, number):
+    """The indices among the faces of `obj`, from 0, of fin `number` of
+    `which`; empty for a fin not built, or for fins merged into the part,
+    which have no solids of their own."""
+    tags = list(getattr(obj, FIN_TAGS, []))
+    tag = fin_tag(which, number)
+    if tag not in tags:
+        return []
+    own = obj.Shape.Solids[tags.index(tag)].Faces
+    return [index for index, candidate in enumerate(obj.Shape.Faces)
+            if any(candidate.isSame(face) for face in own)]
+
+
+def fin_face(obj, which, number):
+    """The name of a face of fin `number` of `which` ("Face12"), to select the
+    fin by; None where fin_faces() finds none."""
+    faces = fin_faces(obj, which, number)
+    # Face names count from 1.
+    return face_name(faces[0] + 1) if faces else None
 
 
 def edits(obj, which):
@@ -706,13 +820,25 @@ def remove_fin(obj, which, number):
     _edited(obj, which)
 
 
+def stored_mm(mm):
+    """`mm` as a change by hand is stored: a value tried before and the same
+    value stored compare equal."""
+    return round(mm, d.LENGTH_DECIMALS)
+
+
+def edits_key(left, shifts, heights):
+    """The changes by hand of one side, as edits() gives them, as a key:
+    equal changes, equal key."""
+    return tuple(sorted(left)), tuple(sorted(shifts.items())), tuple(sorted(heights.items()))
+
+
 def _set_mm(obj, name, number, mm):
     hidden_property(obj, name, "App::PropertyMap")
     values = dict(getattr(obj, name))
     if mm is None:
         values.pop(str(number), None)
     else:
-        values[str(number)] = repr(round(mm, d.LENGTH_DECIMALS))
+        values[str(number)] = repr(stored_mm(mm))
     setattr(obj, name, values)
 
 
@@ -762,8 +888,8 @@ def remove_fins(obj, fins):
     picked = set(fins)
     built = {MAIN: set(), COUNTER: set()}
     for tag in getattr(obj, FIN_TAGS, []):
-        which, number = tag.split(":")
-        built[which].add(int(number))
+        which, number = tag_fin(tag)
+        built[which].add(number)
     gone = {which: {n for w, n in picked if w == which} for which in built}
     if built[MAIN] and built[MAIN] <= gone[MAIN]:
         return True

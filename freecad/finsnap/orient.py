@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Stand a part on one of its edges, and lay it flat again.
 
 The part lies flat on the bed. It is turned about a selected edge until the

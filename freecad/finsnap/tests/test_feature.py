@@ -1,30 +1,34 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """The parametric object and the 3MF export, without the GUI.
 
-Run from the repository root:
-    freecad --console tests/test_feature.py
+Run in FreeCAD, with this checkout installed as an addon (see CONTRIBUTING.md):
+    freecad --console freecad/finsnap/tests/test_feature.py
 """
 
 import os
 import sys
 import tempfile
-import xml.etree.ElementTree as ET
+# Audited: Parses package.xml and files the tests wrote.
+import xml.etree.ElementTree as ET  # nosec B405
 import zipfile
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-import FreeCAD as App  # noqa: E402
-import Part  # noqa: E402
-from support import STANDARD_THICKNESS, expect, lower_left_face, run, tilted_cube  # noqa: E402
-from freecad.finsnap import defaults as d  # noqa: E402
-from freecad.finsnap import export_3mf, export_step, feature, geometry, orient  # noqa: E402
-from freecad.finsnap import presets  # noqa: E402
-from freecad.finsnap.params import FinParams, ParamError  # noqa: E402
-from freecad.finsnap.shapes import global_shape, outermost  # noqa: E402
+import FreeCAD as App
+import Part
+from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left_face, run, tilted_cube
+from freecad.finsnap import defaults as d
+from freecad.finsnap import export_3mf, export_step, feature, geometry, orient
+from freecad.finsnap import presets
+from freecad.finsnap.params import FinParams, ParamError
+from freecad.finsnap.paths import PACKAGE_XML
+from freecad.finsnap.shapes import global_shape, outermost
 
 V = App.Vector
 # The version as package.xml states it, read independently of the workbench.
-PACKAGE_XML = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "package.xml")
-PACKAGE_VERSION = ET.parse(PACKAGE_XML).getroot().findtext("{https://wiki.freecad.org/Package_Metadata}version")
+# Audited: package.xml of this repository.
+PACKAGE_ROOT = ET.parse(PACKAGE_XML).getroot()  # nosec B314
+PACKAGE_VERSION = PACKAGE_ROOT.findtext("{https://wiki.freecad.org/Package_Metadata}version")
 BOX = (40.0, 20.0, 20.0)
 XY_PLANE = 3  # index in the origin features of a Body
 FIN_SHIFT = 1.5  # how far a fin is moved along the face by hand, in mm

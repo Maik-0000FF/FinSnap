@@ -1,7 +1,10 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """The commands as a user runs them, in a FreeCAD with GUI but without a screen.
 
-Run from the repository root:
-    QT_QPA_PLATFORM=offscreen freecad tests/test_gui.py
+Run in FreeCAD, with this checkout installed as an addon (see CONTRIBUTING.md):
+    QT_QPA_PLATFORM=offscreen freecad freecad/finsnap/tests/test_gui.py
 
 Dialogs that would wait for a click are replaced by fixed answers; everything
 else, from the selection to the written file, runs as in FreeCAD.
@@ -13,14 +16,12 @@ import sys
 import tempfile
 import zipfile
 
-sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-
-import FreeCAD as App  # noqa: E402
-import FreeCADGui as Gui  # noqa: E402
-import Part  # noqa: E402
-from pivy import coin  # noqa: E402
-from PySide import QtWidgets  # noqa: E402
-from support import STANDARD_THICKNESS, expect, lower_left_face, run, tilted_cube  # noqa: E402
+import FreeCAD as App
+import FreeCADGui as Gui
+import Part
+from pivy import coin
+from PySide import QtWidgets
+from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left_face, run, tilted_cube
 
 WORKBENCH = "FinSnapWorkbench"
 COMMANDS = ("FinSnap_QuickFins", "FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCounterFin",
@@ -42,12 +43,16 @@ FIN_SHIFT = 1.5  # how far a handle moves a fin along the face, in mm
 TOO_MANY_FINS = 50  # more fins than the face takes, so the build fails
 AXIS_Z_RGB = (0.2, 0.2, 0.8)  # FreeCAD's standard colour of the z axis
 COLOR_TOLERANCE = 0.01
+BUILD_STEP = 0.5  # how far a fin moves at each step of a counted drag, in mm
+# Shares of the step between two tines a fin is dragged down, short of and past half of it.
+SHORT_OF_HALF_STEP = 0.4
+PAST_HALF_STEP = 0.6
+TOO_HIGH = 100.0  # how far an arrow is dragged up, far above any face of the tests, in mm
+GERMAN = "FinSnap_de.ts"  # written by freecad/finsnap/tools/update_translations.sh
 
 
 def load_workbench():
-    # Installed copies register themselves at start-up; a checkout does so on import.
-    if WORKBENCH not in Gui.listWorkbenches():
-        import freecad.finsnap.init_gui  # noqa: F401
+    # The installed addon registered the workbench when FreeCAD started.
     Gui.activateWorkbench(WORKBENCH)
     from freecad.finsnap import commands
     return commands
@@ -70,6 +75,21 @@ def face_name(obj, face):
         if candidate.isSame(face):
             return "Face%d" % i
     raise AssertionError("face not found")
+
+
+def rgb_close(color, wanted):
+    """Whether `color`, with or without alpha, is `wanted` in red, green and blue."""
+    return all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(color[:3], wanted))
+
+
+def fin_tinted(obj, fin, tint=None):
+    """Whether the faces of `fin` are in `tint`, red without, and every other face green."""
+    from freecad.finsnap import feature, handles
+    own = set(feature.fin_faces(obj, *fin))
+    colors = [material.DiffuseColor for material in obj.ViewObject.ShapeAppearance]
+    return bool(own) and len(colors) == len(obj.Shape.Faces) and all(
+        rgb_close(color, (tint or handles.INVALID_COLOR) if index in own else handles.VALID_COLOR)
+        for index, color in enumerate(colors))
 
 
 def select(obj, *subs):
@@ -224,6 +244,45 @@ def main():
     expect(marks.whichChild.getValue() == coin.SO_SWITCH_NONE, "hiding the part hides the marks on it")
     box.ViewObject.Visibility = True
     expect(marks.whichChild.getValue() == coin.SO_SWITCH_ALL, "showing the part shows them again")
+    # A part inside containers: hiding the container it lies in, or the one
+    # around that, hides its marks as well.
+    outer = doc.addObject("App::Part", "Outer")
+    inner = doc.addObject("App::Part", "Inner")
+    outer.addObject(inner)
+    held = doc.addObject("Part::Feature", "Held")
+    held.Shape = box.Shape.copy()
+    held.Placement = box.Placement
+    inner.addObject(held)
+    nested = feature.create(held, "Face%d" % steep[0])
+    commands.ViewProviderFinSnap(nested.ViewObject)
+    doc.recompute()
+    nested_marks = nested.ViewObject.Proxy.marks
+    for container in (inner, outer):
+        container.ViewObject.Visibility = False
+        hidden = nested_marks.whichChild.getValue() == coin.SO_SWITCH_NONE
+        container.ViewObject.Visibility = True
+        expect(hidden and nested_marks.whichChild.getValue() == coin.SO_SWITCH_ALL,
+               "hiding %s, which holds the part, hides its marks, showing it shows them" % container.Label)
+    # Shown or hidden, an object no fins depend on is not checked against
+    # every object of the document.
+    checked = []
+    real_is_fins = feature.is_fins
+
+    def counting_is_fins(obj):
+        checked.append(obj)
+        return real_is_fins(obj)
+
+    lone = doc.addObject("Part::Feature", "Lone")
+    lone.Shape = Part.makeBox(1, 1, 1)
+    doc.recompute()
+    feature.is_fins = counting_is_fins
+    try:
+        lone.ViewObject.Visibility = False
+    finally:
+        feature.is_fins = real_is_fins
+    expect(not checked, "hiding an object no fins depend on checks no other object: %d" % len(checked))
+    for name in (lone.Name, nested.Name, held.Name, inner.Name, outer.Name):
+        doc.removeObject(name)
 
     # Fins under the overhanging face as well: the report after a tilt leaves it out.
     carried = feature.create(box, hanging[0])
@@ -336,6 +395,54 @@ def main():
         doc.removeObject(made[0].Name)
         quick.Placement = App.Placement()
         doc.recompute()
+    # Fins of the part laid flat keep their mark and shape over a Quick fins
+    # cancelled: standing the part rebuilt them, Cancel gives them back.
+    select(quick, "Edge%d" % on_bed)
+    Gui.runCommand("FinSnap_QuickFins")
+    kept = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick][0]
+    kept.ViewObject.Proxy.panel.accept()
+    # Laid flat keeping its fins, as Lay flat again does with No.
+    feature.keep_laid_flat(kept, orient.back_to_flat(quick))
+    orient.lay_back(quick)
+    doc.recompute()
+    flat_box = kept.Shape.BoundBox
+    # Over the opposite edge on the bed: the face over the first is carried already.
+    bounds = quick.Shape.BoundBox
+    opposite = [i for i, e in enumerate(quick.Shape.Edges, 1) if e.BoundBox.ZMax < bounds.ZMin + d.TOLERANCE
+                and e.BoundBox.YMin > bounds.YMax - d.TOLERANCE]
+    expect(opposite, "the part lies flat again, with an edge on the bed opposite the first")
+    opposite = opposite[0]
+    select(quick, "Edge%d" % opposite)
+    Gui.runCommand("FinSnap_QuickFins")
+    rebuilt = not feature.is_laid_flat(kept)
+    others = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick and o is not kept]
+    expect(others, "Quick fins runs again on the part with fins laid flat: %s" % messages)
+    second = others[0]
+    second.ViewObject.Proxy.panel.reject()
+    expect(rebuilt and feature.is_laid_flat(kept) and kept.Shape.BoundBox.isInside(flat_box)
+           and flat_box.isInside(kept.Shape.BoundBox) and quick.Placement.isIdentity(),
+           "Cancel after Quick fins leaves other fins laid flat as they were, mark and shape")
+    doc.removeObject(kept.Name)
+    doc.recompute()
+    # Without a 3D view the panel cannot open, so there is no Cancel: the
+    # fins go again and the part lies as before, at once, with a message.
+    from freecad.finsnap import handles as handles_module
+    real_handles = handles_module.Handles
+
+    def without_view(*args):
+        raise handles_module.NoView("no 3D view")
+
+    handles_module.Handles = without_view
+    try:
+        select(quick, "Edge%d" % on_bed)
+        Gui.runCommand("FinSnap_QuickFins")
+    finally:
+        handles_module.Handles = real_handles
+    left = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick]
+    expect(not left and quick.Placement.isIdentity() and messages and "no 3D view" in messages[-1]
+           and not Gui.Control.activeDialog(),
+           "Quick fins without a 3D view leaves no fins and the part as it lay: %s" % messages)
+    del messages[:]
     doc.removeObject(quick.Name)
     # An edge off the bed between faces not at a right angle: Quick fins points to Stand on edge.
     beveled = doc.addObject("Part::Feature", "Beveled")
@@ -358,7 +465,8 @@ def main():
     select(cube, face_name(cube, lower_left_face(cube.Shape)))
     Gui.runCommand("FinSnap_AddFins")
     created = [o for o in doc.Objects if o.TypeId == "Part::FeaturePython"]
-    expect(len(created) == 1 and Gui.Control.activeDialog(), "Add fins creates the object and opens the panel")
+    expect(len(created) == 1 and Gui.Control.activeDialog() and not Gui.Selection.getSelection(),
+           "Add fins creates the object and opens the panel, the selection that made it used up")
     Gui.Control.closeDialog()
     fins = created[0]
     doc.recompute()
@@ -490,6 +598,26 @@ def main():
     editing.remove_selected()
     editing.add_counter()
     expect(lined.ResultFinCount == 2 and lined.CounterFace, "the panel removes the selected fin and adds a counter fin")
+    editing.fin_list.setCurrentRow(editing.fin_list.count() - 1)
+    expect(editing.listed_fins[-1][0] == feature.COUNTER and editing.handled == editing.listed_fins[-1]
+           and editing.selected_fins() == [editing.handled],
+           "the list names the counter fins last; one picked there gets the arrows and is selected: %s"
+           % editing.listed_fins)
+    gone_before = feature.removed(lined, feature.MAIN)
+    editing.fin_list.setCurrentRow(0)
+    picked = editing.handled
+    editing.remove_selected()
+    expect(picked[0] == feature.MAIN and feature.removed(lined, feature.MAIN) == sorted(gone_before + [picked[1]]),
+           "Remove selected fin takes the fin picked in the list")
+    # A face lying on the bed, selected for the counter fin, is refused with a
+    # note, and the counter fin stays where it was.
+    counter_face = lined.CounterFace
+    on_bed = [f for f in row.Shape.Faces if f.BoundBox.ZLength < d.TOLERANCE][0]
+    select(row, face_name(row, on_bed))
+    editing.add_counter()
+    expect(lined.CounterFace == counter_face and not editing.notes.isHidden()
+           and taskpanel.WARNING_COLOR in editing.notes.styleSheet(),
+           "a face on the bed is refused for the counter fin, with a note: %s" % editing.notes.text())
     editing.reject()
     expect(lined.ResultFinCount == 2 and not lined.CounterFace and feature.removed(lined, feature.MAIN) == [2],
            "Cancel puts back the fins as they were when the panel opened")
@@ -536,6 +664,16 @@ def main():
            "the fins are see-through while the panel is open")
     select(lined, face_of_fin(2))
     expect(moving.handled == (feature.MAIN, 3), "a fin clicked gets the handles")
+    expect(moving.fin_list.count() == 3 and moving.fin_list.currentRow() == 2,
+           "the list shows the fins one below the other and marks the one clicked in the 3D view")
+    moving.fin_list.setCurrentRow(1)
+    expect(moving.handled == (feature.MAIN, 2) and moving.fin_label.text().endswith("2")
+           and moving.selected_fins() == [(feature.MAIN, 2)],
+           "a fin picked in the list gets the arrows, its name and the selection")
+    Gui.Selection.clearSelection()
+    moving.fin_list.itemClicked.emit(moving.fin_list.item(1))
+    expect(moving.selected_fins() == [(feature.MAIN, 2)],
+           "a click on the row already marked selects its fin again")
     select(lined, face_of_fin(0))
     before = lined.Shape.Solids[0].BoundBox.Center
     held = dict(moving.handles.draggers)
@@ -565,22 +703,172 @@ def main():
            and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_ALL
            and taskpanel.ERROR_COLOR in moving.notes.styleSheet(),
            "a fin dragged onto its neighbour stays at its last place, shown red where the arrow is")
+    expect(fin_tinted(lined, moving.handled), "while the fin cannot stand where the arrow is, it alone is "
+           "red, not mixed with green; the other fins stay green")
+    expect(lined.isValid(), "a place where the fin cannot stand is never built into the object")
+    # After one fin alone was red, the whole object turns red and green again
+    # with one material, whatever number of faces it has by then.
+    moving.handles.tint(False)
+    red_once = list(lined.ViewObject.ShapeAppearance)
+    moving.handles.tint(True)
+    expect(len(red_once) == 1 and rgb_close(red_once[0].DiffuseColor, handles.INVALID_COLOR)
+           and len(lined.ViewObject.ShapeAppearance) == 1, "after one fin alone was red, the whole object can turn red")
+    moving.drag_step()
     moving.finish_drag(handles.ALONG, onto_neighbour)
-    expect(feature.edits(lined, feature.MAIN)[1] == {1: FIN_SHIFT}
-           and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_NONE,
-           "let go there, it stays at its last place")
+    snapped = feature.edits(lined, feature.MAIN)[1].get(1, 0.0)
+    # The drag started with the fin moved by FIN_SHIFT already.
+    nearest = FIN_SHIFT + onto_neighbour - result.thickness - d.FOOT_CLEARANCE
+    expect(nearest - taskpanel.SNAP_RESOLUTION - d.TOLERANCE <= snapped <= nearest + d.TOLERANCE
+           and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_NONE
+           and rgb_close(lined.ViewObject.ShapeColor, handles.VALID_COLOR),
+           "let go there, it goes as near to its neighbour as it can stand, green again: %.3f of %.3f mm"
+           % (snapped, nearest))
+    moving.update_ends()
+    expect(moving.handles.ends[handles.ALONG] == (handles.BACK,),
+           "at its neighbour, the arrow along the face shows no end towards it")
+    expect(all(switch.whichChild.getValue() == coin.SO_SWITCH_NONE
+               for halves in moving.handles.halves[handles.ALONG].values() for end, switch in halves.items()
+               if end == handles.FORTH), "the end left out is hidden, at rest and held")
+    # Dragged up or down, the fin follows the arrow: near a tine it is built
+    # ending with it, green; between tines it is built as high as the arrow,
+    # yellow, with no second fin over it; far above the face, where it cannot
+    # stand, it stays and is red. Let go, it goes to the nearest tine.
+    tops = moving.tine_tops()
+    high = moving.built_value(handles.UP)
+    pitch = tops[-1] - tops[-2]
+    between = tops[-2] + pitch / 2
+    moving.handle_started(handles.UP)
+    moving.handle_moved(handles.UP, between - high)
+    moving.drag_step()
+    expect(len(tops) > 1 and fin_tinted(lined, moving.handled, handles.BETWEEN_COLOR)
+           and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_NONE
+           and abs(moving.built_value(handles.UP) - between) < d.TOLERANCE,
+           "dragged between two tines, the fin is built as high as the arrow, yellow, alone: %s" % tops)
+    moving.handle_moved(handles.UP, tops[-2] + taskpanel.HEIGHT_REACH / 2 - high)
+    moving.drag_step()
+    expect(abs(moving.built_value(handles.UP) - tops[-2]) < d.TOLERANCE
+           and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_NONE
+           and len(lined.ViewObject.ShapeAppearance) == 1,
+           "dragged near a tine, the fin is built ending with it, green")
+    moving.handle_moved(handles.UP, TOO_HIGH)
+    moving.drag_step()
+    expect(fin_tinted(lined, moving.handled) and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_ALL
+           and abs(moving.built_value(handles.UP) - tops[-2]) < d.TOLERANCE,
+           "dragged far above the face, the fin stays at its last place, red")
+    moving.finish_drag(handles.UP, TOO_HIGH)
+    tallest = moving.built_value(handles.UP)
+    expect(abs(tallest - tops[-1]) < d.TOLERANCE and len(lined.ViewObject.ShapeAppearance) == 1,
+           "let go far above the face, the fin ends with its highest tine, green: %.3f mm" % tallest)
+    moving.update_ends()
+    expect(moving.handles.ends[handles.UP] == (handles.BACK,), "at its highest tine, the arrow up shows no end up")
+    moving.handle_started(handles.UP)
+    moving.finish_drag(handles.UP, -SHORT_OF_HALF_STEP * pitch)
+    kept = moving.built_value(handles.UP)
+    moving.handle_started(handles.UP)
+    moving.finish_drag(handles.UP, -PAST_HALF_STEP * pitch)
+    expect(abs(kept - tops[-1]) < d.TOLERANCE and abs(moving.built_value(handles.UP) - tops[-2]) < d.TOLERANCE,
+           "let go less than half a step down the height stays, more than half it ends with the tine below")
+    moving.update_ends()
+    expect(moving.handles.ends[handles.UP] == ((handles.BACK, handles.FORTH) if len(tops) > 2 else (handles.FORTH,)),
+           "between its tines, the arrow up shows both ends")
+    # Dragged over the corner of the face, let go it stands at the corner.
+    moving.handle_started(handles.ALONG)
+    moving.handle_moved(handles.ALONG, -TOO_HIGH)
+    moving.finish_drag(handles.ALONG, -TOO_HIGH)
+    cornered = moving.built_value(handles.ALONG)
+    expect(cornered < FIN_SHIFT and not moving.can_stand(handles.ALONG, cornered - taskpanel.SNAP_RESOLUTION),
+           "let go beyond the corner of the face, the fin stands at the corner: %.3f mm" % cornered)
+    moving.update_ends()
+    expect(moving.handles.ends[handles.ALONG] == (handles.FORTH,),
+           "at the corner, the arrow along the face shows no end beyond it")
+    moving.fin_fields[handles.ALONG].setValue(place + FIN_SHIFT)
+    moving.field_entered(handles.ALONG)
+    moving.fin_fields[handles.UP].setValue(high)
+    moving.field_entered(handles.UP)
     lower = result.heights[1] - FIN_SHIFT
     moving.fin_fields[handles.UP].setValue(lower)
     moving.field_entered(handles.UP)
     lowered = lined.Proxy.results[feature.MAIN]
     expect(abs(lowered.heights[1] - lower) < d.TOLERANCE, "a height typed into the field sets the fin's height")
+    moving.handle_started(handles.UP)
+    moving.finish_drag(handles.UP, 0.0)
+    expect(abs(moving.built_value(handles.UP) - lower) < d.TOLERANCE,
+           "a click on the arrow up keeps a height typed by hand, off the tines")
     moving.fin_fields[handles.ALONG].setValue(place)
     moving.field_entered(handles.ALONG)
     expect(not feature.edits(lined, feature.MAIN)[1], "a place typed into the field moves the fin there")
     lowered = lined.Proxy.results[feature.MAIN]
+    off_edge = App.Vector(*moving.handles.offsets[handles.UP].translation.getValue().getValue())
     expect(App.Vector(*moving.handles.places[handles.UP].translation.getValue().getValue())
-           .sub(lowered.edges[1]).Length < d.TOLERANCE,
-           "the arrows follow to the upright outer edge of the fin")
+           .sub(lowered.edges[1]).Length < d.TOLERANCE
+           and abs(off_edge.Length - handles.CLEARANCE) < d.TOLERANCE,
+           "the arrows follow to the upright outer edge of the fin, just outside it")
+    # A drag builds each place once: the trial of a step serves its real
+    # build, and nothing is built twice. Afterwards every build is new, and
+    # the arrow ends are tried once for each place of the fin.
+    from freecad.finsnap import geometry
+    real_build = geometry.build
+    builds = []
+
+    def counting(*args, **kwargs):
+        builds.append(args)
+        return real_build(*args, **kwargs)
+
+    geometry.build = counting
+    try:
+        moving.handle_started(handles.ALONG)
+        steps = []
+        for step in (1, 2):
+            moving.handle_moved(handles.ALONG, step * BUILD_STEP)
+            del builds[:]
+            moving.drag_step()
+            steps.append(len(builds))
+        moving.finish_drag(handles.ALONG, 2 * BUILD_STEP)
+        reuse_after = lined.Proxy.reuse
+        del builds[:]
+        moving.update_ends()
+        first_ends = len(builds)
+        del builds[:]
+        moving.update_ends()
+        same_ends = len(builds)
+        tine_count = moving.widgets["TineCount"]
+        tine_count.setValue(tine_count.value() + 1)
+        moving.preview()
+        del builds[:]
+        moving.update_ends()
+        changed_ends = len(builds)
+        tine_count.setValue(tine_count.value() - 1)
+        moving.preview()
+    finally:
+        geometry.build = real_build
+    expect(steps == [1, 1], "each step of a drag builds once, not as trial and again for real: %s" % steps)
+    expect(reuse_after is None, "after the drag, every build is made afresh")
+    expect(first_ends == len(handles.KINDS) * 2 and same_ends == 0 and changed_ends > 0,
+           "the arrow ends are tried once for each place, again after a parameter changed: %d, %d, %d"
+           % (first_ends, same_ends, changed_ends))
+    # A drag that fails on letting go still ends: every later build is made afresh.
+    real_drag_to = moving.drag_to
+
+    def failing(*args):
+        raise RuntimeError("a drag failing on purpose")
+
+    moving.drag_to = failing
+    moving.handle_started(handles.ALONG)
+    try:
+        moving.finish_drag(handles.ALONG, BUILD_STEP)
+    except RuntimeError:
+        pass
+    moving.drag_to = real_drag_to
+    expect(lined.Proxy.reuse is None, "a drag that fails on letting go still ends, nothing is kept")
+    # A value typed just before an arrow is grabbed is built first.
+    tines = moving.widgets["TineCount"]
+    typed = tines.value() + 1
+    tines.setValue(typed)
+    moving.handle_started(handles.ALONG)
+    moving.finish_drag(handles.ALONG, 0.0)
+    expect(lined.TineCount == typed, "a value typed just before an arrow is grabbed is built first")
+    tines.setValue(typed - 1)
+    moving.preview()
     # A click on an arrow without a move, and a field left as it is, change nothing.
     feature.reset_fins(lined)
     lined.recompute()
@@ -622,9 +910,18 @@ def main():
     Gui.Control.showDialog(blocker)
     expect(lined.ViewObject.Proxy.setEdit(lined.ViewObject) is False and lined.ViewObject.Transparency == look[1],
            "with another task dialog open no panel opens, and the fins keep their look")
-    commands._edit_new(lined)
-    expect(not getattr(lined.ViewObject.Proxy, "created", False),
-           "fins opened while another dialog is open are not taken as just made")
+    # Fins just made cannot be edited then: they go again, with a message,
+    # as there would be no Cancel for them.
+    del messages[:]
+    blocked = feature.create(row, face_name(row, lower_left_face(row.Shape)))
+    commands.ViewProviderFinSnap(blocked.ViewObject)
+    doc.recompute()
+    blocked_name = blocked.Name
+    commands._edit_new(blocked)
+    expect(blocked_name not in [o.Name for o in doc.Objects] and len(messages) == 1
+           and App.Qt.translate("FinSnap", commands.NOTE_BUSY) in messages[0],
+           "new fins that cannot be edited while another task panel is open go again, with a message")
+    del messages[:]
     Gui.Control.closeDialog()
     # No 3D view to show the fins in: double click says so instead of failing.
     from freecad.finsnap import handles as handles_module
@@ -641,10 +938,12 @@ def main():
     expect(opened is False and messages and "no 3D view" in messages[-1] and not Gui.Control.activeDialog(),
            "without a 3D view no panel opens, and a message says why: %s" % messages)
     # Read from the German file itself: the language FreeCAD runs in may be English.
-    import xml.etree.ElementTree as ET
+    # Audited: Parses the German file of this repository.
+    import xml.etree.ElementTree as ET  # nosec B405
     from freecad.finsnap.paths import TRANSLATIONS
     no_view_text = "No 3D view of %s is open to edit the fins in."
-    german = ET.parse(os.path.join(TRANSLATIONS, "finsnap_de.ts")).getroot()
+    # Audited: File of this repository.
+    german = ET.parse(os.path.join(TRANSLATIONS, GERMAN)).getroot()  # nosec B314
     expect(any(m.findtext("source") == no_view_text and m.find("translation").get("type") is None
                and m.findtext("translation") for m in german.iter("message")),
            "the message without a 3D view has a German translation")

@@ -1,11 +1,15 @@
 <?xml version="1.0" encoding="UTF-8" standalone="no" ?>
+<!--
+  SPDX-FileCopyrightText: 2026 Maik-0000FF
+  SPDX-License-Identifier: GPL-3.0-or-later
+-->
 <package format="1" xmlns="https://wiki.freecad.org/Package_Metadata">
 
   <name>FinSnap</name>
 
-  <description>Breakaway fins for parts printed standing on an edge. The fins hold the tilted part on the bed and touch it only with small horizontal tines, as a separate object or merged with the part. Printing on an edge puts the layers diagonal to the load and gives every side the same finish.</description>
+  <description>Breakaway fins for parts printed standing on an edge. The fins hold the tilted part on the bed and touch it only with small horizontal tines.</description>
 
-  <version>0.4.1</version>
+  <version>0.5.0</version>
 
   <date>2026-10-27</date>
 
@@ -19,6 +23,8 @@
 
   <url type="bugtracker">https://github.com/Maik-0000FF/FinSnap/issues</url>
 
+  <url type="readme">https://github.com/Maik-0000FF/FinSnap/raw/main/README.md</url>
+
   <icon>freecad/finsnap/icons/finsnap.svg</icon>
 
   <tag>3D printing</tag>
@@ -29,6 +35,9 @@
       <classname>FinSnapWorkbench</classname>
       <subdirectory>./</subdirectory>
       <freecadmin>1.1.0</freecadmin>
+      <depend type="internal">Part</depend>
+      <depend type="internal">MeshPart</depend>
+      <depend type="internal">Import</depend>
     </workbench>
   </content>
 

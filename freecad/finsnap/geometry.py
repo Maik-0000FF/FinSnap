@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Fin geometry for one supported face.
 
 The part stands tilted on the bed. A planar face of it leans outward over the
@@ -161,6 +164,11 @@ class FinResult:
     heights: dict = field(default_factory=dict)
     # The middle of the upright outer edge of each fin built, by number.
     edges: dict = field(default_factory=dict)
+    # The direction away from the part, level with the bed: the outer edges face it.
+    out: App.Vector = None
+    # By number, the heights of the tines of each fin built that find the face
+    # (mm, from the bed), all of them, also above a height of its own.
+    touching_z: dict = field(default_factory=dict)
     # Where the face starts along it (mm, as starts): fins are placed from there.
     face_start: float = 0.0
 
@@ -564,6 +572,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     gap_heights = set(gap_z)
     fins_left_out = []
     fin_heights = []
+    touching_z = {}
     edges = []
     numbers = []
     for number, t0 in starts.items():
@@ -580,8 +589,11 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         start = tine_start(p, t0, thickness)
         # A tine wholly or partly over a recess or a hole in the face would hang
         # free there; it is left out, and a fin without any tine left with it.
-        on_face = [contact_share(frame, support, start, p, z) >= d.TINE_MIN_CONTACT - d.TOLERANCE
-                   for z in candidate_z]
+        # Tried at every tine height, also above a height of its own: those are
+        # the heights the fin can be given with a tine on top.
+        touching = {z for z in tine_z
+                    if contact_share(frame, support, start, p, z) >= d.TINE_MIN_CONTACT - d.TOLERANCE}
+        on_face = [z in touching for z in candidate_z]
         kept_z = [z for z, whole in zip(candidate_z, on_face) if whole]
         if not kept_z:
             fins_left_out.append(t0 + thickness / 2 - face_start)
@@ -597,6 +609,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         kept = [tine for tine, whole in zip(tines, on_face) if whole]
         dropped += [tine for tine, whole in zip(tines, on_face) if not whole]
         fin_heights.append(fin_height)
+        touching_z[number] = sorted(touching)
         edges.append(edge)
         built.append(t0)
         numbers.append(number)
@@ -638,8 +651,9 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
                      thickness=thickness, tine_z=tine_z, positions=built,
                      foot_half_width=half_foot, warnings=warnings, carried=support.Faces,
                      numbers=numbers, planned=len(positions),
-                     dropped=dropped, starts={n: starts[n] for n in numbers}, along=frame.along,
+                     dropped=dropped, starts={n: starts[n] for n in numbers}, along=frame.along, out=frame.out,
                      heights=dict(zip(numbers, fin_heights)), edges=dict(zip(numbers, edges)),
+                     touching_z=touching_z,
                      face_start=face_start)
 
 

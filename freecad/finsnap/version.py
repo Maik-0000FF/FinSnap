@@ -1,3 +1,6 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """The version of FinSnap, read from package.xml at run time.
 
 package.xml is the single source of the version; the Addon Manager reads it
@@ -10,7 +13,8 @@ INPUTS this has to withstand (version()):
   <version> empty or missing                 ->  UNKNOWN
 """
 
-import xml.etree.ElementTree as ET
+# Audited: Parses only package.xml of this addon.
+import xml.etree.ElementTree as ET  # nosec B405
 
 from .paths import PACKAGE_XML
 
@@ -25,7 +29,8 @@ def version():
     global _cached
     if _cached is None:
         try:
-            root = ET.parse(PACKAGE_XML).getroot()
+            # Audited: package.xml of this addon.
+            root = ET.parse(PACKAGE_XML).getroot()  # nosec B314
             _cached = (root.findtext("p:version", default="", namespaces=NAMESPACE) or "").strip() or UNKNOWN
         except (OSError, ET.ParseError):
             _cached = UNKNOWN

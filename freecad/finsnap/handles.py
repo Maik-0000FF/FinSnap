@@ -1,9 +1,13 @@
+# SPDX-FileCopyrightText: 2026 Maik-0000FF
+# SPDX-License-Identifier: GPL-3.0-or-later
+
 """Handles in the 3D view to move a fin along its face and to set its height.
 
 While the task panel is open the fins are shown see-through, green while they
 can be built and red while not, the tines that find no face are marked red,
-and two arrows sit on the middle of the upright outer edge of one fin, the
-one picked or the first: one along the face, one up. While an arrow is
+and two double arrows stand just outside the middle of the upright outer
+edge of one fin, the one picked or the first: one along the face, one up. An
+end of an arrow is left out where the fin cannot go. While an arrow is
 dragged the task panel builds the fins along, and shows the fin red where it
 cannot stand.
 
@@ -32,7 +36,12 @@ from .i18n import translate
 # green for what a feature adds, red for an error, faint enough to see through.
 VALID_COLOR = (0.0, 1.0, 0.6)
 INVALID_COLOR = (1.0, 0.0, 0.0)
+# A fin dragged to a height between two tines: it stands, but goes to the
+# nearest tine when let go.
+BETWEEN_COLOR = (1.0, 0.85, 0.0)
 PREVIEW_TRANSPARENCY = 1.0 - 0.2
+# What a material of a face carries besides its colour, kept when one face is tinted.
+MATERIAL_FIELDS = ("AmbientColor", "SpecularColor", "EmissiveColor", "Shininess", "Transparency")
 # Transparency of a view object is set in percent.
 PERCENT = 100
 # Largest deviation of drawn faces from the true faces (mm).
@@ -42,14 +51,26 @@ MESH_DEVIATION = 0.1
 FACE_OFFSET = -1.0
 
 ALONG, UP = "along", "up"
+KINDS = (ALONG, UP)
 UP_DIRECTION = App.Vector(0, 0, 1)
-# An arrow is this share of the height of its fin long.
-ARROW_SHARE = 0.4
-# The shape of an arrow one unit long, as FreeCAD draws its own: a thin
-# shaft and a cone at the tip.
+# The two ends of an arrow: towards smaller and towards larger values.
+BACK, FORTH = -1, 1
+# The arrows keep their size on the screen, whatever the size of the fin and
+# the zoom, as FreeCAD's own draggers do, through FreeCAD's node for it. Its
+# scale factor 1 makes a unit about a fiftieth of the view, less in a wide
+# window; a half arrow is a unit long. FreeCAD sizes it at the origin, so in
+# a perspective view an arrow far from the origin is a little off that, as
+# FreeCAD's own are.
+AUTO_ZOOM = "SoAutoZoomTranslation"
+ARROW_SCREEN_SIZE = 4.0
+# The shape of a half arrow one unit long, as FreeCAD draws its own arrows: a
+# thin shaft and a cone at the tip.
 SHAFT_RADIUS = 0.025
 TIP_LENGTH = 0.25
 TIP_RADIUS = 0.08
+# The arrows stand this far off the outer edge of their fin, in units of a
+# half arrow: clear of the fin, which would cover them otherwise.
+CLEARANCE = 2 * TIP_RADIUS
 # The arrows take the colours of the axes they follow, as set in FreeCAD's
 # preferences, and the colour of FreeCAD's own arrows while held.
 VIEW_PARAMETERS = "User parameter:BaseApp/Preferences/View"
@@ -97,11 +118,37 @@ def axis_color(axis):
     return tuple((packed >> shift & BYTE) / BYTE for shift in (24, 16, 8))
 
 
-def arrow(color):
-    """An arrow one unit long from the origin along +x."""
+def double_arrow(color, offset):
+    """An arrow from -1 to +1 along x, with a tip at each end, of a fixed size
+    on the screen, moved by `offset` (a SoTranslation, in its units), and the
+    switch of each half by its end, BACK or FORTH, to hide one."""
     group = coin.SoSeparator()
     base = coin.SoBaseColor()
     base.rgb.setValue(*color)
+    zoom = coin.SoType.fromName(AUTO_ZOOM).createInstance()
+    zoom.scaleFactor.setValue(ARROW_SCREEN_SIZE)
+    for node in (base, zoom, offset):
+        group.addChild(node)
+    halves = {}
+    for end in (BACK, FORTH):
+        switch = coin.SoSwitch()
+        switch.whichChild.setValue(coin.SO_SWITCH_ALL)
+        half = coin.SoSeparator()
+        if end == BACK:
+            turn = coin.SoRotationXYZ()
+            turn.axis.setValue(coin.SoRotationXYZ.Z)
+            turn.angle.setValue(math.pi)
+            half.addChild(turn)
+        half.addChild(half_arrow())
+        switch.addChild(half)
+        group.addChild(switch)
+        halves[end] = switch
+    return group, halves
+
+
+def half_arrow():
+    """Half an arrow, one unit long from the origin along +x."""
+    group = coin.SoSeparator()
     # Coin's cylinder and cone stand along y; turned, they point along x.
     turn = coin.SoRotationXYZ()
     turn.axis.setValue(coin.SoRotationXYZ.Z)
@@ -117,7 +164,7 @@ def arrow(color):
     tip = coin.SoCone()
     tip.bottomRadius.setValue(TIP_RADIUS)
     tip.height.setValue(TIP_LENGTH)
-    for node in (base, turn, to_shaft, shaft, to_tip, tip):
+    for node in (turn, to_shaft, shaft, to_tip, tip):
         group.addChild(node)
     return group
 
@@ -163,14 +210,18 @@ class Handles:
         for node in (self.arrows, self.preview, self.dropped):
             node.whichChild.setValue(coin.SO_SWITCH_NONE)
             self.root.addChild(node)
-        # Each arrow: where it stands and how long it is, and the dragger.
-        self.places, self.draggers, self.lengths = {}, {}, {}
-        for kind in (ALONG, UP):
+        # Each arrow: where it stands and how long it is, and the dragger; the
+        # halves of its two looks, at rest and held, and which ends it shows.
+        self.places, self.draggers = {}, {}
+        # Each arrow off the edge of its fin, in the units of the arrow; one
+        # node shared by its two looks.
+        self.offsets = {kind: coin.SoTranslation() for kind in KINDS}
+        self.halves, self.ends = {}, {}
+        for kind in KINDS:
             place = coin.SoTransform()
             dragger = coin.SoTranslate1Dragger()
             for part in ("feedback", "feedbackActive"):
                 dragger.setPart(part, coin.SoSeparator())
-            dragger.setPart("translatorActive", arrow(HELD_COLOR))
             for name, method in (("addStartCallback", self._held), ("addMotionCallback", self._moved),
                                  ("addFinishCallback", self._let_go)):
                 callback = view.addDraggerCallback(dragger, name, functools.partial(method, kind))
@@ -180,7 +231,9 @@ class Handles:
             group.addChild(dragger)
             self.arrows.addChild(group)
             self.places[kind], self.draggers[kind] = place, dragger
-        self.draggers[UP].setPart("translator", arrow(axis_color("z")))
+            self.halves[kind], self.ends[kind] = {}, (BACK, FORTH)
+            self._look(kind, "translatorActive", HELD_COLOR)
+        self._look(UP, "translator", axis_color("z"))
         self.along_axis = None
         # True from grabbing an arrow until letting it go.
         self.held = False
@@ -200,35 +253,78 @@ class Handles:
         self.viewer.setupEditingRoot(self.root, App.Matrix())
         self.attached = True
 
-    def tint(self, valid):
-        """Colour the object green while its fins can be built, red while not."""
-        self.vobj.ShapeColor = VALID_COLOR if valid else INVALID_COLOR
+    def _material(self, color):
+        """A material like the object's first, but for its colour `color`."""
+        look = self.vobj.ShapeAppearance[0]
+        material = App.Material()
+        for name in MATERIAL_FIELDS:
+            setattr(material, name, getattr(look, name))
+        material.DiffuseColor = color
+        return material
 
-    def show(self, edge, height, along):
+    def tint(self, valid):
+        """Colour the object green while its fins can be built, red while not.
+
+        One material for the whole object, also after tint_faces(): FreeCAD
+        applies a list of materials only while it has one per face, and the
+        number of faces changes with every fin added or removed."""
+        self.tint_all(VALID_COLOR if valid else INVALID_COLOR)
+
+    def tint_all(self, color):
+        """Colour the whole object in `color`, with one material."""
+        self.vobj.ShapeAppearance = [self._material(color)]
+
+    def tint_faces(self, faces, color):
+        """Colour the faces with the indices in `faces` in `color` and every
+        other face green: one fin that cannot stand, or stands between two
+        tines, among fins that stand. Each face gets a material of its own,
+        alike but for the colour, so the object stays as see-through as it is."""
+        self.vobj.ShapeAppearance = [self._material(color if index in faces else VALID_COLOR)
+                                     for index in range(len(self.vobj.Object.Shape.Faces))]
+
+    def _look(self, kind, part, color):
+        """Give the arrow of `kind` a look in `color` as its `part`, at rest
+        ("translator") or held ("translatorActive"), showing the ends it shows."""
+        node, halves = double_arrow(color, self.offsets[kind])
+        self.draggers[kind].setPart(part, node)
+        self.halves[kind][part] = halves
+        self.show_ends(kind, self.ends[kind])
+
+    def show_ends(self, kind, ends):
+        """Show the arrow of `kind` with the ends in `ends`, BACK and FORTH:
+        an end where the fin cannot go is left out."""
+        self.ends[kind] = tuple(ends)
+        for halves in self.halves[kind].values():
+            for end, switch in halves.items():
+                switch.whichChild.setValue(coin.SO_SWITCH_ALL if end in ends else coin.SO_SWITCH_NONE)
+
+    def show(self, edge, along, out):
         """Put the arrows at `edge`, the middle of the upright outer edge of a
-        fin, as long as a share of its `height`; `along` is the direction along
-        the face."""
+        fin, a little off it in the direction `out`, away from the part;
+        `along` is the direction along the face."""
         self._clear(self.preview)
-        length = height * ARROW_SHARE
         # The arrow along the face takes the colour of the axis it is nearest to.
         axis = "x" if abs(along.x) >= abs(along.y) else "y"
         if axis != self.along_axis:
-            self.draggers[ALONG].setPart("translator", arrow(axis_color(axis)))
+            self._look(ALONG, "translator", axis_color(axis))
             self.along_axis = axis
         for kind, direction in ((ALONG, along), (UP, UP_DIRECTION)):
             place = self.places[kind]
             place.translation.setValue(edge.x, edge.y, edge.z)
-            place.rotation.setValue(coin.SbRotation(DRAGGER_AXIS, coin.SbVec3f(direction.x, direction.y,
-                                                                               direction.z)))
-            place.scaleFactor.setValue(length, length, length)
+            turn = coin.SbRotation(DRAGGER_AXIS, coin.SbVec3f(direction.x, direction.y, direction.z))
+            place.rotation.setValue(turn)
+            # Off the edge in the arrow's own turned units, so the distance
+            # keeps to the size of the arrow on the screen.
+            off = turn.inverse().multVec(coin.SbVec3f(out.x, out.y, out.z))
+            self.offsets[kind].translation.setValue(off * CLEARANCE)
             self.draggers[kind].translation.setValue(0, 0, 0)
-            self.lengths[kind] = length
         self.arrows.whichChild.setValue(coin.SO_SWITCH_ALL)
 
     # The callbacks get the dragger as a plain SoDragger, without its fields;
-    # the arrow of `kind` is read instead.
+    # the arrow of `kind` is read instead. It moves in mm: the arrows keep
+    # their size on the screen inside, not through the place.
     def _mm(self, kind):
-        return self.draggers[kind].translation.getValue()[0] * self.lengths[kind]
+        return self.draggers[kind].translation.getValue()[0]
 
     def _held(self, kind, _dragger):
         self.held = True
@@ -253,9 +349,9 @@ class Handles:
             switch.addChild(node)
         switch.whichChild.setValue(coin.SO_SWITCH_ALL if nodes else coin.SO_SWITCH_NONE)
 
-    def show_preview(self, shapes, valid):
-        """Show `shapes` see-through, green if `valid`, else red."""
-        self._fill(self.preview, shaded(shapes, VALID_COLOR if valid else INVALID_COLOR, PREVIEW_TRANSPARENCY))
+    def show_preview(self, shapes, color):
+        """Show `shapes` see-through in `color`."""
+        self._fill(self.preview, shaded(shapes, color, PREVIEW_TRANSPARENCY))
 
     def show_dropped(self, tines):
         """Mark the tines in `tines`, which find no face, red until shown again."""
