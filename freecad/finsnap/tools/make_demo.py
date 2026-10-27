@@ -123,8 +123,8 @@ def main():
     os.makedirs(frames, exist_ok=True)
     Gui.activateWorkbench("FinSnapWorkbench")
     # FreeCAD runs with a home of its own (make_demo.sh): this setting stays
-    # there. A camera animation would wait on itself here; a
-    # message is said instead of waiting for a click.
+    # there. A camera animation would wait on itself here; a message is said
+    # instead of waiting for a click.
     App.ParamGet(VIEW_SETTINGS).SetBool(NAVIGATION_ANIMATIONS, False)
     commands._message = lambda text: say("message:", text)
     QtWidgets.QMessageBox.question = staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.Yes)
