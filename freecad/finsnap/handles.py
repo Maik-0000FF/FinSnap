@@ -57,8 +57,10 @@ UP_DIRECTION = App.Vector(0, 0, 1)
 BACK, FORTH = -1, 1
 # The arrows keep their size on the screen, whatever the size of the fin and
 # the zoom, as FreeCAD's own draggers do, through FreeCAD's node for it. Its
-# scale factor 1 makes a unit about a hundredth of the view wide; a half
-# arrow is a unit long.
+# scale factor 1 makes a unit about a fiftieth of the view, less in a wide
+# window; a half arrow is a unit long. FreeCAD sizes it at the origin, so in
+# a perspective view an arrow far from the origin is a little off that, as
+# FreeCAD's own are.
 AUTO_ZOOM = "SoAutoZoomTranslation"
 ARROW_SCREEN_SIZE = 4.0
 # The shape of a half arrow one unit long, as FreeCAD draws its own arrows: a
