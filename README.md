@@ -74,15 +74,15 @@ FinSnap goes into a folder named `FinSnap` in the `Mod` folder of your FreeCAD u
 
 | System | `Mod` folder |
 |---|---|
-| Windows | `%APPDATA%\FreeCAD\v1-1\Mod` |
+| Windows | `%APPDATA%\FreeCAD\v1-1\Mod` (`$env:APPDATA\FreeCAD\v1-1\Mod` in PowerShell) |
 | macOS | `~/Library/Application Support/FreeCAD/v1-1/Mod` |
 | Linux, also AppImage | `~/.local/share/FreeCAD/v1-1/Mod` |
 | Linux, Flatpak | `~/.var/app/org.freecad.FreeCAD/data/FreeCAD/v1-1/Mod` |
 | Linux, Snap | `~/snap/freecad/current/.local/share/FreeCAD/v1-1/Mod` |
 
-The `v1-1` part names the FreeCAD version: `v26-3` for FreeCAD 26.3, `v27-1` for the current weekly builds. A FreeCAD that shares its configuration with an older version keeps using the older folder, and one updated from 1.0 that way uses `FreeCAD/Mod` without a version. A FreeCAD that copied the configuration of an older version on its first start has its own copy of FinSnap, which is updated separately.
+The `v1-1` part names the FreeCAD version: `v26-3` for FreeCAD 26.3, `v27-1` for the current weekly builds. A FreeCAD that shares its configuration with an older version keeps using the older folder; a FreeCAD 1.1 that still shares its configuration with 1.0 uses `FreeCAD/Mod` without a version. A FreeCAD that copied the configuration of an older version on its first start has its own copy of FinSnap, which is updated separately.
 
-**Without git:** download the [ZIP of the `main` branch](https://github.com/Maik-0000FF/FinSnap/archive/refs/heads/main.zip), extract it into the `Mod` folder, rename the extracted `FinSnap-main` folder to `FinSnap` and restart FreeCAD.
+**Without git:** download the [ZIP of the `main` branch](https://github.com/Maik-0000FF/FinSnap/archive/refs/heads/main.zip), extract it into the `Mod` folder, rename the extracted `FinSnap-main` folder to `FinSnap` so that `Mod/FinSnap/package.xml` exists, and restart FreeCAD. Extracting on Windows can add a second `FinSnap-main` folder inside the first; move the inner one up in that case.
 
 **With git:** clone the repository into the `Mod` folder and restart FreeCAD. On Linux:
 
@@ -90,7 +90,19 @@ The `v1-1` part names the FreeCAD version: `v26-3` for FreeCAD 26.3, `v27-1` for
 git clone https://github.com/Maik-0000FF/FinSnap.git ~/.local/share/FreeCAD/v1-1/Mod/FinSnap
 ```
 
-On Windows and macOS, replace the target with the folder from the table, followed by `FinSnap`.
+On Windows in PowerShell:
+
+```powershell
+git clone https://github.com/Maik-0000FF/FinSnap.git "$env:APPDATA\FreeCAD\v1-1\Mod\FinSnap"
+```
+
+On macOS:
+
+```bash
+git clone https://github.com/Maik-0000FF/FinSnap.git ~/Library/Application\ Support/FreeCAD/v1-1/Mod/FinSnap
+```
+
+With another package or version, replace the target with the folder from the table, followed by `FinSnap`.
 
 ## Commands
 
