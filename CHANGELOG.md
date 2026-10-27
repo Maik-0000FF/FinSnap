@@ -13,7 +13,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Added
 
-- Quick fins and Stand on edge stand a cylinder or tube on its rim, leaning to the front; Quick fins puts one fin under the lowest line of its curved side, and a note suggests a chamfer on the rim and a brim in the slicer; moving that fin in the task panel turns the part about its axis, so the fin can sit anywhere round it (#36)
+- Quick fins and Stand on edge stand a cylinder or tube on its rim, with one fin under its side (#36)
 
 ### Fixed
 

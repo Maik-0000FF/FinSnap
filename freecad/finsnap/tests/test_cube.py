@@ -683,6 +683,27 @@ def check_round_side():
         line = orient.side_direction(plan.change, rim)
         expect(line is not None and abs(abs(line.x) - 1) < 1e-6, "%s: seen from the side along its rim" % name)
 
+    # The chamfer the note suggests: the part stands on it, also on both ends.
+    for chamfered_ends in (1, 2):
+        rims = [e for e in rod.Edges if orient.is_rim(e)]
+        bottom_first = sorted(rims, key=lambda e: e.CenterOfMass.z)
+        chamfered = rod.makeChamfer(EDGE_ROUND, bottom_first[:chamfered_ends])
+        side = round_side_of(chamfered)
+        plan = geometry.quick_plan(chamfered, [], [(chamfered.Faces[side], side)], p, d.TILT_ANGLE)
+        stood = moved(chamfered, plan.change)
+        cones = [f for f in stood.Faces if isinstance(f.Surface, Part.Cone)]
+        expect(not any(plan.edge.isSame(e) for e in chamfered.Faces[side].Edges)
+               and min(f.BoundBox.ZMin for f in cones) < d.TOLERANCE and leans_by(stood, side, d.TILT_ANGLE),
+               "a cylinder chamfered on %d rim(s), its side chosen: it stands on a chamfer" % chamfered_ends)
+
+    arched = Part.Arc(V(0, 0, 0), V(ROD_RADIUS / 2, 0, ROD_RADIUS / 2), V(ROD_RADIUS, 0, 0)).toShape()
+    flat_box = Part.makeBox(ROD_RADIUS, ROD_RADIUS, ROD_RADIUS)
+    box_bottom = [e for e in flat_box.Edges if e.BoundBox.ZMax < d.TOLERANCE][0]
+    rod_bottom = [e for e in rod.Edges if orient.is_rim(e) and e.BoundBox.ZMax < d.TOLERANCE][0]
+    expect(not orient.on_bed(flat_box, arched) and orient.on_bed(flat_box, box_bottom)
+           and orient.on_bed(rod, rod_bottom),
+           "an arc arching up from its ends on the bed is not on the bed; a straight edge and a rim there are")
+
     side = round_side_of(rod)
     rim = [e for e in rod.Faces[side].Edges if orient.is_rim(e)][0]
     stood = moved(rod, orient.stand(rod, rim, ODD_TILT))

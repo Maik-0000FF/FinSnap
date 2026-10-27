@@ -108,6 +108,7 @@ INPUTS this has to withstand (build()):
 
 import math
 from collections import namedtuple
+from functools import partial
 from dataclasses import dataclass, field, replace
 
 import FreeCAD as App
@@ -268,6 +269,42 @@ def is_round_side(face):
         return False
     u0, u1, _, _ = face.ParameterRange
     return u1 - u0 >= FULL_TURN - d.TOLERANCE
+
+
+def rims_on_axis(shape, side):
+    """The rims of `shape` the round side `side` can stand on, best first.
+
+    A rim counts where a flat face ends in a whole circle on the axis of the
+    side. One that is no edge of the side, where a chamfer lies between them,
+    comes first: the chamfer then gives the part more hold on the bed. Larger
+    rims come before smaller ones.
+
+    INPUTS this has to withstand:
+      plain cylinder                        ->  both rims of the side
+      chamfer on one rim                    ->  the small rim of the chamfer first,
+                                                then the plain rim
+      chamfer on both rims                  ->  the small rims of the chamfers; the
+                                                rims of the side end in no flat face
+      tube                                  ->  its outer rims, then its inner ones,
+                                                on which it cannot stand
+      circle off the axis (a hole in the
+        end face beside it)                 ->  not a rim of the side
+    """
+    surface = side.Surface
+    axis = V(surface.Axis).normalize()
+    found = []
+    for edge in shape.Edges:
+        if not orient.is_rim(edge):
+            continue
+        circle = edge.Curve
+        offset = circle.Center - surface.Center
+        on_axis = (abs(abs(V(circle.Axis).normalize().dot(axis)) - 1) < d.TOLERANCE
+                   and (offset - axis * offset.dot(axis)).Length < d.TOLERANCE)
+        flat = any(face.findPlane() is not None for face in shape.ancestorsOfType(edge, Part.Face))
+        if on_axis and flat:
+            own = any(edge.isSame(mine) for mine in side.Edges)
+            found.append((own, -edge.Length, len(found), edge))
+    return [edge for *_, edge in sorted(found)]
 
 
 def _lowest(face):
@@ -856,25 +893,29 @@ def stand_for_face(shape, number, p, angle_deg):
 
     The face is laid onto the bed and the part turned about one of its straight
     edges, the longest first, so it stands on the longest edge it can. A round
-    side stands the part on one of its rims instead.
+    side stands the part on a rim on its axis instead, see rims_on_axis().
 
     INPUTS this has to withstand:
       planar face with straight edges       ->  stood on its longest edge that works
       longest edge does not carry the part
         or the fins do not fit there        ->  the next longest edge
-      round side                            ->  stood on its larger rim that works
+      round side                            ->  stood on the first rim of rims_on_axis()
+                                                that works
       face without a straight edge, or none
         works                               ->  FinError
     """
     face = shape.Faces[number]
     if is_round_side(face):
-        candidates = [edge for edge in face.Edges if orient.is_rim(edge)]
+        tries = [(edge, partial(orient.stand_on_rim, shape, edge, orient.side_tilt(angle_deg)))
+                 for edge in rims_on_axis(shape, face)]
     else:
-        candidates = [edge for edge in face.Edges
-                      if abs(edge.Length - (edge.Vertexes[-1].Point - edge.Vertexes[0].Point).Length) < d.TOLERANCE]
-    for edge in sorted(candidates, key=lambda candidate: -candidate.Length):
+        straight = [edge for edge in face.Edges
+                    if abs(edge.Length - (edge.Vertexes[-1].Point - edge.Vertexes[0].Point).Length) < d.TOLERANCE]
+        tries = [(edge, partial(orient.stand, shape, edge, angle_deg, face))
+                 for edge in sorted(straight, key=lambda candidate: -candidate.Length)]
+    for edge, stand in tries:
         try:
-            change = orient.stand(shape, edge, angle_deg, face)
+            change = stand()
             standing = moved(shape, change)
             build(standing, standing.Faces[number], p)
         except (orient.OrientError, FinError):

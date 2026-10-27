@@ -205,6 +205,12 @@ def lay_flat(shape, face):
     return lift.multiply(turn)
 
 
+def side_tilt(angle_deg):
+    """The tilt of a part on its rim that leans its curved side angle_deg over
+    the bed: the side runs square to the flat face of the rim."""
+    return 90 - angle_deg
+
+
 def stand_on_rim(shape, rim, angle_deg):
     """The placement change that stands `shape` on its rim `rim`, a whole
     circle, tilted by angle_deg towards RIM_LEAN.
@@ -267,7 +273,7 @@ def stand(shape, edge, angle_deg, face=None):
         raise OrientError(translate("FinSnap", "the edge is not an edge of the selected face"))
     if is_rim(edge):
         rounded = face is not None and face.findPlane() is None
-        return stand_on_rim(shape, edge, 90 - angle_deg if rounded else angle_deg)
+        return stand_on_rim(shape, edge, side_tilt(angle_deg) if rounded else angle_deg)
     if face is None:
         if on_bed(shape, edge):
             return tilt(shape, edge, angle_deg)
@@ -292,9 +298,10 @@ def side_direction(change, edge=None, faces=()):
     The line is the edge, or for a rim the line touching it on the bed, which
     after the change lies level and square to the axis of the rim; or what joins
     two faces (its direction is the cross product of their normals), or for a
-    face alone the axis the part was turned about. Of the two senses the one pointing to +Y (or +X for a line along X)
-    is returned, so the same line is always seen from the same side: for a
-    line along Y that is FreeCAD's front view, for one along X the view from the left.
+    face alone the axis the part was turned about. Of the two senses the one
+    pointing to +Y (or +X for a line along X) is returned, so the same line is
+    always seen from the same side: for a line along Y that is FreeCAD's front
+    view, for one along X the view from the left.
     None if the part was not turned, a face that already lay on the bed.
     """
     if edge is not None and is_rim(edge):
