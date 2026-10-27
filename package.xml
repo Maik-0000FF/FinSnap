@@ -9,7 +9,7 @@
 
   <description>Breakaway fins for parts printed standing on an edge. The fins hold the tilted part on the bed and touch it only with small horizontal tines.</description>
 
-  <version>0.5.1</version>
+  <version>0.5.2</version>
 
   <date>2026-10-27</date>
 
@@ -24,6 +24,8 @@
   <url type="bugtracker">https://github.com/Maik-0000FF/FinSnap/issues</url>
 
   <url type="readme">https://github.com/Maik-0000FF/FinSnap/raw/main/README.md</url>
+
+  <url type="discussion">https://forum.freecad.org/viewtopic.php?t=108188</url>
 
   <icon>freecad/finsnap/icons/finsnap.svg</icon>
 

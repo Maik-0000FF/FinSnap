@@ -275,7 +275,7 @@ The CI checks every push: lint with ruff, a security scan with Bandit, licence i
 
 ## Contributing
 
-Bug reports and ideas are welcome as [issues](https://github.com/Maik-0000FF/FinSnap/issues). See the [Contributing guide](CONTRIBUTING.md) for translations and code changes.
+Questions, test results and feedback go to the [FreeCAD forum thread](https://forum.freecad.org/viewtopic.php?t=108188), bug reports and ideas to [issues](https://github.com/Maik-0000FF/FinSnap/issues). See the [Contributing guide](CONTRIBUTING.md) for translations and code changes.
 
 ## Support
 
