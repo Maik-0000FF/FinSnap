@@ -48,6 +48,7 @@ MESH_DEVIATION = 0.1
 FACE_OFFSET = -1.0
 
 ALONG, UP = "along", "up"
+KINDS = (ALONG, UP)
 UP_DIRECTION = App.Vector(0, 0, 1)
 # The two ends of an arrow: towards smaller and towards larger values.
 BACK, FORTH = -1, 1
@@ -200,7 +201,7 @@ class Handles:
         # halves of its two looks, at rest and held, and which ends it shows.
         self.places, self.draggers, self.lengths = {}, {}, {}
         self.halves, self.ends = {}, {}
-        for kind in (ALONG, UP):
+        for kind in KINDS:
             place = coin.SoTransform()
             dragger = coin.SoTranslate1Dragger()
             for part in ("feedback", "feedbackActive"):

@@ -43,6 +43,7 @@ FIN_SHIFT = 1.5  # how far a handle moves a fin along the face, in mm
 TOO_MANY_FINS = 50  # more fins than the face takes, so the build fails
 AXIS_Z_RGB = (0.2, 0.2, 0.8)  # FreeCAD's standard colour of the z axis
 COLOR_TOLERANCE = 0.01
+BUILD_STEP = 0.5  # how far a fin moves at each step of a counted drag, in mm
 TOO_HIGH = 100.0  # how far an arrow is dragged up, far above any face of the tests, in mm
 GERMAN = "FinSnap_de.ts"  # written by freecad/finsnap/tools/update_translations.sh
 
@@ -680,6 +681,49 @@ def main():
     expect(App.Vector(*moving.handles.places[handles.UP].translation.getValue().getValue())
            .sub(lowered.edges[1] + off_edge).Length < d.TOLERANCE,
            "the arrows follow to the upright outer edge of the fin, just outside it")
+    # A drag builds each place once: the trial of a step serves its real
+    # build, and nothing is built twice. Afterwards every build is new, and
+    # the arrow ends are tried once for each place of the fin.
+    from freecad.finsnap import geometry
+    real_build = geometry.build
+    builds = []
+
+    def counting(*args, **kwargs):
+        builds.append(args)
+        return real_build(*args, **kwargs)
+
+    geometry.build = counting
+    try:
+        moving.handle_started(handles.ALONG)
+        steps = []
+        for step in (1, 2):
+            moving.handle_moved(handles.ALONG, step * BUILD_STEP)
+            del builds[:]
+            moving.drag_step()
+            steps.append(len(builds))
+        moving.finish_drag(handles.ALONG, 2 * BUILD_STEP)
+        reuse_after = lined.Proxy.reuse
+        del builds[:]
+        moving.update_ends()
+        first_ends = len(builds)
+        del builds[:]
+        moving.update_ends()
+        same_ends = len(builds)
+        tine_count = moving.widgets["TineCount"]
+        tine_count.setValue(tine_count.value() + 1)
+        moving.preview()
+        del builds[:]
+        moving.update_ends()
+        changed_ends = len(builds)
+        tine_count.setValue(tine_count.value() - 1)
+        moving.preview()
+    finally:
+        geometry.build = real_build
+    expect(steps == [1, 1], "each step of a drag builds once, not as trial and again for real: %s" % steps)
+    expect(reuse_after is None, "after the drag, every build is made afresh")
+    expect(first_ends == len(handles.KINDS) * 2 and same_ends == 0 and changed_ends > 0,
+           "the arrow ends are tried once for each place, again after a parameter changed: %d, %d, %d"
+           % (first_ends, same_ends, changed_ends))
     # A click on an arrow without a move, and a field left as it is, change nothing.
     feature.reset_fins(lined)
     lined.recompute()

@@ -212,6 +212,8 @@ class FinSnapTaskPanel:
         self.handled = None
         # The fin the ends of the arrows were last tried on.
         self.ends_of = None
+        # The arrow ends found, by what they depend on (ends_key).
+        self.known_ends = {}
         self.dragged = None
         self.drag_base, self.drag_own, self.drag_values = {}, {}, {}
         self.released = False
@@ -622,7 +624,7 @@ class FinSnapTaskPanel:
             self.handles.show(result.edges[number], result.heights[number], result.along, result.out)
             # On another fin, both ends until tried, rather than those of the fin before.
             if self.handled != self.ends_of:
-                for kind in (handles.ALONG, handles.UP):
+                for kind in handles.KINDS:
                     self.handles.show_ends(kind, (handles.BACK, handles.FORTH))
             self.ends_timer.start()
         self.show_fin_values(self.fin_values())
@@ -706,13 +708,16 @@ class FinSnapTaskPanel:
         """
         nowhere = geometry.FinError(translate("FinSnap", "no tine of the fin finds the face there"))
         which, number = self.handled
-        part_and_build = feature.builder(self.obj, which)
+        part_and_build = self.obj.Proxy.side_builder(self.obj, which)
         if part_and_build is None:
             return nowhere
         left, shifts, heights = feature.edits(self.obj, which)
         tried = dict(shifts if kind == handles.ALONG else heights)
-        tried[number] = value
+        # As the value would be stored, so a drag's real build finds this trial.
+        tried[number] = feature.stored_mm(value)
         if kind == handles.ALONG:
+            if abs(value) < d.TOLERANCE:
+                del tried[number]
             shifts = tried
         else:
             heights = tried
@@ -744,20 +749,38 @@ class FinSnapTaskPanel:
                 bad = middle
         return good
 
+    def ends_key(self):
+        """What the arrow ends of the handled fin depend on: the fin, the
+        parameters, the changes by hand of its side, and the face it stands
+        under, with the shape and the place of its part."""
+        which = self.handled[0]
+        part, faces = self.obj.Base if which == feature.MAIN else self.obj.CounterFace
+        return (self.handled, repr(feature.params_of(self.obj)),
+                feature.edits_key(*feature.edits(self.obj, which)), tuple(faces),
+                part.Shape.hashCode(), str(part.getGlobalPlacement()))
+
     def update_ends(self):
-        """Leave out each end of an arrow where the handled fin cannot go."""
+        """Leave out each end of an arrow where the handled fin cannot go.
+        Tried once for each fin as it stands: a rebuild that changed nothing
+        it depends on takes the ends found before."""
         if self.handles.held or self.handled_result() is None:
             return
         self.ends_of = self.handled
-        for kind in (handles.ALONG, handles.UP):
-            value = self.built_value(kind)
-            self.handles.show_ends(kind, [end for end in (handles.BACK, handles.FORTH)
-                                          if self.can_stand(kind, value + end * SNAP_RESOLUTION)])
+        key = self.ends_key()
+        if key not in self.known_ends:
+            self.known_ends[key] = {
+                kind: tuple(end for end in (handles.BACK, handles.FORTH)
+                            if self.can_stand(kind, self.built_value(kind) + end * SNAP_RESOLUTION))
+                for kind in handles.KINDS}
+        for kind, ends in self.known_ends[key].items():
+            self.handles.show_ends(kind, ends)
 
     def handle_started(self, kind):
         """An arrow grabbed: note where the fin stands and what it has by hand;
         the drag starts from there."""
         self.ends_timer.stop()
+        # While the drag lasts, builds with the same changes by hand are made once.
+        self.obj.Proxy.reuse = {}
         # Nothing of an earlier drag carries over; without a fin the drag is passed over.
         self.drag_base, self.drag_own, self.drag_values = {}, {}, {}
         if self.handled_result() is None:
@@ -765,7 +788,7 @@ class FinSnapTaskPanel:
         which, number = self.handled
         self.drag_base = {handles.ALONG: feature.edits(self.obj, which)[1].get(number, 0.0),
                           handles.UP: self.handled_result()[0].heights[number]}
-        self.drag_own = {one: self.own_value(one) for one in (handles.ALONG, handles.UP)}
+        self.drag_own = {one: self.own_value(one) for one in handles.KINDS}
         self.drag_values = self.fin_values()
 
     def handle_moved(self, kind, mm):
@@ -832,6 +855,7 @@ class FinSnapTaskPanel:
         there, as far towards it as it can; the arrows return onto it, and its
         field takes the keyboard, so a value can be typed right away."""
         if self.handled_result() is None or kind not in self.drag_base:
+            self.obj.Proxy.reuse = None
             self.place_handles()
             return
         if not self.drag_to(kind, mm) and self.handled_result() is not None:
@@ -839,6 +863,8 @@ class FinSnapTaskPanel:
             limit = self.nearest_standing(kind, last, self.drag_base[kind] + mm)
             if abs(limit - last) >= d.TOLERANCE:
                 self.set_fin(kind, limit)
+        # The drag is over: from here on, every build is made afresh.
+        self.obj.Proxy.reuse = None
         # Nothing failing was built into the object; the red of the drag goes.
         self.handles.tint(True)
         self.handles.clear_preview()
@@ -876,6 +902,7 @@ class FinSnapTaskPanel:
         Gui.Selection.removeObserver(self)
         self.handles.remove()
         self.obj.Proxy.editing = False
+        self.obj.Proxy.reuse = None
         self.obj.Proxy.results = {}
 
     def leave_edit(self):

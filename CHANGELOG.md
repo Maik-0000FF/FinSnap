@@ -24,6 +24,8 @@ All notable changes to FinSnap are listed here. The format follows
 - A fin let go where it cannot stand goes as far towards there as it can, to the corner of the face or next to its neighbour, instead of staying at its last place
 - While a fin cannot stand where its arrow is, it alone turns red and the other fins stay green, so the red preview no longer mixes with green
 
+- Dragging a fin is about three times as fast: each place is built once, and what the drag does not change, the other fins and the overhangs of the part, is built once per drag; the arrow ends are tried once per place of the fin
+
 ### Fixed
 
 - A fin dragged where it cannot stand is tried first and never built there, so the object stays valid and the report view gets no traceback at every step of the drag
