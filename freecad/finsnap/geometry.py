@@ -27,7 +27,7 @@ tine the side falls away behind the plane by a few thousandths of a millimetre,
 so a tine ends on it wherever the side lies within ROUND_SIDE_MAX_DROP of the
 plane.
 
-INPUTS this has to withstand (is_round_side()):
+INPUTS this has to withstand (orient.is_round_side()):
   curved side of a cylinder or tube     ->  True
   inner side of a tube                  ->  True; frame_of() refuses it
   fillet, part of a cylinder            ->  False
@@ -122,8 +122,8 @@ from .shapes import bounds, middle_normal, moved
 V = App.Vector
 UP = V(0, 0, 1)
 DOWN = V(0, 0, -1)
-# A side that wraps all the way round the axis, not a fillet of part of a turn.
-FULL_TURN = 2 * math.pi
+# Degrees in a whole turn.
+FULL_CIRCLE = 360.0
 # The order rims_on_axis() tries rims in: a chamfered one, then one of the
 # side itself, then any other on the axis, which a part rarely stands on.
 RIM_CHAMFERED, RIM_OWN, RIM_OTHER = range(3)
@@ -266,14 +266,6 @@ def support_of(part, face):
     return face if len(pieces) == 1 else Part.makeCompound(pieces)
 
 
-def is_round_side(face):
-    """Whether `face` is the curved side of a cylinder or tube, all the way round."""
-    if not isinstance(face.Surface, Part.Cylinder):
-        return False
-    u0, u1, _, _ = face.ParameterRange
-    return u1 - u0 >= FULL_TURN - d.TOLERANCE
-
-
 def rims_on_axis(shape, side):
     """The rims of `shape` the round side `side` can stand on, best first.
 
@@ -296,8 +288,6 @@ def rims_on_axis(shape, side):
       circle off the axis (a hole in the
         end face beside it)                 ->  not a rim of the side
     """
-    surface = side.Surface
-    axis = V(surface.Axis).normalize()
     chamfers = [face for face in shape.Faces if isinstance(face.Surface, Part.Cone)
                 and any(edge.isSame(mine) for edge in face.Edges for mine in side.Edges)]
     found = []
@@ -305,11 +295,8 @@ def rims_on_axis(shape, side):
         if not orient.is_rim(edge):
             continue
         circle = edge.Curve
-        offset = circle.Center - surface.Center
-        on_axis = (abs(abs(V(circle.Axis).normalize().dot(axis)) - 1) < d.TOLERANCE
-                   and (offset - axis * offset.dot(axis)).Length < d.TOLERANCE)
         flat = any(face.findPlane() is not None for face in shape.ancestorsOfType(edge, Part.Face))
-        if not (on_axis and flat):
+        if not (orient.on_axis(circle.Center, circle.Axis, side.Surface) and flat):
             continue
         if any(edge.isSame(mine) for chamfer in chamfers for mine in chamfer.Edges):
             rank = RIM_CHAMFERED
@@ -366,19 +353,55 @@ def turn_of(face, mm):
     `mm` further along the side, to the right seen from outside, measured round
     it. The side itself stays where it is; what lies on it turns."""
     surface = face.Surface
-    axis = V(surface.Axis).normalize()
+    angle = math.degrees(_turn_sense(face) * mm / surface.Radius)
+    return App.Placement(V(0, 0, 0), App.Rotation(V(surface.Axis), angle), surface.Center)
+
+
+def _turn_sense(face):
+    """1 where the part turns about the axis of its round side `face` the
+    right way round as the fin moves to the right along it, seen from outside,
+    -1 where the other way round."""
+    axis = V(face.Surface.Axis).normalize()
     n = _lowest(face)
     along = UP.cross(V(n.x, n.y, 0).normalize())
     # The part turns the other way round than the fin moves along the side.
-    sense = -1 if axis.cross(n).dot(along) > 0 else 1
-    angle = math.degrees(sense * mm / surface.Radius)
-    return App.Placement(V(0, 0, 0), App.Rotation(axis, angle), surface.Center)
+    return -1 if axis.cross(n).dot(along) > 0 else 1
+
+
+def turn_mm(face, degrees):
+    """How far round the round side `face` the fin comes to stand, as turn_of()
+    takes it (mm), once the part is turned `degrees` about the axis of the
+    side, the right way round."""
+    return _turn_sense(face) * math.radians(degrees) * face.Surface.Radius
+
+
+def side_angle(face):
+    """Where round the round side `face` the fin under it stands: the angle of
+    the lowest line, which the middle of its tines touches, from the zero
+    direction of the side, in degrees from 0 up to 360. Turning the part the
+    right way round about the axis of the side makes it smaller."""
+    surface = face.Surface
+    axis = V(surface.Axis).normalize()
+    # Counted the right way round the axis from the zero direction, not by
+    # the parameter of the side, which runs the other way round where its
+    # frame is left-handed (a primitive cylinder or a pad can have one).
+    zero = surface.value(0, 0) - surface.Center
+    zero = zero - axis * zero.dot(axis)
+    lowest = _lowest(face)
+    return round_angle(math.degrees(math.atan2(axis.dot(zero.cross(lowest)), zero.dot(lowest))))
+
+
+def round_angle(degrees, tolerance=d.TOLERANCE):
+    """`degrees` as an angle round a circle, from 0 up to 360; closer below 360
+    than `tolerance` is 0."""
+    angle = degrees % FULL_CIRCLE
+    return 0.0 if FULL_CIRCLE - angle < tolerance else angle
 
 
 def frame_of(part, face, support=None):
     """The frame of `face`; its extent along and up is that of `support`, the
     face with the faces in its plane, if given."""
-    if is_round_side(face):
+    if orient.is_round_side(face):
         return _round_frame(part, face)
     if face.findPlane() is None:
         raise FinError(translate("FinSnap", "the selected face is not planar"))
@@ -919,8 +942,8 @@ def stand_for_face(shape, number, p, angle_deg):
         works                               ->  FinError
     """
     face = shape.Faces[number]
-    if is_round_side(face):
-        tries = [(edge, partial(orient.stand_on_rim, shape, edge, orient.side_tilt(angle_deg)))
+    if orient.is_round_side(face):
+        tries = [(edge, partial(orient.stand_on_rim, shape, edge, orient.side_tilt(angle_deg), face))
                  for edge in rims_on_axis(shape, face)]
     else:
         straight = [edge for edge in face.Edges
@@ -993,7 +1016,7 @@ def quick_plan(shape, edges, faces, p, angle_deg):
         return QuickPlan(change, best_face(moved(shape, change), p), edge, ())
     if not edges and len(faces) == 1:
         face, number = faces[0]
-        if not is_round_side(face) and (face.findPlane() is None or is_chamfer(shape, face)):
+        if not orient.is_round_side(face) and (face.findPlane() is None or is_chamfer(shape, face)):
             change = orient.lay_flat(shape, face)
             return QuickPlan(change, best_face(moved(shape, change), p), None, ())
         change, edge = stand_for_face(shape, number, p, angle_deg)

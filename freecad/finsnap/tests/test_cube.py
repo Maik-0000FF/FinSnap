@@ -51,6 +51,8 @@ ROD_RADIUS = 10.0      # a cylinder standing on its rim
 ROD_HEIGHT = 40.0
 BORE_RADIUS = 6.0      # the hole that makes it a tube
 ROUND_TURN = 5.0       # how far the fin under a round side is moved by hand, in mm round it
+ROUND_DEGREES = 30.0   # how far a part is turned about its round side, in degrees
+ODD_TURNS = (77.0, 200.0)  # turns of a part about its axis before it is stood, in degrees
 
 # Thin horizontal slices through the fin, to measure it layer by layer.
 SLICE_SIZE = 1000.0
@@ -639,7 +641,8 @@ def check_quick_plan():
 
 def round_side_of(shape, radius=ROD_RADIUS):
     """The number of the curved side of `shape` with `radius`."""
-    return [i for i, f in enumerate(shape.Faces) if geometry.is_round_side(f) and f.Surface.Radius == radius][0]
+    return [i for i, f in enumerate(shape.Faces)
+            if orient.is_round_side(f) and abs(f.Surface.Radius - radius) < d.TOLERANCE][0]
 
 
 def leans_by(shape, number, degrees):
@@ -656,14 +659,17 @@ def check_round_side():
     lying = rod.copy()
     lying.rotate(V(0, 0, 0), V(1, 0, 0), 90)
     lying.translate(V(0, 0, ROD_RADIUS))
+    # Mirrored, the side counts its parameter the other way round its axis.
+    mirrored = rod.mirror(V(0, 0, 0), V(1, 0, 0))
 
     box = Part.makeBox(BOX_SIDE, BOX_SIDE, BOX_SIDE)
     filleted = box.makeFillet(EDGE_ROUND, box.Edges[:1])
-    expect(geometry.is_round_side(rod.Faces[round_side_of(rod)])
-           and not any(geometry.is_round_side(f) for f in filleted.Faces),
+    expect(orient.is_round_side(rod.Faces[round_side_of(rod)])
+           and not any(orient.is_round_side(f) for f in filleted.Faces),
            "the side of a cylinder is a round side, a fillet is not")
 
-    for name, shape in (("cylinder", rod), ("tube", tube), ("cylinder on its side", lying)):
+    for name, shape in (("cylinder", rod), ("tube", tube), ("cylinder on its side", lying),
+                        ("mirrored cylinder", mirrored)):
         side = round_side_of(shape)
         rim = [e for e in shape.Faces[side].Edges if orient.is_rim(e)][0]
         for chosen, edges, faces in (("its rim", [(rim, None)], []), ("its side", [], [(shape.Faces[side], side)]),
@@ -680,6 +686,21 @@ def check_round_side():
                    "%s, %s chosen: one fin, every tine ends on the side, none in it" % (name, chosen))
             expect(any("rim" in w for w in result.warnings),
                    "%s, %s chosen: a note gives the rim more hold on the bed" % (name, chosen))
+            expect(abs(geometry.side_angle(stood.Faces[side])) < d.TOLERANCE,
+                   "%s, %s chosen: the fin stands at 0 degrees of the side" % (name, chosen))
+        for degrees in ODD_TURNS:
+            spun = shape.copy()
+            spun.rotate(spun.Faces[side].Surface.Center, spun.Faces[side].Surface.Axis, degrees)
+            plan = geometry.quick_plan(spun, [], [(spun.Faces[side], side)], p, d.TILT_ANGLE)
+            expect(abs(geometry.side_angle(moved(spun, plan.change).Faces[side])) < d.TOLERANCE,
+                   "%s turned %g degrees about its axis first: the fin still stands at 0 degrees"
+                   % (name, degrees))
+            stood = moved(spun, plan.change)
+            change = geometry.turn_of(stood.Faces[side], geometry.turn_mm(stood.Faces[side], ROUND_DEGREES))
+            expect(abs(geometry.side_angle(moved(stood, change).Faces[side])
+                       - (geometry.FULL_CIRCLE - ROUND_DEGREES)) < 1e-6,
+                   "%s turned %g degrees the right way round: the fin stands that far back round the side"
+                   % (name, ROUND_DEGREES))
         line = orient.side_direction(plan.change, rim)
         expect(line is not None and abs(abs(line.x) - 1) < 1e-6, "%s: seen from the side along its rim" % name)
 
@@ -701,6 +722,14 @@ def check_round_side():
         radii = [e.Curve.Radius for e in geometry.rims_on_axis(shape, shape.Faces[round_side_of(shape)])]
         expect(radii[:2] == [ROD_RADIUS, ROD_RADIUS] and radii[-1] == BORE_RADIUS,
                "%s tries the rims of its side before the smaller ones on its axis: %s" % (name, radii))
+    # A step whose angles count from elsewhere than those of the shaft.
+    step = Part.makeCylinder(BORE_RADIUS, ROD_HEIGHT, V(0, 0, ROD_HEIGHT))
+    step.rotate(V(0, 0, 0), UP, ODD_TURNS[0])
+    stepped = rod.fuse(step)
+    thin = round_side_of(stepped, BORE_RADIUS)
+    plan = geometry.quick_plan(stepped, [], [(stepped.Faces[thin], thin)], p, d.TILT_ANGLE)
+    expect(abs(geometry.side_angle(moved(stepped, plan.change).Faces[thin])) < d.TOLERANCE,
+           "the thinner side of a shaft chosen, the fin stands at 0 degrees of that side")
 
     arched = Part.Arc(V(0, 0, 0), V(ROD_RADIUS / 2, 0, ROD_RADIUS / 2), V(ROD_RADIUS, 0, 0)).toShape()
     flat_box = Part.makeBox(ROD_RADIUS, ROD_RADIUS, ROD_RADIUS)
@@ -765,7 +794,7 @@ def check_round_side():
     expect(went < -ROUND_TURN / 2 and len(shifted.tines) == len(whole.tines),
            "the part turns under the fin moved %.0f mm, the hole goes %.1f mm the other way" % (ROUND_TURN, went))
     shown = shifted.starts[1] + shifted.thickness / 2 - shifted.face_start
-    expect(abs(shown - ROUND_TURN) < d.TOLERANCE and shifted.radius == ROD_RADIUS
+    expect(abs(shown - ROUND_TURN) < d.TOLERANCE and abs(shifted.radius - ROD_RADIUS) < d.TOLERANCE
            and shifted.fins.BoundBox.isInside(whole.fins.BoundBox.Center),
            "the fin stays under the lowest line, its place on the face shows the turn")
 

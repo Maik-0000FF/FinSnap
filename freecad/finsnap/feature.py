@@ -867,7 +867,7 @@ def turn_part(obj, mm):
     """Turn the part of `obj` about the axis of the round side its main fin
     stands under, so the fin comes to stand `mm` further along the side; see
     geometry.turn_of(). Inside a Body, the whole Body is turned."""
-    change = geometry.turn_of(_face(obj.Base)[1], mm)
+    change = geometry.turn_of(round_side(obj), mm)
     owner = outermost(obj.Base[0])
     owner.Placement = change.multiply(owner.Placement)
 
@@ -875,9 +875,15 @@ def turn_part(obj, mm):
 def on_round_side(obj):
     """Whether the main fin of `obj` stands under the round side of a cylinder or tube."""
     try:
-        return geometry.is_round_side(_face(obj.Base)[1])
+        return orient.is_round_side(round_side(obj))
     except (geometry.FinError, ValueError, Part.OCCError):
         return False
+
+
+def round_side(obj):
+    """The round side of a cylinder or tube the main fin of `obj` stands
+    under, as its part stands now."""
+    return _face(obj.Base)[1]
 
 
 def round_shift(obj):

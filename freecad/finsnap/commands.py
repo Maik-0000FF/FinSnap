@@ -27,7 +27,7 @@ from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_
                     ICON_QUICK, ICON_TILT)
 from .presets import PREFERENCES
 from .shapes import FACE_PREFIX, face_name, global_shape, outermost
-from .taskpanel import LENGTH_SUFFIX, FinSnapTaskPanel, discard_created
+from .taskpanel import DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, discard_created
 from .version import NAME
 
 EDGE_PREFIX = "Edge"
@@ -53,7 +53,6 @@ MESH_LINEAR_RANGE = (0.001, 1.0)
 MESH_ANGULAR_RANGE = (0.1, 30.0)
 MESH_LINEAR_DECIMALS = 3
 MESH_ANGULAR_DECIMALS = 1
-DEGREE_SUFFIX = " \N{DEGREE SIGN}"
 SOLID_SUFFIX = "_solid"
 FINS_SUFFIX = "_fins"
 # Marks on faces that overhang without fins: red, half see-through, drawn

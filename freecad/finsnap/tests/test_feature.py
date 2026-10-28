@@ -430,7 +430,8 @@ def turned_tube(doc):
     """A fin under the side of a tube moved by hand turns the tube about its
     axis; the fin stays under the lowest line, and the turn is undone again."""
     tube = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
-    side = [i for i, f in enumerate(tube.Faces) if geometry.is_round_side(f) and f.Surface.Radius == TUBE_RADIUS][0]
+    side = [i for i, f in enumerate(tube.Faces)
+            if orient.is_round_side(f) and abs(f.Surface.Radius - TUBE_RADIUS) < d.TOLERANCE][0]
     plan = geometry.quick_plan(tube, [], [(tube.Faces[side], side)], FinParams(), d.TILT_ANGLE)
     part = doc.addObject("Part::Feature", "Tube")
     part.Shape = tube
