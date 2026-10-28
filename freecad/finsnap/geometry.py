@@ -922,26 +922,25 @@ def merged(part, *fin_shapes):
     return result.removeSplitter()
 
 
-def opposite_face(part, face):
-    """The face of `part` that leans the other way, for a counter fin, or None.
-
-    Of the faces that lean over the bed in the opposite direction to `face`,
-    the largest one is taken: that is the side the part could tip towards.
-    The side of a cylinder or tube is passed over: its fin stays under its
+def opposite_faces(part, face):
+    """The faces of `part` that lean the other way, for a counter fin, the
+    largest first: the side the part could tip towards. Whether a counter fin
+    can be built under one is the caller's to try, on the face as it names
+    it. The side of a cylinder or tube is passed over: its fin stays under its
     lowest line and moves only by turning the part, which the main fin does.
     """
     out = frame_of(part, face).out
-    best = None
-    for candidate in part.Faces:
+    leaning = []
+    for number, candidate in enumerate(part.Faces):
         if orient.is_round_side(candidate):
             continue
         try:
             other = frame_of(part, candidate)
         except FinError:
             continue
-        if other.out.dot(out) < -d.OPPOSITE_DIRECTION and (best is None or candidate.Area > best.Area):
-            best = candidate
-    return best
+        if other.out.dot(out) < -d.OPPOSITE_DIRECTION:
+            leaning.append((candidate.Area, number))
+    return [part.Faces[number] for _, number in sorted(leaning, reverse=True)]
 
 
 def best_face(shape, p, tried=()):

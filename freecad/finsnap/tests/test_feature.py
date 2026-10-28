@@ -487,6 +487,21 @@ def split_tube(doc):
            "the counter fin under the end ring of a split tube stands under both halves of it: %s" % carried)
     feature.remove_counter(fins)
     doc.recompute()
+    # Turned back, the bore leaves that ring too narrow for a fin: found by
+    # itself, no counter fin is set, and chosen by hand it is refused; the
+    # main fin stays either way.
+    feature.set_round_shift(fins, 0.0)
+    doc.recompute()
+    expect(feature.add_counter(fins) is None and not fins.CounterFace and fins.isValid()
+           and fins.ResultFinCount == 1,
+           "no face that takes a counter fin: none is set, the main fin stays")
+    try:
+        feature.add_counter(fins, tube, named)
+    except geometry.FinError as error:
+        expect(not fins.CounterFace and fins.isValid(),
+               "a face too narrow for a counter fin chosen by hand is refused, nothing changed: %s" % error)
+    else:
+        raise AssertionError("a counter fin was set under a face too narrow for it")
     doc.removeObject(fins.Name)
     doc.removeObject(tube.Name)
     doc.recompute()
