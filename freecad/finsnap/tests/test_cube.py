@@ -36,6 +36,10 @@ GROOVE_DEPTH = 2.0     # a groove across the front of a box, splitting it
 SINK_DEPTH = 0.5       # how deep the face is sunk around a stretch of it, so that stretch is a face of its own
 SINK_INSET = 0.5       # how far that stretch ends inside the grid tines below and above it, in mm
 OUT_OF_REACH = 100.0   # a height or a width beyond any test part, in mm
+NOTCH_CLEAR = 1.0      # how far a notch in the end of a face stays from the grid tines, and its depth, in mm
+PIN_HOLE_RADIUS = 0.9  # a hole that splits the face under a tine, small enough to leave the tines beside it
+WIDE_FIN = 3.0         # a fin thick enough for a hole under its flank, clear of its tine, in mm
+FLANK_HOLE_RADIUS = 0.5  # that hole, across the side of the fin, in mm
 GROOVE_WIDTH = 2.0
 GROOVE_FROM = 8.0
 WIDE_BOX = 60.0          # long enough for a U profile with legs of a third each
@@ -564,6 +568,88 @@ def check_restart_planned(cube, face):
     expect(gridded.moved and not bridged.moved and bridged.tines and not bridged.dropped,
            "a fin whose grid tines all lie over holes moves on one grid, and bridges them with the restart: %s"
            % bridged.touching_z)
+
+
+def check_restart_narrow(cube, face):
+    """With the restart a fin on its own grid gets no tine where the face is
+    narrower than the fin: a notch in the end of the face, beside the fin
+    but clear of its tine, between two grid tines, over a fin whose grid
+    restarts above a hole."""
+    p, one_grid = FinParams(placement=d.PLACEMENT_ENDS), FinParams(tine_restart=False, placement=d.PLACEMENT_ENDS)
+    frame = geometry.frame_of(cube, face)
+    normal = face.normalAt(0, 0)
+    plain = geometry.build(cube, face, one_grid)
+    t0, grid = min(plain.positions), plain.tine_z
+    start = geometry.tine_start(p, t0, plain.thickness)
+
+    def on_face(t, z):
+        return frame.point(t, frame.s_face(frame.bed_z + z), frame.bed_z + z)
+
+    low, high = grid[1] + p.tine_height + NOTCH_CLEAR, grid[2] - NOTCH_CLEAR
+    # Between the side of the fin and its tine.
+    inner = (t0 + start) / 2
+    ring = [on_face(frame.along_min - NOTCH_CLEAR, low), on_face(inner, low), on_face(inner, high),
+            on_face(frame.along_min - NOTCH_CLEAR, high)]
+    notch = Part.Face(Part.makePolygon(ring + ring[:1])).translated(normal * NOTCH_CLEAR).extrude(
+        -normal * 2 * NOTCH_CLEAR)
+    hole_z = (grid[0] + p.tine_height + grid[1]) / 2
+    centre = on_face(start + p.tine_width / 2, hole_z)
+    part = cube.cut(notch).cut(Part.makeCylinder(PIN_HOLE_RADIUS, 2 * NOTCH_CLEAR, centre - normal * NOTCH_CLEAR,
+                                                 normal))
+    notched = max((f for f in part.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE), key=lambda f: f.Area)
+    result = geometry.build(part, notched, p)
+    first = result.numbers[0]
+    beside = [z for z in result.touching_z[first] if z + p.tine_height > low + d.TOLERANCE and z < high - d.TOLERANCE]
+    expect(not beside and any(z > high - d.TOLERANCE for z in result.touching_z[first]),
+           "no tine where a notch makes the face narrower than the fin, the grid anew above it: %s"
+           % result.touching_z[first])
+
+
+def check_restart_flank_hole(cube, face):
+    """With the restart a hole inside the face under the flank of a fin but
+    clear of its tine costs no tine: the flank stands off the face, only the
+    tines rest on it, and the width counts the outermost points of the face."""
+    p = FinParams(fin_thickness=WIDE_FIN)
+    frame = geometry.frame_of(cube, face)
+    normal = face.normalAt(0, 0)
+    plain = geometry.build(cube, face, FinParams(tine_restart=False, fin_thickness=WIDE_FIN))
+    t0, grid = plain.positions[0], plain.tine_z
+    start = geometry.tine_start(p, t0, WIDE_FIN)
+
+    def pin_hole(part, t, z, radius):
+        centre = frame.point(t, frame.s_face(frame.bed_z + z), frame.bed_z + z)
+        return part.cut(Part.makeCylinder(radius, 2 * NOTCH_CLEAR, centre - normal * NOTCH_CLEAR, normal))
+
+    # A hole under the tine, between the two lowest grid tines, starts the grid anew.
+    restarted = pin_hole(cube, start + p.tine_width / 2, (grid[0] + p.tine_height + grid[1]) / 2, PIN_HOLE_RADIUS)
+    # Across the side of the fin, so a slice along that side would find a gap.
+    flank = pin_hole(restarted, t0, (grid[1] + grid[2]) / 2, FLANK_HOLE_RADIUS)
+
+    def own_grid(part):
+        result = geometry.build(part, max((f for f in part.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE),
+                                          key=lambda f: f.Area), p)
+        return result.touching_z[result.numbers[0]]
+
+    expect(own_grid(flank) == own_grid(restarted),
+           "a hole under the flank, clear of the tine, costs no tine: %s" % own_grid(flank))
+
+
+def check_wide_enough(cube, face):
+    """wide_enough(), against its table, on the extents _extent_at() finds."""
+    frame = geometry.frame_of(cube, face)
+    p, corner = FinParams(), FinParams(placement=d.PLACEMENT_CORNERS)
+    thickness = geometry.thickness_for(p, 0.0)
+    low, high = frame.along_min, frame.along_max
+    reach = (thickness - p.tine_width) / 2
+    notched = (low + thickness / 2, high)
+    rows = [("the face wider than the fin", p, (low, high), low + thickness, True),
+            ("a notch in the end of the face under the fin", p, notched, low, False),
+            ("no face at that height", p, None, low, False),
+            ("a corner fin past the end, its tine on the face", corner, (low, high), low - reach, True),
+            ("a face as wide as the fin", p, (low, low + thickness), low, True)]
+    for name, params, extent, t0, wanted in rows:
+        expect(geometry.wide_enough(extent, params, t0, thickness) == wanted,
+               "wide_enough(): %s -> %s" % (name, wanted))
 
 
 def check_split_face():
@@ -1228,6 +1314,9 @@ def main():
     check_shortened(cube, face)
     check_restart(cube, face)
     check_restart_planned(cube, face)
+    check_restart_narrow(cube, face)
+    check_restart_flank_hole(cube, face)
+    check_wide_enough(cube, face)
     check_split_face()
     check_quick_fins()
     check_quick_plan()

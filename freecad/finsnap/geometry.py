@@ -492,19 +492,66 @@ def tine_heights(p, frame, tine_count):
     return zs, height
 
 
-def _extent_at(face, frame, z, p):
-    """(first, last) position along the face over the height of a tine at z, None if it misses."""
+def _span_at(face, frame, height):
+    """(first, last) position along the face where the level plane at
+    `height` crosses the outer edges of `face`, None if it misses. Holes
+    inside the face lie within, so only its outer wires are cut: much faster
+    than slicing the face itself, with the same outermost points."""
+    box = face.BoundBox
+    # A plane larger than the face, about its middle.
+    size = 2 * box.DiagonalLength
+    plane = Part.makePlane(size, size, App.Vector(box.Center.x - size / 2, box.Center.y - size / 2, height))
+    ts = [v.Point.dot(frame.along) for one in face.Faces for v in one.OuterWire.section(plane).Vertexes]
+    return (min(ts), max(ts)) if ts else None
+
+
+def _extent_at(face, frame, z, p, slices=None):
+    """(first, last) position along the face over the height of a tine at z,
+    None if it misses. Holes inside the face are passed over: the outermost
+    points at each height count, and whether a tine rests over a hole is for
+    contact_share(). `slices`, a dict kept for one build, holds the span of
+    the face at each height cut, so a height is cut once, whichever fin or
+    plan asks for it."""
     low, high = frame.along_min, frame.along_max
     # The lowest line of a round side runs from face_bottom_z to face_top_z,
     # which bound the tines already; a hole across it is found by contact_share().
     if frame.round_side:
         return low, high
+    slices = {} if slices is None else slices
     for height in (frame.bed_z + z, frame.bed_z + z + p.tine_height):
-        ts = [v.Point.dot(frame.along) for wire in face.slice(UP, height) for v in wire.Vertexes]
-        if not ts:
+        if height not in slices:
+            slices[height] = _span_at(face, frame, height)
+        if slices[height] is None:
             return None
-        low, high = max(low, min(ts)), min(high, max(ts))
+        low, high = max(low, slices[height][0]), min(high, slices[height][1])
     return low, high
+
+
+def wide_enough(extent, p, t0, thickness):
+    """Whether the face, reaching over `extent` along it at the height of a
+    tine (_extent_at(), None where it misses), is wide enough there for the
+    fin starting at t0: it reaches under the whole fin, or for a fin on a
+    corner, which reaches past the end of the face, under its tine. The rule
+    tines_on_face() keeps for the tines of the face as a whole, for a fin on
+    its own tine grid, whose tines lie at other heights.
+
+    INPUTS this has to withstand:
+      the face wider than the fin there     ->  True
+      a notch in the end of the face under
+        the fin                             ->  False
+      a hole inside the face under the fin  ->  True: its outermost points count
+      no face at that height (None)         ->  False
+      a fin on a corner, past the end       ->  True while the face reaches under its tine
+      a face as wide as the fin             ->  True, within the tolerance
+    """
+    if extent is None:
+        return False
+    if p.placement == d.PLACEMENT_CORNERS or p.placement in d.PLACEMENT_ONE_CORNER:
+        first = tine_start(p, t0, thickness)
+        last = first + p.tine_width
+    else:
+        first, last = t0, t0 + thickness
+    return extent[0] <= first + d.TOLERANCE and last <= extent[1] + d.TOLERANCE
 
 
 def room_for_one_fin(p, frame, thickness):
@@ -520,7 +567,7 @@ def room_for_one_fin(p, frame, thickness):
     return thickness + 2 * p.end_inset
 
 
-def tines_on_face(face, frame, tine_z, p, width):
+def tines_on_face(face, frame, tine_z, p, width, slices=None):
     """The longest run of consecutive tines that all meet the face over at
     least `width`, and the stretch along the face they share.
 
@@ -528,10 +575,11 @@ def tines_on_face(face, frame, tine_z, p, width):
     narrower at some tines than a fin is thick; those tines are left out. A
     height where no face lies at all, the gap between two faces in one plane,
     only leaves its own tine out; the run goes on above it.
+    `slices` is the dict of _extent_at() kept for the build.
     Returns (tine heights, first, last, heights over a gap); raises if no tine
     has room.
     """
-    extents = [_extent_at(face, frame, z, p) for z in tine_z]
+    extents = [_extent_at(face, frame, z, p, slices) for z in tine_z]
     gaps = [z for z, extent in zip(tine_z, extents) if extent is None]
     best = None
     for start in range(len(tine_z)):
@@ -944,17 +992,19 @@ FacePlan = namedtuple("FacePlan", "frame height thickness tine_z gap_z narrow_he
                                   "starts half_foot fins moved fins_left_out")
 
 
-def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out, shifts, heights):
+def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out, shifts, heights, slices):
     """The fins of the face planned for a fin height of at least `reach`,
     from which their thickness and foot follow. With `restart`, each fin is
     tried on its own tine grid (restarted_tines()), at its planned place and
-    at every place it might move to beside a hole; without, on `all_z`."""
+    at every place it might move to beside a hole; without, on `all_z`.
+    `slices` is the dict of _extent_at() kept for the build."""
     height = max(face_height, reach)
     thickness = thickness_for(p, height)
     if p.tine_width > thickness:
         raise FinError(translate("FinSnap", "tines (%.2f mm) are wider than the fin (%.2f mm)")
                        % (p.tine_width, thickness))
-    tine_z, low, high, gap_z = tines_on_face(support, frame, all_z, p, room_for_one_fin(p, frame, thickness))
+    tine_z, low, high, gap_z = tines_on_face(support, frame, all_z, p, room_for_one_fin(p, frame, thickness),
+                                             slices)
     # Also with a fixed tine count: tines the narrow face cannot take are left
     # out and named, as over a recess, rather than refusing the whole fin.
     narrow_heights = set(all_z) - set(tine_z) - set(gap_z)
@@ -999,18 +1049,24 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
     room = frame.face_top_z - frame.bed_z - d.FACE_TOP_MARGIN
 
     def tines_at(t, own):
-        """The heights the tines of a fin starting at t are planned at, and
-        those of them below a height of its own."""
+        """The heights the tines of a fin starting at t are planned at, those
+        of them below a height of its own, and those of its own grid left out
+        where the face is narrower than the fin (wide_enough())."""
         own_z = None
         if restart:
             own_z = restarted_tines(p, frame, support, t, thickness,
                                     p.fin_height if p.fin_height > 0 else room, count)
-        planned_z = tine_z if own_z is None else own_z
-        return planned_z, [z for z in planned_z if own is None or z + p.tine_height <= own + d.TOLERANCE]
+        if own_z is None:
+            planned_z, narrow = tine_z, []
+        else:
+            wide = [wide_enough(_extent_at(support, frame, z, p, slices), p, t, thickness) for z in own_z]
+            planned_z = [z for z, fits in zip(own_z, wide) if fits]
+            narrow = [z for z, fits in zip(own_z, wide) if not fits]
+        return planned_z, [z for z in planned_z if own is None or z + p.tine_height <= own + d.TOLERANCE], narrow
 
     def rests_at(t, own):
         """Whether a tine of the fin starting at t lies on the face."""
-        planned_z, candidate_z = tines_at(t, own)
+        planned_z, candidate_z, _ = tines_at(t, own)
         return any(z in candidate_z for z in touching_at(frame, support, p, planned_z, t, thickness))
 
     fins = []
@@ -1027,7 +1083,7 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
         if own is not None and own > room + d.TOLERANCE:
             raise refused(translate("FinSnap", "fin %d is %.2f mm high, above the face (%.2f mm)")
                            % (number, own, room), HandEditError)
-        planned_z, candidate_z = tines_at(t0, own)
+        planned_z, candidate_z, narrow = tines_at(t0, own)
         if own is not None and not candidate_z:
             raise refused(translate("FinSnap", "fin %d is lower than its first tine") % number, HandEditError)
         # A tine wholly or partly over a recess or a hole in the face would hang
@@ -1043,9 +1099,12 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
             if moved_to is not None:
                 moved_fins.append((number, moved_to - t0))
                 t0 = starts[number] = moved_to
-                planned_z, candidate_z = tines_at(t0, own)
+                planned_z, candidate_z, narrow = tines_at(t0, own)
                 touching = touching_at(frame, support, p, planned_z, t0, thickness)
         on_face = [z in touching for z in candidate_z]
+        # Tines of its own grid left out where the face is too narrow are named
+        # with those of the face, as far as the fin reaches up to them.
+        narrow_heights.update(z for z in narrow if own is None or z + p.tine_height <= own + d.TOLERANCE)
         kept_z = [z for z, whole in zip(candidate_z, on_face) if whole]
         if not kept_z:
             fins_left_out.append(t0 + thickness / 2 - face_start)
@@ -1065,10 +1124,13 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
 
 def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     frame = frame_of(part, face, support)
+    # The slices of the face at the height of a tine, kept for every plan of this build.
+    slices = {}
     count = p.tine_count if tine_count is None else tine_count
     restart = p.tine_restart and not frame.round_side
     all_z, face_height = face_tines(p, frame, count, restart)
-    plan = _plan(frame, support, p, all_z, face_height, 0.0, count, restart, left_out, shifts, heights)
+    plan = _plan(frame, support, p, all_z, face_height, 0.0, count, restart, left_out, shifts, heights,
+                 slices)
     # With the restart a fin can reach above the tines of the face as a
     # whole, up to the top of the stretch it stands on; the fins are planned
     # again, as thick and with as large a foot as the highest of them needs.
@@ -1079,7 +1141,8 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         reach = max(fin.height for fin in plan.fins)
         if reach <= plan.height + d.TOLERANCE:
             break
-        plan = _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out, shifts, heights)
+        plan = _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out, shifts,
+                     heights, slices)
     frame, thickness = plan.frame, plan.thickness
 
     bodies = []
