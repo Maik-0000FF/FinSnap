@@ -526,6 +526,7 @@ def _extent_at(face, frame, z, p, slices=None):
         low, high = max(low, slices[height][0]), min(high, slices[height][1])
     return low, high
 
+
 def wide_enough(extent, p, t0, thickness):
     """Whether the face, reaching over `extent` along it at the height of a
     tine (_extent_at(), None where it misses), is wide enough there for the
