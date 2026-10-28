@@ -60,6 +60,10 @@ NOTE_MERGED_SINGLE = QT_TRANSLATE_NOOP(
     "have no body of their own. To delete all of them, select the fins in the tree.")
 # Said when a face chosen for the counter fin cannot take fins; %s says why.
 NOTE_NO_COUNTER_ON_FACE = QT_TRANSLATE_NOOP("FinSnap", "No counter fin on this face: %s")
+# Said when a face or edge named is not found once the halves of a side split
+# by a STEP file are joined, as for the seam between them; %s names it.
+NOTE_LOST_IN_JOINING = QT_TRANSLATE_NOOP("FinSnap", "%s is the seam between two halves of a side; select the "
+                                         "side or its rim instead")
 # A counter fin under the side of a cylinder or tube would stay under its
 # lowest line and move only by turning the part, the main fin with it.
 COUNTER_ROUND_SIDE = QT_TRANSLATE_NOOP(
@@ -350,15 +354,14 @@ def params_of(obj):
 
 
 def _face(link):
+    """The shape of the part of `link` and its face named there; half of a
+    side that a STEP file split in two stands for the whole side, on the
+    shape with its halves joined (whole_elements())."""
     part, subs = link
     if not subs:
         raise geometry.FinError(translate("FinSnap", "no face selected on %s") % part.Label)
-    shape = global_shape(part)
-    face = shape.getElement(subs[0])
-    # Half of a side that a STEP file split in two stands for the whole side,
-    # on the shape with its halves joined.
-    whole = orient.whole_side(shape, face)
-    return whole if whole is not None else (shape, face)
+    shape, (face,), _ = whole_elements(part, subs[:1])
+    return shape, face
 
 
 def whole_elements(obj, names):
@@ -371,29 +374,40 @@ def whole_elements(obj, names):
     INPUTS this has to withstand:
       no split side or rim named            ->  the global shape, the elements, names
                                                 as numbered
-      half of a side or of a rim named      ->  the joined shape, the whole side or
-                                                rim, other elements on it; a face of
-                                                it named by a half lying on it
+      half of a side or of a rim named      ->  the joined shape, the whole side or rim
+      a half ring of a split tube named
+        beside it                           ->  the whole ring of the joined shape
+      the seam between the halves named     ->  FinError: joining removes it
+      a face of the joined shape named back ->  the name of a piece of it on `obj`;
+                                                a face made of several pieces takes
+                                                the first, the fins stand under it
+      a fillet or an arc of a slot          ->  as no split side or rim: as it is
     """
     shape = global_shape(obj)
     elements = [shape.getElement(name) for name in names]
-    whole = orient.joined(shape) if any(orient.is_piece(e) for e in elements) else None
-    if whole is None or not any(orient.whole_of(whole, e) for e in elements if orient.is_piece(e)):
+    pieces = [element for element in elements if orient.is_piece(element)]
+    whole = orient.joined(shape) if pieces else None
+    if whole is None or not any(orient.whole_of(whole, piece) is not None for piece in pieces):
         return shape, elements, lambda number: face_name(number + 1)
     kept = []
-    for element in elements:
-        candidates = whole.Faces if isinstance(element, Part.Face) else whole.Edges
-        kept.append(next(c for c in candidates if orient.lies_on(element, c)))
+    for name, element in zip(names, elements):
+        found = orient.counterpart(element, whole.Faces if isinstance(element, Part.Face) else whole.Edges)
+        if found is None:
+            raise geometry.FinError(translate("FinSnap", NOTE_LOST_IN_JOINING) % name)
+        kept.append(found)
 
     def name_of(number):
-        joined_face = whole.Faces[number]
-        return next(face_name(i) for i, face in enumerate(shape.Faces, 1) if orient.lies_on(face, joined_face))
+        pieces_named = names_on(shape, [whole.Faces[number]])
+        if not pieces_named:
+            raise geometry.FinError(translate("FinSnap", NOTE_LOST_IN_JOINING) % face_name(number + 1))
+        return pieces_named[0]
     return whole, kept, name_of
 
 
 def names_on(shape, faces):
     """The names on `shape` of `faces`, faces of it or of its joined shape
-    (orient.joined()): a whole side there is named by the halves lying on it."""
+    (orient.joined()): a face joined from pieces is named by every piece
+    lying on it."""
     names = []
     for face in faces:
         name = face_name_of(shape, face)
@@ -645,7 +659,11 @@ def add_counter(obj, base=None, face_ref=None):
         found = geometry.opposite_face(shape, face)
         if found is None:
             return None
-        face_ref = face_name_of(shape, found)
+        # Named on the part: on a split side the face was found on its joined shape.
+        named = names_on(global_shape(base), [found])
+        if not named:
+            return None
+        face_ref = named[0]
     else:
         # A face chosen by hand has to take fins, or the next build fails.
         face = _face((base, [face_ref]))

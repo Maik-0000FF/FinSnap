@@ -451,6 +451,22 @@ def split_tube(doc):
     doc.recompute()
     expect(abs(feature.round_shift(fins) - TUBE_TURN) < d.TOLERANCE and fins.isValid(),
            "the fin under the split side turns the tube as under a whole one")
+    # A half ring named beside the half rim is found whole, by a point on it
+    # rather than in its hole; the seam between the halves is gone.
+    pieces = tube.Shape.Faces
+    ring = next(i for i, f in enumerate(pieces, 1) if f.findPlane() is not None)
+    _, (_, whole_ring), _ = feature.whole_elements(tube, ["Edge%d" % arc, "Face%d" % ring])
+    rings = feature.names_on(global_shape(tube), [whole_ring])
+    expect(whole_ring.findPlane() is not None and whole_ring.Area > pieces[ring - 1].Area and len(rings) == 2,
+           "a half ring of a split tube stands for the whole ring, named by both halves: %s" % rings)
+    seam = next(i for i, e in enumerate(tube.Shape.Edges, 1) if isinstance(e.Curve, Part.Line)
+                and not any(orient.lies_on(e, f) for f in pieces if f.findPlane() is not None))
+    try:
+        feature.whole_elements(tube, ["Edge%d" % arc, "Edge%d" % seam])
+    except geometry.FinError as error:
+        expect("seam" in str(error), "the seam between the halves named is refused with a reason: %s" % error)
+    else:
+        raise AssertionError("the seam between the halves of a split tube was taken")
     doc.removeObject(fins.Name)
     doc.removeObject(tube.Name)
     doc.recompute()

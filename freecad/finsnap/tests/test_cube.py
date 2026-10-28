@@ -12,7 +12,7 @@ import sys
 
 import Part
 
-from freecad.finsnap.tests.support import expect, lower_left_face, run, split_cylinder, tilted_cube
+from freecad.finsnap.tests.support import HALF_TURN, expect, lower_left_face, run, split_cylinder, tilted_cube
 from freecad.finsnap import defaults as d
 from freecad.finsnap import geometry
 from freecad.finsnap import orient
@@ -655,22 +655,37 @@ def leans_by(shape, number, degrees):
 
 
 def check_split_side():
-    """A side and a rim that a STEP file split in halves are taken whole."""
-    split = split_cylinder(ROD_RADIUS, ROD_HEIGHT)
-    half = [f for f in split.Faces if isinstance(f.Surface, Part.Cylinder)][0]
-    arc = [e for e in split.Edges if isinstance(e.Curve, Part.Circle)][0]
-    side, rim = orient.whole_side(split, half), orient.whole_rim(split, arc)
-    expect(orient.is_piece(half) and side is not None and orient.is_round_side(side[1])
-           and rim is not None and orient.is_rim(rim[1]) and abs(rim[1].Curve.Radius - ROD_RADIUS) < d.TOLERANCE,
+    """A side and a rim that a STEP file split in halves are found whole on
+    the joined shape; a half ring of a split tube is found by a point on it,
+    the seam between the halves is gone."""
+    split = split_cylinder(ROD_RADIUS, ROD_HEIGHT, BORE_RADIUS)
+    whole = orient.joined(split)
+    half = [f for f in split.Faces if isinstance(f.Surface, Part.Cylinder) and f.Surface.Radius > BORE_RADIUS][0]
+    arc = [e for e in split.Edges if isinstance(e.Curve, Part.Circle) and e.Curve.Radius > BORE_RADIUS][0]
+    side, rim = orient.whole_of(whole, half), orient.whole_of(whole, arc)
+    expect(orient.is_piece(half) and side is not None and orient.is_round_side(side)
+           and rim is not None and orient.is_rim(rim) and abs(rim.Curve.Radius - ROD_RADIUS) < d.TOLERANCE,
            "half of a split side and of a split rim stand for the whole side and rim")
+    ring = [f for f in split.Faces if f.findPlane() is not None][0]
+    seam = [e for e in split.Edges if isinstance(e.Curve, Part.Line)
+            and not any(e.isSame(m) for m in half.Edges) and e.BoundBox.XLength < d.TOLERANCE][0]
+    found = orient.counterpart(ring, whole.Faces)
+    expect(found is not None and found.findPlane() is not None and found.Area > ring.Area
+           and orient.counterpart(seam, whole.Edges) is None,
+           "a half ring of a split tube is found on the joined shape, the seam between the halves is not")
     rod = Part.makeCylinder(ROD_RADIUS, ROD_HEIGHT)
     box = Part.makeBox(BOX_SIDE, BOX_SIDE, BOX_SIDE)
     filleted = box.makeFillet(EDGE_ROUND, box.Edges[:1])
     fillet = [f for f in filleted.Faces if isinstance(f.Surface, Part.Cylinder)][0]
-    expect(orient.whole_side(rod, rod.Faces[round_side_of(rod)]) is None
-           and orient.whole_rim(rod, [e for e in rod.Edges if orient.is_rim(e)][0]) is None
-           and orient.whole_side(filleted, fillet) is None,
-           "a whole side, a whole rim and a fillet stay as they are")
+    expect(not orient.is_piece(rod.Faces[round_side_of(rod)])
+           and orient.whole_of(orient.joined(filleted), fillet) is None,
+           "a whole side is no piece, a fillet is a piece of no whole side")
+    # Half a turn on top of a whole cylinder of the same radius joins with its
+    # side, but runs only part of its length: no half of a split side.
+    stepped = rod.fuse(Part.makeCylinder(ROD_RADIUS, ROD_HEIGHT / 2, V(0, 0, ROD_HEIGHT), V(0, 0, 1), HALF_TURN))
+    top = [f for f in stepped.Faces if orient.is_piece(f)][0]
+    expect(orient.whole_of(orient.joined(stepped), top) is None,
+           "half a turn on top of a whole cylinder is no half of a split side")
 
 
 def check_round_side():

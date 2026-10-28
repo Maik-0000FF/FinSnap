@@ -336,7 +336,7 @@ class TiltOntoEdge:
                     change = orient.stand(shape, edge, angle, face)
             else:
                 change = orient.lay_flat(shape, face)
-        except orient.OrientError as error:
+        except (orient.OrientError, geometry.FinError) as error:
             _message(str(error))
             return
         doc = App.ActiveDocument
