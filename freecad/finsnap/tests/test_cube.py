@@ -722,6 +722,14 @@ def check_round_side():
         radii = [e.Curve.Radius for e in geometry.rims_on_axis(shape, shape.Faces[round_side_of(shape)])]
         expect(radii[:2] == [ROD_RADIUS, ROD_RADIUS] and radii[-1] == BORE_RADIUS,
                "%s tries the rims of its side before the smaller ones on its axis: %s" % (name, radii))
+    # A step whose angles count from elsewhere than those of the shaft.
+    step = Part.makeCylinder(BORE_RADIUS, ROD_HEIGHT, V(0, 0, ROD_HEIGHT))
+    step.rotate(V(0, 0, 0), UP, ODD_TURNS[0])
+    stepped = rod.fuse(step)
+    thin = round_side_of(stepped, BORE_RADIUS)
+    plan = geometry.quick_plan(stepped, [], [(stepped.Faces[thin], thin)], p, d.TILT_ANGLE)
+    expect(abs(geometry.side_angle(moved(stepped, plan.change).Faces[thin])) < d.TOLERANCE,
+           "the thinner side of a shaft chosen, the fin stands at 0 degrees of that side")
 
     arched = Part.Arc(V(0, 0, 0), V(ROD_RADIUS / 2, 0, ROD_RADIUS / 2), V(ROD_RADIUS, 0, 0)).toShape()
     flat_box = Part.makeBox(ROD_RADIUS, ROD_RADIUS, ROD_RADIUS)

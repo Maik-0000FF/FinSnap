@@ -29,8 +29,9 @@ INPUTS this has to withstand (stand_on_rim()):
   rim off the bed (cylinder on its side) ->  its flat face laid onto the bed first
   part turned about its axis before     ->  the same placement: the line of its
                                             side at 0 degrees lowest
-  rim of a chamfer or of a step on the
-    axis                                ->  turned by the largest whole side on
+  side chosen, the thinner of a shaft   ->  its line at 0 degrees lowest
+  no side chosen, rim of a chamfer or
+    of a step on the axis               ->  turned by the largest whole side on
                                             the axis
   no whole curved side on the axis      ->  not turned about the axis
   rim without a flat face beside it     ->  OrientError
@@ -258,9 +259,10 @@ def side_tilt(angle_deg):
     return 90 - angle_deg
 
 
-def stand_on_rim(shape, rim, angle_deg):
+def stand_on_rim(shape, rim, angle_deg, side=None):
     """The placement change that stands `shape` on its rim `rim`, a whole
-    circle, tilted by angle_deg towards RIM_LEAN.
+    circle, tilted by angle_deg towards RIM_LEAN. `side` is the curved side
+    the fin goes under, on the axis of the rim; without, the largest whole one.
 
     The flat face of the rim is laid onto the bed if it does not lie there yet,
     and turned about its axis so the line of its curved side at 0 degrees
@@ -274,7 +276,8 @@ def stand_on_rim(shape, rim, angle_deg):
     flat = App.Placement()
     if not on_bed(shape, rim):
         flat = lay_flat(shape, flat_faces[0])
-    side = side_of_rim(shape, rim)
+    if side is None:
+        side = side_of_rim(shape, rim)
     if side is not None:
         flat = zero_to_front(moved(side, flat)).multiply(flat)
     laid = moved(rim, flat)
@@ -324,8 +327,9 @@ def stand(shape, edge, angle_deg, face=None):
     if face is not None and not any(edge.isSame(candidate) for candidate in face.Edges):
         raise OrientError(translate("FinSnap", "the edge is not an edge of the selected face"))
     if is_rim(edge):
-        rounded = face is not None and face.findPlane() is None
-        return stand_on_rim(shape, edge, side_tilt(angle_deg) if rounded else angle_deg)
+        if face is not None and face.findPlane() is None:
+            return stand_on_rim(shape, edge, side_tilt(angle_deg), face if is_round_side(face) else None)
+        return stand_on_rim(shape, edge, angle_deg)
     if face is None:
         if on_bed(shape, edge):
             return tilt(shape, edge, angle_deg)

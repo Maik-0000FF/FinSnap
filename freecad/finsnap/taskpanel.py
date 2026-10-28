@@ -36,6 +36,7 @@ LENGTH_DECIMALS = 3
 FIELD_TOLERANCE = 0.5 * 10 ** -LENGTH_DECIMALS
 RATIO_DECIMALS = 2
 LENGTH_SUFFIX = " mm"
+DEGREE_SUFFIX = " \N{DEGREE SIGN}"
 # Pause after the last change before the preview is rebuilt, so typing a
 # number does not rebuild the fins at every keystroke.
 PREVIEW_DELAY_MS = 400
@@ -72,7 +73,7 @@ FIN_FIELD_ANGLE = (QT_TRANSLATE_NOOP("FinSnap", "Angle on the part"),
                    QT_TRANSLATE_NOOP("FinSnap", "Position of the fin around the cylinder or tube, measured at the "
                                      "middle of its tines, in degrees from 0°, where it is first placed. Type a "
                                      "value and press Enter to turn the part to it; the fin keeps its place."),
-                   " °", ANGLE_DECIMALS, 0.0, geometry.FULL_CIRCLE, True)
+                   DEGREE_SUFFIX, ANGLE_DECIMALS, 0.0, geometry.FULL_CIRCLE, True)
 FIN_FIELD_HEIGHT = (QT_TRANSLATE_NOOP("FinSnap", "Height"),
                     QT_TRANSLATE_NOOP("FinSnap", "Height of this fin alone. Type a value and press Enter to set "
                                       "it; Reset fins gives it the height of the others again."),
@@ -661,7 +662,9 @@ class FinSnapTaskPanel:
         (UP), in mm."""
         result = self.handled_result()[0]
         number = self.handled[1]
-        along = (geometry.side_angle(feature.round_side(self.obj)) if self.turns_part()
+        # The angle rounded as the field shows it: just below 360 is 0.
+        along = (geometry.round_angle(geometry.side_angle(feature.round_side(self.obj)), ANGLE_TOLERANCE)
+                 if self.turns_part()
                  else result.starts[number] + result.thickness / 2 - result.face_start)
         return {handles.ALONG: along, handles.UP: result.heights[number]}
 
@@ -940,7 +943,7 @@ class FinSnapTaskPanel:
         self.dragged = (kind, mm)
         if kind == handles.ALONG and self.drag_mm_per_degree:
             # The angle of the fin on the part goes the other way round than the part turns.
-            shown = (self.drag_values[kind] - mm / self.drag_mm_per_degree) % geometry.FULL_CIRCLE
+            shown = geometry.round_angle(self.drag_values[kind] - mm / self.drag_mm_per_degree, ANGLE_TOLERANCE)
         else:
             shown = self.drag_values[kind] + mm
         self.show_fin_values({kind: shown})

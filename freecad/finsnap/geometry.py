@@ -388,9 +388,14 @@ def side_angle(face):
     zero = surface.value(0, 0) - surface.Center
     zero = zero - axis * zero.dot(axis)
     lowest = _lowest(face)
-    angle = math.degrees(math.atan2(axis.dot(zero.cross(lowest)), zero.dot(lowest))) % FULL_CIRCLE
-    # Just below 360 is 0, as the field shows it.
-    return 0.0 if FULL_CIRCLE - angle < d.TOLERANCE else angle
+    return round_angle(math.degrees(math.atan2(axis.dot(zero.cross(lowest)), zero.dot(lowest))))
+
+
+def round_angle(degrees, tolerance=d.TOLERANCE):
+    """`degrees` as an angle round a circle, from 0 up to 360; closer below 360
+    than `tolerance` is 0."""
+    angle = degrees % FULL_CIRCLE
+    return 0.0 if FULL_CIRCLE - angle < tolerance else angle
 
 
 def frame_of(part, face, support=None):
@@ -938,7 +943,7 @@ def stand_for_face(shape, number, p, angle_deg):
     """
     face = shape.Faces[number]
     if orient.is_round_side(face):
-        tries = [(edge, partial(orient.stand_on_rim, shape, edge, orient.side_tilt(angle_deg)))
+        tries = [(edge, partial(orient.stand_on_rim, shape, edge, orient.side_tilt(angle_deg), face))
                  for edge in rims_on_axis(shape, face)]
     else:
         straight = [edge for edge in face.Edges
