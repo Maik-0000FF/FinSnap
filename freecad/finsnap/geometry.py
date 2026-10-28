@@ -995,6 +995,7 @@ def stand_for_face(shape, number, p, angle_deg):
       planar face with straight edges       ->  stood on its longest edge that works
       longest edge does not carry the part
         or the fins do not fit there        ->  the next longest edge
+      the kernel fails at one edge or rim   ->  the next one, as where fins do not fit
       round side                            ->  stood on the first rim of rims_on_axis()
                                                 that works
       face without a straight edge, or none
@@ -1009,12 +1010,14 @@ def stand_for_face(shape, number, p, angle_deg):
                     if abs(edge.Length - (edge.Vertexes[-1].Point - edge.Vertexes[0].Point).Length) < d.TOLERANCE]
         tries = [(edge, partial(orient.stand, shape, edge, angle_deg, face))
                  for edge in sorted(straight, key=lambda candidate: -candidate.Length)]
+    # A fault in the kernel at one edge or rim passes to the next, as a face
+    # without room for fins does: the next is there to fall back on.
     for edge, stand in tries:
         try:
             change = stand()
             standing = moved(shape, change)
             build(standing, standing.Faces[number], p)
-        except (orient.OrientError, FinError):
+        except (orient.OrientError, FinError, Part.OCCError):
             continue
         return change, edge
     raise FinError(translate("FinSnap", "the part cannot stand so that this face takes fins"))
