@@ -324,8 +324,11 @@ class FinSnapTaskPanel:
         self.field_timer = QtCore.QTimer(self.form)
         self.field_timer.setSingleShot(True)
         self.field_timer.setInterval(PREVIEW_DELAY_MS)
-        self.field_timer.timeout.connect(lambda: self.field_entered(self.typed_field))
+        self.field_timer.timeout.connect(lambda: self.field_entered(self.typed_field, paused=True))
         self.typed_field = None
+        # The field of the fin being typed into while its value is taken after
+        # a pause: the panel leaves it as typed.
+        self.typing = None
         # The fin with the handles on it, as (MAIN or COUNTER, number); the
         # arrow being dragged with how far, as (kind, mm); and the shift and
         # height of the fin, and the values in its fields, when it was grabbed.
@@ -675,6 +678,7 @@ class FinSnapTaskPanel:
             return
         fin = feature.fin_at(self.obj, sub)
         if fin and fin != self.handled:
+            self.take_typed()
             self.handled = fin
             self.place_handles()
 
@@ -713,6 +717,7 @@ class FinSnapTaskPanel:
         # A click on a new row comes as a changed row as well; once is enough.
         if self.listed_fins[row] == self.handled and self.selected_fins() == [self.handled]:
             return
+        self.take_typed()
         self.handled = self.listed_fins[row]
         Gui.Selection.clearSelection()
         face = feature.fin_face(self.obj, *self.handled)
@@ -798,7 +803,9 @@ class FinSnapTaskPanel:
         """Show `values` in the fields of the handled fin, without taking them as typed."""
         self.filling_fields = True
         for kind, value in values.items():
-            self.fin_fields[kind].setValue(value)
+            # A field still being typed into keeps what is typed.
+            if kind != self.typing:
+                self.fin_fields[kind].setValue(value)
         self.filling_fields = False
 
     def turns_part(self):
@@ -960,9 +967,10 @@ class FinSnapTaskPanel:
         the drag starts from there."""
         self.ends_timer.stop()
         # A value typed just before is built first, or the drag would keep the
-        # parameters from before it.
+        # parameters from before it, or the value would come in the middle of it.
         if self.timer.isActive():
             self.preview()
+        self.take_typed()
         # While the drag lasts, builds with the same changes by hand are made once;
         # not while the part turns about a round side, as the builds keep the part.
         self.obj.Proxy.reuse = None if kind == handles.ALONG and self.turns_part() else {}
@@ -1139,9 +1147,31 @@ class FinSnapTaskPanel:
         self.typed_field = kind
         self.field_timer.start()
 
-    def field_entered(self, kind):
+    def take_typed(self):
+        """Take a value still waiting for typing to pause, before the handles
+        go to another fin or an arrow is grabbed, so it is neither lost nor
+        taken in the middle of a drag."""
+        if self.field_timer.isActive():
+            self.field_entered(self.typed_field)
+
+    def field_entered(self, kind, paused=False):
         """A value typed into a field of the handled fin: where it stands along
-        the face (ALONG) or how high it is (UP)."""
+        the face (ALONG) or how high it is (UP). With `paused`, typing has only
+        paused: the field may still be typed into, so it is left as typed.
+
+        INPUTS this has to withstand:
+          paused, the fin stands there          ->  built there, the field left as typed
+          paused, the fin cannot stand there    ->  nothing built, the reason shown, the
+                                                    field left as typed
+          paused, the build fails all the same  ->  taken back, the reason shown, the
+                                                    field left as typed
+          Enter or the field left, the fin
+            stands there                        ->  built there, the field shows it
+          Enter or the field left, it cannot    ->  the reason shown, the field shows
+                                                    where the fin stands
+          the value as shown, untouched         ->  nothing
+          no fin with the handles               ->  nothing
+        """
         self.field_timer.stop()
         if self.filling_fields or self.handled_result() is None:
             return
@@ -1161,8 +1191,19 @@ class FinSnapTaskPanel:
                 return
             if kind == handles.ALONG:
                 value = (self.own_value(kind) or 0.0) + value - current
-        if not self.set_fin(kind, value):
-            self.place_handles()
+        if not paused:
+            if not self.set_fin(kind, value):
+                self.place_handles()
+            return
+        error = self.stand_error(kind, value)
+        if error is not None:
+            self.refuse(error)
+            return
+        self.typing = kind
+        try:
+            self.set_fin(kind, value)
+        finally:
+            self.typing = None
 
     def release_handles(self):
         """Take the arrows away and stop listening, once, whichever way the panel closes."""

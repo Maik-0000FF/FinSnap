@@ -197,8 +197,10 @@ def turned_tube(doc):
 
 def check_typed_fields(panel, fins, place):
     """A value typed into a field of the fin with the arrows is taken once
-    typing pauses; Enter takes it at once and leaves the panel open."""
+    typing pauses, where the fin can stand, and the field is left as typed;
+    Enter takes it at once and leaves the panel open."""
     from PySide import QtCore, QtGui
+    from freecad.finsnap import defaults as d
     from freecad.finsnap import feature, handles
     box = panel.fin_fields[handles.ALONG]
     box.setValue(place + FIN_SHIFT)
@@ -218,6 +220,22 @@ def check_typed_fields(panel, fins, place):
         taken.append(event.isAccepted())
     expect(not feature.edits(fins, feature.MAIN)[1] and not panel.field_timer.isActive() and all(taken),
            "Enter takes the place typed at once and is not passed on to close the panel")
+    nowhere = place + TOO_HIGH
+    box.setValue(nowhere)
+    panel.field_entered(panel.typed_field, paused=True)
+    expect(not feature.edits(fins, feature.MAIN)[1] and abs(box.value() - nowhere) < d.TOLERANCE
+           and not panel.notes.isHidden(),
+           "typing paused where the fin cannot stand: nothing moves, the reason shows, the field keeps what is typed")
+    panel.field_entered(handles.ALONG)
+    expect(abs(box.value() - place) < d.TOLERANCE,
+           "left where the fin cannot stand, the field shows where it stands again")
+    box.setValue(place + FIN_SHIFT)
+    panel.handle_started(handles.ALONG)
+    expect(feature.edits(fins, feature.MAIN)[1] and not panel.field_timer.isActive(),
+           "a place still waiting for typing to pause is taken before an arrow is grabbed")
+    panel.finish_drag(handles.ALONG, 0.0)
+    box.setValue(place)
+    panel.field_entered(handles.ALONG)
 
 
 def check_sections(panel):
