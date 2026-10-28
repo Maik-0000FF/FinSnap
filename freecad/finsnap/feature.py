@@ -64,6 +64,8 @@ NOTE_NO_COUNTER_ON_FACE = QT_TRANSLATE_NOOP("FinSnap", "No counter fin on this f
 # by a STEP file are joined, as for the seam between them; %s names it.
 NOTE_LOST_IN_JOINING = QT_TRANSLATE_NOOP("FinSnap", "%s is the seam between two halves of a side; select the "
                                          "side or its rim instead")
+# Said when a face of the joined shape has no piece on the part to name it by.
+NOTE_NO_PIECE = QT_TRANSLATE_NOOP("FinSnap", "%s of the joined part matches no face of the part itself")
 # A counter fin under the side of a cylinder or tube would stay under its
 # lowest line and move only by turning the part, the main fin with it.
 COUNTER_ROUND_SIDE = QT_TRANSLATE_NOOP(
@@ -378,28 +380,32 @@ def whole_elements(obj, names):
       a half ring of a split tube named
         beside it                           ->  the whole ring of the joined shape
       the seam between the halves named     ->  FinError: joining removes it
-      a face of the joined shape named back ->  the name of a piece of it on `obj`;
-                                                a face made of several pieces takes
-                                                the first, the fins stand under it
+      a face of the joined shape named back ->  the name of its first piece on `obj`:
+                                                a side for the whole side again, a flat
+                                                face for itself with the faces in its
+                                                plane (geometry.support_of())
       a fillet or an arc of a slot          ->  as no split side or rim: as it is
     """
     shape = global_shape(obj)
     elements = [shape.getElement(name) for name in names]
-    pieces = [element for element in elements if orient.is_piece(element)]
-    whole = orient.joined(shape) if pieces else None
-    if whole is None or not any(orient.whole_of(whole, piece) is not None for piece in pieces):
+    pieces = [orient.is_piece(element) for element in elements]
+    whole = orient.joined(shape) if any(pieces) else None
+    found = [] if whole is None else [orient.whole_of(whole, e) if piece else None
+                                      for e, piece in zip(elements, pieces)]
+    if not any(f is not None for f in found):
         return shape, elements, lambda number: face_name(number + 1)
     kept = []
-    for name, element in zip(names, elements):
-        found = orient.counterpart(element, whole.Faces if isinstance(element, Part.Face) else whole.Edges)
-        if found is None:
+    for name, element, own in zip(names, elements, found):
+        if own is None:
+            own = orient.counterpart(element, whole.Faces if isinstance(element, Part.Face) else whole.Edges)
+        if own is None:
             raise geometry.FinError(translate("FinSnap", NOTE_LOST_IN_JOINING) % name)
-        kept.append(found)
+        kept.append(own)
 
     def name_of(number):
         pieces_named = names_on(shape, [whole.Faces[number]])
         if not pieces_named:
-            raise geometry.FinError(translate("FinSnap", NOTE_LOST_IN_JOINING) % face_name(number + 1))
+            raise geometry.FinError(translate("FinSnap", NOTE_NO_PIECE) % face_name(number + 1))
         return pieces_named[0]
     return whole, kept, name_of
 
@@ -662,7 +668,7 @@ def add_counter(obj, base=None, face_ref=None):
         # Named on the part: on a split side the face was found on its joined shape.
         named = names_on(global_shape(base), [found])
         if not named:
-            return None
+            raise geometry.FinError(translate("FinSnap", NOTE_NO_PIECE) % face_name_of(shape, found))
         face_ref = named[0]
     else:
         # A face chosen by hand has to take fins, or the next build fails.

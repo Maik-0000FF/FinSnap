@@ -467,6 +467,17 @@ def split_tube(doc):
         expect("seam" in str(error), "the seam between the halves named is refused with a reason: %s" % error)
     else:
         raise AssertionError("the seam between the halves of a split tube was taken")
+    # The counter fin found by itself goes under the end ring leaning the
+    # other way, which the tube brings in two halves: named by one half, it
+    # stands under both, as under any face with others in its plane.
+    named = feature.add_counter(fins)
+    doc.recompute()
+    sides = ["Face%d" % i for i in halves]
+    carried = [name for name in fins.CarriedFaces if name not in sides]
+    expect(named is not None and fins.isValid() and len(carried) == 2,
+           "the counter fin under the end ring of a split tube stands under both halves of it: %s" % carried)
+    feature.remove_counter(fins)
+    doc.recompute()
     doc.removeObject(fins.Name)
     doc.removeObject(tube.Name)
     doc.recompute()

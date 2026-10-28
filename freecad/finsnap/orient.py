@@ -215,7 +215,9 @@ def counterpart(element, candidates):
                                                 not in its hole
       the seam joining removed              ->  None
     """
-    return next((candidate for candidate in candidates if lies_on(element, candidate)), None)
+    # The point is found once, for every candidate alike.
+    point = Part.Vertex(point_on(element))
+    return next((candidate for candidate in candidates if candidate.distToShape(point)[0] < d.TOLERANCE), None)
 
 
 def is_piece(element):
