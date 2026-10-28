@@ -56,6 +56,8 @@ TUBE_RADIUS = 10.0
 TUBE_BORE = 6.0
 TUBE_HEIGHT = 40.0
 TUBE_TURN = 5.0  # how far the fin under the side of a tube is moved by hand, in mm round it
+FINE_TURN = 1.23456789  # a turn finer than the shift is kept, in mm round the side
+EXACT_DISTANCE = 1e-9  # how far a point of the tube may move and it still stands alike, in mm
 
 
 def face_name(shape, face):
@@ -454,6 +456,16 @@ def turned_tube(doc):
     doc.recompute()
     expect(part.Placement.isSame(standing, d.TOLERANCE) and not feature.round_shift(fins),
            "moved back, the tube stands as before")
+    # A turn finer than the shift is kept: the part turns by the kept shift,
+    # so turned back it stands exactly where it stood.
+    feature.set_round_shift(fins, FINE_TURN)
+    feature.set_round_shift(fins, 0.0)
+    # Measured on the side, where the turn shows as a distance; an angle this
+    # small rounds away in the rotation.
+    probe = feature.round_side(fins).Surface.Center + App.Vector(TUBE_RADIUS, 0, 0)
+    drift = (part.Placement.multVec(probe) - standing.multVec(probe)).Length
+    expect(drift < EXACT_DISTANCE,
+           "turned finer than the shift is kept and back, the tube stands exactly as before: %r mm" % drift)
 
     side_name = "Face%d" % (side + 1)
     try:

@@ -961,9 +961,13 @@ def forget_turn(obj):
 
 def set_round_shift(obj, mm):
     """Turn the part so its main fin stands `mm` round its round side from
-    where it was stood, and keep that as the shift of the fin."""
-    turn_part(obj, mm - round_shift(obj))
-    set_fin_shift(obj, MAIN, 1, mm)
+    where it was stood, and keep that as the shift of the fin. Turned by the
+    shift as it is kept, rounded, so the part stands where the shift says,
+    also after many small turns and a turn back."""
+    # As set_fin_shift() keeps it: rounded, and nothing below the tolerance.
+    kept = stored_mm(mm) if abs(mm) >= d.TOLERANCE else 0.0
+    turn_part(obj, kept - round_shift(obj))
+    set_fin_shift(obj, MAIN, 1, kept)
 
 
 def reset_fins(obj, which=None):

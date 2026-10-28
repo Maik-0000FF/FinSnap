@@ -290,8 +290,11 @@ def rims_on_axis(shape, side):
       circle off the axis (a hole in the
         end face beside it)                 ->  not a rim of the side
     """
-    chamfers = [face for face in shape.Faces if isinstance(face.Surface, Part.Cone)
-                and any(edge.isSame(mine) for edge in face.Edges for mine in side.Edges)]
+    # Edges compared by their hash, as isSame() does: the same edge with the
+    # same placement, whichever way round; one lookup each, not a pair loop.
+    own = {edge.hashCode() for edge in side.Edges}
+    chamfered = {edge.hashCode() for face in shape.Faces if isinstance(face.Surface, Part.Cone)
+                 and any(mine.hashCode() in own for mine in face.Edges) for edge in face.Edges}
     found = []
     for edge in shape.Edges:
         if not orient.is_rim(edge):
@@ -300,9 +303,9 @@ def rims_on_axis(shape, side):
         flat = any(face.findPlane() is not None for face in shape.ancestorsOfType(edge, Part.Face))
         if not (orient.on_axis(circle.Center, circle.Axis, side.Surface) and flat):
             continue
-        if any(edge.isSame(mine) for chamfer in chamfers for mine in chamfer.Edges):
+        if edge.hashCode() in chamfered:
             rank = RIM_CHAMFERED
-        elif any(edge.isSame(mine) for mine in side.Edges):
+        elif edge.hashCode() in own:
             rank = RIM_OWN
         else:
             rank = RIM_OTHER
@@ -944,13 +947,22 @@ def best_face(shape, p):
         except FinError:
             continue
         leaning.append((face.Area, number))
-    for _, number in sorted(leaning, reverse=True):
+    number = first_taking_fins(shape, [number for _, number in sorted(leaning, reverse=True)], p)
+    if number is None:
+        raise FinError(translate("FinSnap", "no face of the part leans over the bed and takes fins"))
+    return number
+
+
+def first_taking_fins(shape, numbers, p):
+    """Of the faces of `shape` numbered `numbers`, in that order, the first
+    the fins can be built under; None if none takes them."""
+    for number in numbers:
         try:
             build(shape, shape.Faces[number], p)
-        except FinError:
+        except (FinError, Part.OCCError):
             continue
         return number
-    raise FinError(translate("FinSnap", "no face of the part leans over the bed and takes fins"))
+    return None
 
 
 def stand_for_face(shape, number, p, angle_deg):
@@ -1042,15 +1054,9 @@ def quick_plan(shape, edges, faces, p, angle_deg):
             side = orient.side_of_rim(shape, edge)
             change = orient.stand_on_rim(shape, edge, orient.side_tilt(angle_deg), side)
             stood = moved(shape, change)
-            if side is not None:
-                number = next(i for i, face in enumerate(shape.Faces) if face.isSame(side))
-                try:
-                    build(stood, stood.Faces[number], p)
-                except (FinError, Part.OCCError):
-                    pass
-                else:
-                    return QuickPlan(change, number, edge, ())
-            return QuickPlan(change, best_face(stood, p), edge, ())
+            sides = [i for i, face in enumerate(shape.Faces) if side is not None and face.isSame(side)]
+            number = first_taking_fins(stood, sides, p)
+            return QuickPlan(change, best_face(stood, p) if number is None else number, edge, ())
         if not orient.on_bed(shape, edge) and orient.right_angle_faces(shape, edge) is None:
             raise FinError(translate("FinSnap", "This edge does not lie on the bed, and its faces do not meet at a "
                                                 "right angle. Use Stand on edge with the edge and the face that "
