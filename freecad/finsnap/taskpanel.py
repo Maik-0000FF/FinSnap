@@ -1295,8 +1295,11 @@ class FinSnapTaskPanel:
             if name in self.obj.PropertiesList:
                 setattr(self.obj, name, value)
         self.obj.CounterFace = self.original_counter
-        # Turned last, so a turn that fails leaves nothing else half put back.
-        if feature.on_round_side(self.obj):
-            feature.turn_part(self.obj, self.original_turn - turned)
-        self.obj.recompute()
+        # Turned last, so a turn that fails leaves nothing else half put back;
+        # what is put back is built all the same.
+        try:
+            if feature.on_round_side(self.obj):
+                feature.turn_part(self.obj, self.original_turn - turned)
+        finally:
+            self.obj.recompute()
         return True

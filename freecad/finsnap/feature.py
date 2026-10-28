@@ -617,9 +617,12 @@ def add_counter(obj, base=None, face_ref=None):
 
 def create(base, face_ref, counter=None):
     """A new FinSnap object under the face named `face_ref` of `base`. counter: (object, face name) or None.
-    A counter face on the side of a cylinder or tube: FinError, nothing made."""
+    A counter face that cannot take fins, or the side of a cylinder or tube:
+    FinError, nothing made."""
     if counter:
-        check_counter_face(_face((counter[0], [counter[1]]))[1])
+        face = _face((counter[0], [counter[1]]))
+        check_counter_face(face[1])
+        geometry.frame_of(*face)
     doc = base.Document
     obj = doc.addObject("Part::FeaturePython", TYPE_NAME)
     FinSnapFeature(obj)

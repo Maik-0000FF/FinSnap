@@ -471,6 +471,16 @@ def turned_tube(doc):
                "fins made with a counter fin under the side of a tube are refused, nothing made: %s" % error)
     else:
         raise AssertionError("fins were made with a counter fin under the side of a tube")
+    stood = part.Shape
+    up = max((i for i, f in enumerate(stood.Faces) if f.findPlane() is not None),
+             key=lambda i: stood.Faces[i].CenterOfMass.z)
+    try:
+        feature.create(part, side_name, (part, "Face%d" % (up + 1)))
+    except geometry.FinError as error:
+        expect(len(doc.Objects) == count,
+               "fins made with a counter face facing up are refused, nothing made: %s" % error)
+    else:
+        raise AssertionError("fins were made with a counter face facing up")
     # Set some other way, as an older file may have it: left out with a note,
     # the main fin still built.
     fins.CounterFace = (part, [side_name])

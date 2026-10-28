@@ -1039,14 +1039,14 @@ def quick_plan(shape, edges, faces, p, angle_deg):
             # The fins go under its side, which leans angle_deg as any face under
             # fins does; under the largest leaning face only where they do not fit
             # under the side, or it has none.
-            change = orient.stand_on_rim(shape, edge, orient.side_tilt(angle_deg))
-            stood = moved(shape, change)
             side = orient.side_of_rim(shape, edge)
+            change = orient.stand_on_rim(shape, edge, orient.side_tilt(angle_deg), side)
+            stood = moved(shape, change)
             if side is not None:
                 number = next(i for i, face in enumerate(shape.Faces) if face.isSame(side))
                 try:
                     build(stood, stood.Faces[number], p)
-                except FinError:
+                except (FinError, Part.OCCError):
                     pass
                 else:
                     return QuickPlan(change, number, edge, ())

@@ -614,7 +614,7 @@ class AddFins:
         doc.openTransaction(translate("FinSnap", "Add fins"))
         try:
             obj = feature.create(base, face_name, counter)
-        except geometry.FinError as error:
+        except (ValueError, Part.OCCError) as error:
             doc.abortTransaction()
             _message(translate("FinSnap", feature.NOTE_NO_COUNTER_ON_FACE) % error)
             return
