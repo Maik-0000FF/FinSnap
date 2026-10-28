@@ -375,16 +375,28 @@ def whole_elements(obj, names):
       asked again, nothing changed          ->  the same answer, nothing joined anew
       the part changed, moved or turned     ->  worked out anew: the key holds its
                                                 shape and its placement
+      an object without a shape of its own  ->  worked out each time, not kept
+      a new shape where an old one was in
+        memory, with the same hash          ->  worked out anew: a kept answer holds
+                                                its shape, which is compared as well
       other names asked                     ->  worked out for those
       many parts or names asked in turn     ->  the oldest answer goes past WHOLE_KEPT
     """
-    key = (obj.Document.Name, obj.Name, obj.Shape.hashCode(), str(obj.getGlobalPlacement().toMatrix()), tuple(names))
-    found = _whole_kept.get(key)
-    if found is None:
+    # The shape the object holds, the same each time it is read while the
+    # object stays as it is; an object without one is worked out each time.
+    own = getattr(obj, "Shape", None)
+    if own is None:
+        return _join_elements(obj, names)
+    key = (obj.Document.Name, obj.Name, own.hashCode(), tuple(obj.getGlobalPlacement().toMatrix().A),
+           tuple(names))
+    kept = _whole_kept.get(key)
+    if kept is None or not kept[0].isSame(own):
         while len(_whole_kept) >= WHOLE_KEPT:
             _whole_kept.pop(next(iter(_whole_kept)))
-        found = _whole_kept[key] = _join_elements(obj, names)
-    shape, elements, name_of = found
+        # The shape is kept with the answer: held, its memory cannot go to a
+        # new shape that would then share its hash.
+        kept = _whole_kept[key] = (own, _join_elements(obj, names))
+    shape, elements, name_of = kept[1]
     return shape, list(elements), name_of
 
 
@@ -490,7 +502,8 @@ def overhangs_of(part_obj, document):
 
 # Builds of one side kept during a drag; beyond these the oldest goes.
 REUSE_KEPT = 8
-# Answers of whole_elements() kept, by part, shape, placement and names asked.
+# Answers of whole_elements() kept, with the shape each was worked out for,
+# by part, shape, placement and names asked.
 WHOLE_KEPT = 16
 _whole_kept = {}
 
