@@ -52,7 +52,9 @@ GERMAN = "FinSnap_de.ts"  # written by freecad/finsnap/tools/update_translations
 TUBE_RADIUS = 10.0
 TUBE_BORE = 6.0
 TUBE_HEIGHT = 40.0
-TUBE_TURN = 5.0  # how far the fin under the side of a tube is moved in the panel, in mm round it
+TUBE_ANGLE = 30.0  # how far the fin under the side of a tube is turned in the panel, in degrees
+ZOOM_OUT = 2.0  # how far the view is zoomed out to see the arc keep its size on the screen
+ARROW_SIZE_TOLERANCE = 0.01  # share by which the size of an arrow may differ from the one reckoned
 
 
 def load_workbench():
@@ -106,11 +108,12 @@ def select(obj, *subs):
 
 
 def turned_tube(doc):
-    """Quick fins on the side of a tube: moving the fin along the face in the
-    panel turns the tube about its axis, the fin stays under the lowest line;
-    Reset fins and Cancel turn it back."""
+    """Quick fins on the side of a tube: the fin is first put at 0 degrees of
+    the side; its angle typed in the panel, or the arc round the axis dragged,
+    turns the tube about its axis, the fin stays under the lowest line; Reset
+    fins and Cancel turn it back."""
     from freecad.finsnap import defaults as d
-    from freecad.finsnap import feature, handles
+    from freecad.finsnap import feature, geometry, handles
     tube = doc.addObject("Part::Feature", "Tube")
     tube.Shape = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
     side = [i for i, f in enumerate(tube.Shape.Faces, 1) if isinstance(f.Surface, Part.Cylinder)
@@ -122,30 +125,64 @@ def turned_tube(doc):
     standing = App.Placement(tube.Placement)
     fin_middle = fins.Shape.BoundBox.Center
 
-    def turn():
-        return tube.Placement.multiply(standing.inverse()).Rotation.Angle * TUBE_RADIUS
+    def turned():
+        """How far the tube is turned from where it was stood, the shorter way round, in degrees."""
+        degrees = math.degrees(tube.Placement.multiply(standing.inverse()).Rotation.Angle)
+        return min(degrees, geometry.FULL_CIRCLE - degrees)
 
-    expect(panel.turns_part(), "the fin under the side of a tube turns the tube when moved")
-    panel.fin_fields[handles.ALONG].setValue(TUBE_TURN)
+    def angle():
+        return panel.fin_values()[handles.ALONG]
+
+    expect(panel.turns_part() and panel.handles.turning(),
+           "the fin under the side of a tube turns the tube when moved, by an arc round its axis")
+    expect(abs(angle()) < d.TOLERANCE, "the fin is first put at 0 degrees of the side")
+    arc = panel.handles
+    camera = Gui.ActiveDocument.ActiveView.getCameraNode()
+    unit = arc.arc_unit
+    camera.height.setValue(camera.height.getValue() * ZOOM_OUT)
+    arc._zoomed()
+    # The middle of every piece of the shaft, in the arc's own frame about the axis.
+    middles = [piece.getChild(0).translation.getValue() for bodies in arc.arc_bodies.values()
+               for body in bodies.values() for piece in list(body.getChildren())[:handles.ARC_PIECES]]
+    reaches = [math.hypot(x, y) for x, y, _ in middles]
+    expect(abs(arc.arc_unit - ZOOM_OUT * unit) < ARROW_SIZE_TOLERANCE * arc.arc_unit
+           and max(reaches) - min(reaches) < d.TOLERANCE and max(abs(z) for _, _, z in middles) < d.TOLERANCE
+           and min(reaches) > feature.round_side(fins).Surface.Radius,
+           "zoomed out, the arc is drawn as large on the screen, round the axis outside the side")
+    camera.height.setValue(camera.height.getValue() / ZOOM_OUT)
+    arc._zoomed()
+    panel.fin_fields[handles.ALONG].setValue(TUBE_ANGLE)
     panel.field_entered(handles.ALONG)
-    expect(abs(turn() - TUBE_TURN) < 1e-6 and fins.Shape.BoundBox.Center.isEqual(fin_middle, d.TOLERANCE)
-           and abs(panel.fin_values()[handles.ALONG] - TUBE_TURN) < d.TOLERANCE,
-           "a place typed for the fin turns the tube that far round its side, the fin stays")
-    panel.handle_started(handles.ALONG)
-    panel.handle_moved(handles.ALONG, TUBE_TURN)
-    panel.finish_drag(handles.ALONG, TUBE_TURN)
-    expect(abs(turn() - 2 * TUBE_TURN) < 1e-6, "dragging the arrow along turns the tube further")
+    expect(abs(turned() - TUBE_ANGLE) < d.TOLERANCE and fins.Shape.BoundBox.Center.isEqual(fin_middle, d.TOLERANCE)
+           and abs(angle() - TUBE_ANGLE) < d.TOLERANCE,
+           "an angle typed for the fin turns the tube that far round its axis, the fin stays")
+    arc._held(handles.ALONG, None)
+    arc.turner.rotation.setValue(coin.SbRotation(coin.SbVec3f(0, 0, 1), math.radians(-TUBE_ANGLE)))
+    arc._moved(handles.ALONG, None)
+    expect(abs(panel.fin_fields[handles.ALONG].value() - 2 * TUBE_ANGLE) < d.TOLERANCE,
+           "while the arc is dragged, the field shows the angle the fin goes to")
+    arc.held = False
+    panel.finish_drag(handles.ALONG, arc._mm(handles.ALONG))
+    expect(abs(turned() - 2 * TUBE_ANGLE) < d.TOLERANCE and abs(angle() - 2 * TUBE_ANGLE) < d.TOLERANCE,
+           "dragging the arc turns the tube further, as near as Coin reads its turn")
+    panel.fin_fields[handles.ALONG].setValue(geometry.FULL_CIRCLE - TUBE_ANGLE)
+    panel.field_entered(handles.ALONG)
+    expect(abs(turned() - TUBE_ANGLE) < d.TOLERANCE
+           and abs(angle() - (geometry.FULL_CIRCLE - TUBE_ANGLE)) < d.TOLERANCE,
+           "an angle typed past 0 turns the tube the shorter way round")
     panel.reset()
     expect(tube.Placement.isSame(standing, d.TOLERANCE), "Reset fins turns the tube back")
-    panel.fin_fields[handles.ALONG].setValue(TUBE_TURN)
+    panel.fin_fields[handles.ALONG].setValue(TUBE_ANGLE)
     panel.field_entered(handles.ALONG)
+    shift = feature.round_shift(fins)
     panel.accept()
     Gui.ActiveDocument.setEdit(fins)
     reopened = fins.ViewObject.Proxy.panel
-    reopened.fin_fields[handles.ALONG].setValue(2 * TUBE_TURN)
+    reopened.fin_fields[handles.ALONG].setValue(2 * TUBE_ANGLE)
     reopened.field_entered(handles.ALONG)
     reopened.reject()
-    expect(abs(turn() - TUBE_TURN) < 1e-6 and feature.round_shift(fins) == TUBE_TURN,
+    expect(abs(turned() - TUBE_ANGLE) < d.TOLERANCE and feature.round_shift(fins) == shift
+           and abs(abs(shift) - math.radians(TUBE_ANGLE) * TUBE_RADIUS) < d.TOLERANCE,
            "Cancel turns the tube back to where the panel found it")
     rim = [i for i, e in enumerate(tube.Shape.Edges, 1) if isinstance(e.Curve, Part.Circle)
            and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE][0]

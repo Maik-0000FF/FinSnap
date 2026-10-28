@@ -14,6 +14,7 @@ All notable changes to FinSnap are listed here. The format follows
 ### Added
 
 - Quick fins and Stand on edge stand a cylinder or tube on its rim, with one fin under its side (#36)
+- The fin under the side of a cylinder or tube is first put at 0 degrees of the side; the task panel shows and takes its angle round the side, and an arc round the axis turns the part
 
 ### Fixed
 

@@ -6,8 +6,11 @@
 While the task panel is open the fins are shown see-through, green while they
 can be built and red while not, the tines that find no face are marked red,
 and two double arrows stand just outside the middle of the upright outer
-edge of one fin, the one picked or the first: one along the face, one up. An
-end of an arrow is left out where the fin cannot go. While an arrow is
+edge of one fin, the one picked or the first: one along the face, one up.
+Under the round side of a cylinder or tube, where moving the fin turns the
+part about its axis, the arrow along the face is an arc round that axis
+through the same place instead. An end of an arrow is left out where the fin
+cannot go. While an arrow is
 dragged the task panel builds the fins along, and shows the fin red where it
 cannot stand.
 
@@ -52,6 +55,9 @@ FACE_OFFSET = -1.0
 
 ALONG, UP = "along", "up"
 KINDS = (ALONG, UP)
+# The arc that moves the fin along a round side, by turning the part, in
+# place of the straight arrow along the face.
+TURNING = "turning"
 UP_DIRECTION = App.Vector(0, 0, 1)
 # The two ends of an arrow: towards smaller and towards larger values.
 BACK, FORTH = -1, 1
@@ -82,6 +88,23 @@ BYTE = 255
 VIEW_3D = "Gui::View3DInventor"
 # A Coin translate dragger moves along its own x axis.
 DRAGGER_AXIS = coin.SbVec3f(1, 0, 0)
+# Coin's cone points along its y axis.
+CONE_AXIS = coin.SbVec3f(0, 1, 0)
+# The arc that turns a part about its round side runs round the true circle
+# about the axis, but keeps the size of the straight arrows on the screen:
+# each half a unit long and as thick, in this many round pieces, and never
+# more than this far round the circle (radians). It is drawn anew whenever
+# the zoom has changed by more than ZOOM_REDRAW_SHARE, looked for every
+# ZOOM_POLL_MS. A unit is reckoned as FreeCAD's node for it does: the scale
+# of the view at the origin, sampled over AUTO_ZOOM_PROBE, by AUTO_ZOOM_DIVISOR.
+ARC_PIECES = 8
+ARC_MAX_HALF_TURN = 0.8 * math.pi
+ZOOM_REDRAW_SHARE = 0.01
+ZOOM_POLL_MS = 50
+AUTO_ZOOM_PROBE = 0.1
+AUTO_ZOOM_DIVISOR = 5
+# The parts of a Coin disc dragger, which turns about its own z axis, at rest and held.
+TURN_PARTS = ("rotator", "rotatorActive")
 
 
 def shaded(shapes, color, transparency):
@@ -161,12 +184,68 @@ def half_arrow():
     shaft.height.setValue(shaft_length)
     to_tip = coin.SoTranslation()
     to_tip.translation.setValue(0, (shaft_length + TIP_LENGTH) / 2, 0)
-    tip = coin.SoCone()
-    tip.bottomRadius.setValue(TIP_RADIUS)
-    tip.height.setValue(TIP_LENGTH)
-    for node in (turn, to_shaft, shaft, to_tip, tip):
+    for node in (turn, to_shaft, shaft, to_tip, tip()):
         group.addChild(node)
     return group
+
+
+def tip(unit=1.0):
+    """The cone at the tip of an arrow, along y round the origin, `unit` long a unit of an arrow."""
+    cone = coin.SoCone()
+    cone.bottomRadius.setValue(TIP_RADIUS * unit)
+    cone.height.setValue(TIP_LENGTH * unit)
+    return cone
+
+
+def arc_arrow(color):
+    """An arc in `color` with an end at each side, and of each end, BACK or
+    FORTH, the switch to hide it and the group fill_half_arc() draws it in."""
+    group = coin.SoSeparator()
+    base = coin.SoBaseColor()
+    base.rgb.setValue(*color)
+    group.addChild(base)
+    halves, bodies = {}, {}
+    for end in (BACK, FORTH):
+        switch = coin.SoSwitch()
+        switch.whichChild.setValue(coin.SO_SWITCH_ALL)
+        body = coin.SoSeparator()
+        switch.addChild(body)
+        group.addChild(switch)
+        halves[end], bodies[end] = switch, body
+    return group, halves, bodies
+
+
+def fill_half_arc(body, radius, unit, sense):
+    """Draw into `body` half an arrow from (radius, 0, 0) round the circle of
+    `radius` about the z axis (mm): the right way round for `sense` 1, the
+    other for -1. It is as long and as thick as half a straight arrow whose
+    unit is `unit` mm, but goes no further round than ARC_MAX_HALF_TURN."""
+    body.removeAllChildren()
+    # Along the arc, in mm, shortened alike where it would go too far round.
+    share = min(1.0, ARC_MAX_HALF_TURN * radius / unit)
+
+    def point(length):
+        angle = sense * length * share / radius
+        return coin.SbVec3f(radius * math.cos(angle), radius * math.sin(angle), 0)
+
+    def placed(node, start, end):
+        """`node`, standing along y round the origin, moved to stand from `start` to `end`."""
+        piece = coin.SoSeparator()
+        place = coin.SoTransform()
+        place.translation.setValue((start + end) * 0.5)
+        place.rotation.setValue(coin.SbRotation(CONE_AXIS, end - start))
+        piece.addChild(place)
+        piece.addChild(node)
+        return piece
+
+    shaft_length = (1.0 - TIP_LENGTH) * unit
+    marks = [point(shaft_length * i / ARC_PIECES) for i in range(ARC_PIECES + 1)]
+    for start, end in zip(marks, marks[1:]):
+        shaft = coin.SoCylinder()
+        shaft.radius.setValue(SHAFT_RADIUS * unit)
+        shaft.height.setValue((end - start).length())
+        body.addChild(placed(shaft, start, end))
+    body.addChild(placed(tip(unit), marks[-1], point(unit)))
 
 
 class NoView(RuntimeError):
@@ -217,24 +296,34 @@ class Handles:
         # node shared by its two looks.
         self.offsets = {kind: coin.SoTranslation() for kind in KINDS}
         self.halves, self.ends = {}, {}
+        # Each straight arrow, and the arc that stands in for the one along the
+        # face under a round side, switched on while it shows.
+        self.shown = {}
         for kind in KINDS:
-            place = coin.SoTransform()
-            dragger = coin.SoTranslate1Dragger()
-            for part in ("feedback", "feedbackActive"):
-                dragger.setPart(part, coin.SoSeparator())
-            for name, method in (("addStartCallback", self._held), ("addMotionCallback", self._moved),
-                                 ("addFinishCallback", self._let_go)):
-                callback = view.addDraggerCallback(dragger, name, functools.partial(method, kind))
-                self.callbacks.append((dragger, name, callback))
-            group = coin.SoSeparator()
-            group.addChild(place)
-            group.addChild(dragger)
-            self.arrows.addChild(group)
-            self.places[kind], self.draggers[kind] = place, dragger
+            self.places[kind], self.draggers[kind] = self._add_dragger(kind, coin.SoTranslate1Dragger(),
+                                                                       ("feedback", "feedbackActive"))
             self.halves[kind], self.ends[kind] = {}, (BACK, FORTH)
             self._look(kind, "translatorActive", HELD_COLOR)
         self._look(UP, "translator", axis_color("z"))
         self.along_axis = None
+        # The arc: it turns about its own z axis, the axis of the round side,
+        # and moves the fin by mm_per_degree for every degree it is turned.
+        self.turn_place, self.turner = self._add_dragger(ALONG, coin.SoRotateDiscDragger(),
+                                                         ("feedback", "feedbackActive"), turning=True)
+        # The colour the arc was last made in; the groups its ends are drawn
+        # in, by look and end; where it was last put, as the arguments of
+        # _show_arc() but the last; and the unit of an arrow it was drawn for (mm).
+        self.arc_made = None
+        self.arc_bodies = {}
+        self.arc_at = None
+        self.arc_unit = 0.0
+        self.mm_per_degree = 0.0
+        # Draws the arc anew once the zoom has changed.
+        self.zoom_timer = QtCore.QTimer()
+        self.zoom_timer.setInterval(ZOOM_POLL_MS)
+        self.zoom_timer.timeout.connect(self._zoomed)
+        # How far the arc is turned in this drag (radians), and its turn as last read.
+        self.turned, self.last_turn = 0.0, 0.0
         # True from grabbing an arrow until letting it go.
         self.held = False
         # In the editing root of the 3D view, where FreeCAD puts the handles of
@@ -245,6 +334,28 @@ class Handles:
         # editing root is there only once that is through.
         self.attached = False
         QtCore.QTimer.singleShot(0, self.attach)
+
+    def _add_dragger(self, kind, dragger, hidden_parts, turning=False):
+        """Put `dragger` into the scene under a place of its own, switched off,
+        with its parts `hidden_parts` left empty and its callbacks going to
+        those of the arrow of `kind`; the arc of a round side with `turning`.
+        Returns the place and the dragger."""
+        for part in hidden_parts:
+            dragger.setPart(part, coin.SoSeparator())
+        for name, method in (("addStartCallback", self._held), ("addMotionCallback", self._moved),
+                             ("addFinishCallback", self._let_go)):
+            callback = self.view.addDraggerCallback(dragger, name, functools.partial(method, kind))
+            self.callbacks.append((dragger, name, callback))
+        place = coin.SoTransform()
+        group = coin.SoSeparator()
+        group.addChild(place)
+        group.addChild(dragger)
+        switch = coin.SoSwitch()
+        switch.whichChild.setValue(coin.SO_SWITCH_NONE)
+        switch.addChild(group)
+        self.arrows.addChild(switch)
+        self.shown[TURNING if turning else kind] = switch
+        return place, dragger
 
     def attach(self):
         if self.root is None:
@@ -298,16 +409,26 @@ class Handles:
             for end, switch in halves.items():
                 switch.whichChild.setValue(coin.SO_SWITCH_ALL if end in ends else coin.SO_SWITCH_NONE)
 
-    def show(self, edge, along, out):
+    def show(self, edge, along, out, turn=None):
         """Put the arrows at `edge`, the middle of the upright outer edge of a
         fin, a little off it in the direction `out`, away from the part;
-        `along` is the direction along the face."""
+        `along` is the direction along the face. With `turn`, a point on the
+        axis of a round side, its direction and how far the fin moves along
+        the face (mm) as the part turns one degree about it, the arrow along
+        the face is an arc round that axis through `edge`."""
         self._clear(self.preview)
         # The arrow along the face takes the colour of the axis it is nearest to.
         axis = "x" if abs(along.x) >= abs(along.y) else "y"
         if axis != self.along_axis:
             self._look(ALONG, "translator", axis_color(axis))
             self.along_axis = axis
+        self.shown[ALONG].whichChild.setValue(coin.SO_SWITCH_NONE if turn else coin.SO_SWITCH_ALL)
+        self.shown[UP].whichChild.setValue(coin.SO_SWITCH_ALL)
+        self.shown[TURNING].whichChild.setValue(coin.SO_SWITCH_ALL if turn else coin.SO_SWITCH_NONE)
+        if turn:
+            self._show_arc(edge, out, *turn)
+        else:
+            self.zoom_timer.stop()
         for kind, direction in ((ALONG, along), (UP, UP_DIRECTION)):
             place = self.places[kind]
             place.translation.setValue(edge.x, edge.y, edge.z)
@@ -320,17 +441,86 @@ class Handles:
             self.draggers[kind].translation.setValue(0, 0, 0)
         self.arrows.whichChild.setValue(coin.SO_SWITCH_ALL)
 
+    def _show_arc(self, edge, out, center, axis, mm_per_degree):
+        """Put the arc where the straight arrows start, at `edge` and off it
+        towards `out`, bent round the axis through `center` along `axis`, about
+        which it turns, in the colour of the arrow along the face; see show()."""
+        if self.along_axis != self.arc_made:
+            self.arc_made = self.along_axis
+            for part, color in zip(TURN_PARTS, (axis_color(self.along_axis), HELD_COLOR)):
+                node, halves, self.arc_bodies[part] = arc_arrow(color)
+                self.turner.setPart(part, node)
+                self.halves[ALONG][part] = halves
+            self.show_ends(ALONG, self.ends[ALONG])
+        self.mm_per_degree = mm_per_degree
+        self.arc_at = (edge, out, center, axis)
+        self.turner.rotation.setValue(coin.SbRotation())
+        self._draw_arc()
+        self.zoom_timer.start()
+
+    def unit_mm(self):
+        """How long a unit of an arrow is now (mm), as FreeCAD's node for it
+        reckons it from the view, scaled by ARROW_SCREEN_SIZE."""
+        aspect = self.viewer.getSoRenderManager().getViewportRegion().getViewportAspectRatio()
+        volume = self.view.getCameraNode().getViewVolume(aspect)
+        scale = volume.getWorldToScreenScale(coin.SbVec3f(0, 0, 0), AUTO_ZOOM_PROBE)
+        return ARROW_SCREEN_SIZE * scale / (AUTO_ZOOM_DIVISOR * aspect)
+
+    def _draw_arc(self):
+        """Draw the arc where _show_arc() put it, for the zoom of now: round
+        the axis of the side, through where the straight arrows start, off
+        the edge by CLEARANCE units as they are."""
+        edge, out, center, axis = self.arc_at
+        self.arc_unit = self.unit_mm()
+        start = edge + out * (CLEARANCE * self.arc_unit)
+        foot = center + axis * (start - center).dot(axis)
+        radial = start - foot
+        # The arc turns about the axis of the side, its own z axis; its own x
+        # axis points out to where it starts.
+        frame = App.Rotation(radial, axis.cross(radial), axis, "ZXY")
+        self.turn_place.translation.setValue(foot.x, foot.y, foot.z)
+        self.turn_place.rotation.setValue(*frame.Q)
+        for bodies in self.arc_bodies.values():
+            for end, body in bodies.items():
+                fill_half_arc(body, radial.Length, self.arc_unit, end * math.copysign(1, self.mm_per_degree))
+
+    def _zoomed(self):
+        """Draw the arc anew where the zoom has changed since it was drawn;
+        not while it is held, which would move it under the mouse."""
+        if self.root is None or self.held or not self.turning():
+            return
+        if abs(self.unit_mm() - self.arc_unit) > ZOOM_REDRAW_SHARE * self.arc_unit:
+            self._draw_arc()
+
+    def _turn(self):
+        """How far the arc is turned about its z axis, from -pi to pi (radians)."""
+        _, _, z, w = self.turner.rotation.getValue().getValue()
+        # A disc dragger turns about its z axis alone; the quaternion holds half the angle.
+        return math.remainder(2 * math.atan2(z, w), 2 * math.pi)
+
     # The callbacks get the dragger as a plain SoDragger, without its fields;
     # the arrow of `kind` is read instead. It moves in mm: the arrows keep
-    # their size on the screen inside, not through the place.
+    # their size on the screen inside, not through the place. The arc is read
+    # as the mm the fin moves by its turn, counted on past half a turn.
     def _mm(self, kind):
+        if kind == ALONG and self.turning():
+            return math.degrees(self.turned) * self.mm_per_degree
         return self.draggers[kind].translation.getValue()[0]
+
+    def turning(self):
+        """Whether the arc stands in for the arrow along the face."""
+        return self.shown[TURNING].whichChild.getValue() == coin.SO_SWITCH_ALL
 
     def _held(self, kind, _dragger):
         self.held = True
+        self.turned, self.last_turn = 0.0, self._turn()
         self.on_start(kind)
 
     def _moved(self, kind, _dragger):
+        if kind == ALONG and self.turning():
+            turn = self._turn()
+            self.turned += math.remainder(turn - self.last_turn, 2 * math.pi)
+            self.last_turn = turn
         self.on_move(kind, self._mm(kind))
 
     def _let_go(self, kind, _dragger):
@@ -361,6 +551,7 @@ class Handles:
         self._clear(self.preview)
 
     def hide(self):
+        self.zoom_timer.stop()
         self.arrows.whichChild.setValue(coin.SO_SWITCH_NONE)
         self._clear(self.preview)
 
