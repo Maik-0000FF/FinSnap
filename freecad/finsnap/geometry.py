@@ -223,6 +223,9 @@ class FinResult:
     radius: float = 0.0
     # The frame the fins were built in, to draw one at another height (fin_at()).
     frame: Frame = None
+    # By number, how far a fin planned over a hole was moved beside it (mm, as
+    # starts); its start is planned plus its shift by hand plus this.
+    moved: dict = field(default_factory=dict)
 
 
 def span_along(shape, direction):
@@ -658,27 +661,30 @@ def touching_at(frame, face, p, tine_z, t0, thickness):
 def beside_hole(frame, face, p, tine_z, candidate_z, t0, thickness, others):
     """Where along the face the fin planned to start at t0, whose tines find
     no face there, starts nearest with a tine of `candidate_z` on `face`;
-    None if nowhere. It keeps within the face and clear of the fins starting
-    at `others`, and is tried a fin thickness at a time, either way in turn.
+    None if nowhere. It keeps within the face and between its neighbours
+    among the fins starting at `others`, clear of them, so the fins keep
+    their order from the left; tried a fin thickness at a time, either way
+    in turn.
 
     INPUTS this has to withstand:
       a hole under the middle of the fin     ->  the nearest start beside it, the
                                                  nearer side first
-      a hole wider than the face around it   ->  None: left out, as before
-      the place beside it taken by another
-        fin                                  ->  passed over, the next one tried
+      a hole wider than the room between
+        its neighbours                       ->  None: left out, as before
+      a neighbour beside the hole            ->  not passed: the search ends clear
+                                                 of it
       the end of the face reached            ->  that way given up, the other tried on
     """
-    low, high = frame.along_min, frame.along_max - thickness
-    clear = thickness + d.FOOT_CLEARANCE - d.TOLERANCE
+    clear = thickness + d.FOOT_CLEARANCE
+    before = [other for other in others if other < t0 - d.TOLERANCE]
+    after = [other for other in others if other > t0 + d.TOLERANCE]
+    low = max([frame.along_min] + [other + clear for other in before])
+    high = min([frame.along_max - thickness] + [other - clear for other in after])
     steps = int(max(t0 - low, high - t0) / thickness) + 1
     for step in range(1, steps + 1):
         for t in (t0 - step * thickness, t0 + step * thickness):
-            if not low - d.TOLERANCE <= t <= high + d.TOLERANCE:
-                continue
-            if any(abs(t - other) < clear for other in others):
-                continue
-            if any(z in candidate_z for z in touching_at(frame, face, p, tine_z, t, thickness)):
+            if low - d.TOLERANCE <= t <= high + d.TOLERANCE and any(
+                    z in candidate_z for z in touching_at(frame, face, p, tine_z, t, thickness)):
                 return t
     return None
 
@@ -973,7 +979,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
                      dropped=dropped, starts={n: starts[n] for n in numbers}, along=frame.along, out=frame.out,
                      heights=dict(zip(numbers, fin_heights)), edges=dict(zip(numbers, edges)),
                      touching_z=touching_z,
-                     face_start=face_start, radius=frame.radius, frame=frame)
+                     face_start=face_start, radius=frame.radius, frame=frame, moved=dict(moved))
 
 
 def merged(part, *fin_shapes):

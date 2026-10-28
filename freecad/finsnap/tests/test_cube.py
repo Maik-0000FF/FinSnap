@@ -12,7 +12,8 @@ import sys
 
 import Part
 
-from freecad.finsnap.tests.support import HALF_TURN, expect, lower_left_face, run, split_cylinder, tilted_cube
+from freecad.finsnap.tests.support import (HALF_TURN, RECESS_RADIUS, expect, grooved, lower_left_face, run,
+                                           split_cylinder, tilted_cube)
 from freecad.finsnap import defaults as d
 from freecad.finsnap import geometry
 from freecad.finsnap import orient
@@ -29,8 +30,6 @@ PYRAMID_TILT = 30.0    # flatter than the overhang limit
 ODD_TILT = 30.0        # any angle but 45, at which a right-angled edge needs its face
 # First tines half a layer (0.1 mm) off the grid of 0.2 mm layers.
 HALF_LAYER_STARTS = (1.1, 1.3, 1.5, 1.7)
-RECESS_RADIUS = 1.5    # wider than a tine, so a tine above it touches nothing
-GROOVE_TOP_GAP = 1.0   # face left above a groove, so the groove does not split the face
 WIDE_NOZZLE = 0.8
 WIDE_BEAD = 0.9       # two of them are thicker than the 1 mm base
 GROOVE_DEPTH = 2.0     # a groove across the front of a box, splitting it
@@ -979,24 +978,18 @@ def check_recesses(cube, face):
     expect(len(partly.tines) == 2, "a tine only partly over a hole is left out as well")
 
     # A groove running up the face under the middle one of three fins: that fin has no tine left.
-    uphill = (UP - normal * UP.dot(normal)).normalize()
     three = FinParams(placement=d.PLACEMENT_DISTRIBUTED, fin_count=3)
     spread = geometry.build(cube, face, three)
     centre = geometry.tine_start(three, spread.positions[1], spread.thickness) + three.tine_width / 2
 
-    def groove(t):
-        start = frame.point(t, frame.s_face(frame.bed_z), frame.bed_z) - uphill * RECESS_RADIUS
-        # It stops below the top of the face, so the face stays one piece. The
-        # start lies one radius below the bed, which the length makes up for.
-        length = (frame.face_top_z - frame.bed_z - GROOVE_TOP_GAP) / uphill.z + RECESS_RADIUS
-        return Part.makeCylinder(RECESS_RADIUS, length, start, uphill)
-
-    grooved = cube.cut(groove(centre))
-    moved = geometry.build(grooved, lower_left_face(grooved), three)
+    over_middle = grooved(cube, face, centre)
+    moved = geometry.build(over_middle, lower_left_face(over_middle), three)
     expect(moved.numbers == [1, 2, 3] and moved.positions[1] != spread.positions[1]
+           and moved.positions == sorted(moved.positions)
            and any("fin 2 by" in w for w in moved.warnings),
-           "a fin over a groove moves beside it, the warning says by how much: %s" % moved.warnings)
-    centred = cube.cut(groove(middle))
+           "a fin over a groove moves beside it, between its neighbours, the warning says by how much: %s"
+           % moved.warnings)
+    centred = grooved(cube, face, middle)
     alone = geometry.build(centred, lower_left_face(centred), FinParams(placement=d.PLACEMENT_CENTER))
     expect(len(alone.positions) == 1 and any("fin 1 by" in w for w in alone.warnings),
            "one fin in the middle over a groove moves beside it: %s" % alone.warnings)

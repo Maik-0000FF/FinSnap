@@ -865,10 +865,14 @@ class FinSnapTaskPanel:
 
     def built_value(self, kind):
         """What the handled fin is built with: its shift along the face (ALONG)
-        or its height (UP), in mm."""
+        from where it was planned, by hand and where it was moved beside a
+        hole, or its height (UP), in mm. Typing and dragging start from here,
+        so a fin moved beside a hole is moved on from where it stands."""
+        result, _ = self.handled_result()
+        number = self.handled[1]
         if kind == handles.ALONG:
-            return self.own_value(kind) or 0.0
-        return self.handled_result()[0].heights[self.handled[1]]
+            return (self.own_value(kind) or 0.0) + result.moved.get(number, 0.0)
+        return result.heights[number]
 
     def can_stand(self, kind, value):
         """Whether the handled fin can stand with the shift along the face
@@ -984,7 +988,7 @@ class FinSnapTaskPanel:
         if self.handled_result() is None:
             return
         which, number = self.handled
-        self.drag_base = {handles.ALONG: feature.edits(self.obj, which)[1].get(number, 0.0),
+        self.drag_base = {handles.ALONG: self.built_value(handles.ALONG),
                           handles.UP: self.handled_result()[0].heights[number]}
         self.drag_own = {one: self.own_value(one) for one in handles.KINDS}
         self.drag_values = self.fin_values()
@@ -1194,7 +1198,7 @@ class FinSnapTaskPanel:
             if abs(value - current) < FIELD_TOLERANCE:
                 return
             if kind == handles.ALONG:
-                value = (self.own_value(kind) or 0.0) + value - current
+                value = self.built_value(kind) + value - current
         if not paused:
             if not self.set_fin(kind, value):
                 self.place_handles()
