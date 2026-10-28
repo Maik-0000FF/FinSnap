@@ -268,6 +268,19 @@ def support_of(part, face):
     return face if len(pieces) == 1 else Part.makeCompound(pieces)
 
 
+class EdgeSet:
+    """Edges to ask whether one of them is the same as a given edge, as
+    isSame() says, with one lookup by hash instead of a comparison with each."""
+
+    def __init__(self, edges):
+        self.by_hash = {}
+        for edge in edges:
+            self.by_hash.setdefault(edge.hashCode(), []).append(edge)
+
+    def __contains__(self, edge):
+        return any(edge.isSame(mine) for mine in self.by_hash.get(edge.hashCode(), ()))
+
+
 def rims_on_axis(shape, side):
     """The rims of `shape` the round side `side` can stand on, best first.
 
@@ -290,8 +303,12 @@ def rims_on_axis(shape, side):
       circle off the axis (a hole in the
         end face beside it)                 ->  not a rim of the side
     """
-    chamfers = [face for face in shape.Faces if isinstance(face.Surface, Part.Cone)
-                and any(edge.isSame(mine) for edge in face.Edges for mine in side.Edges)]
+    # Edges looked up by their hash, then confirmed with isSame(): the same
+    # edge with the same placement, whichever way round. One lookup each, not
+    # a loop over every pair; a hash two edges share still tells them apart.
+    own = EdgeSet(side.Edges)
+    chamfered = EdgeSet(edge for face in shape.Faces if isinstance(face.Surface, Part.Cone)
+                        and any(mine in own for mine in face.Edges) for edge in face.Edges)
     found = []
     for edge in shape.Edges:
         if not orient.is_rim(edge):
@@ -300,9 +317,9 @@ def rims_on_axis(shape, side):
         flat = any(face.findPlane() is not None for face in shape.ancestorsOfType(edge, Part.Face))
         if not (orient.on_axis(circle.Center, circle.Axis, side.Surface) and flat):
             continue
-        if any(edge.isSame(mine) for chamfer in chamfers for mine in chamfer.Edges):
+        if edge in chamfered:
             rank = RIM_CHAMFERED
-        elif any(edge.isSame(mine) for mine in side.Edges):
+        elif edge in own:
             rank = RIM_OWN
         else:
             rank = RIM_OTHER
@@ -927,9 +944,10 @@ def opposite_face(part, face):
     return best
 
 
-def best_face(shape, p):
+def best_face(shape, p, tried=()):
     """Number (from 0) of the face of `shape` that takes fins best: of the planar
     faces leaning over the bed, the largest one the fins can be built under.
+    Faces numbered in `tried` were tried before and are passed over.
 
     INPUTS this has to withstand:
       part standing on an edge              ->  its largest leaning face that takes fins
@@ -944,13 +962,25 @@ def best_face(shape, p):
         except FinError:
             continue
         leaning.append((face.Area, number))
-    for _, number in sorted(leaning, reverse=True):
+    numbers = [number for _, number in sorted(leaning, reverse=True) if number not in tried]
+    number = first_taking_fins(shape, numbers, p)
+    if number is None:
+        raise FinError(translate("FinSnap", "no face of the part leans over the bed and takes fins"))
+    return number
+
+
+def first_taking_fins(shape, numbers, p, errors=(FinError,)):
+    """Of the faces of `shape` numbered `numbers`, in that order, the first
+    the fins can be built under; None if none takes them. A build failing
+    with one of `errors` passes to the next face; any other error is raised,
+    so a fault in the kernel is not taken for a face without fins."""
+    for number in numbers:
         try:
             build(shape, shape.Faces[number], p)
-        except FinError:
+        except errors:
             continue
         return number
-    raise FinError(translate("FinSnap", "no face of the part leans over the bed and takes fins"))
+    return None
 
 
 def stand_for_face(shape, number, p, angle_deg):
@@ -965,6 +995,7 @@ def stand_for_face(shape, number, p, angle_deg):
       planar face with straight edges       ->  stood on its longest edge that works
       longest edge does not carry the part
         or the fins do not fit there        ->  the next longest edge
+      the kernel fails at one edge or rim   ->  the next one, as where fins do not fit
       round side                            ->  stood on the first rim of rims_on_axis()
                                                 that works
       face without a straight edge, or none
@@ -979,12 +1010,14 @@ def stand_for_face(shape, number, p, angle_deg):
                     if abs(edge.Length - (edge.Vertexes[-1].Point - edge.Vertexes[0].Point).Length) < d.TOLERANCE]
         tries = [(edge, partial(orient.stand, shape, edge, angle_deg, face))
                  for edge in sorted(straight, key=lambda candidate: -candidate.Length)]
+    # A fault in the kernel at one edge or rim passes to the next, as a face
+    # without room for fins does: the next is there to fall back on.
     for edge, stand in tries:
         try:
             change = stand()
             standing = moved(shape, change)
             build(standing, standing.Faces[number], p)
-        except (orient.OrientError, FinError):
+        except (orient.OrientError, FinError, Part.OCCError):
             continue
         return change, edge
     raise FinError(translate("FinSnap", "the part cannot stand so that this face takes fins"))
@@ -1042,15 +1075,13 @@ def quick_plan(shape, edges, faces, p, angle_deg):
             side = orient.side_of_rim(shape, edge)
             change = orient.stand_on_rim(shape, edge, orient.side_tilt(angle_deg), side)
             stood = moved(shape, change)
-            if side is not None:
-                number = next(i for i, face in enumerate(shape.Faces) if face.isSame(side))
-                try:
-                    build(stood, stood.Faces[number], p)
-                except (FinError, Part.OCCError):
-                    pass
-                else:
-                    return QuickPlan(change, number, edge, ())
-            return QuickPlan(change, best_face(stood, p), edge, ())
+            sides = [] if side is None else [i for i, face in enumerate(shape.Faces) if face.isSame(side)]
+            # A kernel fault under the side passes to the other faces as well:
+            # they are there to fall back on.
+            number = first_taking_fins(stood, sides, p, (FinError, Part.OCCError))
+            if number is None:
+                number = best_face(stood, p, sides)
+            return QuickPlan(change, number, edge, ())
         if not orient.on_bed(shape, edge) and orient.right_angle_faces(shape, edge) is None:
             raise FinError(translate("FinSnap", "This edge does not lie on the bed, and its faces do not meet at a "
                                                 "right angle. Use Stand on edge with the edge and the face that "

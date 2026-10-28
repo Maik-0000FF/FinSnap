@@ -11,6 +11,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A cylinder or tube turned in the task panel and turned back stands exactly where it stood, also after turns finer than the shift is kept (#53)
+
 ## [0.6.0] - 2026-10-28
 
 ### Added
