@@ -12,7 +12,8 @@ import sys
 
 import Part
 
-from freecad.finsnap.tests.support import expect, lower_left_face, run, tilted_cube
+from freecad.finsnap.tests.support import (HALF_TURN, RECESS_RADIUS, expect, grooved, lower_left_face, run,
+                                           split_cylinder, tilted_cube)
 from freecad.finsnap import defaults as d
 from freecad.finsnap import geometry
 from freecad.finsnap import orient
@@ -29,11 +30,16 @@ PYRAMID_TILT = 30.0    # flatter than the overhang limit
 ODD_TILT = 30.0        # any angle but 45, at which a right-angled edge needs its face
 # First tines half a layer (0.1 mm) off the grid of 0.2 mm layers.
 HALF_LAYER_STARTS = (1.1, 1.3, 1.5, 1.7)
-RECESS_RADIUS = 1.5    # wider than a tine, so a tine above it touches nothing
-GROOVE_TOP_GAP = 1.0   # face left above a groove, so the groove does not split the face
 WIDE_NOZZLE = 0.8
 WIDE_BEAD = 0.9       # two of them are thicker than the 1 mm base
 GROOVE_DEPTH = 2.0     # a groove across the front of a box, splitting it
+SINK_DEPTH = 0.5       # how deep the face is sunk around a stretch of it, so that stretch is a face of its own
+SINK_INSET = 0.5       # how far that stretch ends inside the grid tines below and above it, in mm
+OUT_OF_REACH = 100.0   # a height or a width beyond any test part, in mm
+NOTCH_CLEAR = 1.0      # how far a notch in the end of a face stays from the grid tines, and its depth, in mm
+PIN_HOLE_RADIUS = 0.9  # a hole that splits the face under a tine, small enough to leave the tines beside it
+WIDE_FIN = 3.0         # a fin thick enough for a hole under its flank, clear of its tine, in mm
+FLANK_HOLE_RADIUS = 0.5  # that hole, across the side of the fin, in mm
 GROOVE_WIDTH = 2.0
 GROOVE_FROM = 8.0
 WIDE_BOX = 60.0          # long enough for a U profile with legs of a third each
@@ -468,20 +474,182 @@ def check_tine_clearance(cube, face):
 
 
 def check_shortened(cube, face):
-    """A fin whose top tine finds a hole ends at the tine below; a fin height given by hand stays."""
+    """With one tine grid for every fin: a fin whose top tine finds a hole ends at the tine below; a
+    fin height given by hand stays."""
     frame = geometry.frame_of(cube, face)
     normal = face.normalAt(0, 0)
-    full = geometry.build(cube, face, FinParams())
-    top_tine = full.tine_z[-1] + FinParams().tine_height / 2
+    full = geometry.build(cube, face, FinParams(tine_restart=False))
+    top_tine = full.tine_z[-1] + FinParams(tine_restart=False).tine_height / 2
     middle = (frame.along_min + frame.along_max) / 2
     on_face = frame.point(middle, frame.s_face(top_tine), top_tine)
     holed = cube.cut(Part.makeCylinder(RECESS_RADIUS, 2 * RECESS_RADIUS, on_face - normal * RECESS_RADIUS, normal))
     holed_face = lower_left_face(holed)
-    shortened = geometry.build(holed, holed_face, FinParams())
-    expect(math.isclose(shortened.height, full.tine_z[-2] + FinParams().tine_height),
+    shortened = geometry.build(holed, holed_face, FinParams(tine_restart=False))
+    expect(math.isclose(shortened.height, full.tine_z[-2] + FinParams(tine_restart=False).tine_height),
            "the fin ends at its highest tine left, %.2f mm" % shortened.height)
-    kept = geometry.build(holed, holed_face, FinParams(fin_height=full.height))
+    kept = geometry.build(holed, holed_face, FinParams(tine_restart=False, fin_height=full.height))
     expect(math.isclose(kept.height, full.height), "a fin height given by hand is kept")
+
+
+def check_restart(cube, face):
+    """With the tine grid restarted after a gap: a face that rises from the
+    bed in one stretch keeps the one grid; above a hole the grid starts anew
+    and its tines are spread to the top of the face, none over the hole."""
+    restart, one_grid = FinParams(), FinParams(tine_restart=False)
+    expect(restart.tine_restart and geometry.build(cube, face, restart).tine_z
+           == geometry.build(cube, face, one_grid).tine_z,
+           "a face from the bed up without a gap keeps the one tine grid")
+    frame = geometry.frame_of(cube, face)
+    normal = face.normalAt(0, 0)
+    middle = (frame.along_min + frame.along_max) / 2
+    hole_z = geometry.build(cube, face, one_grid).tine_z[1] + one_grid.tine_height / 2
+    on_face = frame.point(middle, frame.s_face(frame.bed_z + hole_z), frame.bed_z + hole_z)
+    holed = cube.cut(Part.makeCylinder(RECESS_RADIUS, 2 * RECESS_RADIUS, on_face - normal * RECESS_RADIUS, normal))
+    holed_face = lower_left_face(holed)
+    spread = geometry.build(holed, holed_face, restart)
+    gridded = geometry.build(holed, holed_face, one_grid)
+    room = frame.face_top_z - frame.bed_z - d.FACE_TOP_MARGIN
+    expect(not spread.dropped and gridded.dropped and spread.height > room - restart.layer_height - d.TOLERANCE,
+           "above a hole the grid starts anew: no tine over it, the top tine at the top of the face: "
+           "%.2f mm of %.2f" % (spread.height, room))
+    own = geometry.build(holed, holed_face, restart, heights={spread.numbers[0]: spread.height})
+    expect(spread.height > gridded.height and own.thickness == spread.thickness
+           and math.isclose(own.foot_half_width, spread.foot_half_width),
+           "a height of its own on a tine above those of the face gets the fin and foot it needs: %.2f mm"
+           % own.foot_half_width)
+
+
+def sunk_around(cube, face, low, high):
+    """`cube` with `face` sunk SINK_DEPTH below `low` and above `high` (mm
+    from the bed), and the stretch between as a face of its own."""
+    frame = geometry.frame_of(cube, face)
+    normal = face.normalAt(0, 0)
+    sunk = cube
+    for bottom, top in ((-OUT_OF_REACH, low), (high, OUT_OF_REACH)):
+        box = Part.makeBox(OUT_OF_REACH, OUT_OF_REACH, top - bottom,
+                           V(-OUT_OF_REACH / 2, -OUT_OF_REACH / 2, frame.bed_z + bottom))
+        layer = cube.common(box)
+        sunk = sunk.cut(layer.cut(layer.translated(-normal * SINK_DEPTH)))
+    stretch = next(f for f in sunk.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE
+                   and abs(f.BoundBox.ZMin - frame.bed_z - low) < d.TOLERANCE)
+    return sunk, stretch
+
+
+def check_restart_planned(cube, face):
+    """With the restart each fin is planned on its own grid from the start:
+    a short face high above the bed that the one grid misses gets tines, and
+    a fin whose grid tines all lie over holes bridges them where it stands,
+    instead of moving beside them."""
+    restart, one_grid = FinParams(), FinParams(tine_restart=False)
+    grid = geometry.build(cube, face, one_grid).tine_z
+    sunk, short = sunk_around(cube, face, grid[1] + SINK_INSET, grid[2] - SINK_INSET)
+    try:
+        geometry.build(sunk, short, one_grid)
+    except geometry.FinError:
+        missed = True
+    else:
+        missed = False
+    above = geometry.build(sunk, short, restart)
+    expect(missed and above.tines and not above.moved,
+           "a short face between two grid tines, refused on one grid, gets %d tines with the restart"
+           % len(above.tines))
+    frame = geometry.frame_of(cube, face)
+    normal = face.normalAt(0, 0)
+    middle = (frame.along_min + frame.along_max) / 2
+    holed = cube
+    for z in grid:
+        centre = frame.bed_z + z + one_grid.tine_height / 2
+        on_face = frame.point(middle, frame.s_face(centre), centre)
+        holed = holed.cut(Part.makeCylinder(RECESS_RADIUS, 2 * RECESS_RADIUS, on_face - normal * RECESS_RADIUS,
+                                            normal))
+    holed_face = lower_left_face(holed)
+    gridded = geometry.build(holed, holed_face, one_grid)
+    bridged = geometry.build(holed, holed_face, restart)
+    expect(gridded.moved and not bridged.moved and bridged.tines and not bridged.dropped,
+           "a fin whose grid tines all lie over holes moves on one grid, and bridges them with the restart: %s"
+           % bridged.touching_z)
+
+
+def check_restart_narrow(cube, face):
+    """With the restart a fin on its own grid gets no tine where the face is
+    narrower than the fin: a notch in the end of the face, beside the fin
+    but clear of its tine, between two grid tines, over a fin whose grid
+    restarts above a hole."""
+    p, one_grid = FinParams(placement=d.PLACEMENT_ENDS), FinParams(tine_restart=False, placement=d.PLACEMENT_ENDS)
+    frame = geometry.frame_of(cube, face)
+    normal = face.normalAt(0, 0)
+    plain = geometry.build(cube, face, one_grid)
+    t0, grid = min(plain.positions), plain.tine_z
+    start = geometry.tine_start(p, t0, plain.thickness)
+
+    def on_face(t, z):
+        return frame.point(t, frame.s_face(frame.bed_z + z), frame.bed_z + z)
+
+    low, high = grid[1] + p.tine_height + NOTCH_CLEAR, grid[2] - NOTCH_CLEAR
+    # Between the side of the fin and its tine.
+    inner = (t0 + start) / 2
+    ring = [on_face(frame.along_min - NOTCH_CLEAR, low), on_face(inner, low), on_face(inner, high),
+            on_face(frame.along_min - NOTCH_CLEAR, high)]
+    notch = Part.Face(Part.makePolygon(ring + ring[:1])).translated(normal * NOTCH_CLEAR).extrude(
+        -normal * 2 * NOTCH_CLEAR)
+    hole_z = (grid[0] + p.tine_height + grid[1]) / 2
+    centre = on_face(start + p.tine_width / 2, hole_z)
+    part = cube.cut(notch).cut(Part.makeCylinder(PIN_HOLE_RADIUS, 2 * NOTCH_CLEAR, centre - normal * NOTCH_CLEAR,
+                                                 normal))
+    notched = max((f for f in part.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE), key=lambda f: f.Area)
+    result = geometry.build(part, notched, p)
+    first = result.numbers[0]
+    beside = [z for z in result.touching_z[first] if z + p.tine_height > low + d.TOLERANCE and z < high - d.TOLERANCE]
+    expect(not beside and any(z > high - d.TOLERANCE for z in result.touching_z[first]),
+           "no tine where a notch makes the face narrower than the fin, the grid anew above it: %s"
+           % result.touching_z[first])
+
+
+def check_restart_flank_hole(cube, face):
+    """With the restart a hole inside the face under the flank of a fin but
+    clear of its tine costs no tine: the flank stands off the face, only the
+    tines rest on it, and the width counts the outermost points of the face."""
+    p = FinParams(fin_thickness=WIDE_FIN)
+    frame = geometry.frame_of(cube, face)
+    normal = face.normalAt(0, 0)
+    plain = geometry.build(cube, face, FinParams(tine_restart=False, fin_thickness=WIDE_FIN))
+    t0, grid = plain.positions[0], plain.tine_z
+    start = geometry.tine_start(p, t0, WIDE_FIN)
+
+    def pin_hole(part, t, z, radius):
+        centre = frame.point(t, frame.s_face(frame.bed_z + z), frame.bed_z + z)
+        return part.cut(Part.makeCylinder(radius, 2 * NOTCH_CLEAR, centre - normal * NOTCH_CLEAR, normal))
+
+    # A hole under the tine, between the two lowest grid tines, starts the grid anew.
+    restarted = pin_hole(cube, start + p.tine_width / 2, (grid[0] + p.tine_height + grid[1]) / 2, PIN_HOLE_RADIUS)
+    # Across the side of the fin, so a slice along that side would find a gap.
+    flank = pin_hole(restarted, t0, (grid[1] + grid[2]) / 2, FLANK_HOLE_RADIUS)
+
+    def own_grid(part):
+        result = geometry.build(part, max((f for f in part.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE),
+                                          key=lambda f: f.Area), p)
+        return result.touching_z[result.numbers[0]]
+
+    expect(own_grid(flank) == own_grid(restarted),
+           "a hole under the flank, clear of the tine, costs no tine: %s" % own_grid(flank))
+
+
+def check_wide_enough(cube, face):
+    """wide_enough(), against its table, on the extents _extent_at() finds."""
+    frame = geometry.frame_of(cube, face)
+    p, corner = FinParams(), FinParams(placement=d.PLACEMENT_CORNERS)
+    thickness = geometry.thickness_for(p, 0.0)
+    low, high = frame.along_min, frame.along_max
+    reach = (thickness - p.tine_width) / 2
+    notched = (low + thickness / 2, high)
+    rows = [("the face wider than the fin", p, (low, high), low + thickness, True),
+            ("a notch in the end of the face under the fin", p, notched, low, False),
+            ("no face at that height", p, None, low, False),
+            ("a corner fin past the end, its tine on the face", corner, (low, high), low - reach, True),
+            ("a face as wide as the fin", p, (low, low + thickness), low, True)]
+    for name, params, extent, t0, wanted in rows:
+        expect(geometry.wide_enough(extent, params, t0, thickness) == wanted,
+               "wide_enough(): %s -> %s" % (name, wanted))
 
 
 def check_split_face():
@@ -652,6 +820,40 @@ def leans_by(shape, number, degrees):
     """Whether face `number` of `shape`, flat or round, leans `degrees` against the bed."""
     frame = geometry.frame_of(shape, shape.Faces[number])
     return abs(frame.n_z + math.cos(math.radians(degrees))) < 1e-6
+
+
+def check_split_side():
+    """A side and a rim that a STEP file split in halves are found whole on
+    the joined shape; a half ring of a split tube is found by a point on it,
+    the seam between the halves is gone."""
+    split = split_cylinder(ROD_RADIUS, ROD_HEIGHT, BORE_RADIUS)
+    whole = orient.joined(split)
+    half = [f for f in split.Faces if isinstance(f.Surface, Part.Cylinder) and f.Surface.Radius > BORE_RADIUS][0]
+    arc = [e for e in split.Edges if isinstance(e.Curve, Part.Circle) and e.Curve.Radius > BORE_RADIUS][0]
+    side, rim = orient.whole_of(whole, half), orient.whole_of(whole, arc)
+    expect(orient.is_piece(half) and side is not None and orient.is_round_side(side)
+           and rim is not None and orient.is_rim(rim) and abs(rim.Curve.Radius - ROD_RADIUS) < d.TOLERANCE,
+           "half of a split side and of a split rim stand for the whole side and rim")
+    ring = [f for f in split.Faces if f.findPlane() is not None][0]
+    seam = [e for e in split.Edges if isinstance(e.Curve, Part.Line)
+            and not any(e.isSame(m) for m in half.Edges) and e.BoundBox.XLength < d.TOLERANCE][0]
+    found = orient.counterpart(ring, whole.Faces)
+    expect(found is not None and found.findPlane() is not None and found.Area > ring.Area
+           and orient.counterpart(seam, whole.Edges) is None,
+           "a half ring of a split tube is found on the joined shape, the seam between the halves is not")
+    rod = Part.makeCylinder(ROD_RADIUS, ROD_HEIGHT)
+    box = Part.makeBox(BOX_SIDE, BOX_SIDE, BOX_SIDE)
+    filleted = box.makeFillet(EDGE_ROUND, box.Edges[:1])
+    fillet = [f for f in filleted.Faces if isinstance(f.Surface, Part.Cylinder)][0]
+    expect(not orient.is_piece(rod.Faces[round_side_of(rod)])
+           and orient.whole_of(orient.joined(filleted), fillet) is None,
+           "a whole side is no piece, a fillet is a piece of no whole side")
+    # Half a turn on top of a whole cylinder of the same radius joins with its
+    # side, but runs only part of its length: no half of a split side.
+    stepped = rod.fuse(Part.makeCylinder(ROD_RADIUS, ROD_HEIGHT / 2, V(0, 0, ROD_HEIGHT), V(0, 0, 1), HALF_TURN))
+    top = [f for f in stepped.Faces if orient.is_piece(f)][0]
+    expect(orient.whole_of(orient.joined(stepped), top) is None,
+           "half a turn on top of a whole cylinder is no half of a split side")
 
 
 def check_round_side():
@@ -909,23 +1111,24 @@ def check_moved_fins(cube, face):
 
 
 def check_recesses(cube, face):
-    """Tines over a recess or a hole in the face are left out with a warning;
-    a fin none of whose tines finds the face is left out as well."""
+    """With one tine grid for every fin: tines over a recess or a hole in the
+    face are left out with a warning; a fin none of whose tines finds the face
+    moves beside it, or is left out where nowhere takes it."""
     frame = geometry.frame_of(cube, face)
     normal = face.normalAt(0, 0)
     middle = (frame.along_min + frame.along_max) / 2
-    middle_z = geometry.build(cube, face, FinParams()).tine_z[1]
-    middle_tine = middle_z + FinParams().tine_height / 2
+    middle_z = geometry.build(cube, face, FinParams(tine_restart=False)).tine_z[1]
+    middle_tine = middle_z + FinParams(tine_restart=False).tine_height / 2
 
     on_face = frame.point(middle, frame.s_face(middle_tine), middle_tine)
     pit = Part.makeCylinder(RECESS_RADIUS, 2 * RECESS_RADIUS, on_face - normal * RECESS_RADIUS, normal)
     pitted = cube.cut(pit)
-    result = geometry.build(pitted, lower_left_face(pitted), FinParams())
+    result = geometry.build(pitted, lower_left_face(pitted), FinParams(tine_restart=False))
     named = "tines at %.1f mm" % middle_z
     expect(len(result.tines) == 2 and any(named in w for w in result.warnings),
            "the tine over a hole in the face is left out, the warning names its height: %s" % result.warnings)
     left_out = result.dropped[0].BoundBox.Center.z if len(result.dropped) == 1 else None
-    expect(left_out is not None and abs(left_out - middle_tine) < FinParams().tine_height,
+    expect(left_out is not None and abs(left_out - middle_tine) < FinParams(tine_restart=False).tine_height,
            "the tine left out is handed back as a shape, for the red mark")
     # The tine over the hole is no step for the height of the fin; the one
     # beyond it is, also while the fin stands lower than the hole.
@@ -933,43 +1136,34 @@ def check_recesses(cube, face):
     number = result.numbers[0]
     expect(result.touching_z[number] == [zs[0], zs[2]],
            "the heights a fin can end with a tine leave out the tine over the hole: %s" % result.touching_z)
-    lower = geometry.build(pitted, lower_left_face(pitted), FinParams(),
-                           heights={number: zs[0] + FinParams().tine_height})
+    lower = geometry.build(pitted, lower_left_face(pitted), FinParams(tine_restart=False),
+                           heights={number: zs[0] + FinParams(tine_restart=False).tine_height})
     expect(lower.touching_z[number] == [zs[0], zs[2]],
            "a fin lower than the hole still names the tine beyond it as a step: %s" % lower.touching_z)
 
     # A hole under only half of the tine: it would hang free there, so it is left out too.
     beside = frame.point(middle + RECESS_RADIUS, frame.s_face(middle_tine), middle_tine)
     half = cube.cut(Part.makeCylinder(RECESS_RADIUS, 2 * RECESS_RADIUS, beside - normal * RECESS_RADIUS, normal))
-    partly = geometry.build(half, lower_left_face(half), FinParams())
+    partly = geometry.build(half, lower_left_face(half), FinParams(tine_restart=False))
     expect(len(partly.tines) == 2, "a tine only partly over a hole is left out as well")
 
     # A groove running up the face under the middle one of three fins: that fin has no tine left.
-    uphill = (UP - normal * UP.dot(normal)).normalize()
-    three = FinParams(placement=d.PLACEMENT_DISTRIBUTED, fin_count=3)
+    three = FinParams(tine_restart=False, placement=d.PLACEMENT_DISTRIBUTED, fin_count=3)
     spread = geometry.build(cube, face, three)
     centre = geometry.tine_start(three, spread.positions[1], spread.thickness) + three.tine_width / 2
 
-    def groove(t):
-        start = frame.point(t, frame.s_face(frame.bed_z), frame.bed_z) - uphill * RECESS_RADIUS
-        # It stops below the top of the face, so the face stays one piece. The
-        # start lies one radius below the bed, which the length makes up for.
-        length = (frame.face_top_z - frame.bed_z - GROOVE_TOP_GAP) / uphill.z + RECESS_RADIUS
-        return Part.makeCylinder(RECESS_RADIUS, length, start, uphill)
-
-    grooved = cube.cut(groove(centre))
-    two_left = geometry.build(grooved, lower_left_face(grooved), three)
-    named = "fins at %.1f mm" % (spread.positions[1] + spread.thickness / 2 - frame.along_min)
-    expect(len(two_left.positions) == 2 and any(named in w for w in two_left.warnings),
-           "a fin over a groove is left out, the warning names where it stood: %s" % two_left.warnings)
-
-    centred = cube.cut(groove(middle))
-    try:
-        geometry.build(centred, lower_left_face(centred), FinParams(placement=d.PLACEMENT_CENTER))
-    except geometry.FinError as error:
-        expect("no tine finds" in str(error), "a fin with no tine on the face at all is refused: %s" % error)
-    else:
-        raise AssertionError("fins were built although no tine finds the face")
+    over_middle = grooved(cube, face, centre)
+    moved = geometry.build(over_middle, lower_left_face(over_middle), three)
+    expect(moved.numbers == [1, 2, 3] and moved.positions[1] != spread.positions[1]
+           and moved.positions == sorted(moved.positions)
+           and any("fin 2 by" in w for w in moved.warnings),
+           "a fin over a groove moves beside it, between its neighbours, the warning says by how much: %s"
+           % moved.warnings)
+    centred = grooved(cube, face, middle)
+    alone = geometry.build(centred, lower_left_face(centred),
+                           FinParams(tine_restart=False, placement=d.PLACEMENT_CENTER))
+    expect(len(alone.positions) == 1 and any("fin 1 by" in w for w in alone.warnings),
+           "one fin in the middle over a groove moves beside it: %s" % alone.warnings)
 
 
 def check_overhangs(cube, face):
@@ -1096,7 +1290,7 @@ def main():
 
     shape_regression(cube, face)
 
-    opposite = geometry.opposite_face(cube, face)
+    opposite = geometry.opposite_faces(cube, face)[0]
     u0, u1, v0, v1 = opposite.ParameterRange
     normal = opposite.normalAt((u0 + u1) / 2, (v0 + v1) / 2)
     expect(normal.x > 0 and normal.z < 0, "the opposite face leans the other way")
@@ -1118,10 +1312,16 @@ def main():
     check_one_corner(cube, face)
     check_tine_clearance(cube, face)
     check_shortened(cube, face)
+    check_restart(cube, face)
+    check_restart_planned(cube, face)
+    check_restart_narrow(cube, face)
+    check_restart_flank_hole(cube, face)
+    check_wide_enough(cube, face)
     check_split_face()
     check_quick_fins()
     check_quick_plan()
     check_round_side()
+    check_split_side()
     check_left_out(cube, face)
     check_moved_fins(cube, face)
     check_merged_clearance(cube, face)

@@ -11,6 +11,21 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.7.0] - 2026-10-28
+
+### Added
+
+- Quick fins and Stand on edge take a side or rim of a cylinder or tube that a STEP file brings in two halves as one, so such a part stands on its rim with its fin under the side (#45)
+- A tine option, Restart tines after a gap, on for new fins: the tines of each fin start at the lower edge of the face under it and above every gap it bridges, spread evenly up to the top of the face, so a short face or one above a bore still gets a fin with tines; fins saved before keep one grid from the bed. A fin height of its own, typed or set with the arrow, is undone with a note when the tines come to lie at other heights, by this option, the tine spacing or the first tine, so the fin ends at its highest tine again (#66)
+
+### Fixed
+
+- On a part whose side and rims a STEP file splits in halves, a flat face split the same way, such as its end face, is taken whole, so its fin stands in the middle of it, opposite the main fin, and not under one half (#65)
+- A fin planned over a hole, a groove or the bore of a tube, so that none of its tines would rest on the face, moves along the face to the nearest place where they do, and a note says by how much, instead of being left out (#62)
+- A flat face with round edges, such as the end face of a cylinder, is measured along its edges, not only at its corners, so a fin fits under it in any position, not only once the part is turned (#63)
+- Add counter fin takes the largest face leaning the other way that a counter fin can be built under, and refuses a face chosen by hand that cannot take one, instead of failing to build the fins and losing the main fin with them (#59)
+- A cylinder or tube turned in the task panel and turned back stands exactly where it stood, also after turns finer than the shift is kept (#53)
+
 ## [0.6.0] - 2026-10-28
 
 ### Added
@@ -172,7 +187,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.6.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.7.0...HEAD
+[0.7.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.6.0
 [0.5.2]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.5.2
 [0.5.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.5.1

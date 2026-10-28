@@ -37,6 +37,9 @@ LENGTH_DECIMALS = 3
 FIELD_TOLERANCE = 0.5 * 10 ** -LENGTH_DECIMALS
 RATIO_DECIMALS = 2
 LENGTH_SUFFIX = " mm"
+# A checkbox shown in a tooltip, as for the standard it goes back to.
+SHOWN_ON = QT_TRANSLATE_NOOP("FinSnap", "on")
+SHOWN_OFF = QT_TRANSLATE_NOOP("FinSnap", "off")
 DEGREE_SUFFIX = " \N{DEGREE SIGN}"
 # Pause after the last change before the preview is rebuilt, so typing a
 # number does not rebuild the fins at every keystroke.
@@ -224,6 +227,8 @@ def _widget(prop, value):
         box = QtWidgets.QComboBox()
         for choice in prop.choices:
             box.addItem(translate("FinSnap", feature.CHOICE_LABELS[choice]), choice)
+    elif prop.kind == feature.BOOL:
+        box = QtWidgets.QCheckBox()
     elif prop.kind == feature.INTEGER:
         box = QtWidgets.QSpinBox()
         box.setRange(0, MAX_INTEGER)
@@ -245,12 +250,14 @@ def _widget(prop, value):
 def _write(prop, widget, value):
     if prop.kind == feature.CHOICE:
         widget.setCurrentIndex(prop.choices.index(value))
+    elif prop.kind == feature.BOOL:
+        widget.setChecked(bool(value))
     else:
         widget.setValue(value)
 
 
 def _same(prop, first, second):
-    if prop.kind == feature.CHOICE:
+    if prop.kind in (feature.CHOICE, feature.BOOL):
         return first == second
     return abs(first - second) < d.TOLERANCE
 
@@ -259,6 +266,8 @@ def _shown(prop, value):
     """A value as the panel shows it, for a tooltip."""
     if prop.kind == feature.CHOICE:
         return translate("FinSnap", feature.CHOICE_LABELS[value])
+    if prop.kind == feature.BOOL:
+        return translate("FinSnap", SHOWN_ON if value else SHOWN_OFF)
     if prop.kind == feature.LENGTH:
         return "%g%s" % (value, LENGTH_SUFFIX)
     return "%g" % value
@@ -267,12 +276,16 @@ def _shown(prop, value):
 def _changed_signal(widget):
     if isinstance(widget, QtWidgets.QComboBox):
         return widget.currentIndexChanged
+    if isinstance(widget, QtWidgets.QCheckBox):
+        return widget.toggled
     return widget.valueChanged
 
 
 def _read(prop, widget):
     if prop.kind == feature.CHOICE:
         return widget.currentData()
+    if prop.kind == feature.BOOL:
+        return widget.isChecked()
     return widget.value()
 
 
@@ -632,8 +645,7 @@ class FinSnapTaskPanel:
             return
         if found is None:
             self.show_notes(translate("FinSnap", "No counter fin"),
-                            [translate("FinSnap", "The part has no face leaning the other way. Select one "
-                                                  "yourself.")], WARNING_COLOR)
+                            [translate("FinSnap", feature.NOTE_NO_OPPOSITE)], WARNING_COLOR)
             return
         self.edited()
 
@@ -866,10 +878,14 @@ class FinSnapTaskPanel:
 
     def built_value(self, kind):
         """What the handled fin is built with: its shift along the face (ALONG)
-        or its height (UP), in mm."""
+        from where it was planned, by hand and where it was moved beside a
+        hole, or its height (UP), in mm. Typing and dragging start from here,
+        so a fin moved beside a hole is moved on from where it stands."""
+        result, _ = self.handled_result()
+        number = self.handled[1]
         if kind == handles.ALONG:
-            return self.own_value(kind) or 0.0
-        return self.handled_result()[0].heights[self.handled[1]]
+            return (self.own_value(kind) or 0.0) + result.moved.get(number, 0.0)
+        return result.heights[number]
 
     def can_stand(self, kind, value):
         """Whether the handled fin can stand with the shift along the face
@@ -985,7 +1001,7 @@ class FinSnapTaskPanel:
         if self.handled_result() is None:
             return
         which, number = self.handled
-        self.drag_base = {handles.ALONG: feature.edits(self.obj, which)[1].get(number, 0.0),
+        self.drag_base = {handles.ALONG: self.built_value(handles.ALONG),
                           handles.UP: self.handled_result()[0].heights[number]}
         self.drag_own = {one: self.own_value(one) for one in handles.KINDS}
         self.drag_values = self.fin_values()
@@ -1195,7 +1211,7 @@ class FinSnapTaskPanel:
             if abs(value - current) < FIELD_TOLERANCE:
                 return
             if kind == handles.ALONG:
-                value = (self.own_value(kind) or 0.0) + value - current
+                value = self.built_value(kind) + value - current
         if not paused:
             if not self.set_fin(kind, value):
                 self.place_handles()

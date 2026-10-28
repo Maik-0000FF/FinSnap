@@ -50,9 +50,14 @@ HEIGHTS = {"main": "FinHeights", "counter": "CounterFinHeights"}
 # and the name earlier versions kept it under, when fins could only be removed.
 EDITED_OF = {"main": "EditedFinsOf", "counter": "EditedCounterFinsOf"}
 REMOVED_OF = {"main": "RemovedFinsOf", "counter": "RemovedCounterFinsOf"}
+# The tine grid (FinParams.tine_grid) the fin heights of their own were set on.
+HEIGHTS_GRID = {"main": "FinHeightsGrid", "counter": "CounterFinHeightsGrid"}
 NOTE_EDITS_DROPPED = QT_TRANSLATE_NOOP(
     "FinSnap", "The number of fins changed, so the fins changed by hand are as planned again: removed fins "
     "are back, moved fins and fin heights of their own are undone.")
+NOTE_HEIGHTS_DROPPED = QT_TRANSLATE_NOOP(
+    "FinSnap", "The tines lie at other heights now, so fin heights of their own are undone: each fin ends at "
+    "its highest tine again.")
 MAIN, COUNTER = "main", "counter"
 # Said when a single fin is to be removed from fins merged into the part.
 NOTE_MERGED_SINGLE = QT_TRANSLATE_NOOP(
@@ -60,6 +65,15 @@ NOTE_MERGED_SINGLE = QT_TRANSLATE_NOOP(
     "have no body of their own. To delete all of them, select the fins in the tree.")
 # Said when a face chosen for the counter fin cannot take fins; %s says why.
 NOTE_NO_COUNTER_ON_FACE = QT_TRANSLATE_NOOP("FinSnap", "No counter fin on this face: %s")
+# Said when no face leans the other way and takes a counter fin.
+NOTE_NO_OPPOSITE = QT_TRANSLATE_NOOP("FinSnap", "The part has no face leaning the other way that takes a "
+                                     "counter fin. Select one yourself.")
+# Said when a face or edge named is not found once the halves of a side split
+# by a STEP file are joined, as for the seam between them; %s names it.
+NOTE_LOST_IN_JOINING = QT_TRANSLATE_NOOP("FinSnap", "%s is the seam between two halves of a side; select the "
+                                         "side or its rim instead")
+# Said when a face of the joined shape has no piece on the part to name it by.
+NOTE_NO_PIECE = QT_TRANSLATE_NOOP("FinSnap", "%s of the joined part matches no face of the part itself")
 # A counter fin under the side of a cylinder or tube would stay under its
 # lowest line and move only by turning the part, the main fin with it.
 COUNTER_ROUND_SIDE = QT_TRANSLATE_NOOP(
@@ -82,6 +96,10 @@ LENGTH = "App::PropertyLength"
 INTEGER = "App::PropertyInteger"
 FLOAT = "App::PropertyFloat"
 CHOICE = "App::PropertyEnumeration"
+BOOL = "App::PropertyBool"
+# Parameters that a file saved before them gets as off, not as their built-in
+# value: on, they would change fins saved without them.
+RESTORED_AS = {"TineRestart": False}
 # Editor mode that hides a property in the property view.
 EDITOR_HIDDEN = 2
 
@@ -193,6 +211,13 @@ PROPERTIES = (
          QT_TRANSLATE_NOOP("App::Property",
                            "Vertical distance between tines, at least the tine height plus one layer"),
          "tine_spacing", None, STEP_LAYER),
+    Prop("TineRestart", BOOL, GROUP_TINES,
+         QT_TRANSLATE_NOOP("FinSnap", "Restart tines after a gap"),
+         QT_TRANSLATE_NOOP("App::Property",
+                           "Start the tine grid anew at the lower edge of the face under each fin and above every "
+                           "gap it bridges, so a short face or one above a hole still gets tines; off, one grid "
+                           "counts from the bed for every fin"),
+         "tine_restart", None),
     Prop("TineFirst", LENGTH, GROUP_TINES,
          QT_TRANSLATE_NOOP("FinSnap", "Tine first"),
          QT_TRANSLATE_NOOP("App::Property", "Height of the lowest tine above the bed, 0 = on the top of the foot"),
@@ -350,11 +375,112 @@ def params_of(obj):
 
 
 def _face(link):
+    """The shape of the part of `link` and its face named there; half of a
+    side that a STEP file split in two stands for the whole side, on the
+    shape with its halves joined (whole_elements())."""
     part, subs = link
     if not subs:
         raise geometry.FinError(translate("FinSnap", "no face selected on %s") % part.Label)
-    shape = global_shape(part)
-    return shape, shape.getElement(subs[0])
+    shape, (face,), _ = whole_elements(part, subs[:1])
+    return shape, face
+
+
+def whole_elements(obj, names):
+    """_join_elements() of `obj` and `names`, kept for as long as the part
+    keeps its shape and where it stands: a split part is joined once, not at
+    every build, every turn of the arc and every step of a drag.
+
+    INPUTS this has to withstand:
+      asked again, nothing changed          ->  the same answer, nothing joined anew
+      the part changed, moved or turned     ->  worked out anew: the key holds its
+                                                shape and its placement
+      an object without a shape of its own  ->  worked out each time, not kept
+      a new shape where an old one was in
+        memory, with the same hash          ->  worked out anew: a kept answer holds
+                                                its shape, which is compared as well
+      other names asked                     ->  worked out for those
+      many parts or names asked in turn     ->  the oldest answer goes past WHOLE_KEPT
+    """
+    # The shape the object holds, the same each time it is read while the
+    # object stays as it is; an object without one is worked out each time.
+    own = getattr(obj, "Shape", None)
+    if own is None:
+        return _join_elements(obj, names)
+    key = (obj.Document.Name, obj.Name, own.hashCode(), tuple(obj.getGlobalPlacement().toMatrix().A),
+           tuple(names))
+    kept = _whole_kept.get(key)
+    if kept is None or not kept[0].isSame(own):
+        while len(_whole_kept) >= WHOLE_KEPT:
+            _whole_kept.pop(next(iter(_whole_kept)))
+        # The shape is kept with the answer: held, its memory cannot go to a
+        # new shape that would then share its hash.
+        kept = _whole_kept[key] = (own, _join_elements(obj, names))
+    shape, elements, name_of = kept[1]
+    return shape, list(elements), name_of
+
+
+def _join_elements(obj, names):
+    """The global shape of `obj` and its elements named `names` ("Edge3",
+    "Face12"), and a function giving the name on `obj` of a face of that shape
+    by its number from 0. Where one of them is half of a side or a rim that a
+    STEP file split in two, the shape is the one with its halves joined
+    (orient.joined()), and each element the one of it the named one lies on.
+
+    INPUTS this has to withstand:
+      no split side or rim named            ->  the global shape, the elements, names
+                                                as numbered
+      half of a side or of a rim named      ->  the joined shape, the whole side or rim
+      a half ring of a split tube named
+        beside it                           ->  the whole ring of the joined shape
+      the seam between the halves named     ->  FinError: joining removes it
+      a face of the joined shape named back ->  the name of its first piece on `obj`:
+                                                a side for the whole side again, a flat
+                                                face for itself with the faces in its
+                                                plane (geometry.support_of())
+      half a flat face of a split part (the
+        end face of a cylinder)             ->  the joined shape, the whole face
+      a fillet or an arc of a slot          ->  as no split side or rim: as it is
+    """
+    shape = global_shape(obj)
+    elements = [shape.getElement(name) for name in names]
+    # Pieces: half a side or rim, or on a part split so half a flat face,
+    # which its fin needs whole to stand under the middle of it.
+    flat = [isinstance(element, Part.Face) and orient.is_flat_piece(shape, element) for element in elements]
+    curved = [orient.is_piece(element) for element in elements]
+    whole = orient.joined(shape) if any(curved) or any(flat) else None
+    # Flat pieces count only on a part whose side or rim joining makes whole
+    # again: a fillet or an arc leaves the faces of any other part as they are.
+    split = whole is not None and any(flat) and orient.is_split(shape, whole)
+    found = [] if whole is None else [orient.whole_of(whole, e) if curve or (flat_piece and split) else None
+                                      for e, curve, flat_piece in zip(elements, curved, flat)]
+    if not any(f is not None for f in found):
+        return shape, elements, lambda number: face_name(number + 1)
+    kept = []
+    for name, element, own in zip(names, elements, found):
+        if own is None:
+            own = orient.counterpart(element, whole.Faces if isinstance(element, Part.Face) else whole.Edges)
+        if own is None:
+            raise geometry.FinError(translate("FinSnap", NOTE_LOST_IN_JOINING) % name)
+        kept.append(own)
+
+    def name_of(number):
+        pieces_named = names_on(shape, [whole.Faces[number]])
+        if not pieces_named:
+            raise geometry.FinError(translate("FinSnap", NOTE_NO_PIECE) % face_name(number + 1))
+        return pieces_named[0]
+    return whole, kept, name_of
+
+
+def names_on(shape, faces):
+    """The names on `shape` of `faces`, faces of it or of its joined shape
+    (orient.joined()): a face joined from pieces is named by every piece
+    lying on it."""
+    names = []
+    for face in faces:
+        name = face_name_of(shape, face)
+        names += [name] if name else [face_name(i) for i, piece in enumerate(shape.Faces, 1)
+                                      if orient.lies_on(piece, face)]
+    return names
 
 
 def _supported(part_obj, document):
@@ -403,6 +529,10 @@ def overhangs_of(part_obj, document):
 
 # Builds of one side kept during a drag; beyond these the oldest goes.
 REUSE_KEPT = 8
+# Answers of whole_elements() kept, with the shape each was worked out for,
+# by part, shape, placement and names asked.
+WHOLE_KEPT = 16
+_whole_kept = {}
 
 
 class FinSnapFeature:
@@ -469,7 +599,7 @@ class FinSnapFeature:
                     # Under the side of a cylinder or tube: left out, the main fin stays.
                     notes.append(translate("FinSnap", "Counter fin: %s") % translate("FinSnap", COUNTER_ROUND_SIDE))
                 else:
-                    counter_part, build_counter = counter_side
+                    _, build_counter = counter_side
                     counter = build_keeping_edits(obj, COUNTER, build_counter, notes)
         except Exception:
             # Built nothing, the fins carry no face; the overhang marks still
@@ -478,11 +608,11 @@ class FinSnapFeature:
             setattr(obj, CARRIED, [])
             setattr(obj, OVERHANGS, overhangs_of(obj.Base[0], obj.Document))
             raise
-        # Named on the shape each face was found on: the counter face comes from
-        # a shape of its own, even of the same part.
-        carried = [face_name_of(part, f) for f in result.carried]
+        # Named on the part itself, the counter face as well: a split side was
+        # built on the shape with its halves joined.
+        carried = names_on(global_shape(obj.Base[0]), result.carried)
         if counter is not None and obj.CounterFace[0] is obj.Base[0]:
-            carried += [face_name_of(counter_part, f) for f in counter.carried]
+            carried += names_on(global_shape(obj.Base[0]), counter.carried)
         hidden_property(obj, CARRIED, "App::PropertyStringList")
         setattr(obj, CARRIED, carried)
         if getattr(self, "editing", False):
@@ -539,11 +669,12 @@ class FinSnapFeature:
                     setattr(obj, EDITED_OF[which], getattr(obj, old))
                 obj.removeProperty(old)
         # A parameter added in a later version starts with its built-in value,
-        # so fins saved before it keep their shape.
+        # or where that would change the fins with the value it stands for
+        # off, so fins saved before it keep their shape.
         built_in = FinParams()
         for prop in PROPERTIES:
             if prop.name not in obj.PropertiesList:
-                add_property(obj, prop, getattr(built_in, prop.field))
+                add_property(obj, prop, RESTORED_AS.get(prop.name, getattr(built_in, prop.field)))
         # A file saved by an older version knows fewer choices; offer the
         # current ones and keep the value.
         for prop in PROPERTIES:
@@ -551,6 +682,11 @@ class FinSnapFeature:
                 value = getattr(obj, prop.name)
                 setattr(obj, prop.name, list(prop.choices))
                 setattr(obj, prop.name, value)
+        # Saved before the tine grid was noted for the fin heights of their own:
+        # they were set on the grid the file brings.
+        for which in (MAIN, COUNTER):
+            if edits(obj, which)[2] and HEIGHTS_GRID[which] not in obj.PropertiesList:
+                _note_grid(obj, which)
 
     def dumps(self):
         return None
@@ -571,43 +707,82 @@ def face_name_of(shape, face):
     return None
 
 
-def check_counter_face(face):
-    """Refuse `face` for a counter fin where it is the side of a cylinder or
-    tube: its fin would stay under the lowest line and move only by turning
-    the part, the main fin with it. FinError then."""
+def check_counter_face(shape, face, p):
+    """Refuse `face` of `shape` for a counter fin with the parameters `p`,
+    with a FinError saying why; a face that takes one passes.
+
+    INPUTS this has to withstand:
+      a face leaning over the bed that
+        takes a counter fin                 ->  passes
+      the side of a cylinder or tube        ->  FinError: its fin would move only by
+                                                turning the part, the main fin with it
+      a face lying flat, facing up or
+        sideways, or not planar             ->  FinError from geometry.frame_of()
+      a face too narrow for the fin, or one
+        it runs into the part under         ->  FinError from the build tried
+      the kernel fails building there       ->  FinError saying so
+    """
+    # Said before the face is asked to take fins, which a bore or a cut side
+    # would refuse for a reason of its own.
     if orient.is_round_side(face):
         raise geometry.FinError(translate("FinSnap", COUNTER_ROUND_SIDE))
+    geometry.frame_of(shape, face)
+    try:
+        geometry.build(shape, face, p, tine_count=p.counter_tine_count or None)
+    except Part.OCCError as error:
+        # A fault in the kernel: said as why, as for a face without room.
+        raise geometry.FinError(str(error)) from error
+
+
+def _opposite_taking_fins(obj, base, p):
+    """The name on `base` of the face leaning the other way from the main
+    fin of `obj` that takes a counter fin with the parameters `p`, the
+    largest first; None if none does. Each is tried by its name, as its fin
+    is then built: a half of a split end ring stands with the faces in its
+    plane, which the ring joined whole would not."""
+    shape, face = _face(obj.Base)
+    original = global_shape(base)
+    for found in geometry.opposite_faces(shape, face):
+        # Named on the part: on a split side the face was found on its joined shape.
+        named = names_on(original, [found])
+        if not named:
+            # No face of the part to name it by: the next one is tried.
+            continue
+        try:
+            check_counter_face(*_face((base, named[:1])), p)
+        except geometry.FinError:
+            continue
+        return named[0]
+    return None
 
 
 def add_counter(obj, base=None, face_ref=None):
     """Give an existing FinSnap object a counter fin.
 
     face_ref is the name of the face ("Face3"). Without it, the face of the
-    same part that leans the other way is searched. Returns the face name, or
-    None if there is no such face.
+    same part that leans the other way and takes a counter fin is searched.
+    Returns the face name, or None if there is no such face.
 
     INPUTS this has to withstand:
-      no face, one leans the other way         ->  that face, counter fin set
-      no face, none leans the other way        ->  None, nothing changed
-      a face that leans over the bed           ->  that face, counter fin set
-      a face lying flat, facing up or sideways,
-        or not planar, such as one still
-        selected from standing the part        ->  FinError saying why, nothing changed
+      no face, one leans the other way and
+        takes a counter fin                 ->  that face, counter fin set
+      no face, none leans the other way, or
+        none takes a counter fin            ->  None, nothing changed
+      a face chosen that takes one          ->  that face, counter fin set
+      a face chosen that does not, see
+        check_counter_face()                ->  FinError saying why, nothing changed
+      the face the counter fin has, again   ->  kept as it is, not tried anew
     """
+    p = params_of(obj)
     if face_ref is None:
         base = obj.Base[0]
-        shape, face = _face(obj.Base)
-        found = geometry.opposite_face(shape, face)
-        if found is None:
+        face_ref = _opposite_taking_fins(obj, base, p)
+        if face_ref is None:
             return None
-        face_ref = face_name_of(shape, found)
-    else:
-        # A face chosen by hand has to take fins, or the next build fails.
-        face = _face((base, [face_ref]))
-        # Said before the face is asked to take fins, which a bore or a cut
-        # side would refuse for a reason of its own.
-        check_counter_face(face[1])
-        geometry.frame_of(*face)
+    elif obj.CounterFace != (base, [face_ref]):
+        # The face the counter fin has is not tried again: it stands with
+        # its changes by hand, which a trial without them could miss.
+        check_counter_face(*_face((base, [face_ref])), p)
     # Changes by hand to a counter fin on another face would name other fins.
     if obj.CounterFace != (base, [face_ref]):
         reset_fins(obj, COUNTER)
@@ -617,12 +792,10 @@ def add_counter(obj, base=None, face_ref=None):
 
 def create(base, face_ref, counter=None):
     """A new FinSnap object under the face named `face_ref` of `base`. counter: (object, face name) or None.
-    A counter face that cannot take fins, or the side of a cylinder or tube:
-    FinError, nothing made."""
+    A counter face that cannot take a counter fin with the standard
+    parameters, see check_counter_face(): FinError, nothing made."""
     if counter:
-        face = _face((counter[0], [counter[1]]))
-        check_counter_face(face[1])
-        geometry.frame_of(*face)
+        check_counter_face(*_face((counter[0], [counter[1]])), presets.standard())
     doc = base.Document
     obj = doc.addObject("Part::FeaturePython", TYPE_NAME)
     FinSnapFeature(obj)
@@ -738,6 +911,35 @@ def builder(obj, which):
         part, face, p, tine_count=p.counter_tine_count or None, left_out=left, shifts=shifts, heights=heights)
 
 
+def _note_grid(obj, which):
+    """Note the tine grid the fin heights of their own of `which` are set on."""
+    hidden_property(obj, HEIGHTS_GRID[which], "App::PropertyString")
+    setattr(obj, HEIGHTS_GRID[which], repr(params_of(obj).tine_grid))
+
+
+def drop_heights_off_grid(obj, which, notes):
+    """Undo the fin heights of their own of `which` when the tines lie at
+    other heights than when they were set, so each fin ends at its highest
+    tine again; a note says so.
+
+    INPUTS this has to withstand:
+      no height of its own                  ->  nothing changed
+      heights, the grid they were set on    ->  kept
+      heights, another grid now             ->  heights undone, note; moves and
+                                                removed fins kept
+      heights, no grid noted                ->  kept, the grid now noted for them (files
+                                                saved before get it on restore)
+    """
+    if not edits(obj, which)[2]:
+        return
+    noted = getattr(obj, HEIGHTS_GRID[which], None)
+    if noted is None:
+        _note_grid(obj, which)
+    elif noted != repr(params_of(obj).tine_grid):
+        setattr(obj, HEIGHTS[which], {})
+        notes.append(translate("FinSnap", NOTE_HEIGHTS_DROPPED))
+
+
 def build_keeping_edits(obj, which, build_fn, notes):
     """Build the fins of `which` with the changes made by hand, as long as the
     face is planned for as many fins as when they were made.
@@ -757,7 +959,10 @@ def build_keeping_edits(obj, which, build_fn, notes):
       changes made, count they were made
         for unknown                         ->  built with them; a FinError passed on
       FinError for any other reason         ->  passed on
+      heights set on another tine grid      ->  those heights undone first, note
+                                                (drop_heights_off_grid())
     """
+    drop_heights_off_grid(obj, which, notes)
     left, shifts, heights = edits(obj, which)
     changed = bool(left or shifts or heights)
     made_for = getattr(obj, EDITED_OF[which], None)
@@ -883,15 +1088,23 @@ def shift_fin(obj, which, number, by):
     set_fin_shift(obj, which, number, edits(obj, which)[1].get(number, 0.0) + by)
 
 
+def kept_shift(mm):
+    """`mm` as a shift along the face is kept: rounded as stored_mm(), and 0
+    below the tolerance."""
+    return stored_mm(mm) if abs(mm) >= d.TOLERANCE else 0.0
+
+
 def set_fin_shift(obj, which, number, mm):
     """Move fin `number` of `which` `mm` along the face from where it was planned."""
-    _set_mm(obj, SHIFTS[which], number, None if abs(mm) < d.TOLERANCE else mm)
+    kept = kept_shift(mm)
+    _set_mm(obj, SHIFTS[which], number, kept or None)
     _edited(obj, which)
 
 
 def set_fin_height(obj, which, number, mm):
     """Give fin `number` of `which` a height of its own, or with None the height of the others again."""
     _set_mm(obj, HEIGHTS[which], number, mm)
+    _note_grid(obj, which)
     _edited(obj, which)
 
 
@@ -961,9 +1174,15 @@ def forget_turn(obj):
 
 def set_round_shift(obj, mm):
     """Turn the part so its main fin stands `mm` round its round side from
-    where it was stood, and keep that as the shift of the fin."""
-    turn_part(obj, mm - round_shift(obj))
-    set_fin_shift(obj, MAIN, 1, mm)
+    where it was stood, and keep that as the shift of the fin. Turned by the
+    shift as it is kept (kept_shift()), so the part stands where the shift
+    says, also after many small turns and a turn back; a change smaller than
+    the tolerance neither turns nor is kept, so none adds up unturned."""
+    kept, current = kept_shift(mm), round_shift(obj)
+    if abs(kept - current) < d.TOLERANCE:
+        return
+    turn_part(obj, kept - current)
+    set_fin_shift(obj, MAIN, 1, kept)
 
 
 def reset_fins(obj, which=None):

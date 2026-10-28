@@ -20,6 +20,9 @@ TEST_STANDARD_GROUP = "StandardUnderTest"
 STANDARD_THICKNESS = 0.9
 CHAMFER = 1.0
 TILT = 45.0
+HALF_TURN = 180.0  # degrees
+RECESS_RADIUS = 1.5    # wider than a tine, so a tine above it touches nothing
+GROOVE_TOP_GAP = 1.0   # face left above a groove, so the groove does not split the face
 V = App.Vector
 
 
@@ -29,6 +32,33 @@ def tilted_cube():
     cube.rotate(V(0, 0, 0), V(0, 1, 0), TILT)
     cube.translate(V(0, 0, -cube.BoundBox.ZMin))
     return cube
+
+
+def split_cylinder(radius, height, bore=0.0):
+    """A cylinder, or with `bore` a tube, upright on the origin, whose side
+    and rims come in two halves, as some STEP files bring them."""
+    halves = []
+    for turn in (0, HALF_TURN):
+        half = Part.makeCylinder(radius, height, V(0, 0, 0), V(0, 0, 1), HALF_TURN)
+        if bore:
+            half = half.cut(Part.makeCylinder(bore, height, V(0, 0, 0), V(0, 0, 1), HALF_TURN))
+        half.rotate(V(0, 0, 0), V(0, 0, 1), turn)
+        halves.append(half)
+    return halves[0].fuse(halves[1])
+
+
+def grooved(cube, face, t):
+    """`cube` with a groove running up its face `face` at `t` along it, from
+    below the bed to GROOVE_TOP_GAP short of the top, so the face stays one
+    piece and a fin there finds no face for any tine."""
+    from freecad.finsnap import geometry
+    frame = geometry.frame_of(cube, face)
+    normal = face.normalAt(0, 0)
+    uphill = (V(0, 0, 1) - normal * normal.z).normalize()
+    start = frame.point(t, frame.s_face(frame.bed_z), frame.bed_z) - uphill * RECESS_RADIUS
+    # The start lies one radius below the bed, which the length makes up for.
+    length = (frame.face_top_z - frame.bed_z - GROOVE_TOP_GAP) / uphill.z + RECESS_RADIUS
+    return cube.cut(Part.makeCylinder(RECESS_RADIUS, length, start, uphill))
 
 
 def lower_left_face(cube):

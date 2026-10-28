@@ -53,6 +53,7 @@ TUBE_RADIUS = 10.0
 TUBE_BORE = 6.0
 TUBE_HEIGHT = 40.0
 TUBE_ANGLE = 30.0  # how far the fin under the side of a tube is turned in the panel, in degrees
+PLACE_STEP = 1.0  # how far a fin is moved along the face in the panel, in mm
 ZOOM_OUT = 2.0  # how far the view is zoomed out to see the arc keep its size on the screen
 ARROW_SIZE_TOLERANCE = 0.01  # share by which the size of an arrow may differ from the one reckoned
 
@@ -105,6 +106,68 @@ def select(obj, *subs):
             Gui.Selection.addSelection(obj, sub)
     else:
         Gui.Selection.addSelection(obj)
+
+
+def moved_beside_groove(doc):
+    """A fin planned over a groove stands beside it; typed into its field or
+    dragged, it moves on from where it stands, not from where it was planned."""
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, geometry, handles
+    from freecad.finsnap.taskpanel import FinSnapTaskPanel
+    from freecad.finsnap.tests.support import grooved
+    cube = tilted_cube()
+    face = lower_left_face(cube)
+    frame = geometry.frame_of(cube, face)
+    part = doc.addObject("Part::Feature", "Grooved")
+    part.Shape = grooved(cube, face, (frame.along_min + frame.along_max) / 2)
+    fins = feature.create(part, face_name(part, lower_left_face(part.Shape)))
+    fins.FinPlacement = d.PLACEMENT_CENTER
+    doc.recompute()
+    panel = FinSnapTaskPanel(fins)
+    panel.handled = (feature.MAIN, 1)
+    stood = panel.fin_values()[handles.ALONG]
+    moved = fins.Proxy.results[feature.MAIN].moved.get(1)
+    expect(moved, "the fin over the groove is moved beside it")
+    # On away from the groove, the way it was moved.
+    step = math.copysign(PLACE_STEP, moved)
+    panel.fin_fields[handles.ALONG].setValue(stood + step)
+    panel.field_entered(handles.ALONG)
+    typed = panel.fin_values()[handles.ALONG]
+    panel.handle_started(handles.ALONG)
+    panel.finish_drag(handles.ALONG, step)
+    dragged = panel.fin_values()[handles.ALONG]
+    expect(abs(typed - stood - step) < d.TOLERANCE and abs(dragged - typed - step) < d.TOLERANCE,
+           "typed and dragged, a fin moved beside a groove moves on from where it stands: %.3f, %.3f, %.3f"
+           % (stood, typed, dragged))
+    panel.reject()
+    doc.removeObject(fins.Name)
+    doc.removeObject(part.Name)
+    doc.recompute()
+
+
+def quick_on_split_tube(doc):
+    """Quick fins on half the side of a tube that a STEP file split in two,
+    and on half its rim: it stands on its rim, with its fin under the side."""
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, orient
+    from freecad.finsnap.tests.support import split_cylinder
+    tube = doc.addObject("Part::Feature", "SplitTube")
+    tube.Shape = split_cylinder(TUBE_RADIUS, TUBE_HEIGHT, TUBE_BORE)
+    flat = App.Placement(tube.Placement)
+    for kind, pieces in (("Face", tube.Shape.Faces), ("Edge", tube.Shape.Edges)):
+        number = next(i for i, piece in enumerate(pieces, 1) if orient.is_piece(piece)
+                      and abs((piece.Surface if kind == "Face" else piece.Curve).Radius - TUBE_RADIUS) < d.TOLERANCE)
+        select(tube, "%s%d" % (kind, number))
+        Gui.runCommand("FinSnap_QuickFins")
+        fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is tube]
+        expect(len(fins) == 1 and feature.on_round_side(fins[0]) and fins[0].ResultFinCount == 1,
+               "Quick fins on half the %s of a split tube stands it on its rim, its fin under the side"
+               % ("side" if kind == "Face" else "rim"))
+        fins[0].ViewObject.Proxy.panel.reject()
+        doc.recompute()
+        expect(tube.Placement.isSame(flat, d.TOLERANCE), "Cancel lays the split tube back as it lay")
+    doc.removeObject(tube.Name)
+    doc.recompute()
 
 
 def added_on_tube(doc):
@@ -765,6 +828,8 @@ def main():
     from freecad.finsnap.params import FinParams
     built_in = FinParams().fin_thickness
     marking = FinSnapTaskPanel(fins)
+    expect(isinstance(marking.widgets["TineRestart"], QtWidgets.QCheckBox),
+           "the tine restart is a checkbox in the panel")
     thickness, reset = marking.widgets["FinThickness"], marking.resets["FinThickness"]
     label = marking.labels["FinThickness"]
     expect(reset.isHidden() and not label.styleSheet(), "a field at its standard value is not marked")
@@ -1239,6 +1304,8 @@ def main():
     expect(model.count("<object ") == 2, "export without a selection takes all fins with their parts")
     turned_tube(doc)
     added_on_tube(doc)
+    quick_on_split_tube(doc)
+    moved_beside_groove(doc)
 
     empty = doc.addObject("Part::Feature", "Empty")
     select(empty)

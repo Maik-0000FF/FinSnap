@@ -7,6 +7,7 @@ Run in FreeCAD, with this checkout installed as an addon (see CONTRIBUTING.md):
     freecad --console freecad/finsnap/tests/test_feature.py
 """
 
+import dataclasses
 import os
 import sys
 import tempfile
@@ -16,7 +17,7 @@ import zipfile
 
 import FreeCAD as App
 import Part
-from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left_face, run, tilted_cube
+from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left_face, run, split_cylinder, tilted_cube
 from freecad.finsnap import defaults as d
 from freecad.finsnap import export_3mf, export_step, feature, geometry, orient
 from freecad.finsnap import presets
@@ -56,6 +57,14 @@ TUBE_RADIUS = 10.0
 TUBE_BORE = 6.0
 TUBE_HEIGHT = 40.0
 TUBE_TURN = 5.0  # how far the fin under the side of a tube is moved by hand, in mm round it
+FINE_TURN = 1.23456789  # a turn finer than the shift is kept, in mm round the side
+COUNTER_HEIGHT = 6.0  # a height of its own for a counter fin, in mm
+THIN_BORE = 9.8  # a bore that leaves the end ring of the test tube too narrow for a counter fin, in mm
+WIDE_BORE = 9.0  # a bore under the middle of the end ring of the test tube, the ring beside it wide enough, in mm
+BRIDGE_TINES = 2  # tines a counter fin has at least below and above a bore it bridges
+CENTRE_TOLERANCE = 0.5  # how far from the middle of a face a fin planned in its middle may stand, in mm
+FILLET_RADIUS = 2.0  # a fillet on a corner of a test part, in mm
+EXACT_DISTANCE = 1e-9  # how far a point of the tube may move and it still stands alike, in mm
 
 
 def face_name(shape, face):
@@ -287,6 +296,17 @@ def edit_fins(doc):
            "with another number of fins the heights of their own are dropped as well")
     fins.FinCount = 3
     doc.recompute()
+    feature.shift_fin(fins, feature.MAIN, 1, FIN_SHIFT)
+    feature.set_fin_height(fins, feature.MAIN, 3, fins.Shape.Solids[2].BoundBox.ZLength / 2)
+    doc.recompute()
+    fins.TineSpacing = fins.TineSpacing.Value + fins.LayerHeight.Value
+    doc.recompute()
+    left, shifts, heights = feature.edits(fins, feature.MAIN)
+    expect(not heights and shifts.keys() == {1}
+           and translate("FinSnap", feature.NOTE_HEIGHTS_DROPPED) in fins.Warnings,
+           "with the tines at other heights the heights of their own are undone, moves kept, a note says so")
+    feature.reset_fins(fins)
+    fins.TineSpacing = d.TINE_SPACING
     feature.add_counter(fins)
     doc.recompute()
     expect(any(tag.startswith(feature.COUNTER) for tag in fins.FinTags), "a counter fin is added and tagged")
@@ -400,6 +420,16 @@ def warnings_and_old_files(doc):
     fins.Proxy.onDocumentRestored(fins)
     expect("TineClearance" in fins.PropertiesList and fins.TineClearance.Value == d.TINE_CLEARANCE,
            "fins saved before the tine clearance existed get it, touching as before")
+    fins.removeProperty("TineRestart")
+    fins.Proxy.onDocumentRestored(fins)
+    expect("TineRestart" in fins.PropertiesList and fins.TineRestart is False and FinParams().tine_restart,
+           "fins saved before the tine restart existed get it off, built as before; new fins get it on")
+    feature.set_fin_height(fins, feature.MAIN, 1, fins.ResultHeight.Value / 2)
+    fins.removeProperty(feature.HEIGHTS_GRID[feature.MAIN])
+    fins.Proxy.onDocumentRestored(fins)
+    expect(getattr(fins, feature.HEIGHTS_GRID[feature.MAIN], None) == repr(feature.params_of(fins).tine_grid),
+           "fin heights saved before the tine grid was noted for them count as set on the grid restored")
+    feature.reset_fins(fins)
 
 
 def step_with_offset_curves():
@@ -424,6 +454,213 @@ def step_with_offset_curves():
         after = ", also after a 3MF export" if meshed else ""
         expect(len(back.Solids) == 1 and abs(back.Volume - pocketed.Volume) < STEP_VOLUME_TOLERANCE,
                "the STEP export brings the pocketed block back whole%s" % after)
+
+
+def counter_bridges_bore(doc):
+    """With the tine grid restarted after a gap, the counter fin under the
+    end ring of a tube stands where it was planned, over the bore, with tines
+    below and above it, and none of them over the bore."""
+    shape = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
+    tube = doc.addObject("Part::Feature", "BridgedTube")
+    tube.Shape = shape
+    rim = next(i for i, e in enumerate(shape.Edges, 1) if isinstance(e.Curve, Part.Circle)
+               and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE)
+    joined, (edge,), name_of = feature.whole_elements(tube, ["Edge%d" % rim])
+    plan = geometry.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
+    tube.Placement = plan.change
+    fins = feature.create(tube, name_of(plan.number))
+    doc.recompute()
+    named = feature.add_counter(fins)
+    doc.recompute()
+    part, ring = feature._face(fins.CounterFace)
+    p = feature.params_of(fins)
+    counter = geometry.build(part, ring, p, tine_count=p.counter_tine_count or None)
+    one_grid = geometry.build(part, ring, dataclasses.replace(p, tine_restart=False),
+                              tine_count=p.counter_tine_count or None)
+    expect(named is not None and fins.isValid() and not any("moved along the face" in w for w in fins.Warnings)
+           and len(counter.tines) >= BRIDGE_TINES and not counter.dropped
+           and len(counter.tines) > len(one_grid.tines) and counter.height > one_grid.height,
+           "the counter fin bridges the bore with more tines and taller than on one grid: %d tines, %s"
+           % (len(counter.tines), list(fins.Warnings)))
+    doc.removeObject(fins.Name)
+    doc.removeObject(tube.Name)
+    doc.recompute()
+
+
+def counter_beside_bore(doc):
+    """A tube whose bore lies under the middle of its end ring: the counter
+    fin planned there moves along the ring to where its tines rest."""
+    shape = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(WIDE_BORE, TUBE_HEIGHT))
+    tube = doc.addObject("Part::Feature", "BoredTube")
+    tube.Shape = shape
+    rim = next(i for i, e in enumerate(shape.Edges, 1) if isinstance(e.Curve, Part.Circle)
+               and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE)
+    joined, (edge,), name_of = feature.whole_elements(tube, ["Edge%d" % rim])
+    plan = geometry.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
+    tube.Placement = plan.change
+    fins = feature.create(tube, name_of(plan.number))
+    # With one grid for every fin, as the restart below the bore would bridge it.
+    fins.TineRestart = False
+    doc.recompute()
+    named = feature.add_counter(fins)
+    doc.recompute()
+    expect(named is not None and fins.isValid() and any("moved along the face" in w for w in fins.Warnings),
+           "the counter fin over the bore of a tube moves beside it: %s" % list(fins.Warnings))
+    doc.removeObject(fins.Name)
+    doc.removeObject(tube.Name)
+    doc.recompute()
+
+
+def counter_on_thin_tube(doc):
+    """A tube whose wall leaves its end ring too narrow for a counter fin:
+    found by itself none is set, chosen by hand the ring is refused, and the
+    main fin stays either way."""
+    shape = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(THIN_BORE, TUBE_HEIGHT))
+    tube = doc.addObject("Part::Feature", "ThinTube")
+    tube.Shape = shape
+    rim = next(i for i, e in enumerate(shape.Edges, 1) if isinstance(e.Curve, Part.Circle)
+               and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE)
+    joined, (edge,), name_of = feature.whole_elements(tube, ["Edge%d" % rim])
+    plan = geometry.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
+    tube.Placement = plan.change
+    fins = feature.create(tube, name_of(plan.number))
+    doc.recompute()
+    expect(feature.add_counter(fins) is None and not fins.CounterFace and fins.isValid()
+           and fins.ResultFinCount == 1,
+           "no face that takes a counter fin: none is set, the main fin stays")
+    stood, side = feature._face(fins.Base)
+    ring = feature.names_on(global_shape(tube), geometry.opposite_faces(stood, side)[:1])[0]
+    try:
+        feature.add_counter(fins, tube, ring)
+    except geometry.FinError as error:
+        expect(not fins.CounterFace and fins.isValid(),
+               "a face too narrow for a counter fin chosen by hand is refused, nothing changed: %s" % error)
+    else:
+        raise AssertionError("a counter fin was set under a face too narrow for it")
+    doc.removeObject(fins.Name)
+    doc.removeObject(tube.Name)
+    doc.recompute()
+
+
+def halves_kept_beside_fillet(doc):
+    """A part with a fillet and a face in two halves, whose side and rims no
+    STEP file split: its halves stay faces of their own, as before."""
+    halves = Part.makeBox(TUBE_HEIGHT, TUBE_RADIUS, TUBE_RADIUS).fuse(
+        Part.makeBox(TUBE_HEIGHT, TUBE_RADIUS, TUBE_RADIUS, App.Vector(0, TUBE_RADIUS, 0)))
+    corner = next(e for e in halves.Edges if e.BoundBox.XMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE)
+    shape = halves.makeFillet(FILLET_RADIUS, [corner])
+    part = doc.addObject("Part::Feature", "FilletedHalves")
+    part.Shape = shape
+    half = next(i for i, f in enumerate(shape.Faces, 1) if orient.is_flat_piece(shape, f))
+    _, (kept,), _ = feature.whole_elements(part, ["Face%d" % half])
+    expect(abs(kept.Area - shape.Faces[half - 1].Area) < d.TOLERANCE,
+           "beside a fillet, half of a face split by a design step stays a face of its own")
+    doc.removeObject(part.Name)
+    doc.recompute()
+
+
+def counter_under_disc(doc):
+    """A cylinder stood on its rim, whole or split in halves by a STEP file,
+    takes its counter fin under its lower end face as it stands, unturned:
+    the disc is measured along its rim, not at its one corner, and half of
+    it not by its straight side alone."""
+    for name, shape in (("whole", Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT)),
+                        ("split", split_cylinder(TUBE_RADIUS, TUBE_HEIGHT))):
+        rod = doc.addObject("Part::Feature", "Disc_%s" % name)
+        rod.Shape = shape
+        rim = next(i for i, e in enumerate(shape.Edges, 1) if isinstance(e.Curve, Part.Circle))
+        joined, (edge,), name_of = feature.whole_elements(rod, ["Edge%d" % rim])
+        plan = geometry.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
+        rod.Placement = plan.change
+        fins = feature.create(rod, name_of(plan.number))
+        doc.recompute()
+        named = feature.add_counter(fins)
+        doc.recompute()
+        expect(named is not None and fins.isValid() and fins.CounterFace,
+               "a %s cylinder unturned takes a counter fin under its end face" % name)
+        # Under the whole end face, its halves joined: both carry it, and the
+        # fin stands in the middle of it, opposite the main fin.
+        sides = feature.names_on(global_shape(rod), [feature.round_side(fins)])
+        ends = [n for n in fins.CarriedFaces if n not in sides]
+        part, end = feature._face(fins.CounterFace)
+        middle = geometry.frame_of(part, end)
+        centre = (middle.along_min + middle.along_max) / 2
+        built = geometry.build(part, end, feature.params_of(fins))
+        expect(len(ends) == (2 if name == "split" else 1)
+               and abs(built.positions[0] + built.thickness / 2 - centre) < CENTRE_TOLERANCE,
+               "the %s end face carries the counter fin in its middle: %s" % (name, ends))
+        doc.removeObject(fins.Name)
+        doc.removeObject(rod.Name)
+        doc.recompute()
+
+
+def split_tube(doc):
+    """A tube whose side and rims a STEP file split in halves: its rim stands
+    it, and fins under half its side are built under the whole side, named on
+    the tube by both halves."""
+    shape = split_cylinder(TUBE_RADIUS, TUBE_HEIGHT, TUBE_BORE)
+    tube = doc.addObject("Part::Feature", "SplitTube")
+    tube.Shape = shape
+    arc = next(i for i, e in enumerate(shape.Edges, 1) if orient.is_piece(e)
+               and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE)
+    joined, (rim,), name_of = feature.whole_elements(tube, ["Edge%d" % arc])
+    # Asked again with nothing changed, the joined shape is kept; moved, the
+    # part is joined anew where it stands now.
+    again = feature.whole_elements(tube, ["Edge%d" % arc])[0]
+    tube.Placement = App.Placement(App.Vector(1, 0, 0), App.Rotation())
+    moved_on = feature.whole_elements(tube, ["Edge%d" % arc])[0]
+    tube.Placement = App.Placement()
+    expect(again is joined and moved_on is not joined
+           and abs(moved_on.BoundBox.XMin - joined.BoundBox.XMin - 1) < d.TOLERANCE,
+           "a split part is joined once while it stays, anew once it moves")
+    plan = geometry.quick_plan(joined, [(rim, None)], [], FinParams(), d.TILT_ANGLE)
+    tube.Placement = plan.change
+    fins = feature.create(tube, name_of(plan.number))
+    doc.recompute()
+    halves = [i for i, f in enumerate(tube.Shape.Faces, 1) if isinstance(f.Surface, Part.Cylinder)
+              and abs(f.Surface.Radius - TUBE_RADIUS) < d.TOLERANCE]
+    expect(orient.is_rim(rim) and fins.ResultFinCount == 1 and fins.isValid() and feature.on_round_side(fins)
+           and sorted(fins.CarriedFaces) == sorted("Face%d" % i for i in halves),
+           "a split tube stands on its rim, one fin under its side, carried by both halves: %s" % fins.CarriedFaces)
+    feature.set_round_shift(fins, TUBE_TURN)
+    doc.recompute()
+    expect(abs(feature.round_shift(fins) - TUBE_TURN) < d.TOLERANCE and fins.isValid(),
+           "the fin under the split side turns the tube as under a whole one")
+    # A half ring named beside the half rim is found whole, by a point on it
+    # rather than in its hole; the seam between the halves is gone.
+    pieces = tube.Shape.Faces
+    ring = next(i for i, f in enumerate(pieces, 1) if f.findPlane() is not None)
+    _, (_, whole_ring), _ = feature.whole_elements(tube, ["Edge%d" % arc, "Face%d" % ring])
+    rings = feature.names_on(global_shape(tube), [whole_ring])
+    expect(whole_ring.findPlane() is not None and whole_ring.Area > pieces[ring - 1].Area and len(rings) == 2,
+           "a half ring of a split tube stands for the whole ring, named by both halves: %s" % rings)
+    seam = next(i for i, e in enumerate(tube.Shape.Edges, 1) if isinstance(e.Curve, Part.Line)
+                and not any(orient.lies_on(e, f) for f in pieces if f.findPlane() is not None))
+    try:
+        feature.whole_elements(tube, ["Edge%d" % arc, "Edge%d" % seam])
+    except geometry.FinError as error:
+        expect("seam" in str(error), "the seam between the halves named is refused with a reason: %s" % error)
+    else:
+        raise AssertionError("the seam between the halves of a split tube was taken")
+    # The counter fin found by itself goes under the end ring leaning the
+    # other way, which the tube brings in two halves: named by one half, it
+    # stands under both, as under any face with others in its plane.
+    named = feature.add_counter(fins)
+    doc.recompute()
+    sides = ["Face%d" % i for i in halves]
+    carried = [name for name in fins.CarriedFaces if name not in sides]
+    expect(named is not None and fins.isValid() and len(carried) == 2,
+           "the counter fin under the end ring of a split tube stands under both halves of it: %s" % carried)
+    # Chosen again, the face of the counter fin keeps its changes by hand.
+    feature.set_fin_height(fins, feature.COUNTER, 1, COUNTER_HEIGHT)
+    feature.add_counter(fins, tube, named)
+    expect(feature.edits(fins, feature.COUNTER)[2].get(1) == COUNTER_HEIGHT,
+           "the face of the counter fin chosen again keeps its changes by hand")
+    feature.remove_counter(fins)
+    doc.recompute()
+    doc.removeObject(fins.Name)
+    doc.removeObject(tube.Name)
+    doc.recompute()
 
 
 def turned_tube(doc):
@@ -454,6 +691,25 @@ def turned_tube(doc):
     doc.recompute()
     expect(part.Placement.isSame(standing, d.TOLERANCE) and not feature.round_shift(fins),
            "moved back, the tube stands as before")
+    # A turn finer than the shift is kept: the part turns by the kept shift,
+    # so turned back it stands exactly where it stood.
+    feature.set_round_shift(fins, FINE_TURN)
+    feature.set_round_shift(fins, 0.0)
+    # Measured on the outer rim, a tube radius from its axis in its own
+    # coordinates, where the turn shows as a distance; an angle this small
+    # rounds away in the rotation.
+    probe = App.Vector(TUBE_RADIUS, 0, 0)
+    drift = (part.Placement.multVec(probe) - standing.multVec(probe)).Length
+    expect(drift < EXACT_DISTANCE,
+           "turned finer than the shift is kept and back, the tube stands exactly as before: %r mm" % drift)
+    # A change smaller than the tolerance is neither turned nor kept, so none
+    # adds up unturned.
+    feature.set_round_shift(fins, TUBE_TURN)
+    turned = App.Placement(part.Placement)
+    feature.set_round_shift(fins, TUBE_TURN + d.TOLERANCE / 2)
+    expect(feature.round_shift(fins) == TUBE_TURN and part.Placement.isSame(turned, EXACT_DISTANCE),
+           "a change below the tolerance neither turns the tube nor is kept")
+    feature.set_round_shift(fins, 0.0)
 
     side_name = "Face%d" % (side + 1)
     try:
@@ -536,6 +792,12 @@ def main():
     marks_without_face(doc)
     edit_fins(doc)
     turned_tube(doc)
+    split_tube(doc)
+    halves_kept_beside_fillet(doc)
+    counter_under_disc(doc)
+    counter_bridges_bore(doc)
+    counter_beside_bore(doc)
+    counter_on_thin_tube(doc)
     tapered_pad(doc)
     warnings_and_old_files(doc)
     step_with_offset_curves()

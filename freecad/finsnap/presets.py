@@ -45,7 +45,8 @@ def _group():
 
 def _accessors(group):
     """For each type of field: the names saved with it, how to read and how to write one."""
-    return {float: (group.GetFloats(), group.GetFloat, group.SetFloat),
+    return {bool: (group.GetBools(), group.GetBool, group.SetBool),
+            float: (group.GetFloats(), group.GetFloat, group.SetFloat),
             int: (group.GetInts(), group.GetInt, group.SetInt),
             str: (group.GetStrings(), group.GetString, group.SetString)}
 
