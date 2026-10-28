@@ -124,6 +124,10 @@ def discard_created(obj, on_cancel=None):
     doc = obj.Document
     doc.openTransaction(translate("FinSnap", "Cancel fins"))
     try:
+        # Fins just made stood at no turn: a part turned about its round side
+        # in the panel turns back, in the same step.
+        if feature.on_round_side(obj):
+            feature.set_round_shift(obj, 0.0)
         doc.removeObject(obj.Name)
         if on_cancel is not None:
             on_cancel()
@@ -303,6 +307,9 @@ class FinSnapTaskPanel:
         self.original_counter = obj.CounterFace
         # How far the part was turned about a round side by hand; Cancel turns it back.
         self.original_turn = feature.round_shift(obj)
+        # Whether the main fin stands under a round side: asked once, as the
+        # face of the main fin stays while the panel is open.
+        self.main_round = feature.on_round_side(obj)
 
         self.form = QtWidgets.QWidget()
         # A child of the form, so it goes with the panel and never fires on a
@@ -814,7 +821,7 @@ class FinSnapTaskPanel:
         lowest line, and the part turns about its axis. Asked of the face, not
         of the last build, which a failed build leaves empty: a turn that fails
         is still turned back."""
-        return self.handled is not None and self.handled[0] == feature.MAIN and feature.on_round_side(self.obj)
+        return self.handled is not None and self.handled[0] == feature.MAIN and self.main_round
 
     def own_value(self, kind):
         """What the handled fin has by hand now: its shift along the face
@@ -1267,13 +1274,11 @@ class FinSnapTaskPanel:
 
     def reject(self):
         self.close()
-        # The part turns back about its round side first, also for fins just
-        # made, which are deleted after.
-        if feature.on_round_side(self.obj):
-            feature.set_round_shift(self.obj, self.original_turn)
         if self.created:
             discard_created(self.obj, self.on_cancel)
         else:
+            if self.main_round:
+                feature.set_round_shift(self.obj, self.original_turn)
             for name, value in self.original.items():
                 setattr(self.obj, name, value)
             for name, value in self.original_edits.items():

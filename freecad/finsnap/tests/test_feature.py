@@ -455,15 +455,23 @@ def turned_tube(doc):
     expect(part.Placement.isSame(standing, d.TOLERANCE) and not feature.round_shift(fins),
            "moved back, the tube stands as before")
 
-    fins.CounterFace = (part, ["Face%d" % (side + 1)])
+    side_name = "Face%d" % (side + 1)
     try:
-        feature.builder(fins, feature.COUNTER)[1]([], {}, {})
+        feature.add_counter(fins, part, side_name)
     except geometry.FinError as error:
-        expect("counter fin goes under a flat face" in str(error),
-               "a counter fin under the side of a tube is refused: %s" % error)
+        expect("counter fin goes under a flat face" in str(error) and not fins.CounterFace,
+               "a counter fin chosen under the side of a tube is refused, nothing changed: %s" % error)
     else:
-        raise AssertionError("a counter fin was built under the side of a tube")
+        raise AssertionError("a counter fin was added under the side of a tube")
+    # Set some other way, as an older file may have it: left out with a note,
+    # the main fin still built.
+    fins.CounterFace = (part, [side_name])
+    doc.recompute()
+    expect(fins.isValid() and fins.ResultFinCount == 1
+           and any("counter fin goes under a flat face" in w for w in fins.Warnings),
+           "a counter fin under the side of a tube is left out with a note, the main fin stays")
     fins.CounterFace = None
+    doc.recompute()
 
     feature.set_round_shift(fins, TUBE_TURN)
     feature.keep_laid_flat(fins, App.Placement())

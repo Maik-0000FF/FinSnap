@@ -49,6 +49,7 @@ FRUSTUM_TOP = 20.0
 FRUSTUM_HEIGHT = 15.0  # sides at 56 degrees against the base
 ROD_RADIUS = 10.0      # a cylinder standing on its rim
 ROD_HEIGHT = 40.0
+DISC_HEIGHT = 4.0      # a disc: its flat face is larger than its side, the side takes the fins all the same
 BORE_RADIUS = 6.0      # the hole that makes it a tube
 ROUND_TURN = 5.0       # how far the fin under a round side is moved by hand, in mm round it
 ROUND_DEGREES = 30.0   # how far a part is turned about its round side, in degrees
@@ -750,6 +751,12 @@ def check_round_side():
     quick = moved(rod, geometry.quick_plan(rod, [(rim, None)], [], p, ODD_TILT).change)
     expect(leans_by(quick, side, ODD_TILT),
            "Quick fins on a rim alone leans the side by the tilt angle, as on the side")
+    disc = Part.makeCylinder(ROD_RADIUS, DISC_HEIGHT)
+    disc_rim = [e for e in disc.Edges if orient.is_rim(e)][0]
+    plan = geometry.quick_plan(disc, [(disc_rim, None)], [], p, ODD_TILT)
+    on_disc = moved(disc, plan.change)
+    expect(orient.is_round_side(on_disc.Faces[plan.number]) and leans_by(on_disc, plan.number, ODD_TILT),
+           "Quick fins on the rim of a disc puts the fins under its side, leaning by the tilt angle")
     spread = geometry.build(stood, stood.Faces[side], FinParams(placement=d.PLACEMENT_ENDS))
     expect(len(spread.positions) == 1, "a round side takes one fin, whatever the placement")
 

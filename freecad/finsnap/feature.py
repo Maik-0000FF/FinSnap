@@ -60,6 +60,10 @@ NOTE_MERGED_SINGLE = QT_TRANSLATE_NOOP(
     "have no body of their own. To delete all of them, select the fins in the tree.")
 # Said when a face chosen for the counter fin cannot take fins; %s says why.
 NOTE_NO_COUNTER_ON_FACE = QT_TRANSLATE_NOOP("FinSnap", "No counter fin on this face: %s")
+# A counter fin under the side of a cylinder or tube would stay under its
+# lowest line and move only by turning the part, the main fin with it.
+COUNTER_ROUND_SIDE = QT_TRANSLATE_NOOP(
+    "FinSnap", "the counter fin goes under a flat face, not under the side of a cylinder or tube")
 NOTE_LAID_FLAT = QT_TRANSLATE_NOOP(
     "FinSnap", "The part lies flat again: the fins keep their last shape until the part is moved, for example "
     "stood on its edge again; then they are rebuilt.")
@@ -460,8 +464,13 @@ class FinSnapFeature:
             result = build_keeping_edits(obj, MAIN, build_main, notes)
             counter = None
             if obj.CounterFace:
-                counter_part, build_counter = self.side_builder(obj, COUNTER)
-                counter = build_keeping_edits(obj, COUNTER, build_counter, notes)
+                counter_side = self.side_builder(obj, COUNTER)
+                if counter_side is None:
+                    # Under the side of a cylinder or tube: left out, the main fin stays.
+                    notes.append(translate("FinSnap", "Counter fin: %s") % translate("FinSnap", COUNTER_ROUND_SIDE))
+                else:
+                    counter_part, build_counter = counter_side
+                    counter = build_keeping_edits(obj, COUNTER, build_counter, notes)
         except Exception:
             # Built nothing, the fins carry no face; the overhang marks still
             # follow the part.
@@ -586,7 +595,10 @@ def add_counter(obj, base=None, face_ref=None):
         face_ref = face_name_of(shape, found)
     else:
         # A face chosen by hand has to take fins, or the next build fails.
-        geometry.frame_of(*_face((base, [face_ref])))
+        face = _face((base, [face_ref]))
+        geometry.frame_of(*face)
+        if orient.is_round_side(face[1]):
+            raise geometry.FinError(translate("FinSnap", COUNTER_ROUND_SIDE))
     # Changes by hand to a counter fin on another face would name other fins.
     if obj.CounterFace != (base, [face_ref]):
         reset_fins(obj, COUNTER)
@@ -704,11 +716,9 @@ def builder(obj, which):
     part, face = _face(obj.CounterFace)
     if orient.is_round_side(face):
         # Its fin would stay under the lowest line and could move only by
-        # turning the part, which turns the main fin away as well.
-        def refuse(*_):
-            raise geometry.FinError(translate("FinSnap", "the counter fin goes under a flat face, not under the "
-                                                         "side of a cylinder or tube"))
-        return part, refuse
+        # turning the part, which turns the main fin away as well: left out,
+        # as a counter fin not added, with a note (execute()).
+        return None
     return part, lambda left, shifts, heights: geometry.build(
         part, face, p, tine_count=p.counter_tine_count or None, left_out=left, shifts=shifts, heights=heights)
 
@@ -905,19 +915,20 @@ def round_shift(obj):
 def round_turns(owner, document):
     """The fins of `owner` under a round side whose part was turned by hand,
     by name, with how far (mm round the side), for put_back_turns()."""
-    return {obj.Name: round_shift(obj) for obj in fins_of(owner, document)
-            if round_shift(obj) and on_round_side(obj)}
+    shifts = {obj.Name: (obj, round_shift(obj)) for obj in fins_of(owner, document)}
+    return {name: mm for name, (obj, mm) in shifts.items() if mm and on_round_side(obj)}
 
 
 def put_back_turns(document, turns):
     """Note again how far the part of the fins in `turns`, from round_turns(),
     was turned, once it stands as it did then: the placement put back holds
     the turn itself, so the part is not turned again. Fins deleted since are
-    passed over."""
+    passed over. Only the shift is written back: the count of fins it was
+    made for stays as it was noted then."""
     for name, mm in turns.items():
         obj = document.getObject(name)
         if obj is not None:
-            set_fin_shift(obj, MAIN, 1, mm)
+            _set_mm(obj, SHIFTS[MAIN], 1, mm)
 
 
 def forget_turn(obj):

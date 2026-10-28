@@ -128,11 +128,16 @@ def added_on_tube(doc):
     panel.fin_fields[handles.ALONG].setValue(TUBE_ANGLE)
     panel.field_entered(handles.ALONG)
     turned = not tube.Placement.isSame(standing, d.TOLERANCE)
+    name = fins.Name
     panel.reject()
     doc.recompute()
     expect(turned and tube.Placement.isSame(standing, d.TOLERANCE)
            and not [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is tube],
            "Cancel of Add fins on a tube turned in the panel deletes the fins and turns the tube back")
+    doc.undo()
+    expect(doc.getObject(name) is not None and not tube.Placement.isSame(standing, d.TOLERANCE),
+           "one Undo of that Cancel brings the fins back and the tube turned with them")
+    doc.removeObject(name)
     doc.removeObject(tube.Name)
     doc.recompute()
 
