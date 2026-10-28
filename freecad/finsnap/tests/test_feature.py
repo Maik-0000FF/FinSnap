@@ -58,7 +58,8 @@ TUBE_HEIGHT = 40.0
 TUBE_TURN = 5.0  # how far the fin under the side of a tube is moved by hand, in mm round it
 FINE_TURN = 1.23456789  # a turn finer than the shift is kept, in mm round the side
 COUNTER_HEIGHT = 6.0  # a height of its own for a counter fin, in mm
-THIN_BORE = 9.0  # a bore that leaves the end ring of the test tube too narrow for a counter fin, in mm
+THIN_BORE = 9.8  # a bore that leaves the end ring of the test tube too narrow for a counter fin, in mm
+WIDE_BORE = 9.0  # a bore under the middle of the end ring of the test tube, the ring beside it wide enough, in mm
 EXACT_DISTANCE = 1e-9  # how far a point of the tube may move and it still stands alike, in mm
 
 
@@ -430,6 +431,28 @@ def step_with_offset_curves():
                "the STEP export brings the pocketed block back whole%s" % after)
 
 
+def counter_beside_bore(doc):
+    """A tube whose bore lies under the middle of its end ring: the counter
+    fin planned there moves along the ring to where its tines rest."""
+    shape = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(WIDE_BORE, TUBE_HEIGHT))
+    tube = doc.addObject("Part::Feature", "BoredTube")
+    tube.Shape = shape
+    rim = next(i for i, e in enumerate(shape.Edges, 1) if isinstance(e.Curve, Part.Circle)
+               and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE)
+    joined, (edge,), name_of = feature.whole_elements(tube, ["Edge%d" % rim])
+    plan = geometry.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
+    tube.Placement = plan.change
+    fins = feature.create(tube, name_of(plan.number))
+    doc.recompute()
+    named = feature.add_counter(fins)
+    doc.recompute()
+    expect(named is not None and fins.isValid() and any("moved along the face" in w for w in fins.Warnings),
+           "the counter fin over the bore of a tube moves beside it: %s" % list(fins.Warnings))
+    doc.removeObject(fins.Name)
+    doc.removeObject(tube.Name)
+    doc.recompute()
+
+
 def counter_on_thin_tube(doc):
     """A tube whose wall leaves its end ring too narrow for a counter fin:
     found by itself none is set, chosen by hand the ring is refused, and the
@@ -685,6 +708,7 @@ def main():
     turned_tube(doc)
     split_tube(doc)
     counter_under_disc(doc)
+    counter_beside_bore(doc)
     counter_on_thin_tube(doc)
     tapered_pad(doc)
     warnings_and_old_files(doc)

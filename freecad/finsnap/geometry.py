@@ -648,6 +648,41 @@ def tine_start(p, t0, thickness):
     return t0 + (thickness - p.tine_width) / 2
 
 
+def touching_at(frame, face, p, tine_z, t0, thickness):
+    """The heights in `tine_z` at which the tine of the fin starting at t0
+    lies on `face`, as contact_share() finds it."""
+    start = tine_start(p, t0, thickness)
+    return {z for z in tine_z if contact_share(frame, face, start, p, z) >= d.TINE_MIN_CONTACT - d.TOLERANCE}
+
+
+def beside_hole(frame, face, p, tine_z, candidate_z, t0, thickness, others):
+    """Where along the face the fin planned to start at t0, whose tines find
+    no face there, starts nearest with a tine of `candidate_z` on `face`;
+    None if nowhere. It keeps within the face and clear of the fins starting
+    at `others`, and is tried a fin thickness at a time, either way in turn.
+
+    INPUTS this has to withstand:
+      a hole under the middle of the fin     ->  the nearest start beside it, the
+                                                 nearer side first
+      a hole wider than the face around it   ->  None: left out, as before
+      the place beside it taken by another
+        fin                                  ->  passed over, the next one tried
+      the end of the face reached            ->  that way given up, the other tried on
+    """
+    low, high = frame.along_min, frame.along_max - thickness
+    clear = thickness + d.FOOT_CLEARANCE - d.TOLERANCE
+    steps = int(max(t0 - low, high - t0) / thickness) + 1
+    for step in range(1, steps + 1):
+        for t in (t0 - step * thickness, t0 + step * thickness):
+            if not low - d.TOLERANCE <= t <= high + d.TOLERANCE:
+                continue
+            if any(abs(t - other) < clear for other in others):
+                continue
+            if any(z in candidate_z for z in touching_at(frame, face, p, tine_z, t, thickness)):
+                return t
+    return None
+
+
 def contact_share(frame, face, t, p, z):
     """Share of the end of the tine at t and height z that lies on the face:
     1 on the whole face, 0 over a recess or a hole in it.
@@ -837,6 +872,8 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     # Tines over the gap between two faces in one plane are named as over a recess.
     gap_heights = set(gap_z)
     fins_left_out = []
+    # Fins planned over a hole and moved beside it, as (number, mm moved).
+    moved = []
     fin_heights = []
     touching_z = {}
     edges = []
@@ -854,13 +891,20 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         candidate_z = [z for z in tine_z if own is None or z + p.tine_height <= own + d.TOLERANCE]
         if not candidate_z:
             raise refused(translate("FinSnap", "fin %d is lower than its first tine") % number, HandEditError)
-        start = tine_start(p, t0, thickness)
         # A tine wholly or partly over a recess or a hole in the face would hang
         # free there; it is left out, and a fin without any tine left with it.
         # Tried at every tine height, also above a height of its own: those are
         # the heights the fin can be given with a tine on top.
-        touching = {z for z in tine_z
-                    if contact_share(frame, support, start, p, z) >= d.TINE_MIN_CONTACT - d.TOLERANCE}
+        touching = touching_at(frame, support, p, tine_z, t0, thickness)
+        if not any(z in touching for z in candidate_z) and not frame.round_side and number not in shifts:
+            # Planned over a hole, the fin moves along the face to the nearest
+            # place its tines rest; one moved by hand stays where it was put.
+            others = [starts[n] for n in starts if n != number and n not in left_out]
+            moved_to = beside_hole(frame, support, p, tine_z, candidate_z, t0, thickness, others)
+            if moved_to is not None:
+                moved.append((number, moved_to - t0))
+                t0, touching = moved_to, touching_at(frame, support, p, tine_z, moved_to, thickness)
+                starts[number] = t0
         on_face = [z in touching for z in candidate_z]
         kept_z = [z for z, whole in zip(candidate_z, on_face) if whole]
         if not kept_z:
@@ -900,6 +944,10 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     if gap_heights:
         warnings.append(translate("FinSnap", "tines at %s mm above the bed left out: a recess or hole in the "
                                   "face lies under them") % _mm_list(gap_heights))
+    if moved:
+        warnings.append(translate("FinSnap", "fins moved along the face to where their tines rest, beside a "
+                                  "hole or recess under their planned place: %s") % ", ".join(
+            translate("FinSnap", "fin %d by %.2f mm") % (number, mm) for number, mm in moved))
     if fins_left_out:
         warnings.append(translate("FinSnap", "fins at %s mm from the end of the face left out: none of their "
                                   "tines lies wholly on the face") % _mm_list(fins_left_out))

@@ -992,18 +992,14 @@ def check_recesses(cube, face):
         return Part.makeCylinder(RECESS_RADIUS, length, start, uphill)
 
     grooved = cube.cut(groove(centre))
-    two_left = geometry.build(grooved, lower_left_face(grooved), three)
-    named = "fins at %.1f mm" % (spread.positions[1] + spread.thickness / 2 - frame.along_min)
-    expect(len(two_left.positions) == 2 and any(named in w for w in two_left.warnings),
-           "a fin over a groove is left out, the warning names where it stood: %s" % two_left.warnings)
-
+    moved = geometry.build(grooved, lower_left_face(grooved), three)
+    expect(moved.numbers == [1, 2, 3] and moved.positions[1] != spread.positions[1]
+           and any("fin 2 by" in w for w in moved.warnings),
+           "a fin over a groove moves beside it, the warning says by how much: %s" % moved.warnings)
     centred = cube.cut(groove(middle))
-    try:
-        geometry.build(centred, lower_left_face(centred), FinParams(placement=d.PLACEMENT_CENTER))
-    except geometry.FinError as error:
-        expect("no tine finds" in str(error), "a fin with no tine on the face at all is refused: %s" % error)
-    else:
-        raise AssertionError("fins were built although no tine finds the face")
+    alone = geometry.build(centred, lower_left_face(centred), FinParams(placement=d.PLACEMENT_CENTER))
+    expect(len(alone.positions) == 1 and any("fin 1 by" in w for w in alone.warnings),
+           "one fin in the middle over a groove moves beside it: %s" % alone.warnings)
 
 
 def check_overhangs(cube, face):
