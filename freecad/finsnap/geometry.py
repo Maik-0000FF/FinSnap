@@ -124,6 +124,8 @@ UP = V(0, 0, 1)
 DOWN = V(0, 0, -1)
 # Degrees in a whole turn.
 FULL_CIRCLE = 360.0
+# How closely the points that measure a face along its edges follow a curve (mm).
+SPAN_DEFLECTION = 0.01
 # The order rims_on_axis() tries rims in: a chamfered one, then one of the
 # side itself, then any other on the axis, which a part rarely stands on.
 RIM_CHAMFERED, RIM_OWN, RIM_OTHER = range(3)
@@ -223,6 +225,22 @@ class FinResult:
     frame: Frame = None
 
 
+def span_along(shape, direction):
+    """How far `shape` reaches along `direction` (mm), as (first, last):
+    measured at points along its edges, not at its corners alone. A disc has
+    one corner on its rim, half a disc two at the ends of its straight side;
+    by those alone the disc would be no width at all.
+
+    INPUTS this has to withstand:
+      a face with straight edges            ->  from its corners, as they are on the edges
+      a disc, one corner on its rim         ->  its diameter
+      half a disc, its straight side across
+        `direction`                         ->  its radius, not nothing
+    """
+    ts = [point.dot(direction) for edge in shape.Edges for point in edge.discretize(Deflection=SPAN_DEFLECTION)]
+    return min(ts), max(ts)
+
+
 def support_of(part, face):
     """The face and the faces of `part` above and below it in its plane, as one shape.
 
@@ -249,11 +267,7 @@ def support_of(part, face):
         return face
     along = UP.cross(horizontal.normalize())
 
-    def span(candidate):
-        ts = [vertex.Point.dot(along) for vertex in candidate.Vertexes]
-        return min(ts), max(ts)
-
-    low, high = span(face)
+    low, high = span_along(face, along)
     c = normal.dot(face.Vertexes[0].Point)
     pieces = [face]
     for other in part.Faces:
@@ -262,7 +276,7 @@ def support_of(part, face):
         in_plane = abs(normal.dot(other.Vertexes[0].Point) - c) <= d.TOLERANCE
         if middle_normal(other).dot(normal) < 1 - d.TOLERANCE or not in_plane:
             continue
-        other_low, other_high = span(other)
+        other_low, other_high = span_along(other, along)
         if other_low < high - d.TOLERANCE and other_high > low + d.TOLERANCE:
             pieces.append(other)
     return face if len(pieces) == 1 else Part.makeCompound(pieces)
@@ -434,11 +448,11 @@ def frame_of(part, face, support=None):
     out = horizontal.normalize()
     along = UP.cross(out)
     extent = face if support is None else support
-    ts = [v.Point.dot(along) for v in extent.Vertexes]
+    low, high = span_along(extent, along)
     face_box = bounds(extent)
     return Frame(out=out, along=along, n_out=n.dot(out), n_z=n.z,
                  c=n.dot(face.Vertexes[0].Point), bed_z=bounds(part).ZMin,
-                 along_min=min(ts), along_max=max(ts), face_top_z=face_box.ZMax,
+                 along_min=low, along_max=high, face_top_z=face_box.ZMax,
                  face_bottom_z=face_box.ZMin)
 
 
