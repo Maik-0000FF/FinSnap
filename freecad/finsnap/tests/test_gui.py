@@ -195,6 +195,71 @@ def turned_tube(doc):
     doc.recompute()
 
 
+def check_typed_fields(panel, fins, place):
+    """A value typed into a field of the fin with the arrows is taken once
+    typing pauses, where the fin can stand, and the field is left as typed;
+    Enter takes it at once and leaves the panel open."""
+    from PySide import QtCore, QtGui
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, handles
+    box = panel.fin_fields[handles.ALONG]
+    box.setValue(place + FIN_SHIFT)
+    expect(panel.field_timer.isActive() and panel.typed_field == handles.ALONG
+           and not feature.edits(fins, feature.MAIN)[1], "a place typed waits for typing to pause")
+    # What the timer does once typing pauses.
+    panel.field_entered(panel.typed_field)
+    expect(feature.edits(fins, feature.MAIN)[1] and not panel.field_timer.isActive(),
+           "once typing pauses, the place typed moves the fin")
+    box.setValue(place)
+    # The panel is built here without a task dialog; that Enter reaches none
+    # shows in the event being taken.
+    taken = []
+    for key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+        event = QtGui.QKeyEvent(QtCore.QEvent.KeyPress, key, QtCore.Qt.NoModifier)
+        QtWidgets.QApplication.sendEvent(box, event)
+        taken.append(event.isAccepted())
+    expect(not feature.edits(fins, feature.MAIN)[1] and not panel.field_timer.isActive() and all(taken),
+           "Enter takes the place typed at once and is not passed on to close the panel")
+    nowhere = place + TOO_HIGH
+    box.setValue(nowhere)
+    panel.field_entered(panel.typed_field, paused=True)
+    expect(not feature.edits(fins, feature.MAIN)[1] and abs(box.value() - nowhere) < d.TOLERANCE
+           and not panel.notes.isHidden(),
+           "typing paused where the fin cannot stand: nothing moves, the reason shows, the field keeps what is typed")
+    panel.field_entered(handles.ALONG)
+    expect(abs(box.value() - place) < d.TOLERANCE,
+           "left where the fin cannot stand, the field shows where it stands again")
+    box.setValue(place + FIN_SHIFT)
+    panel.handle_started(handles.ALONG)
+    expect(feature.edits(fins, feature.MAIN)[1] and not panel.field_timer.isActive(),
+           "a place still waiting for typing to pause is taken before an arrow is grabbed")
+    panel.finish_drag(handles.ALONG, 0.0)
+    box.setValue(place)
+    panel.field_entered(handles.ALONG)
+
+
+def check_sections(panel):
+    """Each section of the panel folds away and opens again as it was left;
+    its header is marked while a field in it differs from the standard."""
+    from freecad.finsnap import feature, taskpanel
+    section = panel.sections[feature.GROUP_FIN]
+    opened = section.header.isChecked()
+    section.header.setChecked(not opened)
+    kept = App.ParamGet(taskpanel.SECTION_PREFERENCES).GetBool(feature.GROUP_FIN, opened)
+    expect(kept == (not opened) and section.content.isHidden() == opened,
+           "a section folded or opened is kept so for the next time")
+    section.header.setChecked(opened)
+    prop = [p for p in feature.PROPERTIES if p.group == feature.GROUP_FIN
+            and isinstance(panel.widgets[p.name], QtWidgets.QDoubleSpinBox)][0]
+    widget = panel.widgets[prop.name]
+    before = widget.value()
+    widget.setValue(before + widget.singleStep())
+    marked = taskpanel.MODIFIED_HEADER_STYLE in section.header.styleSheet()
+    widget.setValue(before)
+    expect(marked and taskpanel.MODIFIED_HEADER_STYLE not in section.header.styleSheet(),
+           "the header of a section is marked while a field in it differs from the standard")
+
+
 def main():
     commands = load_workbench()
     registered = Gui.listCommands()
@@ -891,6 +956,8 @@ def main():
     moving.fin_fields[handles.ALONG].setValue(place)
     moving.field_entered(handles.ALONG)
     expect(not feature.edits(lined, feature.MAIN)[1], "a place typed into the field moves the fin there")
+    check_typed_fields(moving, lined, place)
+    check_sections(moving)
     lowered = lined.Proxy.results[feature.MAIN]
     off_edge = App.Vector(*moving.handles.offsets[handles.UP].translation.getValue().getValue())
     expect(App.Vector(*moving.handles.places[handles.UP].translation.getValue().getValue())
