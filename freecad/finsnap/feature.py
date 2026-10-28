@@ -690,13 +690,18 @@ def check_counter_face(shape, face, p):
         sideways, or not planar             ->  FinError from geometry.frame_of()
       a face too narrow for the fin, or one
         it runs into the part under         ->  FinError from the build tried
+      the kernel fails building there       ->  FinError saying so
     """
     # Said before the face is asked to take fins, which a bore or a cut side
     # would refuse for a reason of its own.
     if orient.is_round_side(face):
         raise geometry.FinError(translate("FinSnap", COUNTER_ROUND_SIDE))
     geometry.frame_of(shape, face)
-    geometry.build(shape, face, p, tine_count=p.counter_tine_count or None)
+    try:
+        geometry.build(shape, face, p, tine_count=p.counter_tine_count or None)
+    except Part.OCCError as error:
+        # A fault in the kernel: said as why, as for a face without room.
+        raise geometry.FinError(str(error)) from error
 
 
 def _opposite_taking_fins(obj, base, p):
@@ -711,10 +716,11 @@ def _opposite_taking_fins(obj, base, p):
         # Named on the part: on a split side the face was found on its joined shape.
         named = names_on(original, [found])
         if not named:
-            raise geometry.FinError(translate("FinSnap", NOTE_NO_PIECE) % face_name_of(shape, found))
+            # No face of the part to name it by: the next one is tried.
+            continue
         try:
             check_counter_face(*_face((base, named[:1])), p)
-        except (geometry.FinError, Part.OCCError):
+        except geometry.FinError:
             continue
         return named[0]
     return None
@@ -735,6 +741,7 @@ def add_counter(obj, base=None, face_ref=None):
       a face chosen that takes one          ->  that face, counter fin set
       a face chosen that does not, see
         check_counter_face()                ->  FinError saying why, nothing changed
+      the face the counter fin has, again   ->  kept as it is, not tried anew
     """
     p = params_of(obj)
     if face_ref is None:
@@ -742,7 +749,9 @@ def add_counter(obj, base=None, face_ref=None):
         face_ref = _opposite_taking_fins(obj, base, p)
         if face_ref is None:
             return None
-    else:
+    elif obj.CounterFace != (base, [face_ref]):
+        # The face the counter fin has is not tried again: it stands with
+        # its changes by hand, which a trial without them could miss.
         check_counter_face(*_face((base, [face_ref])), p)
     # Changes by hand to a counter fin on another face would name other fins.
     if obj.CounterFace != (base, [face_ref]):
