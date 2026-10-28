@@ -11,6 +11,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Quick fins and Stand on edge take a side or rim of a cylinder or tube that a STEP file brings in two halves as one, so such a part stands on its rim with its fin under the side (#45)
+
 ### Fixed
 
 - A cylinder or tube turned in the task panel and turned back stands exactly where it stood, also after turns finer than the shift is kept (#53)

@@ -12,7 +12,7 @@ import sys
 
 import Part
 
-from freecad.finsnap.tests.support import expect, lower_left_face, run, tilted_cube
+from freecad.finsnap.tests.support import expect, lower_left_face, run, split_cylinder, tilted_cube
 from freecad.finsnap import defaults as d
 from freecad.finsnap import geometry
 from freecad.finsnap import orient
@@ -654,6 +654,25 @@ def leans_by(shape, number, degrees):
     return abs(frame.n_z + math.cos(math.radians(degrees))) < 1e-6
 
 
+def check_split_side():
+    """A side and a rim that a STEP file split in halves are taken whole."""
+    split = split_cylinder(ROD_RADIUS, ROD_HEIGHT)
+    half = [f for f in split.Faces if isinstance(f.Surface, Part.Cylinder)][0]
+    arc = [e for e in split.Edges if isinstance(e.Curve, Part.Circle)][0]
+    side, rim = orient.whole_side(split, half), orient.whole_rim(split, arc)
+    expect(orient.is_piece(half) and side is not None and orient.is_round_side(side[1])
+           and rim is not None and orient.is_rim(rim[1]) and abs(rim[1].Curve.Radius - ROD_RADIUS) < d.TOLERANCE,
+           "half of a split side and of a split rim stand for the whole side and rim")
+    rod = Part.makeCylinder(ROD_RADIUS, ROD_HEIGHT)
+    box = Part.makeBox(BOX_SIDE, BOX_SIDE, BOX_SIDE)
+    filleted = box.makeFillet(EDGE_ROUND, box.Edges[:1])
+    fillet = [f for f in filleted.Faces if isinstance(f.Surface, Part.Cylinder)][0]
+    expect(orient.whole_side(rod, rod.Faces[round_side_of(rod)]) is None
+           and orient.whole_rim(rod, [e for e in rod.Edges if orient.is_rim(e)][0]) is None
+           and orient.whole_side(filleted, fillet) is None,
+           "a whole side, a whole rim and a fillet stay as they are")
+
+
 def check_round_side():
     """A cylinder or tube stands on its rim, one fin under the lowest line of its curved side."""
     p = FinParams(placement=d.PLACEMENT_CENTER)
@@ -1122,6 +1141,7 @@ def main():
     check_quick_fins()
     check_quick_plan()
     check_round_side()
+    check_split_side()
     check_left_out(cube, face)
     check_moved_fins(cube, face)
     check_merged_clearance(cube, face)

@@ -354,7 +354,52 @@ def _face(link):
     if not subs:
         raise geometry.FinError(translate("FinSnap", "no face selected on %s") % part.Label)
     shape = global_shape(part)
-    return shape, shape.getElement(subs[0])
+    face = shape.getElement(subs[0])
+    # Half of a side that a STEP file split in two stands for the whole side,
+    # on the shape with its halves joined.
+    whole = orient.whole_side(shape, face)
+    return whole if whole is not None else (shape, face)
+
+
+def whole_elements(obj, names):
+    """The global shape of `obj` and its elements named `names` ("Edge3",
+    "Face12"), and a function giving the name on `obj` of a face of that shape
+    by its number from 0. Where one of them is half of a side or a rim that a
+    STEP file split in two, the shape is the one with its halves joined
+    (orient.joined()), and each element the one of it the named one lies on.
+
+    INPUTS this has to withstand:
+      no split side or rim named            ->  the global shape, the elements, names
+                                                as numbered
+      half of a side or of a rim named      ->  the joined shape, the whole side or
+                                                rim, other elements on it; a face of
+                                                it named by a half lying on it
+    """
+    shape = global_shape(obj)
+    elements = [shape.getElement(name) for name in names]
+    whole = orient.joined(shape) if any(orient.is_piece(e) for e in elements) else None
+    if whole is None or not any(orient.whole_of(whole, e) for e in elements if orient.is_piece(e)):
+        return shape, elements, lambda number: face_name(number + 1)
+    kept = []
+    for element in elements:
+        candidates = whole.Faces if isinstance(element, Part.Face) else whole.Edges
+        kept.append(next(c for c in candidates if orient.lies_on(element, c)))
+
+    def name_of(number):
+        joined_face = whole.Faces[number]
+        return next(face_name(i) for i, face in enumerate(shape.Faces, 1) if orient.lies_on(face, joined_face))
+    return whole, kept, name_of
+
+
+def names_on(shape, faces):
+    """The names on `shape` of `faces`, faces of it or of its joined shape
+    (orient.joined()): a whole side there is named by the halves lying on it."""
+    names = []
+    for face in faces:
+        name = face_name_of(shape, face)
+        names += [name] if name else [face_name(i) for i, piece in enumerate(shape.Faces, 1)
+                                      if orient.lies_on(piece, face)]
+    return names
 
 
 def _supported(part_obj, document):
@@ -469,7 +514,7 @@ class FinSnapFeature:
                     # Under the side of a cylinder or tube: left out, the main fin stays.
                     notes.append(translate("FinSnap", "Counter fin: %s") % translate("FinSnap", COUNTER_ROUND_SIDE))
                 else:
-                    counter_part, build_counter = counter_side
+                    _, build_counter = counter_side
                     counter = build_keeping_edits(obj, COUNTER, build_counter, notes)
         except Exception:
             # Built nothing, the fins carry no face; the overhang marks still
@@ -478,11 +523,11 @@ class FinSnapFeature:
             setattr(obj, CARRIED, [])
             setattr(obj, OVERHANGS, overhangs_of(obj.Base[0], obj.Document))
             raise
-        # Named on the shape each face was found on: the counter face comes from
-        # a shape of its own, even of the same part.
-        carried = [face_name_of(part, f) for f in result.carried]
+        # Named on the part itself, the counter face as well: a split side was
+        # built on the shape with its halves joined.
+        carried = names_on(global_shape(obj.Base[0]), result.carried)
         if counter is not None and obj.CounterFace[0] is obj.Base[0]:
-            carried += [face_name_of(counter_part, f) for f in counter.carried]
+            carried += names_on(global_shape(obj.Base[0]), counter.carried)
         hidden_property(obj, CARRIED, "App::PropertyStringList")
         setattr(obj, CARRIED, carried)
         if getattr(self, "editing", False):

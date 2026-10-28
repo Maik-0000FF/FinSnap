@@ -169,6 +169,84 @@ def is_round_side(face):
     return u1 - u0 >= FULL_TURN - d.TOLERANCE
 
 
+def joined(shape):
+    """A copy of `shape` with the faces split along one surface, and the
+    edges split along one curve, joined again: a side or a rim that a STEP
+    file brings in two halves becomes one whole."""
+    unify = Part.ShapeUpgrade.UnifySameDomain(shape, True, True, True)
+    unify.build()
+    return unify.shape()
+
+
+def _middle_point(element):
+    """A point in the middle of the face or edge `element`."""
+    if isinstance(element, Part.Face):
+        u0, u1, v0, v1 = element.ParameterRange
+        return element.valueAt((u0 + u1) / 2, (v0 + v1) / 2)
+    first, last = element.ParameterRange
+    return element.valueAt((first + last) / 2)
+
+
+def lies_on(piece, whole):
+    """Whether the face or edge `piece` lies on `whole`: its middle point does."""
+    return whole.distToShape(Part.Vertex(_middle_point(piece)))[0] < d.TOLERANCE
+
+
+def whole_side(shape, face):
+    """Where `face` is a piece of the curved side of a cylinder or tube, as
+    a STEP file may split it: (joined(shape), the whole side there). None
+    for a whole side or any other face, which stay as they are.
+
+    INPUTS this has to withstand:
+      half of a side split in two           ->  the joined shape, the whole side
+      a whole side                          ->  None
+      part of a cylinder, no whole turn
+        (a fillet)                          ->  None
+      planar face                           ->  None
+    """
+    if not is_piece(face):
+        return None
+    whole = joined(shape)
+    found = whole_of(whole, face)
+    return None if found is None else (whole, found)
+
+
+def whole_rim(shape, edge):
+    """Where `edge` is a piece of a rim, a circle a STEP file may split:
+    (joined(shape), the whole rim there). None for a whole rim or any other
+    edge.
+
+    INPUTS this has to withstand:
+      half of a rim split in two            ->  the joined shape, the whole rim
+      a whole rim                           ->  None
+      an arc of no whole circle (a slot)    ->  None
+      a straight edge                       ->  None
+    """
+    if not is_piece(edge):
+        return None
+    whole = joined(shape)
+    found = whole_of(whole, edge)
+    return None if found is None else (whole, found)
+
+
+def is_piece(element):
+    """Whether the face or edge `element` could be a piece of a side or a rim
+    split by a STEP file: part of a cylinder or of a circle, not a whole one."""
+    if isinstance(element, Part.Face):
+        return isinstance(element.Surface, Part.Cylinder) and not is_round_side(element)
+    return isinstance(element.Curve, Part.Circle) and not is_rim(element)
+
+
+def whole_of(whole, element):
+    """The whole side or rim of the joined shape `whole` that the face or
+    edge `element` is a piece of; None if it is none."""
+    if isinstance(element, Part.Face):
+        candidates = [face for face in whole.Faces if is_round_side(face)]
+    else:
+        candidates = [edge for edge in whole.Edges if is_rim(edge)]
+    return next((candidate for candidate in candidates if lies_on(element, candidate)), None)
+
+
 def on_axis(center, direction, surface):
     """Whether the line through `center` along `direction` is the axis of the
     cylinder `surface`, in either sense."""

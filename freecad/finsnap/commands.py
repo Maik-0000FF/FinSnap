@@ -26,7 +26,7 @@ from .i18n import QT_TRANSLATE_NOOP, translate
 from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_LAY_FLAT, ICON_MESH,
                     ICON_QUICK, ICON_TILT)
 from .presets import PREFERENCES
-from .shapes import FACE_PREFIX, face_name, global_shape, outermost
+from .shapes import FACE_PREFIX, global_shape, outermost
 from .taskpanel import DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, discard_created
 from .version import NAME
 
@@ -315,14 +315,15 @@ class TiltOntoEdge:
             return
         obj = picked[0][0]
         try:
-            shape = global_shape(obj)
-            chosen = [shape.getElement(name) for _, name in faces]
+            # A side or rim split in halves is taken whole.
+            shape, elements, _ = feature.whole_elements(obj, [name for _, name in edges + faces])
+            chosen = elements[len(edges):]
             face = chosen[0] if chosen else None
             edge = None
             if len(chosen) == 2:
                 change = orient.rest_between(shape, *chosen)
             elif edges:
-                edge = shape.getElement(edges[0][1])
+                edge = elements[0]
                 if face is None and not orient.on_bed(shape, edge) and not orient.is_rim(edge):
                     # The angle is fixed by the right angle between its faces.
                     change = orient.stand(shape, edge, orient.RIGHT_ANGLE_TILT)
@@ -517,7 +518,7 @@ class QuickFins:
         obj = picked[0][0]
         p = quick_params()
         try:
-            plan = quick_plan(obj, [n for _, n in edges], [n for _, n in faces])
+            plan, fin_face = quick_plan(obj, [n for _, n in edges], [n for _, n in faces])
         except (orient.OrientError, geometry.FinError) as error:
             _message(str(error))
             return
@@ -531,7 +532,7 @@ class QuickFins:
         turns = feature.round_turns(owner, doc)
         _stand(obj, plan.change)
         # The main fin only; a counter fin is added in the panel or with Add counter fin.
-        fins = feature.create(obj, face_name(plan.number + 1))
+        fins = feature.create(obj, fin_face)
         fins.FinPlacement = p.placement
         ViewProviderFinSnap(fins.ViewObject)
         doc.commitTransaction()
@@ -550,11 +551,15 @@ def quick_params():
 def quick_plan(obj, edge_names, face_names):
     """How Quick fins stands `obj` for its edges and faces named ("Edge3",
     "Face12"), faces in the order selected: geometry.quick_plan() on its
-    global shape. OrientError or FinError where it cannot."""
-    shape = global_shape(obj)
-    return geometry.quick_plan(
-        shape, [(shape.getElement(n), None) for n in edge_names],
-        [(shape.getElement(n), int(n[len(FACE_PREFIX):]) - 1) for n in face_names], quick_params(), d.TILT_ANGLE)
+    global shape, a side or rim split in halves taken whole (feature.whole_elements()).
+    Returns the plan and the name on `obj` of the face it puts the fins under.
+    OrientError or FinError where it cannot."""
+    shape, elements, name_of = feature.whole_elements(obj, list(edge_names) + list(face_names))
+    edges, faces = elements[:len(edge_names)], elements[len(edge_names):]
+    numbers = [next(i for i, candidate in enumerate(shape.Faces) if candidate.isSame(face)) for face in faces]
+    plan = geometry.quick_plan(shape, [(edge, None) for edge in edges], list(zip(faces, numbers)),
+                               quick_params(), d.TILT_ANGLE)
+    return plan, name_of(plan.number)
 
 
 def _put_back_quick(owner, before, laid_flat, turns):
