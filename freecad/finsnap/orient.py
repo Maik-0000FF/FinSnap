@@ -138,9 +138,12 @@ FLAT_TIP = QT_TRANSLATE_NOOP("App::Property", "Placement before Stand on edge, r
 PLACEMENT_TYPE = "App::PropertyPlacement"
 # Editor mode that hides a property in the property view.
 EDITOR_HIDDEN = 2
+# A right angle, in degrees: the tilt lies below it, and a flat face and the
+# curved side square to it lean by angles that add up to it.
+RIGHT_ANGLE = 90.0
 # The one angle at which an edge between two faces at a right angle stands the
 # part without saying which face goes down: both faces end up equally steep.
-RIGHT_ANGLE_TILT = 45.0
+RIGHT_ANGLE_TILT = RIGHT_ANGLE / 2
 
 
 class OrientError(ValueError):
@@ -209,7 +212,7 @@ def right_angle_faces(shape, edge):
 
 def tilt(shape, edge, angle_deg):
     """The placement change that stands `shape` on `edge`, tilted by angle_deg."""
-    if not 0 < angle_deg < 90:
+    if not 0 < angle_deg < RIGHT_ANGLE:
         raise OrientError(translate("FinSnap", "the tilt angle must lie between 0 and 90 degrees"))
     start, end = edge.Vertexes[0].Point, edge.Vertexes[-1].Point
     axis = end - start
@@ -256,7 +259,7 @@ def lay_flat(shape, face):
 def side_tilt(angle_deg):
     """The tilt of a part on its rim that leans its curved side angle_deg over
     the bed: the side runs square to the flat face of the rim."""
-    return 90 - angle_deg
+    return RIGHT_ANGLE - angle_deg
 
 
 def stand_on_rim(shape, rim, angle_deg, side=None):

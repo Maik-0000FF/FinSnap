@@ -910,10 +910,14 @@ def opposite_face(part, face):
 
     Of the faces that lean over the bed in the opposite direction to `face`,
     the largest one is taken: that is the side the part could tip towards.
+    The side of a cylinder or tube is passed over: its fin stays under its
+    lowest line and moves only by turning the part, which the main fin does.
     """
     out = frame_of(part, face).out
     best = None
     for candidate in part.Faces:
+        if orient.is_round_side(candidate):
+            continue
         try:
             other = frame_of(part, candidate)
         except FinError:
@@ -1005,9 +1009,11 @@ def quick_plan(shape, edges, faces, p, angle_deg):
                                                 largest leaning face that takes them
       one edge off the bed, faces not at a
         right angle                         ->  FinError pointing to Stand on edge
-      one rim                               ->  stood on it, its flat face lifted by
-                                                angle_deg; fins under the largest
-                                                leaning face, the round side mostly
+      one rim                               ->  stood on it, its side leaning angle_deg
+                                                as with the side selected; fins under it,
+                                                larger flat faces passed over
+      one rim, fins do not fit under its
+        side, or it has no whole side       ->  fins under the largest leaning face
       one planar face                       ->  it leans angle_deg over the bed, on its
                                                 longest edge that works; fins under it
       one round side (cylinder, tube)       ->  stood on a rim, the side leaning
@@ -1030,8 +1036,21 @@ def quick_plan(shape, edges, faces, p, angle_deg):
     if len(edges) == 1 and not faces:
         edge = edges[0][0]
         if orient.is_rim(edge):
-            change = orient.stand(shape, edge, angle_deg)
-            return QuickPlan(change, best_face(moved(shape, change), p), edge, ())
+            # The fins go under its side, which leans angle_deg as any face under
+            # fins does; under the largest leaning face only where they do not fit
+            # under the side, or it has none.
+            side = orient.side_of_rim(shape, edge)
+            change = orient.stand_on_rim(shape, edge, orient.side_tilt(angle_deg), side)
+            stood = moved(shape, change)
+            if side is not None:
+                number = next(i for i, face in enumerate(shape.Faces) if face.isSame(side))
+                try:
+                    build(stood, stood.Faces[number], p)
+                except (FinError, Part.OCCError):
+                    pass
+                else:
+                    return QuickPlan(change, number, edge, ())
+            return QuickPlan(change, best_face(stood, p), edge, ())
         if not orient.on_bed(shape, edge) and orient.right_angle_faces(shape, edge) is None:
             raise FinError(translate("FinSnap", "This edge does not lie on the bed, and its faces do not meet at a "
                                                 "right angle. Use Stand on edge with the edge and the face that "
