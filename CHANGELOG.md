@@ -11,6 +11,21 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.6.0] - 2026-10-28
+
+### Added
+
+- Quick fins and Stand on edge stand a cylinder or tube on its rim, with one fin under its side (#36)
+- The fin under the side of a cylinder or tube is first put at 0 degrees of the side; the task panel shows and takes its angle round the side, and an arc round the axis turns the part
+- The sections of fields in the task panel fold away and open again as they were left; a folded section with a changed value has its header marked
+
+### Fixed
+
+- The README names the Addon Manager menu as FreeCAD shows it and no longer implies that FreeCAD 26.3 is already released
+- A fin dragged to a height where it cannot stand is previewed in its true shape instead of stretched, so it no longer looks tilted
+- The place and height of a single fin in the task panel are taken once typing pauses, as the other fields are, and Enter takes them without closing the panel
+- Add fins refuses a second face that cannot take a counter fin, as Add counter fin does, instead of failing to build the fins
+
 ## [0.5.2] - 2026-10-27
 
 ### Added
@@ -157,7 +172,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.5.2...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.6.0...HEAD
+[0.6.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.6.0
 [0.5.2]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.5.2
 [0.5.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.5.1
 [0.5.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.5.0

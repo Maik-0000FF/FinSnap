@@ -10,9 +10,35 @@ faces: that face is laid onto the bed first, which makes the edge a bottom edge.
 An edge between two flat faces at a right angle needs no face at 45 degrees:
 either face laid down gives the same result, both faces equally steep.
 A face alone, a chamfer or a fillet, is laid onto the bed and carries the part.
+A cylinder or tube stands on its rim: the flat face of the rim is laid onto the
+bed and turned about its axis until the zero direction of its curved side
+points to -Y, then the part is turned about the line touching the rim at its
+front, so it leans to -Y and rests on one point of the rim. Its lowest line,
+under which the fin stands, is then the line at 0 degrees round the side.
 
 The placement before the first tilt is kept on the moved object, so the part
 can be laid flat again, also after several tilts.
+
+INPUTS this has to withstand (is_rim()):
+  closed circle (rim of a cylinder)     ->  True
+  arc, straight edge, ellipse           ->  False
+
+INPUTS this has to withstand (stand_on_rim()):
+  rim on the bed (cylinder upright)     ->  turned about the line touching the rim
+                                            at its front, leaning to -Y by angle_deg
+  rim off the bed (cylinder on its side) ->  its flat face laid onto the bed first
+  part turned about its axis before     ->  the same placement: the line of its
+                                            side at 0 degrees lowest
+  side chosen, the thinner of a shaft   ->  its line at 0 degrees lowest
+  no side chosen, rim of a chamfer or
+    of a step on the axis               ->  turned by the largest whole side on
+                                            the axis
+  no whole curved side on the axis      ->  not turned about the axis
+  rim without a flat face beside it     ->  OrientError
+  inner rim of a tube                   ->  OrientError from tilt(): the outer rim
+                                            reaches below the line
+  flat face of the rim cannot lie on
+    the bed (a flange reaches below it) ->  OrientError from lay_flat()
 
 INPUTS this has to withstand (tilt()):
   straight, horizontal edge on the bed  ->  placement standing on that edge
@@ -35,6 +61,9 @@ INPUTS this has to withstand (stand()):
   no face, faces not at a right angle,
     or one of them rounded              ->  OrientError: select the face
   no face, edge of an inner corner      ->  OrientError from rest_between()
+  rim, no face or its flat face         ->  as stand_on_rim() by angle_deg
+  rim and the curved side it bounds     ->  as stand_on_rim(), by 90 - angle_deg,
+                                            so the side leans angle_deg
   edge of the face, face can lie on
     the bed                             ->  face laid down, then as tilt()
   face already on the bed               ->  same result as tilt() alone
@@ -66,6 +95,8 @@ INPUTS this has to withstand (lay_flat()):
 
 INPUTS this has to withstand (side_direction()):
   edge                                  ->  the edge after the change, horizontal
+  rim                                   ->  the line touching it on the bed: level
+                                            and square to its axis after the change
   two faces (sharp edge or fillet)      ->  the line joining them after the change
   face alone, turned                    ->  the axis of the turn
   face alone, already on the bed        ->  None
@@ -92,6 +123,13 @@ from .shapes import bounds, middle_normal, middle_of, moved
 V = App.Vector
 DOWN = V(0, 0, -1)
 UP = V(0, 0, 1)
+# A cylinder standing on its rim leans to the front, towards the viewer of
+# FreeCAD's front view; it is turned about the line touching the rim there,
+# which runs along X.
+RIM_LEAN = V(0, -1, 0)
+RIM_LINE = V(1, 0, 0)
+# A side that wraps all the way round the axis, not a fillet of part of a turn.
+FULL_TURN = 2 * math.pi
 
 # Placement of the moved object before its first tilt.
 FLAT_PLACEMENT = "FinSnapFlatPlacement"
@@ -100,9 +138,12 @@ FLAT_TIP = QT_TRANSLATE_NOOP("App::Property", "Placement before Stand on edge, r
 PLACEMENT_TYPE = "App::PropertyPlacement"
 # Editor mode that hides a property in the property view.
 EDITOR_HIDDEN = 2
+# A right angle, in degrees: the tilt lies below it, and a flat face and the
+# curved side square to it lean by angles that add up to it.
+RIGHT_ANGLE = 90.0
 # The one angle at which an edge between two faces at a right angle stands the
 # part without saying which face goes down: both faces end up equally steep.
-RIGHT_ANGLE_TILT = 45.0
+RIGHT_ANGLE_TILT = RIGHT_ANGLE / 2
 
 
 class OrientError(ValueError):
@@ -110,9 +151,51 @@ class OrientError(ValueError):
 
 
 def on_bed(shape, edge):
-    """True if both ends of `edge` lie on the bed, the lowest level of `shape`."""
-    bed_z = bounds(shape).ZMin
-    return all(vertex.Point.z <= bed_z + d.TOLERANCE for vertex in edge.Vertexes)
+    """True if `edge` lies on the bed, the lowest level of `shape`, all along:
+    a straight edge with both ends, a rim with its whole circle."""
+    return bounds(edge).ZMax <= bounds(shape).ZMin + d.TOLERANCE
+
+
+def is_rim(edge):
+    """Whether `edge` is a whole circle, the rim of a cylinder or tube."""
+    return isinstance(edge.Curve, Part.Circle) and edge.isClosed()
+
+
+def is_round_side(face):
+    """Whether `face` is the curved side of a cylinder or tube, all the way round."""
+    if not isinstance(face.Surface, Part.Cylinder):
+        return False
+    u0, u1, _, _ = face.ParameterRange
+    return u1 - u0 >= FULL_TURN - d.TOLERANCE
+
+
+def on_axis(center, direction, surface):
+    """Whether the line through `center` along `direction` is the axis of the
+    cylinder `surface`, in either sense."""
+    axis = V(surface.Axis).normalize()
+    offset = center - surface.Center
+    return (abs(abs(V(direction).normalize().dot(axis)) - 1) < d.TOLERANCE
+            and (offset - axis * offset.dot(axis)).Length < d.TOLERANCE)
+
+
+def side_of_rim(shape, rim):
+    """The curved side of `shape` on the axis of its rim `rim`, the largest
+    whole one; None if there is none."""
+    circle = rim.Curve
+    sides = [face for face in shape.Faces
+             if is_round_side(face) and on_axis(circle.Center, circle.Axis, face.Surface)]
+    return max(sides, key=lambda face: face.Surface.Radius, default=None)
+
+
+def zero_to_front(side):
+    """The placement change that turns the upright curved side `side` about
+    its axis until its zero direction, where its angles count from, points
+    to RIM_LEAN."""
+    surface = side.Surface
+    zero = surface.value(0, 0) - surface.Center
+    zero.z = 0
+    angle = math.degrees(math.atan2(zero.cross(RIM_LEAN).z, zero.dot(RIM_LEAN)))
+    return App.Placement(V(0, 0, 0), App.Rotation(UP, angle), surface.Center)
 
 
 def right_angle_faces(shape, edge):
@@ -129,7 +212,7 @@ def right_angle_faces(shape, edge):
 
 def tilt(shape, edge, angle_deg):
     """The placement change that stands `shape` on `edge`, tilted by angle_deg."""
-    if not 0 < angle_deg < 90:
+    if not 0 < angle_deg < RIGHT_ANGLE:
         raise OrientError(translate("FinSnap", "the tilt angle must lie between 0 and 90 degrees"))
     start, end = edge.Vertexes[0].Point, edge.Vertexes[-1].Point
     axis = end - start
@@ -173,6 +256,40 @@ def lay_flat(shape, face):
     return lift.multiply(turn)
 
 
+def side_tilt(angle_deg):
+    """The tilt of a part on its rim that leans its curved side angle_deg over
+    the bed: the side runs square to the flat face of the rim."""
+    return RIGHT_ANGLE - angle_deg
+
+
+def stand_on_rim(shape, rim, angle_deg, side=None):
+    """The placement change that stands `shape` on its rim `rim`, a whole
+    circle, tilted by angle_deg towards RIM_LEAN. `side` is the curved side
+    the fin goes under, on the axis of the rim; without, the largest whole one.
+
+    The flat face of the rim is laid onto the bed if it does not lie there yet,
+    and turned about its axis so the line of its curved side at 0 degrees
+    comes to the front, where the fin stands under it. The part is then turned
+    about the line touching the rim at its front, as tilt() turns it about an
+    edge, and rests on that one point of the rim.
+    """
+    flat_faces = [face for face in shape.ancestorsOfType(rim, Part.Face) if face.findPlane() is not None]
+    if not flat_faces:
+        raise OrientError(translate("FinSnap", "the rim has no flat face to stand on"))
+    flat = App.Placement()
+    if not on_bed(shape, rim):
+        flat = lay_flat(shape, flat_faces[0])
+    if side is None:
+        side = side_of_rim(shape, rim)
+    if side is not None:
+        flat = zero_to_front(moved(side, flat)).multiply(flat)
+    laid = moved(rim, flat)
+    radius = laid.Curve.Radius
+    front = laid.CenterOfMass + RIM_LEAN * radius
+    line = Part.makeLine(front - RIM_LINE * radius, front + RIM_LINE * radius)
+    return tilt(moved(shape, flat), line, angle_deg).multiply(flat)
+
+
 def rest_between(shape, first, second):
     """The placement change that stands `shape` on what lies between two faces,
     both leaning equally steeply over the bed.
@@ -208,7 +325,14 @@ def rest_between(shape, first, second):
 def stand(shape, edge, angle_deg, face=None):
     """Like tilt(); with a face, that face is laid onto the bed first. Without a
     face, an edge off the bed between two faces at a right angle stands the part
-    at 45 degrees."""
+    at 45 degrees. A rim stands the part as stand_on_rim(); with the curved side
+    it bounds, that side leans angle_deg, as a flat face would."""
+    if face is not None and not any(edge.isSame(candidate) for candidate in face.Edges):
+        raise OrientError(translate("FinSnap", "the edge is not an edge of the selected face"))
+    if is_rim(edge):
+        if face is not None and face.findPlane() is None:
+            return stand_on_rim(shape, edge, side_tilt(angle_deg), face if is_round_side(face) else None)
+        return stand_on_rim(shape, edge, angle_deg)
     if face is None:
         if on_bed(shape, edge):
             return tilt(shape, edge, angle_deg)
@@ -219,8 +343,6 @@ def stand(shape, edge, angle_deg, face=None):
             raise OrientError(translate("FinSnap", "an edge alone stands the part only at 45 degrees; for "
                                                    "another angle select the face that is to lie on the bed"))
         return rest_between(shape, *corner)
-    if not any(edge.isSame(candidate) for candidate in face.Edges):
-        raise OrientError(translate("FinSnap", "the edge is not an edge of the selected face"))
     if face.findPlane() is None:
         raise OrientError(translate("FinSnap", "a rounded face does not lie on the bed with its edge; select "
                                                "it alone, or the two faces beside it"))
@@ -232,22 +354,27 @@ def side_direction(change, edge=None, faces=()):
     """The horizontal direction of the line the part stands on after `change`.
 
     Looking along it shows the part from the side, the tilt angle in profile.
-    The line is the edge, or what joins two faces (its direction is the cross
-    product of their normals), or for a face alone the axis the part was turned
-    about. Of the two senses the one pointing to +Y (or +X for a line along X)
-    is returned, so the same line is always seen from the same side: for a
-    line along Y that is FreeCAD's front view, for one along X the view from the left.
+    The line is the edge, or for a rim the line touching it on the bed, which
+    after the change lies level and square to the axis of the rim; or what joins
+    two faces (its direction is the cross product of their normals), or for a
+    face alone the axis the part was turned about. Of the two senses the one
+    pointing to +Y (or +X for a line along X) is returned, so the same line is
+    always seen from the same side: for a line along Y that is FreeCAD's front
+    view, for one along X the view from the left.
     None if the part was not turned, a face that already lay on the bed.
     """
-    if edge is not None:
-        line = edge.Vertexes[-1].Point - edge.Vertexes[0].Point
-    elif len(faces) == 2:
-        line = middle_normal(faces[0]).cross(middle_normal(faces[1]))
-    elif abs(change.Rotation.Angle) > d.TOLERANCE:
-        line = change.Rotation.Axis
+    if edge is not None and is_rim(edge):
+        line = change.Rotation.multVec(edge.Curve.Axis).cross(UP)
     else:
-        return None
-    line = change.Rotation.multVec(line)
+        if edge is not None:
+            line = edge.Vertexes[-1].Point - edge.Vertexes[0].Point
+        elif len(faces) == 2:
+            line = middle_normal(faces[0]).cross(middle_normal(faces[1]))
+        elif abs(change.Rotation.Angle) > d.TOLERANCE:
+            line = change.Rotation.Axis
+        else:
+            return None
+        line = change.Rotation.multVec(line)
     line.z = 0
     if line.Length < d.TOLERANCE:
         return None

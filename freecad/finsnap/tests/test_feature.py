@@ -52,6 +52,10 @@ POCKET_ELLIPSE = (8.0, 4.0)
 POCKET_OFFSET = 1.5
 POCKET_DEPTH = 4.0
 STEP_VOLUME_TOLERANCE = 1e-3  # mm3, what reading the file back may differ by
+TUBE_RADIUS = 10.0
+TUBE_BORE = 6.0
+TUBE_HEIGHT = 40.0
+TUBE_TURN = 5.0  # how far the fin under the side of a tube is moved by hand, in mm round it
 
 
 def face_name(shape, face):
@@ -422,6 +426,80 @@ def step_with_offset_curves():
                "the STEP export brings the pocketed block back whole%s" % after)
 
 
+def turned_tube(doc):
+    """A fin under the side of a tube moved by hand turns the tube about its
+    axis; the fin stays under the lowest line, and the turn is undone again."""
+    tube = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
+    side = [i for i, f in enumerate(tube.Faces)
+            if orient.is_round_side(f) and abs(f.Surface.Radius - TUBE_RADIUS) < d.TOLERANCE][0]
+    plan = geometry.quick_plan(tube, [], [(tube.Faces[side], side)], FinParams(), d.TILT_ANGLE)
+    part = doc.addObject("Part::Feature", "Tube")
+    part.Shape = tube
+    part.Placement = plan.change
+    fins = feature.create(part, "Face%d" % (side + 1))
+    doc.recompute()
+    standing = App.Placement(part.Placement)
+    fin_box = fins.Shape.BoundBox
+    expect(fins.ResultFinCount == 1 and feature.on_round_side(fins), "a tube stood on its rim takes one fin")
+
+    feature.set_round_shift(fins, TUBE_TURN)
+    doc.recompute()
+    turned = part.Placement.multiply(standing.inverse()).Rotation.Angle
+    expect(abs(turned - TUBE_TURN / TUBE_RADIUS) < 1e-6 and feature.round_shift(fins) == TUBE_TURN,
+           "moving the fin %.0f mm turns the tube by that much round its side" % TUBE_TURN)
+    expect(fins.Shape.BoundBox.isInside(fin_box.Center) and abs(fins.Shape.BoundBox.XLength - fin_box.XLength)
+           < d.TOLERANCE and abs(fins.Shape.BoundBox.YLength - fin_box.YLength) < d.TOLERANCE,
+           "the fin stays under the lowest line")
+    feature.set_round_shift(fins, 0.0)
+    doc.recompute()
+    expect(part.Placement.isSame(standing, d.TOLERANCE) and not feature.round_shift(fins),
+           "moved back, the tube stands as before")
+
+    side_name = "Face%d" % (side + 1)
+    try:
+        feature.add_counter(fins, part, side_name)
+    except geometry.FinError as error:
+        expect("counter fin goes under a flat face" in str(error) and not fins.CounterFace,
+               "a counter fin chosen under the side of a tube is refused, nothing changed: %s" % error)
+    else:
+        raise AssertionError("a counter fin was added under the side of a tube")
+    count = len(doc.Objects)
+    try:
+        feature.create(part, side_name, (part, side_name))
+    except geometry.FinError as error:
+        expect("counter fin goes under a flat face" in str(error) and len(doc.Objects) == count,
+               "fins made with a counter fin under the side of a tube are refused, nothing made: %s" % error)
+    else:
+        raise AssertionError("fins were made with a counter fin under the side of a tube")
+    stood = part.Shape
+    up = max((i for i, f in enumerate(stood.Faces) if f.findPlane() is not None),
+             key=lambda i: stood.Faces[i].CenterOfMass.z)
+    try:
+        feature.create(part, side_name, (part, "Face%d" % (up + 1)))
+    except geometry.FinError as error:
+        expect(len(doc.Objects) == count,
+               "fins made with a counter face facing up are refused, nothing made: %s" % error)
+    else:
+        raise AssertionError("fins were made with a counter face facing up")
+    # Set some other way, as an older file may have it: left out with a note,
+    # the main fin still built.
+    fins.CounterFace = (part, [side_name])
+    doc.recompute()
+    expect(fins.isValid() and fins.ResultFinCount == 1
+           and any("counter fin goes under a flat face" in w for w in fins.Warnings),
+           "a counter fin under the side of a tube is left out with a note, the main fin stays")
+    fins.CounterFace = None
+    doc.recompute()
+
+    feature.set_round_shift(fins, TUBE_TURN)
+    # A count of its own, which a build would not give: it has to stay as it is.
+    made_for = getattr(fins, feature.PLANNED[feature.MAIN]) + 1
+    setattr(fins, feature.EDITED_OF[feature.MAIN], made_for)
+    feature.keep_laid_flat(fins, App.Placement())
+    expect(not feature.round_shift(fins) and getattr(fins, feature.EDITED_OF[feature.MAIN]) == made_for,
+           "laid flat, the fin keeps no turn of the tube, and the count its changes were made for")
+
+
 def main():
     doc = App.newDocument("FinSnapTest")
     cube = doc.addObject("Part::Feature", "Cube")
@@ -457,6 +535,7 @@ def main():
     lost_face(doc)
     marks_without_face(doc)
     edit_fins(doc)
+    turned_tube(doc)
     tapered_pad(doc)
     warnings_and_old_files(doc)
     step_with_offset_curves()

@@ -49,6 +49,12 @@ SHORT_OF_HALF_STEP = 0.4
 PAST_HALF_STEP = 0.6
 TOO_HIGH = 100.0  # how far an arrow is dragged up, far above any face of the tests, in mm
 GERMAN = "FinSnap_de.ts"  # written by freecad/finsnap/tools/update_translations.sh
+TUBE_RADIUS = 10.0
+TUBE_BORE = 6.0
+TUBE_HEIGHT = 40.0
+TUBE_ANGLE = 30.0  # how far the fin under the side of a tube is turned in the panel, in degrees
+ZOOM_OUT = 2.0  # how far the view is zoomed out to see the arc keep its size on the screen
+ARROW_SIZE_TOLERANCE = 0.01  # share by which the size of an arrow may differ from the one reckoned
 
 
 def load_workbench():
@@ -99,6 +105,218 @@ def select(obj, *subs):
             Gui.Selection.addSelection(obj, sub)
     else:
         Gui.Selection.addSelection(obj)
+
+
+def added_on_tube(doc):
+    """Add fins under the side of a tube already standing on its rim, turned
+    in the panel: Cancel deletes the fins and turns the tube back."""
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, geometry, handles
+    from freecad.finsnap.params import FinParams
+    shape = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
+    side = [i for i, f in enumerate(shape.Faces) if isinstance(f.Surface, Part.Cylinder)
+            and abs(f.Surface.Radius - TUBE_RADIUS) < d.TOLERANCE][0]
+    tube = doc.addObject("Part::Feature", "AddedTube")
+    tube.Shape = shape
+    tube.Placement = geometry.quick_plan(shape, [], [(shape.Faces[side], side)], FinParams(), d.TILT_ANGLE).change
+    doc.recompute()
+    standing = App.Placement(tube.Placement)
+    select(tube, "Face%d" % (side + 1))
+    Gui.runCommand("FinSnap_AddFins")
+    fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is tube][0]
+    panel = fins.ViewObject.Proxy.panel
+    panel.fin_fields[handles.ALONG].setValue(TUBE_ANGLE)
+    panel.field_entered(handles.ALONG)
+    turned = not tube.Placement.isSame(standing, d.TOLERANCE)
+    name = fins.Name
+    panel.reject()
+    doc.recompute()
+    expect(turned and tube.Placement.isSame(standing, d.TOLERANCE)
+           and not [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is tube],
+           "Cancel of Add fins on a tube turned in the panel deletes the fins and turns the tube back")
+    doc.undo()
+    expect(doc.getObject(name) is not None and not tube.Placement.isSame(standing, d.TOLERANCE),
+           "one Undo of that Cancel brings the fins back and the tube turned with them")
+    doc.removeObject(name)
+    doc.removeObject(tube.Name)
+    doc.recompute()
+
+
+def turned_tube(doc):
+    """Quick fins on the side of a tube: the fin is first put at 0 degrees of
+    the side; its angle typed in the panel, or the arc round the axis dragged,
+    turns the tube about its axis, the fin stays under the lowest line; Reset
+    fins and Cancel turn it back."""
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, geometry, handles
+    tube = doc.addObject("Part::Feature", "Tube")
+    tube.Shape = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
+    side = [i for i, f in enumerate(tube.Shape.Faces, 1) if isinstance(f.Surface, Part.Cylinder)
+            and f.Surface.Radius == TUBE_RADIUS][0]
+    select(tube, "Face%d" % side)
+    Gui.runCommand("FinSnap_QuickFins")
+    fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is tube][0]
+    panel = fins.ViewObject.Proxy.panel
+    standing = App.Placement(tube.Placement)
+    fin_middle = fins.Shape.BoundBox.Center
+
+    def turned():
+        """How far the tube is turned from where it was stood, the shorter way round, in degrees."""
+        degrees = math.degrees(tube.Placement.multiply(standing.inverse()).Rotation.Angle)
+        return min(degrees, geometry.FULL_CIRCLE - degrees)
+
+    def angle():
+        return panel.fin_values()[handles.ALONG]
+
+    expect(panel.turns_part() and panel.handles.turning(),
+           "the fin under the side of a tube turns the tube when moved, by an arc round its axis")
+    expect(abs(angle()) < d.TOLERANCE, "the fin is first put at 0 degrees of the side")
+    arc = panel.handles
+    camera = Gui.ActiveDocument.ActiveView.getCameraNode()
+    unit = arc.arc_unit
+    camera.height.setValue(camera.height.getValue() * ZOOM_OUT)
+    arc._zoomed()
+    # The middle of every piece of the shaft, in the arc's own frame about the axis.
+    middles = [piece.getChild(0).translation.getValue() for bodies in arc.arc_bodies.values()
+               for body in bodies.values() for piece in list(body.getChildren())[:handles.ARC_PIECES]]
+    reaches = [math.hypot(x, y) for x, y, _ in middles]
+    expect(abs(arc.arc_unit - ZOOM_OUT * unit) < ARROW_SIZE_TOLERANCE * arc.arc_unit
+           and max(reaches) - min(reaches) < d.TOLERANCE and max(abs(z) for _, _, z in middles) < d.TOLERANCE
+           and min(reaches) > feature.round_side(fins).Surface.Radius,
+           "zoomed out, the arc is drawn as large on the screen, round the axis outside the side")
+    camera.height.setValue(camera.height.getValue() / ZOOM_OUT)
+    arc._zoomed()
+    panel.fin_fields[handles.ALONG].setValue(TUBE_ANGLE)
+    panel.field_entered(handles.ALONG)
+    expect(abs(turned() - TUBE_ANGLE) < d.TOLERANCE and fins.Shape.BoundBox.Center.isEqual(fin_middle, d.TOLERANCE)
+           and abs(angle() - TUBE_ANGLE) < d.TOLERANCE,
+           "an angle typed for the fin turns the tube that far round its axis, the fin stays")
+    arc._held(handles.ALONG, None)
+    arc.turner.rotation.setValue(coin.SbRotation(coin.SbVec3f(0, 0, 1), math.radians(-TUBE_ANGLE)))
+    arc._moved(handles.ALONG, None)
+    expect(abs(panel.fin_fields[handles.ALONG].value() - 2 * TUBE_ANGLE) < d.TOLERANCE,
+           "while the arc is dragged, the field shows the angle the fin goes to")
+    arc.held = False
+    panel.finish_drag(handles.ALONG, arc._mm(handles.ALONG))
+    expect(abs(turned() - 2 * TUBE_ANGLE) < d.TOLERANCE and abs(angle() - 2 * TUBE_ANGLE) < d.TOLERANCE,
+           "dragging the arc turns the tube further, as near as Coin reads its turn")
+    panel.fin_fields[handles.ALONG].setValue(geometry.FULL_CIRCLE - TUBE_ANGLE)
+    panel.field_entered(handles.ALONG)
+    expect(abs(turned() - TUBE_ANGLE) < d.TOLERANCE
+           and abs(angle() - (geometry.FULL_CIRCLE - TUBE_ANGLE)) < d.TOLERANCE,
+           "an angle typed past 0 turns the tube the shorter way round")
+    # A build that fails once the tube is turned, which leaves no build behind:
+    # the turn is taken back all the same.
+    before_failure = App.Placement(tube.Placement)
+
+    def failing():
+        fins.Proxy.results = {}
+        raise ValueError("a build that fails")
+
+    panel.apply = failing
+    panel.fin_fields[handles.ALONG].setValue(TUBE_ANGLE)
+    panel.field_entered(handles.ALONG)
+    del panel.apply
+    panel.preview()
+    expect(tube.Placement.isSame(before_failure, d.TOLERANCE),
+           "a turn whose build fails is taken back, also with no build left to ask")
+    panel.reset()
+    expect(tube.Placement.isSame(standing, d.TOLERANCE), "Reset fins turns the tube back")
+    panel.fin_fields[handles.ALONG].setValue(TUBE_ANGLE)
+    panel.field_entered(handles.ALONG)
+    shift = feature.round_shift(fins)
+    panel.accept()
+    Gui.ActiveDocument.setEdit(fins)
+    reopened = fins.ViewObject.Proxy.panel
+    reopened.fin_fields[handles.ALONG].setValue(2 * TUBE_ANGLE)
+    reopened.field_entered(handles.ALONG)
+    reopened.reject()
+    expect(abs(turned() - TUBE_ANGLE) < d.TOLERANCE and feature.round_shift(fins) == shift
+           and abs(abs(shift) - math.radians(TUBE_ANGLE) * TUBE_RADIUS) < d.TOLERANCE,
+           "Cancel turns the tube back to where the panel found it")
+    rim = [i for i, e in enumerate(tube.Shape.Edges, 1) if isinstance(e.Curve, Part.Circle)
+           and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE][0]
+    # Quick fins stands the tube anew, which forgets how far it was turned;
+    # its Cancel puts the tube back and notes the turn again.
+    select(tube, "Edge%d" % rim)
+    Gui.runCommand("FinSnap_QuickFins")
+    quick = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is tube and o is not fins][0]
+    quick.ViewObject.Proxy.panel.reject()
+    doc.recompute()
+    expect(feature.round_shift(fins) == shift and abs(turned() - TUBE_ANGLE) < d.TOLERANCE,
+           "Cancel of Quick fins on the tube keeps how far it was turned for the fins already there")
+    select(tube, "Edge%d" % rim)
+    Gui.runCommand("FinSnap_Tilt")
+    doc.recompute()
+    expect(not feature.round_shift(fins), "stood anew, the fin forgets how far the tube was turned")
+    doc.removeObject(fins.Name)
+    doc.removeObject(tube.Name)
+    doc.recompute()
+
+
+def check_typed_fields(panel, fins, place):
+    """A value typed into a field of the fin with the arrows is taken once
+    typing pauses, where the fin can stand, and the field is left as typed;
+    Enter takes it at once and leaves the panel open."""
+    from PySide import QtCore, QtGui
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, handles
+    box = panel.fin_fields[handles.ALONG]
+    box.setValue(place + FIN_SHIFT)
+    expect(panel.field_timer.isActive() and panel.typed_field == handles.ALONG
+           and not feature.edits(fins, feature.MAIN)[1], "a place typed waits for typing to pause")
+    # What the timer does once typing pauses.
+    panel.field_entered(panel.typed_field)
+    expect(feature.edits(fins, feature.MAIN)[1] and not panel.field_timer.isActive(),
+           "once typing pauses, the place typed moves the fin")
+    box.setValue(place)
+    # The panel is built here without a task dialog; that Enter reaches none
+    # shows in the event being taken.
+    taken = []
+    for key in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter):
+        event = QtGui.QKeyEvent(QtCore.QEvent.KeyPress, key, QtCore.Qt.NoModifier)
+        QtWidgets.QApplication.sendEvent(box, event)
+        taken.append(event.isAccepted())
+    expect(not feature.edits(fins, feature.MAIN)[1] and not panel.field_timer.isActive() and all(taken),
+           "Enter takes the place typed at once and is not passed on to close the panel")
+    nowhere = place + TOO_HIGH
+    box.setValue(nowhere)
+    panel.field_entered(panel.typed_field, paused=True)
+    expect(not feature.edits(fins, feature.MAIN)[1] and abs(box.value() - nowhere) < d.TOLERANCE
+           and not panel.notes.isHidden(),
+           "typing paused where the fin cannot stand: nothing moves, the reason shows, the field keeps what is typed")
+    panel.field_entered(handles.ALONG)
+    expect(abs(box.value() - place) < d.TOLERANCE,
+           "left where the fin cannot stand, the field shows where it stands again")
+    box.setValue(place + FIN_SHIFT)
+    panel.handle_started(handles.ALONG)
+    expect(feature.edits(fins, feature.MAIN)[1] and not panel.field_timer.isActive(),
+           "a place still waiting for typing to pause is taken before an arrow is grabbed")
+    panel.finish_drag(handles.ALONG, 0.0)
+    box.setValue(place)
+    panel.field_entered(handles.ALONG)
+
+
+def check_sections(panel):
+    """Each section of the panel folds away and opens again as it was left;
+    its header is marked while a field in it differs from the standard."""
+    from freecad.finsnap import feature, taskpanel
+    section = panel.sections[feature.GROUP_FIN]
+    opened = section.header.isChecked()
+    section.header.setChecked(not opened)
+    kept = App.ParamGet(taskpanel.SECTION_PREFERENCES).GetBool(feature.GROUP_FIN, opened)
+    expect(kept == (not opened) and section.content.isHidden() == opened,
+           "a section folded or opened is kept so for the next time")
+    section.header.setChecked(opened)
+    prop = [p for p in feature.PROPERTIES if p.group == feature.GROUP_FIN
+            and isinstance(panel.widgets[p.name], QtWidgets.QDoubleSpinBox)][0]
+    widget = panel.widgets[prop.name]
+    before = widget.value()
+    widget.setValue(before + widget.singleStep())
+    marked = taskpanel.MODIFIED_HEADER_STYLE in section.header.styleSheet()
+    widget.setValue(before)
+    expect(marked and taskpanel.MODIFIED_HEADER_STYLE not in section.header.styleSheet(),
+           "the header of a section is marked while a field in it differs from the standard")
 
 
 def main():
@@ -797,6 +1015,8 @@ def main():
     moving.fin_fields[handles.ALONG].setValue(place)
     moving.field_entered(handles.ALONG)
     expect(not feature.edits(lined, feature.MAIN)[1], "a place typed into the field moves the fin there")
+    check_typed_fields(moving, lined, place)
+    check_sections(moving)
     lowered = lined.Proxy.results[feature.MAIN]
     off_edge = App.Vector(*moving.handles.offsets[handles.UP].translation.getValue().getValue())
     expect(App.Vector(*moving.handles.places[handles.UP].translation.getValue().getValue())
@@ -1017,6 +1237,9 @@ def main():
     with zipfile.ZipFile(whole) as archive:
         model = archive.read("3D/3dmodel.model").decode()
     expect(model.count("<object ") == 2, "export without a selection takes all fins with their parts")
+    turned_tube(doc)
+    added_on_tube(doc)
+
     empty = doc.addObject("Part::Feature", "Empty")
     select(empty)
     Gui.runCommand("FinSnap_Export3MF")

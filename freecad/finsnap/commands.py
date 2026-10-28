@@ -27,7 +27,7 @@ from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_
                     ICON_QUICK, ICON_TILT)
 from .presets import PREFERENCES
 from .shapes import FACE_PREFIX, face_name, global_shape, outermost
-from .taskpanel import LENGTH_SUFFIX, FinSnapTaskPanel, discard_created
+from .taskpanel import DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, discard_created
 from .version import NAME
 
 EDGE_PREFIX = "Edge"
@@ -53,7 +53,6 @@ MESH_LINEAR_RANGE = (0.001, 1.0)
 MESH_ANGULAR_RANGE = (0.1, 30.0)
 MESH_LINEAR_DECIMALS = 3
 MESH_ANGULAR_DECIMALS = 1
-DEGREE_SUFFIX = " \N{DEGREE SIGN}"
 SOLID_SUFFIX = "_solid"
 FINS_SUFFIX = "_fins"
 # Marks on faces that overhang without fins: red, half see-through, drawn
@@ -274,6 +273,9 @@ class TiltOntoEdge:
         faces at a right angle              ->  stands on it at 45 degrees, no angle asked
       one edge off the bed, other faces     ->  message, nothing changed
       one edge and one of its faces         ->  face laid down, then turned about the edge
+      one rim of a cylinder or tube         ->  stands on it, leaning to the front by the
+                                                asked angle
+      one rim and its curved side           ->  the same, the side leaning by the angle
       one face alone (a chamfer)            ->  face laid onto the bed, no angle asked
       two faces (beside a fillet)           ->  part stands on what joins them, both
                                                 faces equally steep, no angle asked
@@ -296,7 +298,8 @@ class TiltOntoEdge:
                     "angle, on which the part stands at 45 degrees. A face alone, a chamfer or a fillet, "
                     "is laid onto the bed and carries the part: a chamfer lies flat on it, a fillet "
                     "touches it along its middle. Two faces alone, such as the two beside a fillet, "
-                    "stand the part on what joins them, both equally steep.")}
+                    "stand the part on what joins them, both equally steep. The rim of a cylinder or tube stands "
+                    "it on that rim, leaning to the front.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
         return App.ActiveDocument is not None
@@ -320,7 +323,7 @@ class TiltOntoEdge:
                 change = orient.rest_between(shape, *chosen)
             elif edges:
                 edge = shape.getElement(edges[0][1])
-                if face is None and not orient.on_bed(shape, edge):
+                if face is None and not orient.on_bed(shape, edge) and not orient.is_rim(edge):
                     # The angle is fixed by the right angle between its faces.
                     change = orient.stand(shape, edge, orient.RIGHT_ANGLE_TILT)
                 else:
@@ -353,10 +356,13 @@ def _picked():
 
 
 def _stand(obj, change):
-    """Turn the part of `obj` by `change`, keeping where it lay for Lay flat again."""
+    """Turn the part of `obj` by `change`, keeping where it lay for Lay flat again.
+    Fins under a round side forget how far the part was turned about it."""
     owner = outermost(obj)
     orient.remember_flat(owner)
     owner.Placement = change.multiply(owner.Placement)
+    for fins in feature.fins_of(owner, owner.Document):
+        feature.forget_turn(fins)
 
 
 def _show_on_bed(direction=None):
@@ -497,7 +503,8 @@ class QuickFins:
                     "so that it leans 45 degrees over the bed, on its longest edge; select one of its "
                     "edges as well to stand on that one, or, after the face, a chamfer or fillet to rest "
                     "on. A chamfer or fillet alone, or the two faces beside a fillet, carry the part as "
-                    "well. A counter fin, where wanted, is added in the panel.")}
+                    "well. The rim or the curved side of a cylinder or tube stands it on its rim, with one fin "
+                    "under its lowest line. A counter fin, where wanted, is added in the panel.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
         return App.ActiveDocument is not None
@@ -520,6 +527,8 @@ class QuickFins:
         before = orient.snapshot(owner)
         # Standing the part rebuilds its other fins laid flat; Cancel gives them back.
         laid_flat = feature.laid_flat_marks(owner, doc)
+        # Standing it anew forgets how far it was turned about a round side; Cancel notes it again.
+        turns = feature.round_turns(owner, doc)
         _stand(obj, plan.change)
         # The main fin only; a counter fin is added in the panel or with Add counter fin.
         fins = feature.create(obj, face_name(plan.number + 1))
@@ -529,7 +538,7 @@ class QuickFins:
         doc.recompute()
         _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside))
         # Cancel deletes the fins and stands the part as it stood before.
-        _edit_new(fins, functools.partial(_put_back_quick, owner, before, laid_flat))
+        _edit_new(fins, functools.partial(_put_back_quick, owner, before, laid_flat, turns))
 
 
 def quick_params():
@@ -548,11 +557,13 @@ def quick_plan(obj, edge_names, face_names):
         [(shape.getElement(n), int(n[len(FACE_PREFIX):]) - 1) for n in face_names], quick_params(), d.TILT_ANGLE)
 
 
-def _put_back_quick(owner, before, laid_flat):
+def _put_back_quick(owner, before, laid_flat, turns):
     """Undo what Quick fins did besides making the fins: the part stands as
-    before, and its other fins laid flat keep their marks and shapes."""
+    before, its other fins laid flat keep their marks and shapes, and its fins
+    under a round side how far it was turned about it."""
     orient.put_back(owner, before)
     feature.put_back_laid_flat(owner.Document, laid_flat)
+    feature.put_back_turns(owner.Document, turns)
 
 
 def _edit_new(fins, on_cancel=None):
@@ -601,7 +612,12 @@ class AddFins:
         counter = faces[1] if len(faces) == 2 else None
         doc = App.ActiveDocument
         doc.openTransaction(translate("FinSnap", "Add fins"))
-        obj = feature.create(base, face_name, counter)
+        try:
+            obj = feature.create(base, face_name, counter)
+        except (ValueError, Part.OCCError) as error:
+            doc.abortTransaction()
+            _message(translate("FinSnap", feature.NOTE_NO_COUNTER_ON_FACE) % error)
+            return
         ViewProviderFinSnap(obj.ViewObject)
         doc.commitTransaction()
         _edit_new(obj)

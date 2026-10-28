@@ -3,12 +3,14 @@
 
 """Task panel to tune the parameters of a FinSnap object.
 
-The form is generated from feature.PROPERTIES, one group box per property
-group, so it never falls out of step with the object.
+The form is generated from feature.PROPERTIES, one section per property
+group, so it never falls out of step with the object. Each section folds
+away and opens again as it was left.
 """
 
 import functools
 import html
+import math
 
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -35,9 +37,12 @@ LENGTH_DECIMALS = 3
 FIELD_TOLERANCE = 0.5 * 10 ** -LENGTH_DECIMALS
 RATIO_DECIMALS = 2
 LENGTH_SUFFIX = " mm"
+DEGREE_SUFFIX = " \N{DEGREE SIGN}"
 # Pause after the last change before the preview is rebuilt, so typing a
 # number does not rebuild the fins at every keystroke.
 PREVIEW_DELAY_MS = 400
+# The keys that end typing in a field.
+ENTER_KEYS = (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter)
 # Pause after the last move of a handle before the preview for it is built.
 DRAG_PREVIEW_MS = 150
 # Places of fins whose arrow ends are kept while the panel is open; beyond
@@ -59,6 +64,25 @@ SNAP_RESOLUTION = 0.1
 # to nothing or turns over (mm).
 MIN_PREVIEW_HEIGHT = 0.1
 NOTE_CLICK_FIN = QT_TRANSLATE_NOOP("FinSnap", "Click a fin of these fins in the 3D view first.")
+# The fields of the fin with the arrows, as (label, tooltip, suffix, decimals,
+# lowest, highest, whether it wraps round): where it stands along the face, or
+# round the side of a cylinder or tube, and how high it is.
+FIN_FIELD_PLACE = (QT_TRANSLATE_NOOP("FinSnap", "Place on the face"),
+                   QT_TRANSLATE_NOOP("FinSnap", "Distance of the middle of the fin from the left end of the face, "
+                                     "seen from outside. Type a value to move the fin there."),
+                   LENGTH_SUFFIX, LENGTH_DECIMALS, -MAX_LENGTH, MAX_LENGTH, False)
+ANGLE_DECIMALS = 2
+FIN_FIELD_ANGLE = (QT_TRANSLATE_NOOP("FinSnap", "Angle on the part"),
+                   QT_TRANSLATE_NOOP("FinSnap", "Position of the fin around the cylinder or tube, measured at the "
+                                     "middle of its tines, in degrees from 0°, where it is first placed. Type a "
+                                     "value to turn the part to it; the fin keeps its place."),
+                   DEGREE_SUFFIX, ANGLE_DECIMALS, 0.0, geometry.FULL_CIRCLE, True)
+FIN_FIELD_HEIGHT = (QT_TRANSLATE_NOOP("FinSnap", "Height"),
+                    QT_TRANSLATE_NOOP("FinSnap", "Height of this fin alone. Type a value to set it; Reset fins "
+                                      "gives it the height of the others again."),
+                    LENGTH_SUFFIX, LENGTH_DECIMALS, -MAX_LENGTH, MAX_LENGTH, False)
+# Half the last place the angle field shows: an angle closer than this is the one shown.
+ANGLE_TOLERANCE = 0.5 * 10 ** -ANGLE_DECIMALS
 SIDES = {feature.MAIN: QT_TRANSLATE_NOOP("FinSnap", "Main fin"),
          feature.COUNTER: QT_TRANSLATE_NOOP("FinSnap", "Counter fin")}
 # FinParams field of the layer height, the step of the fields on the layer grid.
@@ -73,6 +97,14 @@ WARNING_SIGN = "⚠"
 # this colour, and a button beside it that puts the standard value back.
 MODIFIED_COLOR = "#e07000"
 MODIFIED_STYLE = "QLabel { color: %s; font-weight: bold; }" % MODIFIED_COLOR
+MODIFIED_HEADER_STYLE = "QToolButton { color: %s; }" % MODIFIED_COLOR
+# The sections of the panel fold away under a flat header in bold; whether
+# each is open is kept in this group of the preferences.
+SECTION_HEADER_STYLE = "QToolButton { border: none; font-weight: bold; }"
+SECTION_PREFERENCES = presets.PREFERENCES + "/PanelSections"
+# The section to edit the fins in, open the first time, as it holds what is
+# most often changed; the others start folded away.
+EDIT_SECTION = QT_TRANSLATE_NOOP("FinSnap", "Edit fins")
 RESET_SIGN = "↺"
 # Icon buttons: icon size, the gap to the text and the margin inside, in pixels.
 BUTTON_ICON_SIZE = 20
@@ -92,6 +124,10 @@ def discard_created(obj, on_cancel=None):
     doc = obj.Document
     doc.openTransaction(translate("FinSnap", "Cancel fins"))
     try:
+        # Fins just made stood at no turn: a part turned about its round side
+        # in the panel turns back, in the same step.
+        if feature.on_round_side(obj):
+            feature.set_round_shift(obj, 0.0)
         doc.removeObject(obj.Name)
         if on_cancel is not None:
             on_cancel()
@@ -100,6 +136,60 @@ def discard_created(obj, on_cancel=None):
         raise
     doc.commitTransaction()
     doc.recompute()
+
+
+class Section(QtWidgets.QWidget):
+    """A section of the panel that folds away: a header to click, with an
+    arrow and the caption, and below it `content`, the widget it holds.
+    Whether it is open is kept under `key` in FinSnap's preferences, so the
+    panel opens as it was left; never opened or closed, it is `open_first`."""
+
+    def __init__(self, caption, key, open_first):
+        super().__init__()
+        self.key = key
+        self.header = QtWidgets.QToolButton()
+        self.header.setText(caption)
+        self.header.setCheckable(True)
+        self.header.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.header.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self.header.setStyleSheet(SECTION_HEADER_STYLE)
+        self.content = QtWidgets.QGroupBox()
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.header)
+        layout.addWidget(self.content)
+        self.header.setChecked(App.ParamGet(SECTION_PREFERENCES).GetBool(key, open_first))
+        self.show_open(self.header.isChecked())
+        self.header.toggled.connect(self.toggled)
+
+    def show_open(self, opened):
+        self.header.setArrowType(QtCore.Qt.DownArrow if opened else QtCore.Qt.RightArrow)
+        self.content.setVisible(opened)
+
+    def toggled(self, opened):
+        self.show_open(opened)
+        App.ParamGet(SECTION_PREFERENCES).SetBool(self.key, opened)
+
+    def mark(self, modified):
+        """Mark the header while a field in it differs from the standard,
+        so a change stays in sight with the section folded away."""
+        self.header.setStyleSheet(SECTION_HEADER_STYLE + (MODIFIED_HEADER_STYLE if modified else ""))
+
+
+class EnterTakes(QtCore.QObject):
+    """Takes Enter in a field as the value typed, by calling `take`, and keeps
+    it from the task dialog, which would close the panel on it."""
+
+    def __init__(self, take, parent):
+        super().__init__(parent)
+        self.take = take
+
+    def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
+        if event.type() == QtCore.QEvent.KeyPress and event.key() in ENTER_KEYS:
+            watched.interpretText()
+            self.take()
+            return True
+        return False
 
 
 def _icon_button(icon, text):
@@ -215,6 +305,8 @@ class FinSnapTaskPanel:
                                 (feature.HEIGHTS.values(), {}), (feature.EDITED_OF.values(), 0))
                                for name in names}
         self.original_counter = obj.CounterFace
+        # How far the part was turned about a round side by hand; Cancel turns it back.
+        self.original_turn = feature.round_shift(obj)
 
         self.form = QtWidgets.QWidget()
         # A child of the form, so it goes with the panel and never fires on a
@@ -231,6 +323,16 @@ class FinSnapTaskPanel:
         self.ends_timer.setSingleShot(True)
         self.ends_timer.setInterval(ENDS_DELAY_MS)
         self.ends_timer.timeout.connect(self.update_ends)
+        # Takes a value typed into a field of the fin with the handles once
+        # typing pauses, as the other fields do; the field typed into last.
+        self.field_timer = QtCore.QTimer(self.form)
+        self.field_timer.setSingleShot(True)
+        self.field_timer.setInterval(PREVIEW_DELAY_MS)
+        self.field_timer.timeout.connect(lambda: self.field_entered(self.typed_field, paused=True))
+        self.typed_field = None
+        # The field of the fin being typed into while its value is taken after
+        # a pause: the panel leaves it as typed.
+        self.typing = None
         # The fin with the handles on it, as (MAIN or COUNTER, number); the
         # arrow being dragged with how far, as (kind, mm); and the shift and
         # height of the fin, and the values in its fields, when it was grabbed.
@@ -241,6 +343,7 @@ class FinSnapTaskPanel:
         self.known_ends = {}
         self.dragged = None
         self.drag_base, self.drag_own, self.drag_values = {}, {}, {}
+        self.drag_mm_per_degree = None
         self.released = False
         # True while the panel fills the fields of the fin, not the user.
         self.filling_fields = False
@@ -256,6 +359,7 @@ class FinSnapTaskPanel:
             "with the current choices; their tooltip says why."))
         intro.setWordWrap(True)
         layout.addWidget(intro)
+        # The drawings always show, as the letters in the fields point to them.
         self.drawings = []
         for path, caption in DRAWINGS:
             box = QtWidgets.QGroupBox(translate("FinSnap", caption))
@@ -265,15 +369,16 @@ class FinSnapTaskPanel:
             layout.addWidget(box)
             self.drawings.append(picture)
 
+        # The sections below fold away, each kept by its caption untranslated.
+        self.sections = {}
         groups = {}
         for prop in feature.PROPERTIES:
             if prop.group not in groups:
-                box = QtWidgets.QGroupBox(translate("App::Property", prop.group))
-                groups[prop.group] = QtWidgets.QFormLayout(box)
+                section = self.add_section(layout, prop.group, translate("App::Property", prop.group))
+                groups[prop.group] = QtWidgets.QFormLayout(section.content)
                 info = QtWidgets.QLabel(translate("FinSnap", feature.GROUP_INFO[prop.group]))
                 info.setWordWrap(True)
                 groups[prop.group].addRow(info)
-                layout.addWidget(box)
             widget = _widget(prop, feature.value_of(obj, prop.name))
             widget.setToolTip(_wrapped(translate("App::Property", prop.tip)))
             label = translate("FinSnap", prop.label)
@@ -293,7 +398,7 @@ class FinSnapTaskPanel:
             self.resets[prop.name] = reset
             _changed_signal(widget).connect(self.changed)
 
-        edit = QtWidgets.QGroupBox(translate("FinSnap", "Edit fins"))
+        edit = self.add_section(layout, EDIT_SECTION, translate("FinSnap", EDIT_SECTION)).content
         edit_layout = QtWidgets.QGridLayout(edit)
         edit_info = QtWidgets.QLabel(translate(
             "FinSnap", "To remove one fin, click it in the 3D view and press Remove selected fin, or the "
@@ -326,28 +431,21 @@ class FinSnapTaskPanel:
         self.fin_label = QtWidgets.QLabel(translate("FinSnap", NOTE_CLICK_FIN))
         self.fin_label.setWordWrap(True)
         edit_layout.addWidget(self.fin_label, 4, 0, 1, 2)
-        # Where the fin with the arrows stands, to read or to type in; Enter moves it.
-        self.fin_fields = {}
-        for row, kind, text, tip in (
-                (5, handles.ALONG, QT_TRANSLATE_NOOP("FinSnap", "Place on the face"),
-                 QT_TRANSLATE_NOOP("FinSnap", "Distance of the middle of the fin from the left end of the face, "
-                                   "seen from outside. Type a value and press Enter to move the fin.")),
-                (6, handles.UP, QT_TRANSLATE_NOOP("FinSnap", "Height"),
-                 QT_TRANSLATE_NOOP("FinSnap", "Height of this fin alone. Type a value and press Enter to set "
-                                   "it; Reset fins gives it the height of the others again."))):
-            label = QtWidgets.QLabel(translate("FinSnap", text))
+        # Where the fin with the arrows stands, to read or to type in: taken
+        # once typing pauses, at once with Enter or on leaving the field.
+        self.fin_fields, self.fin_field_labels = {}, {}
+        for row, kind in ((5, handles.ALONG), (6, handles.UP)):
+            label = QtWidgets.QLabel()
             box = QtWidgets.QDoubleSpinBox()
-            box.setDecimals(LENGTH_DECIMALS)
-            box.setSuffix(LENGTH_SUFFIX)
-            box.setRange(-MAX_LENGTH, MAX_LENGTH)
-            box.setKeyboardTracking(False)
-            box.setToolTip(_wrapped(translate("FinSnap", tip)))
-            label.setToolTip(box.toolTip())
+            box.valueChanged.connect(functools.partial(self.field_typed, kind))
             box.editingFinished.connect(functools.partial(self.field_entered, kind))
+            box.installEventFilter(EnterTakes(functools.partial(self.field_entered, kind), box))
             edit_layout.addWidget(label, row, 0)
             edit_layout.addWidget(box, row, 1)
-            self.fin_fields[kind] = box
-        layout.addWidget(edit)
+            self.fin_fields[kind], self.fin_field_labels[kind] = box, label
+            self.set_field(kind, FIN_FIELD_PLACE if kind == handles.ALONG else FIN_FIELD_HEIGHT)
+        # Whether the field along the face takes the angle on a round side.
+        self.angle_field = False
 
         standard_buttons = QtWidgets.QHBoxLayout()
         save = QtWidgets.QPushButton(translate("FinSnap", "Save as standard"))
@@ -376,6 +474,21 @@ class FinSnapTaskPanel:
         self.update_marks()
         self.preview()
 
+    def set_field(self, kind, spec):
+        """Make the field of the handled fin for `kind` the one `spec` describes,
+        FIN_FIELD_PLACE, FIN_FIELD_ANGLE or FIN_FIELD_HEIGHT."""
+        text, tip, suffix, decimals, lowest, highest, wraps = spec
+        box, label = self.fin_fields[kind], self.fin_field_labels[kind]
+        self.filling_fields = True
+        box.setDecimals(decimals)
+        box.setSuffix(suffix)
+        box.setRange(lowest, highest)
+        box.setWrapping(wraps)
+        self.filling_fields = False
+        box.setToolTip(_wrapped(translate("FinSnap", tip)))
+        label.setText(translate("FinSnap", text))
+        label.setToolTip(box.toolTip())
+
     def current(self, name):
         """A field's value as entered; a link that is no field counts as set or not."""
         for prop in feature.PROPERTIES:
@@ -400,15 +513,28 @@ class FinSnapTaskPanel:
             self.widgets[prop.name].setToolTip(_wrapped(*paragraphs))
             self.labels[prop.name].setEnabled(not notes)
 
+    def add_section(self, layout, key, caption):
+        """A section under `caption` added to `layout`, kept as `key`."""
+        section = Section(caption, key, key == EDIT_SECTION)
+        layout.addWidget(section)
+        self.sections[key] = section
+        return section
+
     def update_marks(self):
-        """Mark every field whose value differs from the standard for new fins."""
+        """Mark every field whose value differs from the standard for new fins,
+        and the header of each section holding one."""
+        modified_groups = set()
         for prop in feature.PROPERTIES:
             value = getattr(self.standard, prop.field)
             modified = not _same(prop, _read(prop, self.widgets[prop.name]), value)
+            if modified:
+                modified_groups.add(prop.group)
             self.labels[prop.name].setStyleSheet(MODIFIED_STYLE if modified else "")
             self.resets[prop.name].setVisible(modified)
             self.resets[prop.name].setToolTip(_wrapped(translate("FinSnap", "Back to the standard: %s")
                                                        % _shown(prop, value)))
+        for group in {prop.group for prop in feature.PROPERTIES}:
+            self.sections[group].mark(group in modified_groups)
 
     def back_to_standard(self, prop):
         _write(prop, self.widgets[prop.name], getattr(self.standard, prop.field))
@@ -489,6 +615,8 @@ class FinSnapTaskPanel:
         doc.recompute()
 
     def reset(self):
+        if feature.on_round_side(self.obj):
+            feature.set_round_shift(self.obj, 0.0)
         feature.reset_fins(self.obj)
         self.edited()
 
@@ -554,6 +682,7 @@ class FinSnapTaskPanel:
             return
         fin = feature.fin_at(self.obj, sub)
         if fin and fin != self.handled:
+            self.take_typed()
             self.handled = fin
             self.place_handles()
 
@@ -592,6 +721,7 @@ class FinSnapTaskPanel:
         # A click on a new row comes as a changed row as well; once is enough.
         if self.listed_fins[row] == self.handled and self.selected_fins() == [self.handled]:
             return
+        self.take_typed()
         self.handled = self.listed_fins[row]
         Gui.Selection.clearSelection()
         face = feature.fin_face(self.obj, *self.handled)
@@ -624,11 +754,24 @@ class FinSnapTaskPanel:
 
     def fin_values(self):
         """Where the handled fin stands, from the last build: its middle from the
-        start of the face along it (ALONG) and its height (UP), in mm."""
+        start of the face along it (ALONG), in mm, or under a round side the
+        angle of the middle of its tines round it, in degrees; and its height
+        (UP), in mm."""
         result = self.handled_result()[0]
         number = self.handled[1]
-        return {handles.ALONG: result.starts[number] + result.thickness / 2 - result.face_start,
-                handles.UP: result.heights[number]}
+        # The angle rounded as the field shows it: just below 360 is 0.
+        along = (geometry.round_angle(geometry.side_angle(feature.round_side(self.obj)), ANGLE_TOLERANCE)
+                 if self.turns_part()
+                 else result.starts[number] + result.thickness / 2 - result.face_start)
+        return {handles.ALONG: along, handles.UP: result.heights[number]}
+
+    def turn_of_handles(self):
+        """The axis of the round side the handled fin stands under, as a point
+        on it and its direction, and how far the fin moves along the face (mm)
+        for every degree the part turns about it, for handles.Handles.show()."""
+        face = feature.round_side(self.obj)
+        surface = face.Surface
+        return App.Vector(surface.Center), App.Vector(surface.Axis).normalize(), geometry.turn_mm(face, 1.0)
 
     def place_handles(self):
         if self.handled_result() is None:
@@ -644,9 +787,14 @@ class FinSnapTaskPanel:
             return
         result = found[0]
         which, number = self.handled
+        turning = self.turns_part()
+        if turning != self.angle_field:
+            self.set_field(handles.ALONG, FIN_FIELD_ANGLE if turning else FIN_FIELD_PLACE)
+            self.angle_field = turning
         # A held arrow stays where it was grabbed; only the numbers follow it.
         if not self.handles.held:
-            self.handles.show(result.edges[number], result.along, result.out)
+            self.handles.show(result.edges[number], result.along, result.out,
+                              self.turn_of_handles() if turning else None)
             # On another fin, both ends until tried, rather than those of the fin before.
             if self.handled != self.ends_of:
                 for kind in handles.KINDS:
@@ -659,8 +807,18 @@ class FinSnapTaskPanel:
         """Show `values` in the fields of the handled fin, without taking them as typed."""
         self.filling_fields = True
         for kind, value in values.items():
-            self.fin_fields[kind].setValue(value)
+            # A field still being typed into keeps what is typed.
+            if kind != self.typing:
+                self.fin_fields[kind].setValue(value)
         self.filling_fields = False
+
+    def turns_part(self):
+        """Whether moving the handled fin along the face turns the part instead:
+        the main fin under the round side of a cylinder or tube stays under its
+        lowest line, and the part turns about its axis. Asked of the face, not
+        of the last build, which a failed build leaves empty: a turn that fails
+        is still turned back."""
+        return self.handled is not None and self.handled[0] == feature.MAIN and feature.on_round_side(self.obj)
 
     def own_value(self, kind):
         """What the handled fin has by hand now: its shift along the face
@@ -673,6 +831,9 @@ class FinSnapTaskPanel:
         handled fin; None takes it away."""
         which, number = self.handled
         if kind == handles.ALONG:
+            if self.turns_part():
+                feature.set_round_shift(self.obj, value or 0.0)
+                return
             feature.set_fin_shift(self.obj, which, number, value or 0.0)
         else:
             feature.set_fin_height(self.obj, which, number, value)
@@ -732,6 +893,10 @@ class FinSnapTaskPanel:
           its side has no fins (counter fin removed)  ->  error: no tine finds the face there
         """
         nowhere = geometry.FinError(translate("FinSnap", "no tine of the fin finds the face there"))
+        # Moving the fin on a round side turns the part, which stands on its rim at
+        # any turn; a turn that fails is taken back by set_fin().
+        if kind == handles.ALONG and self.turns_part():
+            return None
         which, number = self.handled
         part_and_build = self.obj.Proxy.side_builder(self.obj, which)
         if part_and_build is None:
@@ -807,13 +972,16 @@ class FinSnapTaskPanel:
         the drag starts from there."""
         self.ends_timer.stop()
         # A value typed just before is built first, or the drag would keep the
-        # parameters from before it.
+        # parameters from before it, or the value would come in the middle of it.
         if self.timer.isActive():
             self.preview()
-        # While the drag lasts, builds with the same changes by hand are made once.
-        self.obj.Proxy.reuse = {}
+        self.take_typed()
+        # While the drag lasts, builds with the same changes by hand are made once;
+        # not while the part turns about a round side, as the builds keep the part.
+        self.obj.Proxy.reuse = None if kind == handles.ALONG and self.turns_part() else {}
         # Nothing of an earlier drag carries over; without a fin the drag is passed over.
         self.drag_base, self.drag_own, self.drag_values = {}, {}, {}
+        self.drag_mm_per_degree = None
         if self.handled_result() is None:
             return
         which, number = self.handled
@@ -821,6 +989,8 @@ class FinSnapTaskPanel:
                           handles.UP: self.handled_result()[0].heights[number]}
         self.drag_own = {one: self.own_value(one) for one in handles.KINDS}
         self.drag_values = self.fin_values()
+        # Under a round side, the mm the fin moves for every degree the part turns.
+        self.drag_mm_per_degree = self.turn_of_handles()[2] if self.turns_part() else None
 
     def tine_tops(self):
         """The heights of the handled fin that end with a tine on top, from
@@ -872,7 +1042,12 @@ class FinSnapTaskPanel:
         if kind not in self.drag_base:
             return
         self.dragged = (kind, mm)
-        self.show_fin_values({kind: self.drag_values[kind] + mm})
+        if kind == handles.ALONG and self.drag_mm_per_degree:
+            # The angle of the fin on the part goes the other way round than the part turns.
+            shown = geometry.round_angle(self.drag_values[kind] - mm / self.drag_mm_per_degree, ANGLE_TOLERANCE)
+        else:
+            shown = self.drag_values[kind] + mm
+        self.show_fin_values({kind: shown})
         self.drag_timer.start()
 
     def drag_to(self, kind, mm):
@@ -916,23 +1091,22 @@ class FinSnapTaskPanel:
         """Show the handled fin `mm` from where its arrow was grabbed as a
         preview, and the fin itself, in `color`; the other fins stay green."""
         result, index = self.handled_result()
-        fin = result.fins.childShapes()[index].copy()
         wanted = self.drag_base[kind] + mm
-        if kind == handles.ALONG:
-            fin.translate(result.along * (wanted - self.built_value(kind)))
+        if kind == handles.UP:
+            # The fin as it would be at the height dragged to, its flank on
+            # along the face, rather than stretched, which would tilt it.
+            shapes = geometry.fin_at(feature.params_of(self.obj), result, self.handled[1],
+                                     max(wanted, MIN_PREVIEW_HEIGHT))
         else:
-            # Stretched up or down from the bed to the height dragged to: what
-            # the fin would look like, as near as a preview needs.
-            bed = fin.BoundBox.ZMin
-            stretch = App.Matrix()
-            stretch.move(App.Vector(0, 0, -bed))
-            stretch.scale(1, 1, max(wanted, MIN_PREVIEW_HEIGHT) / self.built_value(kind))
-            stretch.move(App.Vector(0, 0, bed))
-            fin = fin.transformGeometry(stretch)
+            fin = result.fins.childShapes()[index].copy()
+            # Under a round side the fin stays and the part turns instead.
+            if not self.turns_part():
+                fin.translate(result.along * (wanted - self.built_value(kind)))
+            shapes = [fin]
         # The fin in the colour as well: a preview over a green fin would mix
         # to neither.
         self.tint_handled(color)
-        self.handles.show_preview([fin], color)
+        self.handles.show_preview(shapes, color)
 
     def handle_done(self, kind, mm):
         # Coin still handles the drag here; rebuilding would move the arrow
@@ -970,20 +1144,69 @@ class FinSnapTaskPanel:
         box.setFocus()
         box.selectAll()
 
-    def field_entered(self, kind):
+    def field_typed(self, kind, _value):
+        """A field of the handled fin changed while typing: its value is taken
+        once typing pauses; a value the panel fills in is not."""
+        if self.filling_fields:
+            return
+        self.typed_field = kind
+        self.field_timer.start()
+
+    def take_typed(self):
+        """Take a value still waiting for typing to pause, before the handles
+        go to another fin or an arrow is grabbed, so it is neither lost nor
+        taken in the middle of a drag."""
+        if self.field_timer.isActive():
+            self.field_entered(self.typed_field)
+
+    def field_entered(self, kind, paused=False):
         """A value typed into a field of the handled fin: where it stands along
-        the face (ALONG) or how high it is (UP)."""
+        the face (ALONG) or how high it is (UP). With `paused`, typing has only
+        paused: the field may still be typed into, so it is left as typed.
+
+        INPUTS this has to withstand:
+          paused, the fin stands there          ->  built there, the field left as typed
+          paused, the fin cannot stand there    ->  nothing built, the reason shown, the
+                                                    field left as typed
+          paused, the build fails all the same  ->  taken back, the reason shown, the
+                                                    field left as typed
+          Enter or the field left, the fin
+            stands there                        ->  built there, the field shows it
+          Enter or the field left, it cannot    ->  the reason shown, the field shows
+                                                    where the fin stands
+          the value as shown, untouched         ->  nothing
+          no fin with the handles               ->  nothing
+        """
+        self.field_timer.stop()
         if self.filling_fields or self.handled_result() is None:
             return
         value = self.fin_fields[kind].value()
         current = self.fin_values()[kind]
-        # The field shows the value rounded; leaving it untouched changes nothing.
-        if abs(value - current) < FIELD_TOLERANCE:
+        if kind == handles.ALONG and self.turns_part():
+            # The part turns the other way round than the angle of the fin on
+            # it goes, the shorter way.
+            turn = math.remainder(current - value, geometry.FULL_CIRCLE)
+            # The field shows the angle rounded; leaving it untouched changes nothing.
+            if abs(turn) < ANGLE_TOLERANCE:
+                return
+            value = (self.own_value(kind) or 0.0) + geometry.turn_mm(feature.round_side(self.obj), turn)
+        else:
+            # The field shows the value rounded; leaving it untouched changes nothing.
+            if abs(value - current) < FIELD_TOLERANCE:
+                return
+            if kind == handles.ALONG:
+                value = (self.own_value(kind) or 0.0) + value - current
+        if not paused:
+            if not self.set_fin(kind, value):
+                self.place_handles()
             return
-        if kind == handles.ALONG:
-            value = (self.own_value(kind) or 0.0) + value - current
-        if not self.set_fin(kind, value):
-            self.place_handles()
+        # set_fin() tries the value first and shows why where the fin cannot
+        # stand; the field it leaves as typed meanwhile.
+        self.typing = kind
+        try:
+            self.set_fin(kind, value)
+        finally:
+            self.typing = None
 
     def release_handles(self):
         """Take the arrows away and stop listening, once, whichever way the panel closes."""
@@ -991,7 +1214,7 @@ class FinSnapTaskPanel:
             return
         self.released = True
         # Closed by FreeCAD first, the panel's form and its timers are gone already.
-        for timer in (self.timer, self.drag_timer, self.ends_timer):
+        for timer in (self.timer, self.drag_timer, self.ends_timer, self.field_timer):
             try:
                 timer.stop()
             except RuntimeError:
@@ -1047,15 +1270,36 @@ class FinSnapTaskPanel:
         return True
 
     def reject(self):
+        """Cancel: fins just made are deleted, and the part turned back with
+        them, in one undo step (discard_created()); fins edited get back what
+        they had, and then the part turns back to where the panel found it.
+
+        INPUTS this has to withstand:
+          fins just made, the part turned       ->  fins deleted, part turned back
+          fins edited, the part turned          ->  values, changes by hand and counter
+                                                    fin back, then the part turned back
+          fins edited, the part not turned      ->  values back, placement untouched
+          fins edited, the face of the main fin
+            no round side any more              ->  values back, no turn
+        """
         self.close()
         if self.created:
             discard_created(self.obj, self.on_cancel)
-        else:
-            for name, value in self.original.items():
+            return True
+        # How far the part is turned now, read before the changes by hand,
+        # which hold it, are put back.
+        turned = feature.round_shift(self.obj)
+        for name, value in self.original.items():
+            setattr(self.obj, name, value)
+        for name, value in self.original_edits.items():
+            if name in self.obj.PropertiesList:
                 setattr(self.obj, name, value)
-            for name, value in self.original_edits.items():
-                if name in self.obj.PropertiesList:
-                    setattr(self.obj, name, value)
-            self.obj.CounterFace = self.original_counter
+        self.obj.CounterFace = self.original_counter
+        # Turned last, so a turn that fails leaves nothing else half put back;
+        # what is put back is built all the same.
+        try:
+            if feature.on_round_side(self.obj):
+                feature.turn_part(self.obj, self.original_turn - turned)
+        finally:
             self.obj.recompute()
         return True

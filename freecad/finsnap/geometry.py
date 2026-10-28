@@ -20,6 +20,30 @@ the flank at the gap plus the tine clearance, the end of a tine at the
 tine clearance alone.
 The fin occupies s >= s_flank(z); the part lies at smaller s.
 
+ROUND SIDE: a cylinder or tube standing on its rim leans its curved side over
+the bed. Its lowest line is straight, and the plane touching the side along it
+stands in for the face: one fin stands in the middle under that line. Across a
+tine the side falls away behind the plane by a few thousandths of a millimetre,
+so a tine ends on it wherever the side lies within ROUND_SIDE_MAX_DROP of the
+plane.
+
+INPUTS this has to withstand (orient.is_round_side()):
+  curved side of a cylinder or tube     ->  True
+  inner side of a tube                  ->  True; frame_of() refuses it
+  fillet, part of a cylinder            ->  False
+  cone, planar face                     ->  False
+
+INPUTS this has to withstand (frame_of() on a round side):
+  cylinder standing on its rim          ->  frame on the plane touching its lowest
+                                            line, as wide as the side stays within
+                                            ROUND_SIDE_MAX_DROP of it
+  cylinder upright                      ->  FinError: it does not lean
+  cylinder lying on its side            ->  FinError: it rests on the bed
+  inner side of a tube                  ->  FinError: it curves inward
+  lowest line cut away or through a
+    hole, cylinder cut at a slant       ->  the frame reaches as far as the line runs
+                                            on the side; tines over a hole left out
+
 INPUTS this has to withstand (build()):
   inclined planar face, part standing on the bed  ->  FinResult
   face not planar                       ->  FinError
@@ -77,11 +101,15 @@ INPUTS this has to withstand (build()):
     beads                               ->  warning in FinResult, no error
   face inclined outside FACE_ANGLE_MIN
     to FACE_ANGLE_MAX                    ->  warning in FinResult, no error
+  round side                            ->  one fin under its lowest line, whatever
+                                            the placement; a note to give the rim
+                                            more hold on the bed
 """
 
 import math
 from collections import namedtuple
 from dataclasses import dataclass, field, replace
+from functools import partial
 
 import FreeCAD as App
 import Part
@@ -93,6 +121,12 @@ from .shapes import bounds, middle_normal, moved
 
 V = App.Vector
 UP = V(0, 0, 1)
+DOWN = V(0, 0, -1)
+# Degrees in a whole turn.
+FULL_CIRCLE = 360.0
+# The order rims_on_axis() tries rims in: a chamfered one, then one of the
+# side itself, then any other on the axis, which a part rarely stands on.
+RIM_CHAMFERED, RIM_OWN, RIM_OTHER = range(3)
 
 
 class FinError(ValueError):
@@ -118,6 +152,17 @@ class Frame:
     along_max: float
     face_top_z: float
     face_bottom_z: float
+    # The radius of the face when it is the curved side of a cylinder, its
+    # plane the one touching its lowest line; 0 for a planar face.
+    radius: float = 0.0
+
+    @property
+    def round_side(self):
+        return self.radius > 0
+
+    def normal(self):
+        """The outward normal of the plane of the face."""
+        return self.out * self.n_out + UP * self.n_z
 
     def s_face(self, z):
         return (self.c - self.n_z * z) / self.n_out
@@ -171,6 +216,11 @@ class FinResult:
     touching_z: dict = field(default_factory=dict)
     # Where the face starts along it (mm, as starts): fins are placed from there.
     face_start: float = 0.0
+    # The radius of a round side the fin stands under, 0 under a planar face.
+    # Its fin stays under the lowest line; moved by hand, the part turns instead.
+    radius: float = 0.0
+    # The frame the fins were built in, to draw one at another height (fin_at()).
+    frame: Frame = None
 
 
 def support_of(part, face):
@@ -189,7 +239,10 @@ def support_of(part, face):
         by side along the face)             ->  the face itself
       groove across and slot beside         ->  the pieces above and below only
       face without a lean (flat or upright) ->  the face itself; frame_of() refuses it
+      curved face                           ->  the face itself
     """
+    if face.findPlane() is None:
+        return face
     normal = middle_normal(face)
     horizontal = V(normal.x, normal.y, 0)
     if horizontal.Length < d.MIN_NORMAL_COMPONENT:
@@ -215,9 +268,143 @@ def support_of(part, face):
     return face if len(pieces) == 1 else Part.makeCompound(pieces)
 
 
+def rims_on_axis(shape, side):
+    """The rims of `shape` the round side `side` can stand on, best first.
+
+    A rim counts where a flat face ends in a whole circle on the axis of the
+    side. One that a chamfer joins to the side, a cone touching it, comes
+    first: the chamfer gives the part more hold on the bed. The rims of the
+    side itself come next, then any other on the axis, the bore of a tube or
+    a smaller step of a shaft. Larger rims come before smaller ones.
+
+    INPUTS this has to withstand:
+      plain cylinder                        ->  both rims of the side
+      chamfer on one rim                    ->  the small rim of the chamfer first,
+                                                then the plain rim
+      chamfer on both rims                  ->  the small rims of the chamfers; the
+                                                rims of the side end in no flat face
+      tube                                  ->  its outer rims, then its inner ones,
+                                                on which it cannot stand
+      shaft with a smaller step on the axis ->  the rims of the side before those of
+                                                the step
+      circle off the axis (a hole in the
+        end face beside it)                 ->  not a rim of the side
+    """
+    chamfers = [face for face in shape.Faces if isinstance(face.Surface, Part.Cone)
+                and any(edge.isSame(mine) for edge in face.Edges for mine in side.Edges)]
+    found = []
+    for edge in shape.Edges:
+        if not orient.is_rim(edge):
+            continue
+        circle = edge.Curve
+        flat = any(face.findPlane() is not None for face in shape.ancestorsOfType(edge, Part.Face))
+        if not (orient.on_axis(circle.Center, circle.Axis, side.Surface) and flat):
+            continue
+        if any(edge.isSame(mine) for chamfer in chamfers for mine in chamfer.Edges):
+            rank = RIM_CHAMFERED
+        elif any(edge.isSame(mine) for mine in side.Edges):
+            rank = RIM_OWN
+        else:
+            rank = RIM_OTHER
+        found.append((rank, -edge.Length, len(found), edge))
+    return [edge for *_, edge in sorted(found)]
+
+
+def _lowest(face):
+    """The direction from the axis of the round side `face` to its lowest line,
+    square to the axis and pointing down the most: the side lies lowest there,
+    and its normal leans furthest over the bed. Its horizontal part is `out`."""
+    axis = V(face.Surface.Axis).normalize()
+    n = DOWN - axis * DOWN.dot(axis)
+    if n.Length < d.MIN_NORMAL_COMPONENT:
+        raise FinError(translate("FinSnap", "the selected face does not lean over the bed"))
+    n.normalize()
+    if V(n.x, n.y, 0).Length < d.MIN_NORMAL_COMPONENT:
+        raise FinError(translate("FinSnap", "the selected face is flat; it rests on the bed or needs regular support"))
+    return n
+
+
+def _round_frame(part, face):
+    """The frame of the round side `face` on the plane touching its lowest line."""
+    surface = face.Surface
+    n = _lowest(face)
+    lowest = surface.Center + n * surface.Radius
+    u, v = surface.parameter(lowest)
+    if face.normalAt(u, v).dot(n) < 0:
+        raise FinError(translate("FinSnap", "the selected face curves inward; fins go under the outside of a "
+                                            "cylinder or tube"))
+    _, _, v0, v1 = face.ParameterRange
+    line = Part.LineSegment(surface.value(u, v0), surface.value(u, v1)).toShape().common(face)
+    if not line.Edges:
+        raise FinError(translate("FinSnap", "the lowest line of the selected face is cut away"))
+
+    out = V(n.x, n.y, 0).normalize()
+    along = UP.cross(out)
+    middle = lowest.dot(along)
+    drop = min(d.ROUND_SIDE_MAX_DROP, surface.Radius)
+    half_width = math.sqrt(surface.Radius ** 2 - (surface.Radius - drop) ** 2)
+    line_box = bounds(line)
+    return Frame(out=out, along=along, n_out=n.dot(out), n_z=n.z, c=n.dot(lowest), bed_z=bounds(part).ZMin,
+                 along_min=middle - half_width, along_max=middle + half_width, face_top_z=line_box.ZMax,
+                 face_bottom_z=line_box.ZMin, radius=surface.Radius)
+
+
+def turn_of(face, mm):
+    """The placement change that turns a part about the axis of its round side
+    `face` so that the fin, which stays under the lowest line, comes to stand
+    `mm` further along the side, to the right seen from outside, measured round
+    it. The side itself stays where it is; what lies on it turns."""
+    surface = face.Surface
+    angle = math.degrees(_turn_sense(face) * mm / surface.Radius)
+    return App.Placement(V(0, 0, 0), App.Rotation(V(surface.Axis), angle), surface.Center)
+
+
+def _turn_sense(face):
+    """1 where the part turns about the axis of its round side `face` the
+    right way round as the fin moves to the right along it, seen from outside,
+    -1 where the other way round."""
+    axis = V(face.Surface.Axis).normalize()
+    n = _lowest(face)
+    along = UP.cross(V(n.x, n.y, 0).normalize())
+    # The part turns the other way round than the fin moves along the side.
+    return -1 if axis.cross(n).dot(along) > 0 else 1
+
+
+def turn_mm(face, degrees):
+    """How far round the round side `face` the fin comes to stand, as turn_of()
+    takes it (mm), once the part is turned `degrees` about the axis of the
+    side, the right way round."""
+    return _turn_sense(face) * math.radians(degrees) * face.Surface.Radius
+
+
+def side_angle(face):
+    """Where round the round side `face` the fin under it stands: the angle of
+    the lowest line, which the middle of its tines touches, from the zero
+    direction of the side, in degrees from 0 up to 360. Turning the part the
+    right way round about the axis of the side makes it smaller."""
+    surface = face.Surface
+    axis = V(surface.Axis).normalize()
+    # Counted the right way round the axis from the zero direction, not by
+    # the parameter of the side, which runs the other way round where its
+    # frame is left-handed (a primitive cylinder or a pad can have one).
+    zero = surface.value(0, 0) - surface.Center
+    zero = zero - axis * zero.dot(axis)
+    lowest = _lowest(face)
+    return round_angle(math.degrees(math.atan2(axis.dot(zero.cross(lowest)), zero.dot(lowest))))
+
+
+def round_angle(degrees, tolerance=d.TOLERANCE):
+    """`degrees` as an angle round a circle, from 0 up to 360; closer below 360
+    than `tolerance` is 0."""
+    angle = degrees % FULL_CIRCLE
+    return 0.0 if FULL_CIRCLE - angle < tolerance else angle
+
+
 def frame_of(part, face, support=None):
     """The frame of `face`; its extent along and up is that of `support`, the
     face with the faces in its plane, if given."""
+    if orient.is_round_side(face):
+        return _round_frame(part, face)
     if face.findPlane() is None:
         raise FinError(translate("FinSnap", "the selected face is not planar"))
     n = middle_normal(face)
@@ -274,6 +461,10 @@ def tine_heights(p, frame, tine_count):
 def _extent_at(face, frame, z, p):
     """(first, last) position along the face over the height of a tine at z, None if it misses."""
     low, high = frame.along_min, frame.along_max
+    # The lowest line of a round side runs from face_bottom_z to face_top_z,
+    # which bound the tines already; a hole across it is found by contact_share().
+    if frame.round_side:
+        return low, high
     for height in (frame.bed_z + z, frame.bed_z + z + p.tine_height):
         ts = [v.Point.dot(frame.along) for wire in face.slice(UP, height) for v in wire.Vertexes]
         if not ts:
@@ -282,9 +473,12 @@ def _extent_at(face, frame, z, p):
     return low, high
 
 
-def room_for_one_fin(p, thickness):
+def room_for_one_fin(p, frame, thickness):
     """The least stretch along the face a fin needs: inside both insets, or
-    for a fin on each corner, both tines and the clearance between the fins."""
+    for a fin on each corner, both tines and the clearance between the fins.
+    Under a round side only the tine touches it; the fin stands clear of it."""
+    if frame.round_side:
+        return p.tine_width
     if p.placement == d.PLACEMENT_CORNERS:
         return thickness + d.FOOT_CLEARANCE + p.tine_width
     if p.placement in d.PLACEMENT_ONE_CORNER:
@@ -334,6 +528,9 @@ def thickness_for(p, height):
 
 def positions_for(p, frame, thickness):
     """Start of each fin along the face."""
+    if frame.round_side:
+        # One fin, its tine in the middle under the lowest line, whatever the placement.
+        return [(frame.along_min + frame.along_max - thickness) / 2]
     if p.placement == d.PLACEMENT_CORNERS or p.placement in d.PLACEMENT_ONE_CORNER:
         # The tine sits in the middle of the fin; its outer side ends flush
         # with the end of the face, the fin reaches past it. Along the face
@@ -422,12 +619,22 @@ def tine_start(p, t0, thickness):
 
 def contact_share(frame, face, t, p, z):
     """Share of the end of the tine at t and height z that lies on the face:
-    1 on the whole face, 0 over a recess or a hole in it."""
+    1 on the whole face, 0 over a recess or a hole in it.
+
+    A round side only touches the plane of the frame along its lowest line; the
+    end is pushed into the part by ROUND_SIDE_MAX_DROP instead, and the side has
+    to fill it there. It is curved, so its piece inside is a little larger than
+    the end it fills.
+    """
     bottom, top = frame.bed_z + z, frame.bed_z + z + p.tine_height
     ring = [frame.point(t, frame.s_face(bottom), bottom), frame.point(t + p.tine_width, frame.s_face(bottom), bottom),
             frame.point(t + p.tine_width, frame.s_face(top), top), frame.point(t, frame.s_face(top), top)]
     end = Part.Face(Part.makePolygon(ring + ring[:1]))
-    return end.common(face).Area / end.Area
+    if not frame.round_side:
+        return end.common(face).Area / end.Area
+    normal = frame.normal()
+    probe = end.translated(normal * d.TOLERANCE).extrude(-normal * (d.ROUND_SIDE_MAX_DROP + d.TOLERANCE))
+    return min(1.0, probe.common(face).Area / end.Area)
 
 
 def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
@@ -471,6 +678,29 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
         tines.append(frame.section(t_tine, [(s_end_bottom, bottom), (s_into_fin, bottom),
                                             (s_into_fin, top), (s_end_top, top)], p.tine_width))
     return body, tines, outer_middle
+
+
+def fin_at(p, result, number, height):
+    """Fin `number` of `result` as it would be `height` high (mm, from the
+    bed), with the tines that find the face up to that height, as a list of
+    shapes: where it stands and how thick it is as built, unchecked, to show
+    where a fin cannot be built.
+
+    INPUTS this has to withstand:
+      height between its tines              ->  the fin, ending above the last tine below
+      height above the face                 ->  the fin as high, its flank on along the face
+      height below its first tine           ->  the fin without tines
+      height at or below the top of its
+        foot, down to 0                     ->  the fin as high as its foot: lower, its
+                                                outline would cross itself
+      no foot, height above 0               ->  the fin as high
+    """
+    height = max(height, p.foot_height)
+    index = result.numbers.index(number)
+    tine_z = [z for z in result.touching_z.get(number, []) if z + p.tine_height <= height + d.TOLERANCE]
+    body, tines, _ = one_fin(p, result.frame, result.positions[index], height, result.thickness,
+                             result.foot_half_width, tine_z)
+    return [body] + tines
 
 
 def check(p, part, fins, bodies):
@@ -527,7 +757,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     if p.tine_width > thickness:
         raise FinError(translate("FinSnap", "tines (%.2f mm) are wider than the fin (%.2f mm)")
                        % (p.tine_width, thickness))
-    tine_z, low, high, gap_z = tines_on_face(support, frame, all_z, p, room_for_one_fin(p, thickness))
+    tine_z, low, high, gap_z = tines_on_face(support, frame, all_z, p, room_for_one_fin(p, frame, thickness))
     # Also with a fixed tine count: tines the narrow face cannot take are left
     # out and named, as over a recess, rather than refusing the whole fin.
     narrow_heights = set(all_z) - set(tine_z) - set(gap_z)
@@ -539,6 +769,11 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     face_start = frame.along_min
     frame = replace(frame, along_min=low, along_max=high)
     positions = positions_for(p, frame, thickness)
+    if frame.round_side:
+        # The fin stays under the lowest line, and its shift is how far the
+        # part was turned (turn_of()); measured from the middle, the place on
+        # the face is that shift.
+        face_start = (low + high) / 2
 
     def refused(message, kind=FinError):
         """A FinError, or `kind`, that says how many fins the face is planned
@@ -578,6 +813,8 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     for number, t0 in starts.items():
         if number in left_out:
             continue
+        if frame.round_side:
+            t0 = positions[number - 1]
         # A fin height set by hand for this fin alone: tines above it are left out.
         own = heights.get(number)
         if own is not None and own > room + d.TOLERANCE:
@@ -646,6 +883,9 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     if tine_length < d.TINE_MIN_LENGTH_BEADS * p.bead_width:
         warnings.append(translate("FinSnap", "tines are %.2f mm long, shorter than %.2f beads; the slicer "
                                   "may not print them to the face") % (tine_length, d.TINE_MIN_LENGTH_BEADS))
+    if frame.round_side:
+        warnings.append(translate("FinSnap", "the part stands on one point of its rim: a chamfer on the rim and "
+                                  "a brim in the slicer give it more hold on the bed"))
 
     return FinResult(fins=fins, bodies=bodies, tines=all_tines, height=max(fin_heights),
                      thickness=thickness, tine_z=tine_z, positions=built,
@@ -654,7 +894,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
                      dropped=dropped, starts={n: starts[n] for n in numbers}, along=frame.along, out=frame.out,
                      heights=dict(zip(numbers, fin_heights)), edges=dict(zip(numbers, edges)),
                      touching_z=touching_z,
-                     face_start=face_start)
+                     face_start=face_start, radius=frame.radius, frame=frame)
 
 
 def merged(part, *fin_shapes):
@@ -670,10 +910,14 @@ def opposite_face(part, face):
 
     Of the faces that lean over the bed in the opposite direction to `face`,
     the largest one is taken: that is the side the part could tip towards.
+    The side of a cylinder or tube is passed over: its fin stays under its
+    lowest line and moves only by turning the part, which the main fin does.
     """
     out = frame_of(part, face).out
     best = None
     for candidate in part.Faces:
+        if orient.is_round_side(candidate):
+            continue
         try:
             other = frame_of(part, candidate)
         except FinError:
@@ -714,21 +958,30 @@ def stand_for_face(shape, number, p, angle_deg):
     takes fins: (placement change, edge it stands on).
 
     The face is laid onto the bed and the part turned about one of its straight
-    edges, the longest first, so it stands on the longest edge it can.
+    edges, the longest first, so it stands on the longest edge it can. A round
+    side stands the part on a rim on its axis instead, see rims_on_axis().
 
     INPUTS this has to withstand:
       planar face with straight edges       ->  stood on its longest edge that works
       longest edge does not carry the part
         or the fins do not fit there        ->  the next longest edge
+      round side                            ->  stood on the first rim of rims_on_axis()
+                                                that works
       face without a straight edge, or none
         works                               ->  FinError
     """
     face = shape.Faces[number]
-    straight = [edge for edge in face.Edges
-                if abs(edge.Length - (edge.Vertexes[-1].Point - edge.Vertexes[0].Point).Length) < d.TOLERANCE]
-    for edge in sorted(straight, key=lambda candidate: -candidate.Length):
+    if orient.is_round_side(face):
+        tries = [(edge, partial(orient.stand_on_rim, shape, edge, orient.side_tilt(angle_deg), face))
+                 for edge in rims_on_axis(shape, face)]
+    else:
+        straight = [edge for edge in face.Edges
+                    if abs(edge.Length - (edge.Vertexes[-1].Point - edge.Vertexes[0].Point).Length) < d.TOLERANCE]
+        tries = [(edge, partial(orient.stand, shape, edge, angle_deg, face))
+                 for edge in sorted(straight, key=lambda candidate: -candidate.Length)]
+    for edge, stand in tries:
         try:
-            change = orient.stand(shape, edge, angle_deg, face)
+            change = stand()
             standing = moved(shape, change)
             build(standing, standing.Faces[number], p)
         except (orient.OrientError, FinError):
@@ -756,8 +1009,15 @@ def quick_plan(shape, edges, faces, p, angle_deg):
                                                 largest leaning face that takes them
       one edge off the bed, faces not at a
         right angle                         ->  FinError pointing to Stand on edge
+      one rim                               ->  stood on it, its side leaning angle_deg
+                                                as with the side selected; fins under it,
+                                                larger flat faces passed over
+      one rim, fins do not fit under its
+        side, or it has no whole side       ->  fins under the largest leaning face
       one planar face                       ->  it leans angle_deg over the bed, on its
                                                 longest edge that works; fins under it
+      one round side (cylinder, tube)       ->  stood on a rim, the side leaning
+                                                angle_deg; one fin under it
       one rounded face (fillet)             ->  the part rests on it; fins under the
                                                 largest leaning face
       one chamfer, wide or narrow           ->  as a rounded face: the part rests on it
@@ -775,6 +1035,22 @@ def quick_plan(shape, edges, faces, p, angle_deg):
     """
     if len(edges) == 1 and not faces:
         edge = edges[0][0]
+        if orient.is_rim(edge):
+            # The fins go under its side, which leans angle_deg as any face under
+            # fins does; under the largest leaning face only where they do not fit
+            # under the side, or it has none.
+            side = orient.side_of_rim(shape, edge)
+            change = orient.stand_on_rim(shape, edge, orient.side_tilt(angle_deg), side)
+            stood = moved(shape, change)
+            if side is not None:
+                number = next(i for i, face in enumerate(shape.Faces) if face.isSame(side))
+                try:
+                    build(stood, stood.Faces[number], p)
+                except (FinError, Part.OCCError):
+                    pass
+                else:
+                    return QuickPlan(change, number, edge, ())
+            return QuickPlan(change, best_face(stood, p), edge, ())
         if not orient.on_bed(shape, edge) and orient.right_angle_faces(shape, edge) is None:
             raise FinError(translate("FinSnap", "This edge does not lie on the bed, and its faces do not meet at a "
                                                 "right angle. Use Stand on edge with the edge and the face that "
@@ -784,7 +1060,7 @@ def quick_plan(shape, edges, faces, p, angle_deg):
         return QuickPlan(change, best_face(moved(shape, change), p), edge, ())
     if not edges and len(faces) == 1:
         face, number = faces[0]
-        if face.findPlane() is None or is_chamfer(shape, face):
+        if not orient.is_round_side(face) and (face.findPlane() is None or is_chamfer(shape, face)):
             change = orient.lay_flat(shape, face)
             return QuickPlan(change, best_face(moved(shape, change), p), None, ())
         change, edge = stand_for_face(shape, number, p, angle_deg)
