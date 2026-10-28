@@ -421,11 +421,17 @@ def _join_elements(obj, names):
                                                 a side for the whole side again, a flat
                                                 face for itself with the faces in its
                                                 plane (geometry.support_of())
+      half a flat face of a split part (the
+        end face of a cylinder)             ->  the joined shape, the whole face
       a fillet or an arc of a slot          ->  as no split side or rim: as it is
     """
     shape = global_shape(obj)
     elements = [shape.getElement(name) for name in names]
-    pieces = [orient.is_piece(element) for element in elements]
+    # Pieces: half a side or rim, or on a part split so half a flat face,
+    # which its fin needs whole to stand under the middle of it.
+    flat = [isinstance(element, Part.Face) and orient.is_flat_piece(shape, element) for element in elements]
+    split = any(flat) and orient.is_split(shape)
+    pieces = [orient.is_piece(element) or (flat_piece and split) for element, flat_piece in zip(elements, flat)]
     whole = orient.joined(shape) if any(pieces) else None
     found = [] if whole is None else [orient.whole_of(whole, e) if piece else None
                                       for e, piece in zip(elements, pieces)]

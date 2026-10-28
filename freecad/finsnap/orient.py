@@ -228,6 +228,40 @@ def is_piece(element):
     return isinstance(element.Curve, Part.Circle) and not is_rim(element)
 
 
+def is_split(shape):
+    """Whether `shape` has a side or a rim in pieces, as a STEP file splits
+    them; only on such a part are the flat faces in pieces joined as well."""
+    return any(is_piece(element) for element in shape.Faces + shape.Edges)
+
+
+def is_flat_piece(shape, face):
+    """Whether the flat face `face` of `shape` meets another face of its plane
+    along an edge: one of two halves of a face, as the end face of a split
+    cylinder.
+
+    INPUTS this has to withstand:
+      half of the end face of a split
+        cylinder                            ->  True
+      a whole end face, or a face beside
+        faces of other planes only          ->  False
+      a face that is not flat               ->  False
+    """
+    plane = face.findPlane()
+    if plane is None:
+        return False
+    normal = V(plane.Axis).normalize()
+    for edge in face.Edges:
+        for other in shape.ancestorsOfType(edge, Part.Face):
+            if other.isSame(face):
+                continue
+            other_plane = other.findPlane()
+            if (other_plane is not None
+                    and abs(abs(V(other_plane.Axis).normalize().dot(normal)) - 1) < d.TOLERANCE
+                    and abs((other_plane.Position - plane.Position).dot(normal)) < d.TOLERANCE):
+                return True
+    return False
+
+
 def _length(face):
     """How far the cylinder face `face` runs along its axis (mm): its range in v."""
     _, _, v0, v1 = face.ParameterRange
@@ -243,8 +277,14 @@ def whole_of(whole, element):
       half of a split side or rim           ->  the whole side or rim
       part of a turn, shorter than the
         whole cylinder it is joined to      ->  None
+      half of a flat face on a split part   ->  the face it was joined into
+      a flat face joining left as it was    ->  None
       a fillet, an arc of a slot            ->  None
     """
+    if isinstance(element, Part.Face) and element.findPlane() is not None:
+        # A flat piece: the face it was joined into, larger than itself.
+        found = counterpart(element, whole.Faces)
+        return found if found is not None and found.Area > element.Area + d.TOLERANCE else None
     if isinstance(element, Part.Face):
         found = counterpart(element, whole.Faces)
         if found is None or not is_round_side(found):

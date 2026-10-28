@@ -60,6 +60,7 @@ FINE_TURN = 1.23456789  # a turn finer than the shift is kept, in mm round the s
 COUNTER_HEIGHT = 6.0  # a height of its own for a counter fin, in mm
 THIN_BORE = 9.8  # a bore that leaves the end ring of the test tube too narrow for a counter fin, in mm
 WIDE_BORE = 9.0  # a bore under the middle of the end ring of the test tube, the ring beside it wide enough, in mm
+CENTRE_TOLERANCE = 0.5  # how far from the middle of a face a fin planned in its middle may stand, in mm
 EXACT_DISTANCE = 1e-9  # how far a point of the tube may move and it still stands alike, in mm
 
 
@@ -503,6 +504,17 @@ def counter_under_disc(doc):
         doc.recompute()
         expect(named is not None and fins.isValid() and fins.CounterFace,
                "a %s cylinder unturned takes a counter fin under its end face" % name)
+        # Under the whole end face, its halves joined: both carry it, and the
+        # fin stands in the middle of it, opposite the main fin.
+        sides = feature.names_on(global_shape(rod), [feature.round_side(fins)])
+        ends = [n for n in fins.CarriedFaces if n not in sides]
+        part, end = feature._face(fins.CounterFace)
+        middle = geometry.frame_of(part, end)
+        centre = (middle.along_min + middle.along_max) / 2
+        built = geometry.build(part, end, feature.params_of(fins))
+        expect(len(ends) == (2 if name == "split" else 1)
+               and abs(built.positions[0] + built.thickness / 2 - centre) < CENTRE_TOLERANCE,
+               "the %s end face carries the counter fin in its middle: %s" % (name, ends))
         doc.removeObject(fins.Name)
         doc.removeObject(rod.Name)
         doc.recompute()
