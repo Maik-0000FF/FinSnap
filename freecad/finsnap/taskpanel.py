@@ -3,8 +3,9 @@
 
 """Task panel to tune the parameters of a FinSnap object.
 
-The form is generated from feature.PROPERTIES, one group box per property
-group, so it never falls out of step with the object.
+The form is generated from feature.PROPERTIES, one section per property
+group, so it never falls out of step with the object. Each section folds
+away and opens again as it was left.
 """
 
 import functools
@@ -40,6 +41,8 @@ DEGREE_SUFFIX = " \N{DEGREE SIGN}"
 # Pause after the last change before the preview is rebuilt, so typing a
 # number does not rebuild the fins at every keystroke.
 PREVIEW_DELAY_MS = 400
+# The keys that end typing in a field.
+ENTER_KEYS = (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter)
 # Pause after the last move of a handle before the preview for it is built.
 DRAG_PREVIEW_MS = 150
 # Places of fins whose arrow ends are kept while the panel is open; beyond
@@ -66,17 +69,17 @@ NOTE_CLICK_FIN = QT_TRANSLATE_NOOP("FinSnap", "Click a fin of these fins in the 
 # round the side of a cylinder or tube, and how high it is.
 FIN_FIELD_PLACE = (QT_TRANSLATE_NOOP("FinSnap", "Place on the face"),
                    QT_TRANSLATE_NOOP("FinSnap", "Distance of the middle of the fin from the left end of the face, "
-                                     "seen from outside. Type a value and press Enter to move the fin."),
+                                     "seen from outside. Type a value to move the fin there."),
                    LENGTH_SUFFIX, LENGTH_DECIMALS, -MAX_LENGTH, MAX_LENGTH, False)
 ANGLE_DECIMALS = 2
 FIN_FIELD_ANGLE = (QT_TRANSLATE_NOOP("FinSnap", "Angle on the part"),
                    QT_TRANSLATE_NOOP("FinSnap", "Position of the fin around the cylinder or tube, measured at the "
                                      "middle of its tines, in degrees from 0°, where it is first placed. Type a "
-                                     "value and press Enter to turn the part to it; the fin keeps its place."),
+                                     "value to turn the part to it; the fin keeps its place."),
                    DEGREE_SUFFIX, ANGLE_DECIMALS, 0.0, geometry.FULL_CIRCLE, True)
 FIN_FIELD_HEIGHT = (QT_TRANSLATE_NOOP("FinSnap", "Height"),
-                    QT_TRANSLATE_NOOP("FinSnap", "Height of this fin alone. Type a value and press Enter to set "
-                                      "it; Reset fins gives it the height of the others again."),
+                    QT_TRANSLATE_NOOP("FinSnap", "Height of this fin alone. Type a value to set it; Reset fins "
+                                      "gives it the height of the others again."),
                     LENGTH_SUFFIX, LENGTH_DECIMALS, -MAX_LENGTH, MAX_LENGTH, False)
 # Half the last place the angle field shows: an angle closer than this is the one shown.
 ANGLE_TOLERANCE = 0.5 * 10 ** -ANGLE_DECIMALS
@@ -94,6 +97,14 @@ WARNING_SIGN = "⚠"
 # this colour, and a button beside it that puts the standard value back.
 MODIFIED_COLOR = "#e07000"
 MODIFIED_STYLE = "QLabel { color: %s; font-weight: bold; }" % MODIFIED_COLOR
+MODIFIED_HEADER_STYLE = "QToolButton { color: %s; }" % MODIFIED_COLOR
+# The sections of the panel fold away under a flat header in bold; whether
+# each is open is kept in this group of the preferences.
+SECTION_HEADER_STYLE = "QToolButton { border: none; font-weight: bold; }"
+SECTION_PREFERENCES = presets.PREFERENCES + "/PanelSections"
+# The section to edit the fins in, open the first time, as it holds what is
+# most often changed; the others start folded away.
+EDIT_SECTION = QT_TRANSLATE_NOOP("FinSnap", "Edit fins")
 RESET_SIGN = "↺"
 # Icon buttons: icon size, the gap to the text and the margin inside, in pixels.
 BUTTON_ICON_SIZE = 20
@@ -121,6 +132,60 @@ def discard_created(obj, on_cancel=None):
         raise
     doc.commitTransaction()
     doc.recompute()
+
+
+class Section(QtWidgets.QWidget):
+    """A section of the panel that folds away: a header to click, with an
+    arrow and the caption, and below it `content`, the widget it holds.
+    Whether it is open is kept under `key` in FinSnap's preferences, so the
+    panel opens as it was left; never opened or closed, it is `open_first`."""
+
+    def __init__(self, caption, key, open_first):
+        super().__init__()
+        self.key = key
+        self.header = QtWidgets.QToolButton()
+        self.header.setText(caption)
+        self.header.setCheckable(True)
+        self.header.setToolButtonStyle(QtCore.Qt.ToolButtonTextBesideIcon)
+        self.header.setSizePolicy(QtWidgets.QSizePolicy.Expanding, QtWidgets.QSizePolicy.Fixed)
+        self.header.setStyleSheet(SECTION_HEADER_STYLE)
+        self.content = QtWidgets.QGroupBox()
+        layout = QtWidgets.QVBoxLayout(self)
+        layout.setContentsMargins(0, 0, 0, 0)
+        layout.addWidget(self.header)
+        layout.addWidget(self.content)
+        self.header.setChecked(App.ParamGet(SECTION_PREFERENCES).GetBool(key, open_first))
+        self.show_open(self.header.isChecked())
+        self.header.toggled.connect(self.toggled)
+
+    def show_open(self, opened):
+        self.header.setArrowType(QtCore.Qt.DownArrow if opened else QtCore.Qt.RightArrow)
+        self.content.setVisible(opened)
+
+    def toggled(self, opened):
+        self.show_open(opened)
+        App.ParamGet(SECTION_PREFERENCES).SetBool(self.key, opened)
+
+    def mark(self, modified):
+        """Mark the header while a field in it differs from the standard,
+        so a change stays in sight with the section folded away."""
+        self.header.setStyleSheet(SECTION_HEADER_STYLE + (MODIFIED_HEADER_STYLE if modified else ""))
+
+
+class EnterTakes(QtCore.QObject):
+    """Takes Enter in a field as the value typed, by calling `take`, and keeps
+    it from the task dialog, which would close the panel on it."""
+
+    def __init__(self, take, parent):
+        super().__init__(parent)
+        self.take = take
+
+    def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
+        if event.type() == QtCore.QEvent.KeyPress and event.key() in ENTER_KEYS:
+            watched.interpretText()
+            self.take()
+            return True
+        return False
 
 
 def _icon_button(icon, text):
@@ -254,6 +319,13 @@ class FinSnapTaskPanel:
         self.ends_timer.setSingleShot(True)
         self.ends_timer.setInterval(ENDS_DELAY_MS)
         self.ends_timer.timeout.connect(self.update_ends)
+        # Takes a value typed into a field of the fin with the handles once
+        # typing pauses, as the other fields do; the field typed into last.
+        self.field_timer = QtCore.QTimer(self.form)
+        self.field_timer.setSingleShot(True)
+        self.field_timer.setInterval(PREVIEW_DELAY_MS)
+        self.field_timer.timeout.connect(lambda: self.field_entered(self.typed_field))
+        self.typed_field = None
         # The fin with the handles on it, as (MAIN or COUNTER, number); the
         # arrow being dragged with how far, as (kind, mm); and the shift and
         # height of the fin, and the values in its fields, when it was grabbed.
@@ -280,6 +352,7 @@ class FinSnapTaskPanel:
             "with the current choices; their tooltip says why."))
         intro.setWordWrap(True)
         layout.addWidget(intro)
+        # The drawings always show, as the letters in the fields point to them.
         self.drawings = []
         for path, caption in DRAWINGS:
             box = QtWidgets.QGroupBox(translate("FinSnap", caption))
@@ -289,15 +362,16 @@ class FinSnapTaskPanel:
             layout.addWidget(box)
             self.drawings.append(picture)
 
+        # The sections below fold away, each kept by its caption untranslated.
+        self.sections = {}
         groups = {}
         for prop in feature.PROPERTIES:
             if prop.group not in groups:
-                box = QtWidgets.QGroupBox(translate("App::Property", prop.group))
-                groups[prop.group] = QtWidgets.QFormLayout(box)
+                section = self.add_section(layout, prop.group, translate("App::Property", prop.group))
+                groups[prop.group] = QtWidgets.QFormLayout(section.content)
                 info = QtWidgets.QLabel(translate("FinSnap", feature.GROUP_INFO[prop.group]))
                 info.setWordWrap(True)
                 groups[prop.group].addRow(info)
-                layout.addWidget(box)
             widget = _widget(prop, feature.value_of(obj, prop.name))
             widget.setToolTip(_wrapped(translate("App::Property", prop.tip)))
             label = translate("FinSnap", prop.label)
@@ -317,7 +391,7 @@ class FinSnapTaskPanel:
             self.resets[prop.name] = reset
             _changed_signal(widget).connect(self.changed)
 
-        edit = QtWidgets.QGroupBox(translate("FinSnap", "Edit fins"))
+        edit = self.add_section(layout, EDIT_SECTION, translate("FinSnap", EDIT_SECTION)).content
         edit_layout = QtWidgets.QGridLayout(edit)
         edit_info = QtWidgets.QLabel(translate(
             "FinSnap", "To remove one fin, click it in the 3D view and press Remove selected fin, or the "
@@ -350,20 +424,21 @@ class FinSnapTaskPanel:
         self.fin_label = QtWidgets.QLabel(translate("FinSnap", NOTE_CLICK_FIN))
         self.fin_label.setWordWrap(True)
         edit_layout.addWidget(self.fin_label, 4, 0, 1, 2)
-        # Where the fin with the arrows stands, to read or to type in; Enter moves it.
+        # Where the fin with the arrows stands, to read or to type in: taken
+        # once typing pauses, at once with Enter or on leaving the field.
         self.fin_fields, self.fin_field_labels = {}, {}
         for row, kind in ((5, handles.ALONG), (6, handles.UP)):
             label = QtWidgets.QLabel()
             box = QtWidgets.QDoubleSpinBox()
-            box.setKeyboardTracking(False)
+            box.valueChanged.connect(functools.partial(self.field_typed, kind))
             box.editingFinished.connect(functools.partial(self.field_entered, kind))
+            box.installEventFilter(EnterTakes(functools.partial(self.field_entered, kind), box))
             edit_layout.addWidget(label, row, 0)
             edit_layout.addWidget(box, row, 1)
             self.fin_fields[kind], self.fin_field_labels[kind] = box, label
             self.set_field(kind, FIN_FIELD_PLACE if kind == handles.ALONG else FIN_FIELD_HEIGHT)
         # Whether the field along the face takes the angle on a round side.
         self.angle_field = False
-        layout.addWidget(edit)
 
         standard_buttons = QtWidgets.QHBoxLayout()
         save = QtWidgets.QPushButton(translate("FinSnap", "Save as standard"))
@@ -431,15 +506,28 @@ class FinSnapTaskPanel:
             self.widgets[prop.name].setToolTip(_wrapped(*paragraphs))
             self.labels[prop.name].setEnabled(not notes)
 
+    def add_section(self, layout, key, caption):
+        """A section under `caption` added to `layout`, kept as `key`."""
+        section = Section(caption, key, key == EDIT_SECTION)
+        layout.addWidget(section)
+        self.sections[key] = section
+        return section
+
     def update_marks(self):
-        """Mark every field whose value differs from the standard for new fins."""
+        """Mark every field whose value differs from the standard for new fins,
+        and the header of each section holding one."""
+        modified_groups = set()
         for prop in feature.PROPERTIES:
             value = getattr(self.standard, prop.field)
             modified = not _same(prop, _read(prop, self.widgets[prop.name]), value)
+            if modified:
+                modified_groups.add(prop.group)
             self.labels[prop.name].setStyleSheet(MODIFIED_STYLE if modified else "")
             self.resets[prop.name].setVisible(modified)
             self.resets[prop.name].setToolTip(_wrapped(translate("FinSnap", "Back to the standard: %s")
                                                        % _shown(prop, value)))
+        for group in {prop.group for prop in feature.PROPERTIES}:
+            self.sections[group].mark(group in modified_groups)
 
     def back_to_standard(self, prop):
         _write(prop, self.widgets[prop.name], getattr(self.standard, prop.field))
@@ -1043,9 +1131,18 @@ class FinSnapTaskPanel:
         box.setFocus()
         box.selectAll()
 
+    def field_typed(self, kind, _value):
+        """A field of the handled fin changed while typing: its value is taken
+        once typing pauses; a value the panel fills in is not."""
+        if self.filling_fields:
+            return
+        self.typed_field = kind
+        self.field_timer.start()
+
     def field_entered(self, kind):
         """A value typed into a field of the handled fin: where it stands along
         the face (ALONG) or how high it is (UP)."""
+        self.field_timer.stop()
         if self.filling_fields or self.handled_result() is None:
             return
         value = self.fin_fields[kind].value()
@@ -1073,7 +1170,7 @@ class FinSnapTaskPanel:
             return
         self.released = True
         # Closed by FreeCAD first, the panel's form and its timers are gone already.
-        for timer in (self.timer, self.drag_timer, self.ends_timer):
+        for timer in (self.timer, self.drag_timer, self.ends_timer, self.field_timer):
             try:
                 timer.stop()
             except RuntimeError:
