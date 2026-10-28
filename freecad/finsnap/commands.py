@@ -612,7 +612,12 @@ class AddFins:
         counter = faces[1] if len(faces) == 2 else None
         doc = App.ActiveDocument
         doc.openTransaction(translate("FinSnap", "Add fins"))
-        obj = feature.create(base, face_name, counter)
+        try:
+            obj = feature.create(base, face_name, counter)
+        except geometry.FinError as error:
+            doc.abortTransaction()
+            _message(translate("FinSnap", feature.NOTE_NO_COUNTER_ON_FACE) % error)
+            return
         ViewProviderFinSnap(obj.ViewObject)
         doc.commitTransaction()
         _edit_new(obj)

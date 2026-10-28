@@ -571,6 +571,14 @@ def face_name_of(shape, face):
     return None
 
 
+def check_counter_face(face):
+    """Refuse `face` for a counter fin where it is the side of a cylinder or
+    tube: its fin would stay under the lowest line and move only by turning
+    the part, the main fin with it. FinError then."""
+    if orient.is_round_side(face):
+        raise geometry.FinError(translate("FinSnap", COUNTER_ROUND_SIDE))
+
+
 def add_counter(obj, base=None, face_ref=None):
     """Give an existing FinSnap object a counter fin.
 
@@ -596,9 +604,10 @@ def add_counter(obj, base=None, face_ref=None):
     else:
         # A face chosen by hand has to take fins, or the next build fails.
         face = _face((base, [face_ref]))
+        # Said before the face is asked to take fins, which a bore or a cut
+        # side would refuse for a reason of its own.
+        check_counter_face(face[1])
         geometry.frame_of(*face)
-        if orient.is_round_side(face[1]):
-            raise geometry.FinError(translate("FinSnap", COUNTER_ROUND_SIDE))
     # Changes by hand to a counter fin on another face would name other fins.
     if obj.CounterFace != (base, [face_ref]):
         reset_fins(obj, COUNTER)
@@ -607,7 +616,10 @@ def add_counter(obj, base=None, face_ref=None):
 
 
 def create(base, face_ref, counter=None):
-    """A new FinSnap object under the face named `face_ref` of `base`. counter: (object, face name) or None."""
+    """A new FinSnap object under the face named `face_ref` of `base`. counter: (object, face name) or None.
+    A counter face on the side of a cylinder or tube: FinError, nothing made."""
+    if counter:
+        check_counter_face(_face((counter[0], [counter[1]]))[1])
     doc = base.Document
     obj = doc.addObject("Part::FeaturePython", TYPE_NAME)
     FinSnapFeature(obj)
@@ -915,8 +927,12 @@ def round_shift(obj):
 def round_turns(owner, document):
     """The fins of `owner` under a round side whose part was turned by hand,
     by name, with how far (mm round the side), for put_back_turns()."""
-    shifts = {obj.Name: (obj, round_shift(obj)) for obj in fins_of(owner, document)}
-    return {name: mm for name, (obj, mm) in shifts.items() if mm and on_round_side(obj)}
+    turns = {}
+    for obj in fins_of(owner, document):
+        mm = round_shift(obj)
+        if mm and on_round_side(obj):
+            turns[obj.Name] = mm
+    return turns
 
 
 def put_back_turns(document, turns):
@@ -934,9 +950,10 @@ def put_back_turns(document, turns):
 def forget_turn(obj):
     """Drop how far the part of `obj` was turned about its round side, once
     the part is laid flat or stood anew: the turn went with its placement,
-    and the fin starts from where it stands then."""
+    and the fin starts from where it stands then. Only the shift goes: the
+    count of fins it was made for stays, as it does in put_back_turns()."""
     if round_shift(obj) and on_round_side(obj):
-        set_fin_shift(obj, MAIN, 1, 0.0)
+        _set_mm(obj, SHIFTS[MAIN], 1, None)
 
 
 def set_round_shift(obj, mm):

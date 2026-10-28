@@ -463,6 +463,14 @@ def turned_tube(doc):
                "a counter fin chosen under the side of a tube is refused, nothing changed: %s" % error)
     else:
         raise AssertionError("a counter fin was added under the side of a tube")
+    count = len(doc.Objects)
+    try:
+        feature.create(part, side_name, (part, side_name))
+    except geometry.FinError as error:
+        expect("counter fin goes under a flat face" in str(error) and len(doc.Objects) == count,
+               "fins made with a counter fin under the side of a tube are refused, nothing made: %s" % error)
+    else:
+        raise AssertionError("fins were made with a counter fin under the side of a tube")
     # Set some other way, as an older file may have it: left out with a note,
     # the main fin still built.
     fins.CounterFace = (part, [side_name])
@@ -474,8 +482,12 @@ def turned_tube(doc):
     doc.recompute()
 
     feature.set_round_shift(fins, TUBE_TURN)
+    # A count of its own, which a build would not give: it has to stay as it is.
+    made_for = getattr(fins, feature.PLANNED[feature.MAIN]) + 1
+    setattr(fins, feature.EDITED_OF[feature.MAIN], made_for)
     feature.keep_laid_flat(fins, App.Placement())
-    expect(not feature.round_shift(fins), "laid flat, the fin keeps no turn of the tube")
+    expect(not feature.round_shift(fins) and getattr(fins, feature.EDITED_OF[feature.MAIN]) == made_for,
+           "laid flat, the fin keeps no turn of the tube, and the count its changes were made for")
 
 
 def main():

@@ -753,10 +753,11 @@ def check_round_side():
            "Quick fins on a rim alone leans the side by the tilt angle, as on the side")
     disc = Part.makeCylinder(ROD_RADIUS, DISC_HEIGHT)
     disc_rim = [e for e in disc.Edges if orient.is_rim(e)][0]
-    plan = geometry.quick_plan(disc, [(disc_rim, None)], [], p, ODD_TILT)
-    on_disc = moved(disc, plan.change)
-    expect(orient.is_round_side(on_disc.Faces[plan.number]) and leans_by(on_disc, plan.number, ODD_TILT),
-           "Quick fins on the rim of a disc puts the fins under its side, leaning by the tilt angle")
+    for tilt in (ODD_TILT, d.TILT_ANGLE):
+        plan = geometry.quick_plan(disc, [(disc_rim, None)], [], p, tilt)
+        on_disc = moved(disc, plan.change)
+        expect(orient.is_round_side(on_disc.Faces[plan.number]) and leans_by(on_disc, plan.number, tilt),
+               "Quick fins on the rim of a disc at %g degrees puts the fins under its side, leaning so" % tilt)
     spread = geometry.build(stood, stood.Faces[side], FinParams(placement=d.PLACEMENT_ENDS))
     expect(len(spread.positions) == 1, "a round side takes one fin, whatever the placement")
 

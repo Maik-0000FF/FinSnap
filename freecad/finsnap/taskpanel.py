@@ -307,9 +307,6 @@ class FinSnapTaskPanel:
         self.original_counter = obj.CounterFace
         # How far the part was turned about a round side by hand; Cancel turns it back.
         self.original_turn = feature.round_shift(obj)
-        # Whether the main fin stands under a round side: asked once, as the
-        # face of the main fin stays while the panel is open.
-        self.main_round = feature.on_round_side(obj)
 
         self.form = QtWidgets.QWidget()
         # A child of the form, so it goes with the panel and never fires on a
@@ -821,7 +818,7 @@ class FinSnapTaskPanel:
         lowest line, and the part turns about its axis. Asked of the face, not
         of the last build, which a failed build leaves empty: a turn that fails
         is still turned back."""
-        return self.handled is not None and self.handled[0] == feature.MAIN and self.main_round
+        return self.handled is not None and self.handled[0] == feature.MAIN and feature.on_round_side(self.obj)
 
     def own_value(self, kind):
         """What the handled fin has by hand now: its shift along the face
@@ -1273,17 +1270,33 @@ class FinSnapTaskPanel:
         return True
 
     def reject(self):
+        """Cancel: fins just made are deleted, and the part turned back with
+        them, in one undo step (discard_created()); fins edited get back what
+        they had, and then the part turns back to where the panel found it.
+
+        INPUTS this has to withstand:
+          fins just made, the part turned       ->  fins deleted, part turned back
+          fins edited, the part turned          ->  values, changes by hand and counter
+                                                    fin back, then the part turned back
+          fins edited, the part not turned      ->  values back, placement untouched
+          fins edited, the face of the main fin
+            no round side any more              ->  values back, no turn
+        """
         self.close()
         if self.created:
             discard_created(self.obj, self.on_cancel)
-        else:
-            if self.main_round:
-                feature.set_round_shift(self.obj, self.original_turn)
-            for name, value in self.original.items():
+            return True
+        # How far the part is turned now, read before the changes by hand,
+        # which hold it, are put back.
+        turned = feature.round_shift(self.obj)
+        for name, value in self.original.items():
+            setattr(self.obj, name, value)
+        for name, value in self.original_edits.items():
+            if name in self.obj.PropertiesList:
                 setattr(self.obj, name, value)
-            for name, value in self.original_edits.items():
-                if name in self.obj.PropertiesList:
-                    setattr(self.obj, name, value)
-            self.obj.CounterFace = self.original_counter
-            self.obj.recompute()
+        self.obj.CounterFace = self.original_counter
+        # Turned last, so a turn that fails leaves nothing else half put back.
+        if feature.on_round_side(self.obj):
+            feature.turn_part(self.obj, self.original_turn - turned)
+        self.obj.recompute()
         return True
