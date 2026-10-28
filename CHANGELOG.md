@@ -19,6 +19,7 @@ All notable changes to FinSnap are listed here. The format follows
 ### Fixed
 
 - The README names the Addon Manager menu as FreeCAD shows it and no longer implies that FreeCAD 26.3 is already released
+- A fin dragged to a height where it cannot stand is previewed in its true shape instead of stretched, so it no longer looks tilted
 
 ## [0.5.2] - 2026-10-27
 

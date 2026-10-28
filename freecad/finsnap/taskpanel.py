@@ -990,23 +990,22 @@ class FinSnapTaskPanel:
         """Show the handled fin `mm` from where its arrow was grabbed as a
         preview, and the fin itself, in `color`; the other fins stay green."""
         result, index = self.handled_result()
-        fin = result.fins.childShapes()[index].copy()
         wanted = self.drag_base[kind] + mm
-        if kind == handles.ALONG and not self.turns_part():
-            fin.translate(result.along * (wanted - self.built_value(kind)))
+        if kind == handles.UP:
+            # The fin as it would be at the height dragged to, its flank on
+            # along the face, rather than stretched, which would tilt it.
+            shapes = geometry.fin_at(feature.params_of(self.obj), result, self.handled[1],
+                                     max(wanted, MIN_PREVIEW_HEIGHT))
         else:
-            # Stretched up or down from the bed to the height dragged to: what
-            # the fin would look like, as near as a preview needs.
-            bed = fin.BoundBox.ZMin
-            stretch = App.Matrix()
-            stretch.move(App.Vector(0, 0, -bed))
-            stretch.scale(1, 1, max(wanted, MIN_PREVIEW_HEIGHT) / self.built_value(kind))
-            stretch.move(App.Vector(0, 0, bed))
-            fin = fin.transformGeometry(stretch)
+            fin = result.fins.childShapes()[index].copy()
+            # Under a round side the fin stays and the part turns instead.
+            if not self.turns_part():
+                fin.translate(result.along * (wanted - self.built_value(kind)))
+            shapes = [fin]
         # The fin in the colour as well: a preview over a green fin would mix
         # to neither.
         self.tint_handled(color)
-        self.handles.show_preview([fin], color)
+        self.handles.show_preview(shapes, color)
 
     def handle_done(self, kind, mm):
         # Coin still handles the drag here; rebuilding would move the arrow

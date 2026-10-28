@@ -53,6 +53,8 @@ BORE_RADIUS = 6.0      # the hole that makes it a tube
 ROUND_TURN = 5.0       # how far the fin under a round side is moved by hand, in mm round it
 ROUND_DEGREES = 30.0   # how far a part is turned about its round side, in degrees
 ODD_TURNS = (77.0, 200.0)  # turns of a part about its axis before it is stood, in degrees
+ABOVE_FACE = 30.0      # how far above its own height a fin is drawn, beyond the face, in mm
+NORMAL_DECIMALS = 6    # places to which the directions of faces are compared
 
 # Thin horizontal slices through the fin, to measure it layer by layer.
 SLICE_SIZE = 1000.0
@@ -815,6 +817,31 @@ def check_left_out(cube, face):
         raise AssertionError("fins were built with every fin removed")
 
 
+def check_fin_at(cube, face):
+    """A fin drawn at another height, as the task panel shows one that cannot
+    stand there, has the faces of the fin built, its flank along the face."""
+    p = FinParams()
+    built = geometry.build(cube, face, p)
+    number = built.numbers[0]
+
+    def planes(shapes):
+        """The directions the flat faces of `shapes` face, rounded to compare."""
+        return {tuple(round(c, NORMAL_DECIMALS) for c in f.normalAt(*f.ParameterRange[::2]))
+                for shape in shapes for f in shape.Faces if f.findPlane() is not None}
+
+    same = geometry.fin_at(p, built, number, built.heights[number])
+    expect(abs(same[0].Volume - built.bodies[0].Volume) < d.TOLERANCE and len(same) == 1 + len(built.tines),
+           "drawn at its own height, the fin is the one built, with its tines")
+    for height, why in ((built.heights[number] + ABOVE_FACE, "far above the face"),
+                        (built.tine_z[0], "at the bottom of its first tine")):
+        drawn = geometry.fin_at(p, built, number, height)
+        expect(planes(drawn[:1]) <= planes(built.bodies[:1])
+               and abs(drawn[0].BoundBox.ZMax - (cube.BoundBox.ZMin + height)) < d.TOLERANCE,
+               "drawn %s, the fin is as high, its faces turned as those of the fin built" % why)
+    expect(len(geometry.fin_at(p, built, number, built.tine_z[0])) == 1,
+           "drawn no higher than the bottom of its first tine, the fin has no tines")
+
+
 def check_merged_clearance(cube, face):
     """Fins merged into the part reach it through their tines: a tine
     clearance would leave them loose, so it is not applied."""
@@ -1081,6 +1108,7 @@ def main():
     check_left_out(cube, face)
     check_moved_fins(cube, face)
     check_merged_clearance(cube, face)
+    check_fin_at(cube, face)
     print("all checks passed", file=sys.__stdout__)
 
 

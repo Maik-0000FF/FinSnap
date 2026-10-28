@@ -219,6 +219,8 @@ class FinResult:
     # The radius of a round side the fin stands under, 0 under a planar face.
     # Its fin stays under the lowest line; moved by hand, the part turns instead.
     radius: float = 0.0
+    # The frame the fins were built in, to draw one at another height (fin_at()).
+    frame: Frame = None
 
 
 def support_of(part, face):
@@ -678,6 +680,24 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
     return body, tines, outer_middle
 
 
+def fin_at(p, result, number, height):
+    """Fin `number` of `result` as it would be `height` high (mm, from the
+    bed), with the tines that find the face up to that height, as a list of
+    shapes: where it stands and how thick it is as built, unchecked, to show
+    where a fin cannot be built.
+
+    INPUTS this has to withstand:
+      height between its tines              ->  the fin, ending above the last tine below
+      height above the face                 ->  the fin as high, its flank on along the face
+      height below its first tine           ->  the fin without tines, no lower than its foot
+    """
+    index = result.numbers.index(number)
+    tine_z = [z for z in result.touching_z.get(number, []) if z + p.tine_height <= height + d.TOLERANCE]
+    body, tines, _ = one_fin(p, result.frame, result.positions[index], height, result.thickness,
+                             result.foot_half_width, tine_z)
+    return [body] + tines
+
+
 def check(p, part, fins, bodies):
     """Fins clear of the part. That every tine reaches the face is settled when
     the tines are chosen, by contact_share()."""
@@ -869,7 +889,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
                      dropped=dropped, starts={n: starts[n] for n in numbers}, along=frame.along, out=frame.out,
                      heights=dict(zip(numbers, fin_heights)), edges=dict(zip(numbers, edges)),
                      touching_z=touching_z,
-                     face_start=face_start, radius=frame.radius)
+                     face_start=face_start, radius=frame.radius, frame=frame)
 
 
 def merged(part, *fin_shapes):
