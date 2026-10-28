@@ -36,6 +36,8 @@ GROOVE_DEPTH = 2.0     # a groove across the front of a box, splitting it
 SINK_DEPTH = 0.5       # how deep the face is sunk around a stretch of it, so that stretch is a face of its own
 SINK_INSET = 0.5       # how far that stretch ends inside the grid tines below and above it, in mm
 OUT_OF_REACH = 100.0   # a height or a width beyond any test part, in mm
+NOTCH_CLEAR = 1.0      # how far a notch in the end of a face stays from the grid tines, and its depth, in mm
+PIN_HOLE_RADIUS = 0.9  # a hole that splits the face under a tine, small enough to leave the tines beside it
 GROOVE_WIDTH = 2.0
 GROOVE_FROM = 8.0
 WIDE_BOX = 60.0          # long enough for a U profile with legs of a third each
@@ -564,6 +566,41 @@ def check_restart_planned(cube, face):
     expect(gridded.moved and not bridged.moved and bridged.tines and not bridged.dropped,
            "a fin whose grid tines all lie over holes moves on one grid, and bridges them with the restart: %s"
            % bridged.touching_z)
+
+
+def check_restart_narrow(cube, face):
+    """With the restart a fin on its own grid gets no tine where the face is
+    narrower than the fin: a notch in the end of the face, beside the fin
+    but clear of its tine, between two grid tines, over a fin whose grid
+    restarts above a hole."""
+    p, one_grid = FinParams(placement=d.PLACEMENT_ENDS), FinParams(tine_restart=False, placement=d.PLACEMENT_ENDS)
+    frame = geometry.frame_of(cube, face)
+    normal = face.normalAt(0, 0)
+    plain = geometry.build(cube, face, one_grid)
+    t0, grid = min(plain.positions), plain.tine_z
+    start = geometry.tine_start(p, t0, plain.thickness)
+
+    def on_face(t, z):
+        return frame.point(t, frame.s_face(frame.bed_z + z), frame.bed_z + z)
+
+    low, high = grid[1] + p.tine_height + NOTCH_CLEAR, grid[2] - NOTCH_CLEAR
+    # Between the side of the fin and its tine.
+    inner = (t0 + start) / 2
+    ring = [on_face(frame.along_min - NOTCH_CLEAR, low), on_face(inner, low), on_face(inner, high),
+            on_face(frame.along_min - NOTCH_CLEAR, high)]
+    notch = Part.Face(Part.makePolygon(ring + ring[:1])).translated(normal * NOTCH_CLEAR).extrude(
+        -normal * 2 * NOTCH_CLEAR)
+    hole_z = (grid[0] + p.tine_height + grid[1]) / 2
+    centre = on_face(start + p.tine_width / 2, hole_z)
+    part = cube.cut(notch).cut(Part.makeCylinder(PIN_HOLE_RADIUS, 2 * NOTCH_CLEAR, centre - normal * NOTCH_CLEAR,
+                                                 normal))
+    notched = max((f for f in part.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE), key=lambda f: f.Area)
+    result = geometry.build(part, notched, p)
+    first = result.numbers[0]
+    beside = [z for z in result.touching_z[first] if z + p.tine_height > low + d.TOLERANCE and z < high - d.TOLERANCE]
+    expect(not beside and any(z > high - d.TOLERANCE for z in result.touching_z[first]),
+           "no tine where a notch makes the face narrower than the fin, the grid anew above it: %s"
+           % result.touching_z[first])
 
 
 def check_split_face():
@@ -1228,6 +1265,7 @@ def main():
     check_shortened(cube, face)
     check_restart(cube, face)
     check_restart_planned(cube, face)
+    check_restart_narrow(cube, face)
     check_split_face()
     check_quick_fins()
     check_quick_plan()

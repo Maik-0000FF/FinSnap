@@ -735,11 +735,14 @@ def face_tines(p, frame, tine_count, restart):
 def restarted_tines(p, frame, face, t0, thickness, limit, count):
     """Bottoms of the tines of the fin starting at t0 (mm, from the bed), on
     a grid that starts anew at the lower edge of each stretch of `face` under
-    the fin: at the bottom of the face and above every gap the fin bridges.
-    Within a stretch they are spread evenly from its lower edge to its top,
-    no further apart than the tine spacing, so a tine sits just above every
-    gap and one at the top of the face; between two stretches at least one
-    free layer is left. None above `limit`, `count` at most if given, the
+    the fin: at the bottom of the face, above every gap the fin bridges, and
+    where the face is wide enough for the fin again. A stretch is where the
+    face lies under both sides of the tine and of the fin, or for a fin on a
+    corner, which reaches past the end of the face, of the tine alone.
+    Within a stretch the tines are spread evenly from its lower edge to its
+    top, no further apart than the tine spacing, so a tine sits just above
+    every gap and one at the top of the face; between two stretches at least
+    one free layer is left. None above `limit`, `count` at most if given, the
     lowest first; None for a face that rises from the bed in one stretch,
     which keeps the one grid.
 
@@ -748,6 +751,9 @@ def restarted_tines(p, frame, face, t0, thickness, limit, count):
                                                 restart
       a face starting above the bed         ->  the first tine just above its lower edge
       a hole under the fin                  ->  one just below it, one just above it
+      a face narrower than the fin above
+        a gap                               ->  no tine where it is narrower
+      a corner fin past the end of the face ->  its tine alone has to lie on the face
       a stretch lower than a tine           ->  no tine in it
       a stretch with room for one tine      ->  that tine at its lower edge
       a gap narrower than a free layer      ->  the next tine a free layer above the
@@ -755,10 +761,15 @@ def restarted_tines(p, frame, face, t0, thickness, limit, count):
       no face under the fin at all          ->  no tine
     """
     start = tine_start(p, t0, thickness)
-    left, right = _bands_at(frame, face, start), _bands_at(frame, face, start + p.tine_width)
-    # Where the whole width of a tine lies on the face: both its sides do.
-    bands = sorted((max(a0, b0), min(a1, b1)) for a0, a1 in left for b0, b1 in right
-                   if min(a1, b1) - max(a0, b0) > d.TOLERANCE)
+    sides = [start, start + p.tine_width]
+    if not (p.placement == d.PLACEMENT_CORNERS or p.placement in d.PLACEMENT_ONE_CORNER):
+        # Just inside the sides of the fin: a fin flush with the end of the
+        # face would slice it along its edge.
+        sides += [t0 + d.TOLERANCE, t0 + thickness - d.TOLERANCE]
+    bands = _bands_at(frame, face, sides[0])
+    for side in sides[1:]:
+        bands = sorted((max(a0, b0), min(a1, b1)) for a0, a1 in bands for b0, b1 in _bands_at(frame, face, side)
+                       if min(a1, b1) - max(a0, b0) > d.TOLERANCE)
     # A face that rises from the bed in one stretch keeps the one grid, as
     # without the restart: its fins are as they were.
     if len(bands) == 1 and bands[0][0] <= d.TOLERANCE:
