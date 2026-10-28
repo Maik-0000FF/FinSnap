@@ -1195,10 +1195,8 @@ class FinSnapTaskPanel:
             if not self.set_fin(kind, value):
                 self.place_handles()
             return
-        error = self.stand_error(kind, value)
-        if error is not None:
-            self.refuse(error)
-            return
+        # set_fin() tries the value first and shows why where the fin cannot
+        # stand; the field it leaves as typed meanwhile.
         self.typing = kind
         try:
             self.set_fin(kind, value)
