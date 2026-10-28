@@ -50,9 +50,14 @@ HEIGHTS = {"main": "FinHeights", "counter": "CounterFinHeights"}
 # and the name earlier versions kept it under, when fins could only be removed.
 EDITED_OF = {"main": "EditedFinsOf", "counter": "EditedCounterFinsOf"}
 REMOVED_OF = {"main": "RemovedFinsOf", "counter": "RemovedCounterFinsOf"}
+# The tine grid (FinParams.tine_grid) the fin heights of their own were set on.
+HEIGHTS_GRID = {"main": "FinHeightsGrid", "counter": "CounterFinHeightsGrid"}
 NOTE_EDITS_DROPPED = QT_TRANSLATE_NOOP(
     "FinSnap", "The number of fins changed, so the fins changed by hand are as planned again: removed fins "
     "are back, moved fins and fin heights of their own are undone.")
+NOTE_HEIGHTS_DROPPED = QT_TRANSLATE_NOOP(
+    "FinSnap", "The tines lie at other heights now, so fin heights of their own are undone: each fin ends at "
+    "its highest tine again.")
 MAIN, COUNTER = "main", "counter"
 # Said when a single fin is to be removed from fins merged into the part.
 NOTE_MERGED_SINGLE = QT_TRANSLATE_NOOP(
@@ -677,6 +682,11 @@ class FinSnapFeature:
                 value = getattr(obj, prop.name)
                 setattr(obj, prop.name, list(prop.choices))
                 setattr(obj, prop.name, value)
+        # Saved before the tine grid was noted for the fin heights of their own:
+        # they were set on the grid the file brings.
+        for which in (MAIN, COUNTER):
+            if edits(obj, which)[2] and HEIGHTS_GRID[which] not in obj.PropertiesList:
+                _note_grid(obj, which)
 
     def dumps(self):
         return None
@@ -901,6 +911,35 @@ def builder(obj, which):
         part, face, p, tine_count=p.counter_tine_count or None, left_out=left, shifts=shifts, heights=heights)
 
 
+def _note_grid(obj, which):
+    """Note the tine grid the fin heights of their own of `which` are set on."""
+    hidden_property(obj, HEIGHTS_GRID[which], "App::PropertyString")
+    setattr(obj, HEIGHTS_GRID[which], repr(params_of(obj).tine_grid))
+
+
+def drop_heights_off_grid(obj, which, notes):
+    """Undo the fin heights of their own of `which` when the tines lie at
+    other heights than when they were set, so each fin ends at its highest
+    tine again; a note says so.
+
+    INPUTS this has to withstand:
+      no height of its own                  ->  nothing changed
+      heights, the grid they were set on    ->  kept
+      heights, another grid now             ->  heights undone, note; moves and
+                                                removed fins kept
+      heights, no grid noted                ->  kept, the grid now noted for them (files
+                                                saved before get it on restore)
+    """
+    if not edits(obj, which)[2]:
+        return
+    noted = getattr(obj, HEIGHTS_GRID[which], None)
+    if noted is None:
+        _note_grid(obj, which)
+    elif noted != repr(params_of(obj).tine_grid):
+        setattr(obj, HEIGHTS[which], {})
+        notes.append(translate("FinSnap", NOTE_HEIGHTS_DROPPED))
+
+
 def build_keeping_edits(obj, which, build_fn, notes):
     """Build the fins of `which` with the changes made by hand, as long as the
     face is planned for as many fins as when they were made.
@@ -920,7 +959,10 @@ def build_keeping_edits(obj, which, build_fn, notes):
       changes made, count they were made
         for unknown                         ->  built with them; a FinError passed on
       FinError for any other reason         ->  passed on
+      heights set on another tine grid      ->  those heights undone first, note
+                                                (drop_heights_off_grid())
     """
+    drop_heights_off_grid(obj, which, notes)
     left, shifts, heights = edits(obj, which)
     changed = bool(left or shifts or heights)
     made_for = getattr(obj, EDITED_OF[which], None)
@@ -1062,6 +1104,7 @@ def set_fin_shift(obj, which, number, mm):
 def set_fin_height(obj, which, number, mm):
     """Give fin `number` of `which` a height of its own, or with None the height of the others again."""
     _set_mm(obj, HEIGHTS[which], number, mm)
+    _note_grid(obj, which)
     _edited(obj, which)
 
 

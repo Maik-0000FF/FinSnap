@@ -33,6 +33,9 @@ HALF_LAYER_STARTS = (1.1, 1.3, 1.5, 1.7)
 WIDE_NOZZLE = 0.8
 WIDE_BEAD = 0.9       # two of them are thicker than the 1 mm base
 GROOVE_DEPTH = 2.0     # a groove across the front of a box, splitting it
+SINK_DEPTH = 0.5       # how deep the face is sunk around a stretch of it, so that stretch is a face of its own
+SINK_INSET = 0.5       # how far that stretch ends inside the grid tines below and above it, in mm
+OUT_OF_REACH = 100.0   # a height or a width beyond any test part, in mm
 GROOVE_WIDTH = 2.0
 GROOVE_FROM = 8.0
 WIDE_BOX = 60.0          # long enough for a U profile with legs of a third each
@@ -505,6 +508,57 @@ def check_restart(cube, face):
     expect(not spread.dropped and gridded.dropped and spread.height > room - restart.layer_height - d.TOLERANCE,
            "above a hole the grid starts anew: no tine over it, the top tine at the top of the face: "
            "%.2f mm of %.2f" % (spread.height, room))
+
+
+def sunk_around(cube, face, low, high):
+    """`cube` with `face` sunk SINK_DEPTH below `low` and above `high` (mm
+    from the bed), and the stretch between as a face of its own."""
+    frame = geometry.frame_of(cube, face)
+    normal = face.normalAt(0, 0)
+    sunk = cube
+    for bottom, top in ((-OUT_OF_REACH, low), (high, OUT_OF_REACH)):
+        box = Part.makeBox(OUT_OF_REACH, OUT_OF_REACH, top - bottom,
+                           V(-OUT_OF_REACH / 2, -OUT_OF_REACH / 2, frame.bed_z + bottom))
+        layer = cube.common(box)
+        sunk = sunk.cut(layer.cut(layer.translated(-normal * SINK_DEPTH)))
+    stretch = next(f for f in sunk.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE
+                   and abs(f.BoundBox.ZMin - frame.bed_z - low) < d.TOLERANCE)
+    return sunk, stretch
+
+
+def check_restart_planned(cube, face):
+    """With the restart each fin is planned on its own grid from the start:
+    a short face high above the bed that the one grid misses gets tines, and
+    a fin whose grid tines all lie over holes bridges them where it stands,
+    instead of moving beside them."""
+    restart, one_grid = FinParams(), FinParams(tine_restart=False)
+    grid = geometry.build(cube, face, one_grid).tine_z
+    sunk, short = sunk_around(cube, face, grid[1] + SINK_INSET, grid[2] - SINK_INSET)
+    try:
+        geometry.build(sunk, short, one_grid)
+    except geometry.FinError:
+        missed = True
+    else:
+        missed = False
+    above = geometry.build(sunk, short, restart)
+    expect(missed and above.tines and not above.moved,
+           "a short face between two grid tines, refused on one grid, gets %d tines with the restart"
+           % len(above.tines))
+    frame = geometry.frame_of(cube, face)
+    normal = face.normalAt(0, 0)
+    middle = (frame.along_min + frame.along_max) / 2
+    holed = cube
+    for z in grid:
+        centre = frame.bed_z + z + one_grid.tine_height / 2
+        on_face = frame.point(middle, frame.s_face(centre), centre)
+        holed = holed.cut(Part.makeCylinder(RECESS_RADIUS, 2 * RECESS_RADIUS, on_face - normal * RECESS_RADIUS,
+                                            normal))
+    holed_face = lower_left_face(holed)
+    gridded = geometry.build(holed, holed_face, one_grid)
+    bridged = geometry.build(holed, holed_face, restart)
+    expect(gridded.moved and not bridged.moved and bridged.tines and not bridged.dropped,
+           "a fin whose grid tines all lie over holes moves on one grid, and bridges them with the restart: %s"
+           % bridged.touching_z)
 
 
 def check_split_face():
@@ -1168,6 +1222,7 @@ def main():
     check_tine_clearance(cube, face)
     check_shortened(cube, face)
     check_restart(cube, face)
+    check_restart_planned(cube, face)
     check_split_face()
     check_quick_fins()
     check_quick_plan()

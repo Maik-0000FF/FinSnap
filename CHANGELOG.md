@@ -14,7 +14,7 @@ All notable changes to FinSnap are listed here. The format follows
 ### Added
 
 - Quick fins and Stand on edge take a side or rim of a cylinder or tube that a STEP file brings in two halves as one, so such a part stands on its rim with its fin under the side (#45)
-- A tine option, Restart tines after a gap, on for new fins: the tines of each fin start at the lower edge of the face under it and above every gap it bridges, spread evenly up to the top of the face, so a short face or one above a bore still gets a fin with tines; fins saved before keep one grid from the bed (#66)
+- A tine option, Restart tines after a gap, on for new fins: the tines of each fin start at the lower edge of the face under it and above every gap it bridges, spread evenly up to the top of the face, so a short face or one above a bore still gets a fin with tines; fins saved before keep one grid from the bed. A fin height of its own, typed or set with the arrow, is undone with a note when the tines come to lie at other heights, by this option, the tine spacing or the first tine, so the fin ends at its highest tine again (#66)
 
 ### Fixed
 

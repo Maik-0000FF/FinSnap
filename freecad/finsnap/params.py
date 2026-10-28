@@ -162,6 +162,13 @@ class FinParams:
             return self.tine_first
         return self.foot_height if self.foot_height > 0 else self.first_layer_height
 
+    @property
+    def tine_grid(self):
+        """What the heights of the tines follow from: equal for two parameter
+        sets, their tines lie at the same heights on the same face."""
+        return (self.tine_restart, self.first_tine, self.tine_spacing, self.tine_height, self.layer_height,
+                self.first_layer_height)
+
     def snap_to_layer(self, z):
         """The nearest layer boundary at or above the first layer, z above the bed."""
         if z <= self.first_layer_height:

@@ -296,6 +296,17 @@ def edit_fins(doc):
            "with another number of fins the heights of their own are dropped as well")
     fins.FinCount = 3
     doc.recompute()
+    feature.shift_fin(fins, feature.MAIN, 1, FIN_SHIFT)
+    feature.set_fin_height(fins, feature.MAIN, 3, fins.Shape.Solids[2].BoundBox.ZLength / 2)
+    doc.recompute()
+    fins.TineSpacing = fins.TineSpacing.Value + fins.LayerHeight.Value
+    doc.recompute()
+    left, shifts, heights = feature.edits(fins, feature.MAIN)
+    expect(not heights and shifts.keys() == {1}
+           and translate("FinSnap", feature.NOTE_HEIGHTS_DROPPED) in fins.Warnings,
+           "with the tines at other heights the heights of their own are undone, moves kept, a note says so")
+    feature.reset_fins(fins)
+    fins.TineSpacing = d.TINE_SPACING
     feature.add_counter(fins)
     doc.recompute()
     expect(any(tag.startswith(feature.COUNTER) for tag in fins.FinTags), "a counter fin is added and tagged")
@@ -413,6 +424,12 @@ def warnings_and_old_files(doc):
     fins.Proxy.onDocumentRestored(fins)
     expect("TineRestart" in fins.PropertiesList and fins.TineRestart is False and FinParams().tine_restart,
            "fins saved before the tine restart existed get it off, built as before; new fins get it on")
+    feature.set_fin_height(fins, feature.MAIN, 1, fins.ResultHeight.Value / 2)
+    fins.removeProperty(feature.HEIGHTS_GRID[feature.MAIN])
+    fins.Proxy.onDocumentRestored(fins)
+    expect(getattr(fins, feature.HEIGHTS_GRID[feature.MAIN], None) == repr(feature.params_of(fins).tine_grid),
+           "fin heights saved before the tine grid was noted for them count as set on the grid restored")
+    feature.reset_fins(fins)
 
 
 def step_with_offset_curves():
