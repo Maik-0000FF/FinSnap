@@ -128,6 +128,8 @@ UP = V(0, 0, 1)
 # which runs along X.
 RIM_LEAN = V(0, -1, 0)
 RIM_LINE = V(1, 0, 0)
+# How finely a face is drawn to find a point on it (mm): coarse is enough.
+POINT_DEVIATION = 1.0
 # A side that wraps all the way round the axis, not a fillet of part of a turn.
 FULL_TURN = 2 * math.pi
 
@@ -167,6 +169,92 @@ def is_round_side(face):
         return False
     u0, u1, _, _ = face.ParameterRange
     return u1 - u0 >= FULL_TURN - d.TOLERANCE
+
+
+def joined(shape):
+    """A copy of `shape` with the faces split along one surface, and the
+    edges split along one curve, joined again: a side or a rim that a STEP
+    file brings in two halves becomes one whole. Pieces count as one surface
+    within the tolerance the rest of FinSnap works to."""
+    unify = Part.ShapeUpgrade.UnifySameDomain(shape, True, True, True)
+    unify.setLinearTolerance(d.TOLERANCE)
+    unify.setAngularTolerance(d.TOLERANCE)
+    unify.build()
+    return unify.shape()
+
+
+def point_on(element):
+    """A point on the face or edge `element` itself: the middle of an edge;
+    for a face the middle of one of the triangles it is drawn with, put onto
+    its surface. The middle of the parameters of a face can lie off it, in
+    the hole of a half ring."""
+    if not isinstance(element, Part.Face):
+        first, last = element.ParameterRange
+        return element.valueAt((first + last) / 2)
+    vertices, triangles = element.tessellate(POINT_DEVIATION)
+    if not triangles:
+        return element.Vertexes[0].Point
+    middle = sum((vertices[corner] for corner in triangles[0]), V(0, 0, 0)) * (1 / len(triangles[0]))
+    return element.Surface.value(*element.Surface.parameter(middle))
+
+
+def lies_on(piece, whole):
+    """Whether the face or edge `piece` lies on `whole`: a point of it does."""
+    return whole.distToShape(Part.Vertex(point_on(piece)))[0] < d.TOLERANCE
+
+
+def counterpart(element, candidates):
+    """Of `candidates`, faces or edges of another shape of the same solid,
+    the one the face or edge `element` lies on; None where none does, as for
+    the seam between two halves, which joining them removes.
+
+    INPUTS this has to withstand:
+      half of a side or rim, joined shape   ->  the whole side or rim
+      any face or edge kept by joining      ->  the same one of the joined shape
+      a half ring of a split tube           ->  the whole ring, found by a point on it,
+                                                not in its hole
+      the seam joining removed              ->  None
+    """
+    # The point is found once, for every candidate alike.
+    point = Part.Vertex(point_on(element))
+    return next((candidate for candidate in candidates if candidate.distToShape(point)[0] < d.TOLERANCE), None)
+
+
+def is_piece(element):
+    """Whether the face or edge `element` could be a piece of a side or a rim
+    split by a STEP file: part of a cylinder or of a circle, not a whole one."""
+    if isinstance(element, Part.Face):
+        return isinstance(element.Surface, Part.Cylinder) and not is_round_side(element)
+    return isinstance(element.Curve, Part.Circle) and not is_rim(element)
+
+
+def _length(face):
+    """How far the cylinder face `face` runs along its axis (mm): its range in v."""
+    _, _, v0, v1 = face.ParameterRange
+    return v1 - v0
+
+
+def whole_of(whole, element):
+    """The whole side or rim of the joined shape `whole` that the face or
+    edge `element` is a piece of; None if it is none (a fillet, an arc of a
+    slot, a part of a turn beside a whole cylinder it is joined with).
+
+    INPUTS this has to withstand:
+      half of a split side or rim           ->  the whole side or rim
+      part of a turn, shorter than the
+        whole cylinder it is joined to      ->  None
+      a fillet, an arc of a slot            ->  None
+    """
+    if isinstance(element, Part.Face):
+        found = counterpart(element, whole.Faces)
+        if found is None or not is_round_side(found):
+            return None
+        # A half of a split side runs the whole length of the side; a part
+        # of a turn beside a whole cylinder of the same radius, joined with
+        # it, does not, and is no half of a side.
+        return found if abs(_length(element) - _length(found)) < d.TOLERANCE else None
+    found = counterpart(element, whole.Edges)
+    return found if found is not None and is_rim(found) else None
 
 
 def on_axis(center, direction, surface):

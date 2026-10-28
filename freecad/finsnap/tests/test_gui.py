@@ -107,6 +107,31 @@ def select(obj, *subs):
         Gui.Selection.addSelection(obj)
 
 
+def quick_on_split_tube(doc):
+    """Quick fins on half the side of a tube that a STEP file split in two,
+    and on half its rim: it stands on its rim, with its fin under the side."""
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, orient
+    from freecad.finsnap.tests.support import split_cylinder
+    tube = doc.addObject("Part::Feature", "SplitTube")
+    tube.Shape = split_cylinder(TUBE_RADIUS, TUBE_HEIGHT, TUBE_BORE)
+    flat = App.Placement(tube.Placement)
+    for kind, pieces in (("Face", tube.Shape.Faces), ("Edge", tube.Shape.Edges)):
+        number = next(i for i, piece in enumerate(pieces, 1) if orient.is_piece(piece)
+                      and abs((piece.Surface if kind == "Face" else piece.Curve).Radius - TUBE_RADIUS) < d.TOLERANCE)
+        select(tube, "%s%d" % (kind, number))
+        Gui.runCommand("FinSnap_QuickFins")
+        fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is tube]
+        expect(len(fins) == 1 and feature.on_round_side(fins[0]) and fins[0].ResultFinCount == 1,
+               "Quick fins on half the %s of a split tube stands it on its rim, its fin under the side"
+               % ("side" if kind == "Face" else "rim"))
+        fins[0].ViewObject.Proxy.panel.reject()
+        doc.recompute()
+        expect(tube.Placement.isSame(flat, d.TOLERANCE), "Cancel lays the split tube back as it lay")
+    doc.removeObject(tube.Name)
+    doc.recompute()
+
+
 def added_on_tube(doc):
     """Add fins under the side of a tube already standing on its rim, turned
     in the panel: Cancel deletes the fins and turns the tube back."""
@@ -1239,6 +1264,7 @@ def main():
     expect(model.count("<object ") == 2, "export without a selection takes all fins with their parts")
     turned_tube(doc)
     added_on_tube(doc)
+    quick_on_split_tube(doc)
 
     empty = doc.addObject("Part::Feature", "Empty")
     select(empty)

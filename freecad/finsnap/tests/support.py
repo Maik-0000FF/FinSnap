@@ -20,6 +20,7 @@ TEST_STANDARD_GROUP = "StandardUnderTest"
 STANDARD_THICKNESS = 0.9
 CHAMFER = 1.0
 TILT = 45.0
+HALF_TURN = 180.0  # degrees
 V = App.Vector
 
 
@@ -29,6 +30,19 @@ def tilted_cube():
     cube.rotate(V(0, 0, 0), V(0, 1, 0), TILT)
     cube.translate(V(0, 0, -cube.BoundBox.ZMin))
     return cube
+
+
+def split_cylinder(radius, height, bore=0.0):
+    """A cylinder, or with `bore` a tube, upright on the origin, whose side
+    and rims come in two halves, as some STEP files bring them."""
+    halves = []
+    for turn in (0, HALF_TURN):
+        half = Part.makeCylinder(radius, height, V(0, 0, 0), V(0, 0, 1), HALF_TURN)
+        if bore:
+            half = half.cut(Part.makeCylinder(bore, height, V(0, 0, 0), V(0, 0, 1), HALF_TURN))
+        half.rotate(V(0, 0, 0), V(0, 0, 1), turn)
+        halves.append(half)
+    return halves[0].fuse(halves[1])
 
 
 def lower_left_face(cube):

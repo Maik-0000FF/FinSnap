@@ -16,7 +16,7 @@ import zipfile
 
 import FreeCAD as App
 import Part
-from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left_face, run, tilted_cube
+from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left_face, run, split_cylinder, tilted_cube
 from freecad.finsnap import defaults as d
 from freecad.finsnap import export_3mf, export_step, feature, geometry, orient
 from freecad.finsnap import presets
@@ -428,6 +428,61 @@ def step_with_offset_curves():
                "the STEP export brings the pocketed block back whole%s" % after)
 
 
+def split_tube(doc):
+    """A tube whose side and rims a STEP file split in halves: its rim stands
+    it, and fins under half its side are built under the whole side, named on
+    the tube by both halves."""
+    shape = split_cylinder(TUBE_RADIUS, TUBE_HEIGHT, TUBE_BORE)
+    tube = doc.addObject("Part::Feature", "SplitTube")
+    tube.Shape = shape
+    arc = next(i for i, e in enumerate(shape.Edges, 1) if orient.is_piece(e)
+               and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE)
+    joined, (rim,), name_of = feature.whole_elements(tube, ["Edge%d" % arc])
+    plan = geometry.quick_plan(joined, [(rim, None)], [], FinParams(), d.TILT_ANGLE)
+    tube.Placement = plan.change
+    fins = feature.create(tube, name_of(plan.number))
+    doc.recompute()
+    halves = [i for i, f in enumerate(tube.Shape.Faces, 1) if isinstance(f.Surface, Part.Cylinder)
+              and abs(f.Surface.Radius - TUBE_RADIUS) < d.TOLERANCE]
+    expect(orient.is_rim(rim) and fins.ResultFinCount == 1 and fins.isValid() and feature.on_round_side(fins)
+           and sorted(fins.CarriedFaces) == sorted("Face%d" % i for i in halves),
+           "a split tube stands on its rim, one fin under its side, carried by both halves: %s" % fins.CarriedFaces)
+    feature.set_round_shift(fins, TUBE_TURN)
+    doc.recompute()
+    expect(abs(feature.round_shift(fins) - TUBE_TURN) < d.TOLERANCE and fins.isValid(),
+           "the fin under the split side turns the tube as under a whole one")
+    # A half ring named beside the half rim is found whole, by a point on it
+    # rather than in its hole; the seam between the halves is gone.
+    pieces = tube.Shape.Faces
+    ring = next(i for i, f in enumerate(pieces, 1) if f.findPlane() is not None)
+    _, (_, whole_ring), _ = feature.whole_elements(tube, ["Edge%d" % arc, "Face%d" % ring])
+    rings = feature.names_on(global_shape(tube), [whole_ring])
+    expect(whole_ring.findPlane() is not None and whole_ring.Area > pieces[ring - 1].Area and len(rings) == 2,
+           "a half ring of a split tube stands for the whole ring, named by both halves: %s" % rings)
+    seam = next(i for i, e in enumerate(tube.Shape.Edges, 1) if isinstance(e.Curve, Part.Line)
+                and not any(orient.lies_on(e, f) for f in pieces if f.findPlane() is not None))
+    try:
+        feature.whole_elements(tube, ["Edge%d" % arc, "Edge%d" % seam])
+    except geometry.FinError as error:
+        expect("seam" in str(error), "the seam between the halves named is refused with a reason: %s" % error)
+    else:
+        raise AssertionError("the seam between the halves of a split tube was taken")
+    # The counter fin found by itself goes under the end ring leaning the
+    # other way, which the tube brings in two halves: named by one half, it
+    # stands under both, as under any face with others in its plane.
+    named = feature.add_counter(fins)
+    doc.recompute()
+    sides = ["Face%d" % i for i in halves]
+    carried = [name for name in fins.CarriedFaces if name not in sides]
+    expect(named is not None and fins.isValid() and len(carried) == 2,
+           "the counter fin under the end ring of a split tube stands under both halves of it: %s" % carried)
+    feature.remove_counter(fins)
+    doc.recompute()
+    doc.removeObject(fins.Name)
+    doc.removeObject(tube.Name)
+    doc.recompute()
+
+
 def turned_tube(doc):
     """A fin under the side of a tube moved by hand turns the tube about its
     axis; the fin stays under the lowest line, and the turn is undone again."""
@@ -557,6 +612,7 @@ def main():
     marks_without_face(doc)
     edit_fins(doc)
     turned_tube(doc)
+    split_tube(doc)
     tapered_pad(doc)
     warnings_and_old_files(doc)
     step_with_offset_curves()
