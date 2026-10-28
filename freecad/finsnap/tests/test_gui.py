@@ -53,6 +53,7 @@ TUBE_RADIUS = 10.0
 TUBE_BORE = 6.0
 TUBE_HEIGHT = 40.0
 TUBE_ANGLE = 30.0  # how far the fin under the side of a tube is turned in the panel, in degrees
+PLACE_STEP = 1.0  # how far a fin is moved along the face in the panel, in mm
 ZOOM_OUT = 2.0  # how far the view is zoomed out to see the arc keep its size on the screen
 ARROW_SIZE_TOLERANCE = 0.01  # share by which the size of an arrow may differ from the one reckoned
 
@@ -105,6 +106,43 @@ def select(obj, *subs):
             Gui.Selection.addSelection(obj, sub)
     else:
         Gui.Selection.addSelection(obj)
+
+
+def moved_beside_groove(doc):
+    """A fin planned over a groove stands beside it; typed into its field or
+    dragged, it moves on from where it stands, not from where it was planned."""
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, geometry, handles
+    from freecad.finsnap.taskpanel import FinSnapTaskPanel
+    from freecad.finsnap.tests.support import grooved
+    cube = tilted_cube()
+    face = lower_left_face(cube)
+    frame = geometry.frame_of(cube, face)
+    part = doc.addObject("Part::Feature", "Grooved")
+    part.Shape = grooved(cube, face, (frame.along_min + frame.along_max) / 2)
+    fins = feature.create(part, face_name(part, lower_left_face(part.Shape)))
+    fins.FinPlacement = d.PLACEMENT_CENTER
+    doc.recompute()
+    panel = FinSnapTaskPanel(fins)
+    panel.handled = (feature.MAIN, 1)
+    stood = panel.fin_values()[handles.ALONG]
+    moved = fins.Proxy.results[feature.MAIN].moved.get(1)
+    expect(moved, "the fin over the groove is moved beside it")
+    # On away from the groove, the way it was moved.
+    step = math.copysign(PLACE_STEP, moved)
+    panel.fin_fields[handles.ALONG].setValue(stood + step)
+    panel.field_entered(handles.ALONG)
+    typed = panel.fin_values()[handles.ALONG]
+    panel.handle_started(handles.ALONG)
+    panel.finish_drag(handles.ALONG, step)
+    dragged = panel.fin_values()[handles.ALONG]
+    expect(abs(typed - stood - step) < d.TOLERANCE and abs(dragged - typed - step) < d.TOLERANCE,
+           "typed and dragged, a fin moved beside a groove moves on from where it stands: %.3f, %.3f, %.3f"
+           % (stood, typed, dragged))
+    panel.reject()
+    doc.removeObject(fins.Name)
+    doc.removeObject(part.Name)
+    doc.recompute()
 
 
 def quick_on_split_tube(doc):
@@ -1265,6 +1303,7 @@ def main():
     turned_tube(doc)
     added_on_tube(doc)
     quick_on_split_tube(doc)
+    moved_beside_groove(doc)
 
     empty = doc.addObject("Part::Feature", "Empty")
     select(empty)

@@ -17,6 +17,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Fixed
 
+- A fin planned over a hole, a groove or the bore of a tube, so that none of its tines would rest on the face, moves along the face to the nearest place where they do, and a note says by how much, instead of being left out (#62)
 - A flat face with round edges, such as the end face of a cylinder, is measured along its edges, not only at its corners, so a fin fits under it in any position, not only once the part is turned (#63)
 - Add counter fin takes the largest face leaning the other way that a counter fin can be built under, and refuses a face chosen by hand that cannot take one, instead of failing to build the fins and losing the main fin with them (#59)
 - A cylinder or tube turned in the task panel and turned back stands exactly where it stood, also after turns finer than the shift is kept (#53)

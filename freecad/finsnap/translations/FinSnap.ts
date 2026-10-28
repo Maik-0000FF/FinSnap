@@ -672,170 +672,180 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="426"/>
+        <location filename="../geometry.py" line="440"/>
         <source>the selected face is not planar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="337"/>
-        <location filename="../geometry.py" line="430"/>
+        <location filename="../geometry.py" line="351"/>
+        <location filename="../geometry.py" line="444"/>
         <source>the selected face does not lean over the bed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="340"/>
-        <location filename="../geometry.py" line="432"/>
+        <location filename="../geometry.py" line="354"/>
+        <location filename="../geometry.py" line="446"/>
         <source>the selected face is flat; it rests on the bed or needs regular support</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="351"/>
+        <location filename="../geometry.py" line="365"/>
         <source>the selected face curves inward; fins go under the outside of a cylinder or tube</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="356"/>
+        <location filename="../geometry.py" line="370"/>
         <source>the lowest line of the selected face is cut away</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="450"/>
+        <location filename="../geometry.py" line="464"/>
         <source>fin_height %.2f reaches above the face (%.2f)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="471"/>
+        <location filename="../geometry.py" line="485"/>
         <source>no tine fits below %.2f mm</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="473"/>
+        <location filename="../geometry.py" line="487"/>
         <source>only %d of %d tines fit below %.2f mm</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="534"/>
+        <location filename="../geometry.py" line="548"/>
         <source>the face is narrower than the %.2f mm a fin needs at every tine</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="562"/>
+        <location filename="../geometry.py" line="576"/>
         <source>the face is too short for a fin on each corner</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="568"/>
+        <location filename="../geometry.py" line="582"/>
         <source>the face is too short for a fin of %.2f mm</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="586"/>
+        <location filename="../geometry.py" line="600"/>
         <source>%d fins do not fit side by side on this face</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="729"/>
+        <location filename="../geometry.py" line="778"/>
         <source>the fins overlap the part by %.4f mm3</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="734"/>
+        <location filename="../geometry.py" line="783"/>
         <source>a fin comes within %.3f mm of the part, closer than the %.3f mm it keeps from the face</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="764"/>
+        <location filename="../geometry.py" line="813"/>
         <source>fins under the selected face alone, not reaching over the groove: %s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="775"/>
+        <location filename="../geometry.py" line="824"/>
         <location filename="../params.py" line="121"/>
         <source>tines (%.2f mm) are wider than the fin (%.2f mm)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="810"/>
+        <location filename="../geometry.py" line="859"/>
         <source>fin %d would pass fin %d; a fin stays between its neighbours</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="813"/>
+        <location filename="../geometry.py" line="862"/>
         <source>fins %d and %d stand %.2f mm apart, closer than %.2f mm</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="838"/>
+        <location filename="../geometry.py" line="889"/>
         <source>fin %d is %.2f mm high, above the face (%.2f mm)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="842"/>
+        <location filename="../geometry.py" line="893"/>
         <source>fin %d is lower than its first tine</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="877"/>
+        <location filename="../geometry.py" line="935"/>
         <source>every fin is removed; delete the fins instead, or bring them back</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="880"/>
+        <location filename="../geometry.py" line="938"/>
         <source>no tine finds the face; it has a recess or hole at every tine</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="887"/>
+        <location filename="../geometry.py" line="945"/>
         <source>tines at %s mm above the bed left out: a recess or hole in the face lies under them</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="890"/>
+        <location filename="../geometry.py" line="948"/>
+        <source>fins moved along the face to where their tines rest, beside a hole or recess under their planned place: %s</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../geometry.py" line="950"/>
+        <source>fin %d by %.2f mm</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../geometry.py" line="952"/>
         <source>fins at %s mm from the end of the face left out: none of their tines lies wholly on the face</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="893"/>
+        <location filename="../geometry.py" line="955"/>
         <source>tines at %s mm above the bed left out: the face is narrower there than the fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="897"/>
+        <location filename="../geometry.py" line="959"/>
         <source>the face is inclined %.0f degrees against the bed, outside %.0f to %.0f</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="901"/>
+        <location filename="../geometry.py" line="963"/>
         <source>tines are %.2f mm long, shorter than %.2f beads; the slicer may not print them to the face</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="904"/>
+        <location filename="../geometry.py" line="966"/>
         <source>the part stands on one point of its rim: a chamfer on the rim and a brim in the slicer give it more hold on the bed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="967"/>
+        <location filename="../geometry.py" line="1029"/>
         <source>no face of the part leans over the bed and takes fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1022"/>
+        <location filename="../geometry.py" line="1084"/>
         <source>the part cannot stand so that this face takes fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1085"/>
+        <location filename="../geometry.py" line="1147"/>
         <source>This edge does not lie on the bed, and its faces do not meet at a right angle. Use Stand on edge with the edge and the face that is to lie on the bed, then Add fins.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1111"/>
+        <location filename="../geometry.py" line="1173"/>
         <source>Select an edge or a face, a face and the edge or the chamfer or fillet it is to stand on, or the two faces beside a fillet.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1155"/>
+        <location filename="../geometry.py" line="1217"/>
         <source>the fins do not fit under the selected face standing this way: %s</source>
         <translation type="unfinished"></translation>
     </message>
