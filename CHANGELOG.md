@@ -17,6 +17,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Fixed
 
+- Add counter fin takes the largest face leaning the other way that a counter fin can be built under, and refuses a face chosen by hand that cannot take one, instead of failing to build the fins and losing the main fin with them (#59)
 - A cylinder or tube turned in the task panel and turned back stands exactly where it stood, also after turns finer than the shift is kept (#53)
 
 ## [0.6.0] - 2026-10-28

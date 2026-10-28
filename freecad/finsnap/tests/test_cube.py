@@ -1130,7 +1130,7 @@ def main():
 
     shape_regression(cube, face)
 
-    opposite = geometry.opposite_face(cube, face)
+    opposite = geometry.opposite_faces(cube, face)[0]
     u0, u1, v0, v1 = opposite.ParameterRange
     normal = opposite.normalAt((u0 + u1) / 2, (v0 + v1) / 2)
     expect(normal.x > 0 and normal.z < 0, "the opposite face leans the other way")

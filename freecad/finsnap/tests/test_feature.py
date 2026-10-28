@@ -57,6 +57,7 @@ TUBE_BORE = 6.0
 TUBE_HEIGHT = 40.0
 TUBE_TURN = 5.0  # how far the fin under the side of a tube is moved by hand, in mm round it
 FINE_TURN = 1.23456789  # a turn finer than the shift is kept, in mm round the side
+COUNTER_HEIGHT = 6.0  # a height of its own for a counter fin, in mm
 EXACT_DISTANCE = 1e-9  # how far a point of the tube may move and it still stands alike, in mm
 
 
@@ -485,8 +486,28 @@ def split_tube(doc):
     carried = [name for name in fins.CarriedFaces if name not in sides]
     expect(named is not None and fins.isValid() and len(carried) == 2,
            "the counter fin under the end ring of a split tube stands under both halves of it: %s" % carried)
+    # Chosen again, the face of the counter fin keeps its changes by hand.
+    feature.set_fin_height(fins, feature.COUNTER, 1, COUNTER_HEIGHT)
+    feature.add_counter(fins, tube, named)
+    expect(feature.edits(fins, feature.COUNTER)[2].get(1) == COUNTER_HEIGHT,
+           "the face of the counter fin chosen again keeps its changes by hand")
     feature.remove_counter(fins)
     doc.recompute()
+    # Turned back, the bore leaves that ring too narrow for a fin: found by
+    # itself, no counter fin is set, and chosen by hand it is refused; the
+    # main fin stays either way.
+    feature.set_round_shift(fins, 0.0)
+    doc.recompute()
+    expect(feature.add_counter(fins) is None and not fins.CounterFace and fins.isValid()
+           and fins.ResultFinCount == 1,
+           "no face that takes a counter fin: none is set, the main fin stays")
+    try:
+        feature.add_counter(fins, tube, named)
+    except geometry.FinError as error:
+        expect(not fins.CounterFace and fins.isValid(),
+               "a face too narrow for a counter fin chosen by hand is refused, nothing changed: %s" % error)
+    else:
+        raise AssertionError("a counter fin was set under a face too narrow for it")
     doc.removeObject(fins.Name)
     doc.removeObject(tube.Name)
     doc.recompute()

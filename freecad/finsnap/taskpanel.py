@@ -632,8 +632,7 @@ class FinSnapTaskPanel:
             return
         if found is None:
             self.show_notes(translate("FinSnap", "No counter fin"),
-                            [translate("FinSnap", "The part has no face leaning the other way. Select one "
-                                                  "yourself.")], WARNING_COLOR)
+                            [translate("FinSnap", feature.NOTE_NO_OPPOSITE)], WARNING_COLOR)
             return
         self.edited()
 

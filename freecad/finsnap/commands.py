@@ -669,7 +669,7 @@ class AddCounterFin:
             return
         doc.commitTransaction()
         if found is None:
-            _message(translate("FinSnap", "The part has no face leaning the other way. Select one yourself."))
+            _message(translate("FinSnap", feature.NOTE_NO_OPPOSITE))
             return
         doc.recompute()
 

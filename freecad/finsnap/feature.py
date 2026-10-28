@@ -60,6 +60,9 @@ NOTE_MERGED_SINGLE = QT_TRANSLATE_NOOP(
     "have no body of their own. To delete all of them, select the fins in the tree.")
 # Said when a face chosen for the counter fin cannot take fins; %s says why.
 NOTE_NO_COUNTER_ON_FACE = QT_TRANSLATE_NOOP("FinSnap", "No counter fin on this face: %s")
+# Said when no face leans the other way and takes a counter fin.
+NOTE_NO_OPPOSITE = QT_TRANSLATE_NOOP("FinSnap", "The part has no face leaning the other way that takes a "
+                                     "counter fin. Select one yourself.")
 # Said when a face or edge named is not found once the halves of a side split
 # by a STEP file are joined, as for the seam between them; %s names it.
 NOTE_LOST_IN_JOINING = QT_TRANSLATE_NOOP("FinSnap", "%s is the seam between two halves of a side; select the "
@@ -674,47 +677,82 @@ def face_name_of(shape, face):
     return None
 
 
-def check_counter_face(face):
-    """Refuse `face` for a counter fin where it is the side of a cylinder or
-    tube: its fin would stay under the lowest line and move only by turning
-    the part, the main fin with it. FinError then."""
+def check_counter_face(shape, face, p):
+    """Refuse `face` of `shape` for a counter fin with the parameters `p`,
+    with a FinError saying why; a face that takes one passes.
+
+    INPUTS this has to withstand:
+      a face leaning over the bed that
+        takes a counter fin                 ->  passes
+      the side of a cylinder or tube        ->  FinError: its fin would move only by
+                                                turning the part, the main fin with it
+      a face lying flat, facing up or
+        sideways, or not planar             ->  FinError from geometry.frame_of()
+      a face too narrow for the fin, or one
+        it runs into the part under         ->  FinError from the build tried
+      the kernel fails building there       ->  FinError saying so
+    """
+    # Said before the face is asked to take fins, which a bore or a cut side
+    # would refuse for a reason of its own.
     if orient.is_round_side(face):
         raise geometry.FinError(translate("FinSnap", COUNTER_ROUND_SIDE))
+    geometry.frame_of(shape, face)
+    try:
+        geometry.build(shape, face, p, tine_count=p.counter_tine_count or None)
+    except Part.OCCError as error:
+        # A fault in the kernel: said as why, as for a face without room.
+        raise geometry.FinError(str(error)) from error
+
+
+def _opposite_taking_fins(obj, base, p):
+    """The name on `base` of the face leaning the other way from the main
+    fin of `obj` that takes a counter fin with the parameters `p`, the
+    largest first; None if none does. Each is tried by its name, as its fin
+    is then built: a half of a split end ring stands with the faces in its
+    plane, which the ring joined whole would not."""
+    shape, face = _face(obj.Base)
+    original = global_shape(base)
+    for found in geometry.opposite_faces(shape, face):
+        # Named on the part: on a split side the face was found on its joined shape.
+        named = names_on(original, [found])
+        if not named:
+            # No face of the part to name it by: the next one is tried.
+            continue
+        try:
+            check_counter_face(*_face((base, named[:1])), p)
+        except geometry.FinError:
+            continue
+        return named[0]
+    return None
 
 
 def add_counter(obj, base=None, face_ref=None):
     """Give an existing FinSnap object a counter fin.
 
     face_ref is the name of the face ("Face3"). Without it, the face of the
-    same part that leans the other way is searched. Returns the face name, or
-    None if there is no such face.
+    same part that leans the other way and takes a counter fin is searched.
+    Returns the face name, or None if there is no such face.
 
     INPUTS this has to withstand:
-      no face, one leans the other way         ->  that face, counter fin set
-      no face, none leans the other way        ->  None, nothing changed
-      a face that leans over the bed           ->  that face, counter fin set
-      a face lying flat, facing up or sideways,
-        or not planar, such as one still
-        selected from standing the part        ->  FinError saying why, nothing changed
+      no face, one leans the other way and
+        takes a counter fin                 ->  that face, counter fin set
+      no face, none leans the other way, or
+        none takes a counter fin            ->  None, nothing changed
+      a face chosen that takes one          ->  that face, counter fin set
+      a face chosen that does not, see
+        check_counter_face()                ->  FinError saying why, nothing changed
+      the face the counter fin has, again   ->  kept as it is, not tried anew
     """
+    p = params_of(obj)
     if face_ref is None:
         base = obj.Base[0]
-        shape, face = _face(obj.Base)
-        found = geometry.opposite_face(shape, face)
-        if found is None:
+        face_ref = _opposite_taking_fins(obj, base, p)
+        if face_ref is None:
             return None
-        # Named on the part: on a split side the face was found on its joined shape.
-        named = names_on(global_shape(base), [found])
-        if not named:
-            raise geometry.FinError(translate("FinSnap", NOTE_NO_PIECE) % face_name_of(shape, found))
-        face_ref = named[0]
-    else:
-        # A face chosen by hand has to take fins, or the next build fails.
-        face = _face((base, [face_ref]))
-        # Said before the face is asked to take fins, which a bore or a cut
-        # side would refuse for a reason of its own.
-        check_counter_face(face[1])
-        geometry.frame_of(*face)
+    elif obj.CounterFace != (base, [face_ref]):
+        # The face the counter fin has is not tried again: it stands with
+        # its changes by hand, which a trial without them could miss.
+        check_counter_face(*_face((base, [face_ref])), p)
     # Changes by hand to a counter fin on another face would name other fins.
     if obj.CounterFace != (base, [face_ref]):
         reset_fins(obj, COUNTER)
@@ -724,12 +762,10 @@ def add_counter(obj, base=None, face_ref=None):
 
 def create(base, face_ref, counter=None):
     """A new FinSnap object under the face named `face_ref` of `base`. counter: (object, face name) or None.
-    A counter face that cannot take fins, or the side of a cylinder or tube:
-    FinError, nothing made."""
+    A counter face that cannot take a counter fin with the standard
+    parameters, see check_counter_face(): FinError, nothing made."""
     if counter:
-        face = _face((counter[0], [counter[1]]))
-        check_counter_face(face[1])
-        geometry.frame_of(*face)
+        check_counter_face(*_face((counter[0], [counter[1]])), presets.standard())
     doc = base.Document
     obj = doc.addObject("Part::FeaturePython", TYPE_NAME)
     FinSnapFeature(obj)
