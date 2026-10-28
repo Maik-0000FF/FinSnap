@@ -52,6 +52,7 @@ class FinParams:
     tine_clearance: float = d.TINE_CLEARANCE
     # Tines
     tine_spacing: float = d.TINE_SPACING
+    tine_restart: bool = d.TINE_RESTART
     tine_first: float = d.TINE_FIRST_AUTO
     tine_layers: int = d.TINE_LAYERS
     tine_width_beads: int = d.TINE_WIDTH_BEADS
@@ -160,6 +161,13 @@ class FinParams:
         if self.tine_first > 0:
             return self.tine_first
         return self.foot_height if self.foot_height > 0 else self.first_layer_height
+
+    @property
+    def tine_grid(self):
+        """What the heights of the tines follow from: equal for two parameter
+        sets, their tines lie at the same heights on the same face."""
+        return (self.tine_restart, self.first_tine, self.tine_spacing, self.tine_height, self.layer_height,
+                self.first_layer_height)
 
     def snap_to_layer(self, z):
         """The nearest layer boundary at or above the first layer, z above the bed."""

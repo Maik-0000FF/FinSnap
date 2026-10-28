@@ -33,6 +33,9 @@ HALF_LAYER_STARTS = (1.1, 1.3, 1.5, 1.7)
 WIDE_NOZZLE = 0.8
 WIDE_BEAD = 0.9       # two of them are thicker than the 1 mm base
 GROOVE_DEPTH = 2.0     # a groove across the front of a box, splitting it
+SINK_DEPTH = 0.5       # how deep the face is sunk around a stretch of it, so that stretch is a face of its own
+SINK_INSET = 0.5       # how far that stretch ends inside the grid tines below and above it, in mm
+OUT_OF_REACH = 100.0   # a height or a width beyond any test part, in mm
 GROOVE_WIDTH = 2.0
 GROOVE_FROM = 8.0
 WIDE_BOX = 60.0          # long enough for a U profile with legs of a third each
@@ -467,20 +470,100 @@ def check_tine_clearance(cube, face):
 
 
 def check_shortened(cube, face):
-    """A fin whose top tine finds a hole ends at the tine below; a fin height given by hand stays."""
+    """With one tine grid for every fin: a fin whose top tine finds a hole ends at the tine below; a
+    fin height given by hand stays."""
     frame = geometry.frame_of(cube, face)
     normal = face.normalAt(0, 0)
-    full = geometry.build(cube, face, FinParams())
-    top_tine = full.tine_z[-1] + FinParams().tine_height / 2
+    full = geometry.build(cube, face, FinParams(tine_restart=False))
+    top_tine = full.tine_z[-1] + FinParams(tine_restart=False).tine_height / 2
     middle = (frame.along_min + frame.along_max) / 2
     on_face = frame.point(middle, frame.s_face(top_tine), top_tine)
     holed = cube.cut(Part.makeCylinder(RECESS_RADIUS, 2 * RECESS_RADIUS, on_face - normal * RECESS_RADIUS, normal))
     holed_face = lower_left_face(holed)
-    shortened = geometry.build(holed, holed_face, FinParams())
-    expect(math.isclose(shortened.height, full.tine_z[-2] + FinParams().tine_height),
+    shortened = geometry.build(holed, holed_face, FinParams(tine_restart=False))
+    expect(math.isclose(shortened.height, full.tine_z[-2] + FinParams(tine_restart=False).tine_height),
            "the fin ends at its highest tine left, %.2f mm" % shortened.height)
-    kept = geometry.build(holed, holed_face, FinParams(fin_height=full.height))
+    kept = geometry.build(holed, holed_face, FinParams(tine_restart=False, fin_height=full.height))
     expect(math.isclose(kept.height, full.height), "a fin height given by hand is kept")
+
+
+def check_restart(cube, face):
+    """With the tine grid restarted after a gap: a face that rises from the
+    bed in one stretch keeps the one grid; above a hole the grid starts anew
+    and its tines are spread to the top of the face, none over the hole."""
+    restart, one_grid = FinParams(), FinParams(tine_restart=False)
+    expect(restart.tine_restart and geometry.build(cube, face, restart).tine_z
+           == geometry.build(cube, face, one_grid).tine_z,
+           "a face from the bed up without a gap keeps the one tine grid")
+    frame = geometry.frame_of(cube, face)
+    normal = face.normalAt(0, 0)
+    middle = (frame.along_min + frame.along_max) / 2
+    hole_z = geometry.build(cube, face, one_grid).tine_z[1] + one_grid.tine_height / 2
+    on_face = frame.point(middle, frame.s_face(frame.bed_z + hole_z), frame.bed_z + hole_z)
+    holed = cube.cut(Part.makeCylinder(RECESS_RADIUS, 2 * RECESS_RADIUS, on_face - normal * RECESS_RADIUS, normal))
+    holed_face = lower_left_face(holed)
+    spread = geometry.build(holed, holed_face, restart)
+    gridded = geometry.build(holed, holed_face, one_grid)
+    room = frame.face_top_z - frame.bed_z - d.FACE_TOP_MARGIN
+    expect(not spread.dropped and gridded.dropped and spread.height > room - restart.layer_height - d.TOLERANCE,
+           "above a hole the grid starts anew: no tine over it, the top tine at the top of the face: "
+           "%.2f mm of %.2f" % (spread.height, room))
+    own = geometry.build(holed, holed_face, restart, heights={spread.numbers[0]: spread.height})
+    expect(spread.height > gridded.height and own.thickness == spread.thickness
+           and math.isclose(own.foot_half_width, spread.foot_half_width),
+           "a height of its own on a tine above those of the face gets the fin and foot it needs: %.2f mm"
+           % own.foot_half_width)
+
+
+def sunk_around(cube, face, low, high):
+    """`cube` with `face` sunk SINK_DEPTH below `low` and above `high` (mm
+    from the bed), and the stretch between as a face of its own."""
+    frame = geometry.frame_of(cube, face)
+    normal = face.normalAt(0, 0)
+    sunk = cube
+    for bottom, top in ((-OUT_OF_REACH, low), (high, OUT_OF_REACH)):
+        box = Part.makeBox(OUT_OF_REACH, OUT_OF_REACH, top - bottom,
+                           V(-OUT_OF_REACH / 2, -OUT_OF_REACH / 2, frame.bed_z + bottom))
+        layer = cube.common(box)
+        sunk = sunk.cut(layer.cut(layer.translated(-normal * SINK_DEPTH)))
+    stretch = next(f for f in sunk.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE
+                   and abs(f.BoundBox.ZMin - frame.bed_z - low) < d.TOLERANCE)
+    return sunk, stretch
+
+
+def check_restart_planned(cube, face):
+    """With the restart each fin is planned on its own grid from the start:
+    a short face high above the bed that the one grid misses gets tines, and
+    a fin whose grid tines all lie over holes bridges them where it stands,
+    instead of moving beside them."""
+    restart, one_grid = FinParams(), FinParams(tine_restart=False)
+    grid = geometry.build(cube, face, one_grid).tine_z
+    sunk, short = sunk_around(cube, face, grid[1] + SINK_INSET, grid[2] - SINK_INSET)
+    try:
+        geometry.build(sunk, short, one_grid)
+    except geometry.FinError:
+        missed = True
+    else:
+        missed = False
+    above = geometry.build(sunk, short, restart)
+    expect(missed and above.tines and not above.moved,
+           "a short face between two grid tines, refused on one grid, gets %d tines with the restart"
+           % len(above.tines))
+    frame = geometry.frame_of(cube, face)
+    normal = face.normalAt(0, 0)
+    middle = (frame.along_min + frame.along_max) / 2
+    holed = cube
+    for z in grid:
+        centre = frame.bed_z + z + one_grid.tine_height / 2
+        on_face = frame.point(middle, frame.s_face(centre), centre)
+        holed = holed.cut(Part.makeCylinder(RECESS_RADIUS, 2 * RECESS_RADIUS, on_face - normal * RECESS_RADIUS,
+                                            normal))
+    holed_face = lower_left_face(holed)
+    gridded = geometry.build(holed, holed_face, one_grid)
+    bridged = geometry.build(holed, holed_face, restart)
+    expect(gridded.moved and not bridged.moved and bridged.tines and not bridged.dropped,
+           "a fin whose grid tines all lie over holes moves on one grid, and bridges them with the restart: %s"
+           % bridged.touching_z)
 
 
 def check_split_face():
@@ -942,23 +1025,24 @@ def check_moved_fins(cube, face):
 
 
 def check_recesses(cube, face):
-    """Tines over a recess or a hole in the face are left out with a warning;
-    a fin none of whose tines finds the face is left out as well."""
+    """With one tine grid for every fin: tines over a recess or a hole in the
+    face are left out with a warning; a fin none of whose tines finds the face
+    moves beside it, or is left out where nowhere takes it."""
     frame = geometry.frame_of(cube, face)
     normal = face.normalAt(0, 0)
     middle = (frame.along_min + frame.along_max) / 2
-    middle_z = geometry.build(cube, face, FinParams()).tine_z[1]
-    middle_tine = middle_z + FinParams().tine_height / 2
+    middle_z = geometry.build(cube, face, FinParams(tine_restart=False)).tine_z[1]
+    middle_tine = middle_z + FinParams(tine_restart=False).tine_height / 2
 
     on_face = frame.point(middle, frame.s_face(middle_tine), middle_tine)
     pit = Part.makeCylinder(RECESS_RADIUS, 2 * RECESS_RADIUS, on_face - normal * RECESS_RADIUS, normal)
     pitted = cube.cut(pit)
-    result = geometry.build(pitted, lower_left_face(pitted), FinParams())
+    result = geometry.build(pitted, lower_left_face(pitted), FinParams(tine_restart=False))
     named = "tines at %.1f mm" % middle_z
     expect(len(result.tines) == 2 and any(named in w for w in result.warnings),
            "the tine over a hole in the face is left out, the warning names its height: %s" % result.warnings)
     left_out = result.dropped[0].BoundBox.Center.z if len(result.dropped) == 1 else None
-    expect(left_out is not None and abs(left_out - middle_tine) < FinParams().tine_height,
+    expect(left_out is not None and abs(left_out - middle_tine) < FinParams(tine_restart=False).tine_height,
            "the tine left out is handed back as a shape, for the red mark")
     # The tine over the hole is no step for the height of the fin; the one
     # beyond it is, also while the fin stands lower than the hole.
@@ -966,19 +1050,19 @@ def check_recesses(cube, face):
     number = result.numbers[0]
     expect(result.touching_z[number] == [zs[0], zs[2]],
            "the heights a fin can end with a tine leave out the tine over the hole: %s" % result.touching_z)
-    lower = geometry.build(pitted, lower_left_face(pitted), FinParams(),
-                           heights={number: zs[0] + FinParams().tine_height})
+    lower = geometry.build(pitted, lower_left_face(pitted), FinParams(tine_restart=False),
+                           heights={number: zs[0] + FinParams(tine_restart=False).tine_height})
     expect(lower.touching_z[number] == [zs[0], zs[2]],
            "a fin lower than the hole still names the tine beyond it as a step: %s" % lower.touching_z)
 
     # A hole under only half of the tine: it would hang free there, so it is left out too.
     beside = frame.point(middle + RECESS_RADIUS, frame.s_face(middle_tine), middle_tine)
     half = cube.cut(Part.makeCylinder(RECESS_RADIUS, 2 * RECESS_RADIUS, beside - normal * RECESS_RADIUS, normal))
-    partly = geometry.build(half, lower_left_face(half), FinParams())
+    partly = geometry.build(half, lower_left_face(half), FinParams(tine_restart=False))
     expect(len(partly.tines) == 2, "a tine only partly over a hole is left out as well")
 
     # A groove running up the face under the middle one of three fins: that fin has no tine left.
-    three = FinParams(placement=d.PLACEMENT_DISTRIBUTED, fin_count=3)
+    three = FinParams(tine_restart=False, placement=d.PLACEMENT_DISTRIBUTED, fin_count=3)
     spread = geometry.build(cube, face, three)
     centre = geometry.tine_start(three, spread.positions[1], spread.thickness) + three.tine_width / 2
 
@@ -990,7 +1074,8 @@ def check_recesses(cube, face):
            "a fin over a groove moves beside it, between its neighbours, the warning says by how much: %s"
            % moved.warnings)
     centred = grooved(cube, face, middle)
-    alone = geometry.build(centred, lower_left_face(centred), FinParams(placement=d.PLACEMENT_CENTER))
+    alone = geometry.build(centred, lower_left_face(centred),
+                           FinParams(tine_restart=False, placement=d.PLACEMENT_CENTER))
     expect(len(alone.positions) == 1 and any("fin 1 by" in w for w in alone.warnings),
            "one fin in the middle over a groove moves beside it: %s" % alone.warnings)
 
@@ -1141,6 +1226,8 @@ def main():
     check_one_corner(cube, face)
     check_tine_clearance(cube, face)
     check_shortened(cube, face)
+    check_restart(cube, face)
+    check_restart_planned(cube, face)
     check_split_face()
     check_quick_fins()
     check_quick_plan()
