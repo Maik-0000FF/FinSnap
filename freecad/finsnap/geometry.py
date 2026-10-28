@@ -267,7 +267,6 @@ def support_of(part, face):
         return face
     along = UP.cross(horizontal.normalize())
 
-
     low, high = span_along(face, along)
     c = normal.dot(face.Vertexes[0].Point)
     pieces = [face]
