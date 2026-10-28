@@ -438,6 +438,15 @@ def split_tube(doc):
     arc = next(i for i, e in enumerate(shape.Edges, 1) if orient.is_piece(e)
                and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE)
     joined, (rim,), name_of = feature.whole_elements(tube, ["Edge%d" % arc])
+    # Asked again with nothing changed, the joined shape is kept; moved, the
+    # part is joined anew where it stands now.
+    again = feature.whole_elements(tube, ["Edge%d" % arc])[0]
+    tube.Placement = App.Placement(App.Vector(1, 0, 0), App.Rotation())
+    moved_on = feature.whole_elements(tube, ["Edge%d" % arc])[0]
+    tube.Placement = App.Placement()
+    expect(again is joined and moved_on is not joined
+           and abs(moved_on.BoundBox.XMin - joined.BoundBox.XMin - 1) < d.TOLERANCE,
+           "a split part is joined once while it stays, anew once it moves")
     plan = geometry.quick_plan(joined, [(rim, None)], [], FinParams(), d.TILT_ANGLE)
     tube.Placement = plan.change
     fins = feature.create(tube, name_of(plan.number))

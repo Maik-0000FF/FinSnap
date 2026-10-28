@@ -367,6 +367,28 @@ def _face(link):
 
 
 def whole_elements(obj, names):
+    """_join_elements() of `obj` and `names`, kept for as long as the part
+    keeps its shape and where it stands: a split part is joined once, not at
+    every build, every turn of the arc and every step of a drag.
+
+    INPUTS this has to withstand:
+      asked again, nothing changed          ->  the same answer, nothing joined anew
+      the part changed, moved or turned     ->  worked out anew: the key holds its
+                                                shape and its placement
+      other names asked                     ->  worked out for those
+      many parts or names asked in turn     ->  the oldest answer goes past WHOLE_KEPT
+    """
+    key = (obj.Document.Name, obj.Name, obj.Shape.hashCode(), str(obj.getGlobalPlacement().toMatrix()), tuple(names))
+    found = _whole_kept.get(key)
+    if found is None:
+        while len(_whole_kept) >= WHOLE_KEPT:
+            _whole_kept.pop(next(iter(_whole_kept)))
+        found = _whole_kept[key] = _join_elements(obj, names)
+    shape, elements, name_of = found
+    return shape, list(elements), name_of
+
+
+def _join_elements(obj, names):
     """The global shape of `obj` and its elements named `names` ("Edge3",
     "Face12"), and a function giving the name on `obj` of a face of that shape
     by its number from 0. Where one of them is half of a side or a rim that a
@@ -468,6 +490,9 @@ def overhangs_of(part_obj, document):
 
 # Builds of one side kept during a drag; beyond these the oldest goes.
 REUSE_KEPT = 8
+# Answers of whole_elements() kept, by part, shape, placement and names asked.
+WHOLE_KEPT = 16
+_whole_kept = {}
 
 
 class FinSnapFeature:
