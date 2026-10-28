@@ -24,6 +24,7 @@ All notable changes to FinSnap are listed here. The format follows
 - The README names the Addon Manager menu as FreeCAD shows it and no longer implies that FreeCAD 26.3 is already released
 - A fin dragged to a height where it cannot stand is previewed in its true shape instead of stretched, so it no longer looks tilted
 - The place and height of a single fin in the task panel are taken once typing pauses, as the other fields are, and Enter takes them without closing the panel
+- Add fins refuses a second face that cannot take a counter fin, as Add counter fin does, instead of failing to build the fins
 
 ## [0.5.2] - 2026-10-27
 
