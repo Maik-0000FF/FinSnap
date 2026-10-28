@@ -58,6 +58,7 @@ TUBE_HEIGHT = 40.0
 TUBE_TURN = 5.0  # how far the fin under the side of a tube is moved by hand, in mm round it
 FINE_TURN = 1.23456789  # a turn finer than the shift is kept, in mm round the side
 COUNTER_HEIGHT = 6.0  # a height of its own for a counter fin, in mm
+THIN_BORE = 9.0  # a bore that leaves the end ring of the test tube too narrow for a counter fin, in mm
 EXACT_DISTANCE = 1e-9  # how far a point of the tube may move and it still stands alike, in mm
 
 
@@ -429,6 +430,61 @@ def step_with_offset_curves():
                "the STEP export brings the pocketed block back whole%s" % after)
 
 
+def counter_on_thin_tube(doc):
+    """A tube whose wall leaves its end ring too narrow for a counter fin:
+    found by itself none is set, chosen by hand the ring is refused, and the
+    main fin stays either way."""
+    shape = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(THIN_BORE, TUBE_HEIGHT))
+    tube = doc.addObject("Part::Feature", "ThinTube")
+    tube.Shape = shape
+    rim = next(i for i, e in enumerate(shape.Edges, 1) if isinstance(e.Curve, Part.Circle)
+               and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE)
+    joined, (edge,), name_of = feature.whole_elements(tube, ["Edge%d" % rim])
+    plan = geometry.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
+    tube.Placement = plan.change
+    fins = feature.create(tube, name_of(plan.number))
+    doc.recompute()
+    expect(feature.add_counter(fins) is None and not fins.CounterFace and fins.isValid()
+           and fins.ResultFinCount == 1,
+           "no face that takes a counter fin: none is set, the main fin stays")
+    stood, side = feature._face(fins.Base)
+    ring = feature.names_on(global_shape(tube), geometry.opposite_faces(stood, side)[:1])[0]
+    try:
+        feature.add_counter(fins, tube, ring)
+    except geometry.FinError as error:
+        expect(not fins.CounterFace and fins.isValid(),
+               "a face too narrow for a counter fin chosen by hand is refused, nothing changed: %s" % error)
+    else:
+        raise AssertionError("a counter fin was set under a face too narrow for it")
+    doc.removeObject(fins.Name)
+    doc.removeObject(tube.Name)
+    doc.recompute()
+
+
+def counter_under_disc(doc):
+    """A cylinder stood on its rim, whole or split in halves by a STEP file,
+    takes its counter fin under its lower end face as it stands, unturned:
+    the disc is measured along its rim, not at its one corner, and half of
+    it not by its straight side alone."""
+    for name, shape in (("whole", Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT)),
+                        ("split", split_cylinder(TUBE_RADIUS, TUBE_HEIGHT))):
+        rod = doc.addObject("Part::Feature", "Disc_%s" % name)
+        rod.Shape = shape
+        rim = next(i for i, e in enumerate(shape.Edges, 1) if isinstance(e.Curve, Part.Circle))
+        joined, (edge,), name_of = feature.whole_elements(rod, ["Edge%d" % rim])
+        plan = geometry.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
+        rod.Placement = plan.change
+        fins = feature.create(rod, name_of(plan.number))
+        doc.recompute()
+        named = feature.add_counter(fins)
+        doc.recompute()
+        expect(named is not None and fins.isValid() and fins.CounterFace,
+               "a %s cylinder unturned takes a counter fin under its end face" % name)
+        doc.removeObject(fins.Name)
+        doc.removeObject(rod.Name)
+        doc.recompute()
+
+
 def split_tube(doc):
     """A tube whose side and rims a STEP file split in halves: its rim stands
     it, and fins under half its side are built under the whole side, named on
@@ -493,21 +549,6 @@ def split_tube(doc):
            "the face of the counter fin chosen again keeps its changes by hand")
     feature.remove_counter(fins)
     doc.recompute()
-    # Turned back, the bore leaves that ring too narrow for a fin: found by
-    # itself, no counter fin is set, and chosen by hand it is refused; the
-    # main fin stays either way.
-    feature.set_round_shift(fins, 0.0)
-    doc.recompute()
-    expect(feature.add_counter(fins) is None and not fins.CounterFace and fins.isValid()
-           and fins.ResultFinCount == 1,
-           "no face that takes a counter fin: none is set, the main fin stays")
-    try:
-        feature.add_counter(fins, tube, named)
-    except geometry.FinError as error:
-        expect(not fins.CounterFace and fins.isValid(),
-               "a face too narrow for a counter fin chosen by hand is refused, nothing changed: %s" % error)
-    else:
-        raise AssertionError("a counter fin was set under a face too narrow for it")
     doc.removeObject(fins.Name)
     doc.removeObject(tube.Name)
     doc.recompute()
@@ -643,6 +684,8 @@ def main():
     edit_fins(doc)
     turned_tube(doc)
     split_tube(doc)
+    counter_under_disc(doc)
+    counter_on_thin_tube(doc)
     tapered_pad(doc)
     warnings_and_old_files(doc)
     step_with_offset_curves()
