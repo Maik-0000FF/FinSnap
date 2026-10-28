@@ -61,6 +61,7 @@ COUNTER_HEIGHT = 6.0  # a height of its own for a counter fin, in mm
 THIN_BORE = 9.8  # a bore that leaves the end ring of the test tube too narrow for a counter fin, in mm
 WIDE_BORE = 9.0  # a bore under the middle of the end ring of the test tube, the ring beside it wide enough, in mm
 CENTRE_TOLERANCE = 0.5  # how far from the middle of a face a fin planned in its middle may stand, in mm
+FILLET_RADIUS = 2.0  # a fillet on a corner of a test part, in mm
 EXACT_DISTANCE = 1e-9  # how far a point of the tube may move and it still stands alike, in mm
 
 
@@ -485,6 +486,23 @@ def counter_on_thin_tube(doc):
     doc.recompute()
 
 
+def halves_kept_beside_fillet(doc):
+    """A part with a fillet and a face in two halves, whose side and rims no
+    STEP file split: its halves stay faces of their own, as before."""
+    halves = Part.makeBox(TUBE_HEIGHT, TUBE_RADIUS, TUBE_RADIUS).fuse(
+        Part.makeBox(TUBE_HEIGHT, TUBE_RADIUS, TUBE_RADIUS, App.Vector(0, TUBE_RADIUS, 0)))
+    corner = next(e for e in halves.Edges if e.BoundBox.XMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE)
+    shape = halves.makeFillet(FILLET_RADIUS, [corner])
+    part = doc.addObject("Part::Feature", "FilletedHalves")
+    part.Shape = shape
+    half = next(i for i, f in enumerate(shape.Faces, 1) if orient.is_flat_piece(shape, f))
+    _, (kept,), _ = feature.whole_elements(part, ["Face%d" % half])
+    expect(abs(kept.Area - shape.Faces[half - 1].Area) < d.TOLERANCE,
+           "beside a fillet, half of a face split by a design step stays a face of its own")
+    doc.removeObject(part.Name)
+    doc.recompute()
+
+
 def counter_under_disc(doc):
     """A cylinder stood on its rim, whole or split in halves by a STEP file,
     takes its counter fin under its lower end face as it stands, unturned:
@@ -719,6 +737,7 @@ def main():
     edit_fins(doc)
     turned_tube(doc)
     split_tube(doc)
+    halves_kept_beside_fillet(doc)
     counter_under_disc(doc)
     counter_beside_bore(doc)
     counter_on_thin_tube(doc)

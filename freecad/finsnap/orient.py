@@ -228,10 +228,20 @@ def is_piece(element):
     return isinstance(element.Curve, Part.Circle) and not is_rim(element)
 
 
-def is_split(shape):
-    """Whether `shape` has a side or a rim in pieces, as a STEP file splits
-    them; only on such a part are the flat faces in pieces joined as well."""
-    return any(is_piece(element) for element in shape.Faces + shape.Edges)
+def is_split(shape, whole):
+    """Whether `shape` has a side or a rim in pieces that `whole`, its joined
+    shape, makes whole again, as a STEP file splits them; only on such a part
+    are the flat faces in pieces joined as well.
+
+    INPUTS this has to withstand:
+      a cylinder whose side and rims come
+        in halves                           ->  True
+      a part with a fillet or an arc, which
+        joining makes no whole side or rim  ->  False
+      a part with no curve at all           ->  False
+    """
+    return any(is_piece(element) and whole_of(whole, element) is not None
+               for element in shape.Faces + shape.Edges)
 
 
 def is_flat_piece(shape, face):

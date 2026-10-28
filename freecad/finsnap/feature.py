@@ -430,11 +430,13 @@ def _join_elements(obj, names):
     # Pieces: half a side or rim, or on a part split so half a flat face,
     # which its fin needs whole to stand under the middle of it.
     flat = [isinstance(element, Part.Face) and orient.is_flat_piece(shape, element) for element in elements]
-    split = any(flat) and orient.is_split(shape)
-    pieces = [orient.is_piece(element) or (flat_piece and split) for element, flat_piece in zip(elements, flat)]
-    whole = orient.joined(shape) if any(pieces) else None
-    found = [] if whole is None else [orient.whole_of(whole, e) if piece else None
-                                      for e, piece in zip(elements, pieces)]
+    curved = [orient.is_piece(element) for element in elements]
+    whole = orient.joined(shape) if any(curved) or any(flat) else None
+    # Flat pieces count only on a part whose side or rim joining makes whole
+    # again: a fillet or an arc leaves the faces of any other part as they are.
+    split = whole is not None and any(flat) and orient.is_split(shape, whole)
+    found = [] if whole is None else [orient.whole_of(whole, e) if curve or (flat_piece and split) else None
+                                      for e, curve, flat_piece in zip(elements, curved, flat)]
     if not any(f is not None for f in found):
         return shape, elements, lambda number: face_name(number + 1)
     kept = []
