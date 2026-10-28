@@ -236,6 +236,7 @@ The file is a ZIP archive; the content above sits in `3D/3dmodel.model`. A slice
 | | Gap | 0.25 mm | Length of the tines across, between fin and the end of the tines, along the face normal |
 | | Tine clearance | 0 mm = touching | Distance from the end of the tines to the face, along the face normal; the fin moves out by as much. See [Tine clearance](#tine-clearance) |
 | Tines | Tine spacing | 5 mm | Vertical distance between tines, at least the tine height plus one layer |
+| | Restart tines after a gap | on | Start the tines of each fin anew at the lower edge of the face and above every gap it bridges, spread evenly up to the top of the face; off, one grid counts from the bed for every fin |
 | | Tine first | 0 = on the top of the foot | Height of the lowest tine |
 | | Tine layers | 1 | Tine height in layers |
 | | Tine width beads | 1 | Tine width in beads |

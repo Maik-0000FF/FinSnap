@@ -651,6 +651,85 @@ def tine_start(p, t0, thickness):
     return t0 + (thickness - p.tine_width) / 2
 
 
+def _snap_down(p, z):
+    """The last layer boundary at or below z (mm, from the bed), the first layer at least."""
+    snapped = p.snap_to_layer(z)
+    return snapped if snapped <= z + d.TOLERANCE else p.snap_to_layer(snapped - p.layer_height)
+
+
+def _snap_up(p, z):
+    """The first layer boundary at or above z (mm, from the bed)."""
+    snapped = p.snap_to_layer(z)
+    return snapped if snapped >= z - d.TOLERANCE else p.snap_to_layer(snapped + p.layer_height)
+
+
+def _bands_at(frame, face, t):
+    """The stretches of height (mm, from the bed) where `face` lies across
+    the vertical plane at `t` along it, lowest first: a hole, a groove or a
+    bore across that plane splits them."""
+    bands = []
+    for wire in face.slice(frame.along, t):
+        box = wire.BoundBox
+        bands.append((box.ZMin - frame.bed_z, box.ZMax - frame.bed_z))
+    return sorted(bands)
+
+
+def restarted_tines(p, frame, face, t0, thickness, limit, count):
+    """Bottoms of the tines of the fin starting at t0 (mm, from the bed), on
+    a grid that starts anew at the lower edge of each stretch of `face` under
+    the fin: at the bottom of the face and above every gap the fin bridges.
+    Within a stretch they are spread evenly from its lower edge to its top,
+    no further apart than the tine spacing, so a tine sits just above every
+    gap and one at the top of the face; between two stretches at least one
+    free layer is left. None above `limit`, `count` at most if given, the
+    lowest first; None for a face that rises from the bed in one stretch,
+    which keeps the one grid.
+
+    INPUTS this has to withstand:
+      a face from the bed up, no gap        ->  None: the one grid, as without the
+                                                restart
+      a face starting above the bed         ->  the first tine just above its lower edge
+      a hole under the fin                  ->  one just below it, one just above it
+      a stretch lower than a tine           ->  no tine in it
+      a stretch with room for one tine      ->  that tine at its lower edge
+      a gap narrower than a free layer      ->  the next tine a free layer above the
+                                                one below
+      no face under the fin at all          ->  no tine
+    """
+    start = tine_start(p, t0, thickness)
+    left, right = _bands_at(frame, face, start), _bands_at(frame, face, start + p.tine_width)
+    # Where the whole width of a tine lies on the face: both its sides do.
+    bands = sorted((max(a0, b0), min(a1, b1)) for a0, a1 in left for b0, b1 in right
+                   if min(a1, b1) - max(a0, b0) > d.TOLERANCE)
+    # A face that rises from the bed in one stretch keeps the one grid, as
+    # without the restart: its fins are as they were.
+    if len(bands) == 1 and bands[0][0] <= d.TOLERANCE:
+        return None
+    zs = []
+    for index, (bottom, top) in enumerate(bands):
+        # The margins of the face at its own lower edge and below its top, as
+        # the one grid keeps them; at the edges of a gap the tine only has to
+        # rest on the face, which contact_share() checks after.
+        margin = d.FACE_BOTTOM_MARGIN if index == 0 and bottom > d.TOLERANCE else 0.0
+        first = _snap_up(p, max(bottom + margin, p.first_tine))
+        if zs:
+            first = max(first, _snap_up(p, zs[-1] + p.least_tine_spacing))
+        last = _snap_down(p, min(top, limit) - p.tine_height)
+        if last < first - d.TOLERANCE:
+            continue
+        # From the lower edge of the stretch to its top, spread evenly, as many
+        # as keep them no further apart than the tine spacing.
+        steps = math.ceil((last - first) / p.tine_spacing - d.TOLERANCE)
+        for step in range(max(steps, 0) + 1):
+            z = first if steps <= 0 else p.snap_to_layer(first + (last - first) * step / steps)
+            if zs and z < zs[-1] + p.least_tine_spacing - d.TOLERANCE:
+                continue
+            if count and len(zs) >= count:
+                return zs
+            zs.append(z)
+    return zs
+
+
 def touching_at(frame, face, p, tine_z, t0, thickness):
     """The heights in `tine_z` at which the tine of the fin starting at t0
     lies on `face`, as contact_share() finds it."""
@@ -911,6 +990,17 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
                 moved.append((number, moved_to - t0))
                 t0, touching = moved_to, touching_at(frame, support, p, tine_z, moved_to, thickness)
                 starts[number] = t0
+        if p.tine_restart and not frame.round_side:
+            # The grid anew under this fin, at the lower edge of the face and
+            # above every gap it bridges; its tines checked as any.
+            own_z = restarted_tines(p, frame, support, t0, thickness,
+                                    p.fin_height if p.fin_height > 0 else room, count)
+            if own_z is not None:
+                candidate_z = [z for z in own_z if own is None or z + p.tine_height <= own + d.TOLERANCE]
+                if own is not None and not candidate_z:
+                    raise refused(translate("FinSnap", "fin %d is lower than its first tine") % number,
+                                  HandEditError)
+                touching = touching_at(frame, support, p, own_z, t0, thickness)
         on_face = [z in touching for z in candidate_z]
         kept_z = [z for z, whole in zip(candidate_z, on_face) if whole]
         if not kept_z:

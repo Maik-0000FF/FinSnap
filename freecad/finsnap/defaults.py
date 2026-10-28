@@ -43,6 +43,9 @@ TINE_CLEARANCE = 0.0
 # --- Tines --------------------------------------------------------------------
 # Tines are horizontal, so each one is printed within its own layers.
 TINE_SPACING = 5.0          # vertical distance between tine bottoms
+# The tine grid starts anew at the lower edge of the face under each fin and
+# above every gap it bridges; off, one grid counts from the bed for every fin.
+TINE_RESTART = True
 TINE_FIRST_AUTO = 0.0       # 0: the lowest tine sits on the top of the foot
 TINE_LAYERS = 1             # tine height in layers
 TINE_WIDTH_BEADS = 1        # tine width across the fin, in beads

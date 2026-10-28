@@ -91,6 +91,10 @@ LENGTH = "App::PropertyLength"
 INTEGER = "App::PropertyInteger"
 FLOAT = "App::PropertyFloat"
 CHOICE = "App::PropertyEnumeration"
+BOOL = "App::PropertyBool"
+# Parameters that a file saved before them gets as off, not as their built-in
+# value: on, they would change fins saved without them.
+RESTORED_AS = {"TineRestart": False}
 # Editor mode that hides a property in the property view.
 EDITOR_HIDDEN = 2
 
@@ -202,6 +206,13 @@ PROPERTIES = (
          QT_TRANSLATE_NOOP("App::Property",
                            "Vertical distance between tines, at least the tine height plus one layer"),
          "tine_spacing", None, STEP_LAYER),
+    Prop("TineRestart", BOOL, GROUP_TINES,
+         QT_TRANSLATE_NOOP("FinSnap", "Restart tines after a gap"),
+         QT_TRANSLATE_NOOP("App::Property",
+                           "Start the tine grid anew at the lower edge of the face under each fin and above every "
+                           "gap it bridges, so a short face or one above a hole still gets tines; off, one grid "
+                           "counts from the bed for every fin"),
+         "tine_restart", None),
     Prop("TineFirst", LENGTH, GROUP_TINES,
          QT_TRANSLATE_NOOP("FinSnap", "Tine first"),
          QT_TRANSLATE_NOOP("App::Property", "Height of the lowest tine above the bed, 0 = on the top of the foot"),
@@ -653,11 +664,12 @@ class FinSnapFeature:
                     setattr(obj, EDITED_OF[which], getattr(obj, old))
                 obj.removeProperty(old)
         # A parameter added in a later version starts with its built-in value,
-        # so fins saved before it keep their shape.
+        # or where that would change the fins with the value it stands for
+        # off, so fins saved before it keep their shape.
         built_in = FinParams()
         for prop in PROPERTIES:
             if prop.name not in obj.PropertiesList:
-                add_property(obj, prop, getattr(built_in, prop.field))
+                add_property(obj, prop, RESTORED_AS.get(prop.name, getattr(built_in, prop.field)))
         # A file saved by an older version knows fewer choices; offer the
         # current ones and keep the value.
         for prop in PROPERTIES:

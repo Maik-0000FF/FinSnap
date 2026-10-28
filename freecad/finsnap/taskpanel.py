@@ -37,6 +37,9 @@ LENGTH_DECIMALS = 3
 FIELD_TOLERANCE = 0.5 * 10 ** -LENGTH_DECIMALS
 RATIO_DECIMALS = 2
 LENGTH_SUFFIX = " mm"
+# A checkbox shown in a tooltip, as for the standard it goes back to.
+SHOWN_ON = QT_TRANSLATE_NOOP("FinSnap", "on")
+SHOWN_OFF = QT_TRANSLATE_NOOP("FinSnap", "off")
 DEGREE_SUFFIX = " \N{DEGREE SIGN}"
 # Pause after the last change before the preview is rebuilt, so typing a
 # number does not rebuild the fins at every keystroke.
@@ -224,6 +227,8 @@ def _widget(prop, value):
         box = QtWidgets.QComboBox()
         for choice in prop.choices:
             box.addItem(translate("FinSnap", feature.CHOICE_LABELS[choice]), choice)
+    elif prop.kind == feature.BOOL:
+        box = QtWidgets.QCheckBox()
     elif prop.kind == feature.INTEGER:
         box = QtWidgets.QSpinBox()
         box.setRange(0, MAX_INTEGER)
@@ -245,12 +250,14 @@ def _widget(prop, value):
 def _write(prop, widget, value):
     if prop.kind == feature.CHOICE:
         widget.setCurrentIndex(prop.choices.index(value))
+    elif prop.kind == feature.BOOL:
+        widget.setChecked(bool(value))
     else:
         widget.setValue(value)
 
 
 def _same(prop, first, second):
-    if prop.kind == feature.CHOICE:
+    if prop.kind in (feature.CHOICE, feature.BOOL):
         return first == second
     return abs(first - second) < d.TOLERANCE
 
@@ -259,6 +266,8 @@ def _shown(prop, value):
     """A value as the panel shows it, for a tooltip."""
     if prop.kind == feature.CHOICE:
         return translate("FinSnap", feature.CHOICE_LABELS[value])
+    if prop.kind == feature.BOOL:
+        return translate("FinSnap", SHOWN_ON if value else SHOWN_OFF)
     if prop.kind == feature.LENGTH:
         return "%g%s" % (value, LENGTH_SUFFIX)
     return "%g" % value
@@ -267,12 +276,16 @@ def _shown(prop, value):
 def _changed_signal(widget):
     if isinstance(widget, QtWidgets.QComboBox):
         return widget.currentIndexChanged
+    if isinstance(widget, QtWidgets.QCheckBox):
+        return widget.toggled
     return widget.valueChanged
 
 
 def _read(prop, widget):
     if prop.kind == feature.CHOICE:
         return widget.currentData()
+    if prop.kind == feature.BOOL:
+        return widget.isChecked()
     return widget.value()
 
 

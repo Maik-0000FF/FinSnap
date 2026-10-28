@@ -828,6 +828,8 @@ def main():
     from freecad.finsnap.params import FinParams
     built_in = FinParams().fin_thickness
     marking = FinSnapTaskPanel(fins)
+    expect(isinstance(marking.widgets["TineRestart"], QtWidgets.QCheckBox),
+           "the tine restart is a checkbox in the panel")
     thickness, reset = marking.widgets["FinThickness"], marking.resets["FinThickness"]
     label = marking.labels["FinThickness"]
     expect(reset.isHidden() and not label.styleSheet(), "a field at its standard value is not marked")

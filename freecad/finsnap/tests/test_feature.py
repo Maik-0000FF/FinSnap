@@ -7,6 +7,7 @@ Run in FreeCAD, with this checkout installed as an addon (see CONTRIBUTING.md):
     freecad --console freecad/finsnap/tests/test_feature.py
 """
 
+import dataclasses
 import os
 import sys
 import tempfile
@@ -60,6 +61,7 @@ FINE_TURN = 1.23456789  # a turn finer than the shift is kept, in mm round the s
 COUNTER_HEIGHT = 6.0  # a height of its own for a counter fin, in mm
 THIN_BORE = 9.8  # a bore that leaves the end ring of the test tube too narrow for a counter fin, in mm
 WIDE_BORE = 9.0  # a bore under the middle of the end ring of the test tube, the ring beside it wide enough, in mm
+BRIDGE_TINES = 2  # tines a counter fin has at least below and above a bore it bridges
 CENTRE_TOLERANCE = 0.5  # how far from the middle of a face a fin planned in its middle may stand, in mm
 FILLET_RADIUS = 2.0  # a fillet on a corner of a test part, in mm
 EXACT_DISTANCE = 1e-9  # how far a point of the tube may move and it still stands alike, in mm
@@ -407,6 +409,10 @@ def warnings_and_old_files(doc):
     fins.Proxy.onDocumentRestored(fins)
     expect("TineClearance" in fins.PropertiesList and fins.TineClearance.Value == d.TINE_CLEARANCE,
            "fins saved before the tine clearance existed get it, touching as before")
+    fins.removeProperty("TineRestart")
+    fins.Proxy.onDocumentRestored(fins)
+    expect("TineRestart" in fins.PropertiesList and fins.TineRestart is False and FinParams().tine_restart,
+           "fins saved before the tine restart existed get it off, built as before; new fins get it on")
 
 
 def step_with_offset_curves():
@@ -433,6 +439,37 @@ def step_with_offset_curves():
                "the STEP export brings the pocketed block back whole%s" % after)
 
 
+def counter_bridges_bore(doc):
+    """With the tine grid restarted after a gap, the counter fin under the
+    end ring of a tube stands where it was planned, over the bore, with tines
+    below and above it, and none of them over the bore."""
+    shape = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
+    tube = doc.addObject("Part::Feature", "BridgedTube")
+    tube.Shape = shape
+    rim = next(i for i, e in enumerate(shape.Edges, 1) if isinstance(e.Curve, Part.Circle)
+               and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE)
+    joined, (edge,), name_of = feature.whole_elements(tube, ["Edge%d" % rim])
+    plan = geometry.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
+    tube.Placement = plan.change
+    fins = feature.create(tube, name_of(plan.number))
+    doc.recompute()
+    named = feature.add_counter(fins)
+    doc.recompute()
+    part, ring = feature._face(fins.CounterFace)
+    p = feature.params_of(fins)
+    counter = geometry.build(part, ring, p, tine_count=p.counter_tine_count or None)
+    one_grid = geometry.build(part, ring, dataclasses.replace(p, tine_restart=False),
+                              tine_count=p.counter_tine_count or None)
+    expect(named is not None and fins.isValid() and not any("moved along the face" in w for w in fins.Warnings)
+           and len(counter.tines) >= BRIDGE_TINES and not counter.dropped
+           and len(counter.tines) > len(one_grid.tines) and counter.height > one_grid.height,
+           "the counter fin bridges the bore with more tines and taller than on one grid: %d tines, %s"
+           % (len(counter.tines), list(fins.Warnings)))
+    doc.removeObject(fins.Name)
+    doc.removeObject(tube.Name)
+    doc.recompute()
+
+
 def counter_beside_bore(doc):
     """A tube whose bore lies under the middle of its end ring: the counter
     fin planned there moves along the ring to where its tines rest."""
@@ -445,6 +482,8 @@ def counter_beside_bore(doc):
     plan = geometry.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
     tube.Placement = plan.change
     fins = feature.create(tube, name_of(plan.number))
+    # With one grid for every fin, as the restart below the bore would bridge it.
+    fins.TineRestart = False
     doc.recompute()
     named = feature.add_counter(fins)
     doc.recompute()
@@ -739,6 +778,7 @@ def main():
     split_tube(doc)
     halves_kept_beside_fillet(doc)
     counter_under_disc(doc)
+    counter_bridges_bore(doc)
     counter_beside_bore(doc)
     counter_on_thin_tube(doc)
     tapered_pad(doc)
