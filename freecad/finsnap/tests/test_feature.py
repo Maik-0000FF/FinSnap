@@ -460,12 +460,21 @@ def turned_tube(doc):
     # so turned back it stands exactly where it stood.
     feature.set_round_shift(fins, FINE_TURN)
     feature.set_round_shift(fins, 0.0)
-    # Measured on the side, where the turn shows as a distance; an angle this
-    # small rounds away in the rotation.
-    probe = feature.round_side(fins).Surface.Center + App.Vector(TUBE_RADIUS, 0, 0)
+    # Measured on the outer rim, a tube radius from its axis in its own
+    # coordinates, where the turn shows as a distance; an angle this small
+    # rounds away in the rotation.
+    probe = App.Vector(TUBE_RADIUS, 0, 0)
     drift = (part.Placement.multVec(probe) - standing.multVec(probe)).Length
     expect(drift < EXACT_DISTANCE,
            "turned finer than the shift is kept and back, the tube stands exactly as before: %r mm" % drift)
+    # A change smaller than the tolerance is neither turned nor kept, so none
+    # adds up unturned.
+    feature.set_round_shift(fins, TUBE_TURN)
+    turned = App.Placement(part.Placement)
+    feature.set_round_shift(fins, TUBE_TURN + d.TOLERANCE / 2)
+    expect(feature.round_shift(fins) == TUBE_TURN and part.Placement.isSame(turned, EXACT_DISTANCE),
+           "a change below the tolerance neither turns the tube nor is kept")
+    feature.set_round_shift(fins, 0.0)
 
     side_name = "Face%d" % (side + 1)
     try:

@@ -883,9 +883,16 @@ def shift_fin(obj, which, number, by):
     set_fin_shift(obj, which, number, edits(obj, which)[1].get(number, 0.0) + by)
 
 
+def kept_shift(mm):
+    """`mm` as a shift along the face is kept: rounded as stored_mm(), and 0
+    below the tolerance."""
+    return stored_mm(mm) if abs(mm) >= d.TOLERANCE else 0.0
+
+
 def set_fin_shift(obj, which, number, mm):
     """Move fin `number` of `which` `mm` along the face from where it was planned."""
-    _set_mm(obj, SHIFTS[which], number, None if abs(mm) < d.TOLERANCE else mm)
+    kept = kept_shift(mm)
+    _set_mm(obj, SHIFTS[which], number, kept or None)
     _edited(obj, which)
 
 
@@ -962,11 +969,13 @@ def forget_turn(obj):
 def set_round_shift(obj, mm):
     """Turn the part so its main fin stands `mm` round its round side from
     where it was stood, and keep that as the shift of the fin. Turned by the
-    shift as it is kept, rounded, so the part stands where the shift says,
-    also after many small turns and a turn back."""
-    # As set_fin_shift() keeps it: rounded, and nothing below the tolerance.
-    kept = stored_mm(mm) if abs(mm) >= d.TOLERANCE else 0.0
-    turn_part(obj, kept - round_shift(obj))
+    shift as it is kept (kept_shift()), so the part stands where the shift
+    says, also after many small turns and a turn back; a change smaller than
+    the tolerance neither turns nor is kept, so none adds up unturned."""
+    kept, current = kept_shift(mm), round_shift(obj)
+    if abs(kept - current) < d.TOLERANCE:
+        return
+    turn_part(obj, kept - current)
     set_fin_shift(obj, MAIN, 1, kept)
 
 
