@@ -840,6 +840,12 @@ def check_fin_at(cube, face):
                "drawn %s, the fin is as high, its faces turned as those of the fin built" % why)
     expect(len(geometry.fin_at(p, built, number, built.tine_z[0])) == 1,
            "drawn no higher than the bottom of its first tine, the fin has no tines")
+    for height in (p.foot_height / 2, 0.0):
+        low = geometry.fin_at(p, built, number, height)[0]
+        expect(p.foot_height > 0 and low.isValid() and len(low.Solids) == 1
+               and abs(low.BoundBox.ZMax - (cube.BoundBox.ZMin + p.foot_height)) < d.TOLERANCE,
+               "drawn %.2f mm high, below the top of its foot, the fin is a whole solid as high as its foot"
+               % height)
 
 
 def check_merged_clearance(cube, face):

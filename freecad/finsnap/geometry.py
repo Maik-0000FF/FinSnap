@@ -689,8 +689,13 @@ def fin_at(p, result, number, height):
     INPUTS this has to withstand:
       height between its tines              ->  the fin, ending above the last tine below
       height above the face                 ->  the fin as high, its flank on along the face
-      height below its first tine           ->  the fin without tines, no lower than its foot
+      height below its first tine           ->  the fin without tines
+      height at or below the top of its
+        foot, down to 0                     ->  the fin as high as its foot: lower, its
+                                                outline would cross itself
+      no foot, height above 0               ->  the fin as high
     """
+    height = max(height, p.foot_height)
     index = result.numbers.index(number)
     tine_z = [z for z in result.touching_z.get(number, []) if z + p.tine_height <= height + d.TOLERANCE]
     body, tines, _ = one_fin(p, result.frame, result.positions[index], height, result.thickness,
