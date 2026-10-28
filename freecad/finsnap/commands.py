@@ -527,6 +527,8 @@ class QuickFins:
         before = orient.snapshot(owner)
         # Standing the part rebuilds its other fins laid flat; Cancel gives them back.
         laid_flat = feature.laid_flat_marks(owner, doc)
+        # Standing it anew forgets how far it was turned about a round side; Cancel notes it again.
+        turns = feature.round_turns(owner, doc)
         _stand(obj, plan.change)
         # The main fin only; a counter fin is added in the panel or with Add counter fin.
         fins = feature.create(obj, face_name(plan.number + 1))
@@ -536,7 +538,7 @@ class QuickFins:
         doc.recompute()
         _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside))
         # Cancel deletes the fins and stands the part as it stood before.
-        _edit_new(fins, functools.partial(_put_back_quick, owner, before, laid_flat))
+        _edit_new(fins, functools.partial(_put_back_quick, owner, before, laid_flat, turns))
 
 
 def quick_params():
@@ -555,11 +557,13 @@ def quick_plan(obj, edge_names, face_names):
         [(shape.getElement(n), int(n[len(FACE_PREFIX):]) - 1) for n in face_names], quick_params(), d.TILT_ANGLE)
 
 
-def _put_back_quick(owner, before, laid_flat):
+def _put_back_quick(owner, before, laid_flat, turns):
     """Undo what Quick fins did besides making the fins: the part stands as
-    before, and its other fins laid flat keep their marks and shapes."""
+    before, its other fins laid flat keep their marks and shapes, and its fins
+    under a round side how far it was turned about it."""
     orient.put_back(owner, before)
     feature.put_back_laid_flat(owner.Document, laid_flat)
+    feature.put_back_turns(owner.Document, turns)
 
 
 def _edit_new(fins, on_cancel=None):

@@ -747,6 +747,9 @@ def check_round_side():
     expect(leans_by(stood, side, 90 - ODD_TILT), "a rim alone lifts its flat face by the tilt angle")
     stood = moved(rod, orient.stand(rod, rim, ODD_TILT, rod.Faces[side]))
     expect(leans_by(stood, side, ODD_TILT), "a rim with the side it bounds leans the side by the tilt angle")
+    quick = moved(rod, geometry.quick_plan(rod, [(rim, None)], [], p, ODD_TILT).change)
+    expect(leans_by(quick, side, ODD_TILT),
+           "Quick fins on a rim alone leans the side by the tilt angle, as on the side")
     spread = geometry.build(stood, stood.Faces[side], FinParams(placement=d.PLACEMENT_ENDS))
     expect(len(spread.positions) == 1, "a round side takes one fin, whatever the placement")
 

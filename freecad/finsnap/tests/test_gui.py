@@ -107,6 +107,36 @@ def select(obj, *subs):
         Gui.Selection.addSelection(obj)
 
 
+def added_on_tube(doc):
+    """Add fins under the side of a tube already standing on its rim, turned
+    in the panel: Cancel deletes the fins and turns the tube back."""
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, geometry, handles
+    from freecad.finsnap.params import FinParams
+    shape = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
+    side = [i for i, f in enumerate(shape.Faces) if isinstance(f.Surface, Part.Cylinder)
+            and abs(f.Surface.Radius - TUBE_RADIUS) < d.TOLERANCE][0]
+    tube = doc.addObject("Part::Feature", "AddedTube")
+    tube.Shape = shape
+    tube.Placement = geometry.quick_plan(shape, [], [(shape.Faces[side], side)], FinParams(), d.TILT_ANGLE).change
+    doc.recompute()
+    standing = App.Placement(tube.Placement)
+    select(tube, "Face%d" % (side + 1))
+    Gui.runCommand("FinSnap_AddFins")
+    fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is tube][0]
+    panel = fins.ViewObject.Proxy.panel
+    panel.fin_fields[handles.ALONG].setValue(TUBE_ANGLE)
+    panel.field_entered(handles.ALONG)
+    turned = not tube.Placement.isSame(standing, d.TOLERANCE)
+    panel.reject()
+    doc.recompute()
+    expect(turned and tube.Placement.isSame(standing, d.TOLERANCE)
+           and not [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is tube],
+           "Cancel of Add fins on a tube turned in the panel deletes the fins and turns the tube back")
+    doc.removeObject(tube.Name)
+    doc.recompute()
+
+
 def turned_tube(doc):
     """Quick fins on the side of a tube: the fin is first put at 0 degrees of
     the side; its angle typed in the panel, or the arc round the axis dragged,
@@ -170,6 +200,21 @@ def turned_tube(doc):
     expect(abs(turned() - TUBE_ANGLE) < d.TOLERANCE
            and abs(angle() - (geometry.FULL_CIRCLE - TUBE_ANGLE)) < d.TOLERANCE,
            "an angle typed past 0 turns the tube the shorter way round")
+    # A build that fails once the tube is turned, which leaves no build behind:
+    # the turn is taken back all the same.
+    before_failure = App.Placement(tube.Placement)
+
+    def failing():
+        fins.Proxy.results = {}
+        raise ValueError("a build that fails")
+
+    panel.apply = failing
+    panel.fin_fields[handles.ALONG].setValue(TUBE_ANGLE)
+    panel.field_entered(handles.ALONG)
+    del panel.apply
+    panel.preview()
+    expect(tube.Placement.isSame(before_failure, d.TOLERANCE),
+           "a turn whose build fails is taken back, also with no build left to ask")
     panel.reset()
     expect(tube.Placement.isSame(standing, d.TOLERANCE), "Reset fins turns the tube back")
     panel.fin_fields[handles.ALONG].setValue(TUBE_ANGLE)
@@ -186,6 +231,15 @@ def turned_tube(doc):
            "Cancel turns the tube back to where the panel found it")
     rim = [i for i, e in enumerate(tube.Shape.Edges, 1) if isinstance(e.Curve, Part.Circle)
            and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE][0]
+    # Quick fins stands the tube anew, which forgets how far it was turned;
+    # its Cancel puts the tube back and notes the turn again.
+    select(tube, "Edge%d" % rim)
+    Gui.runCommand("FinSnap_QuickFins")
+    quick = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is tube and o is not fins][0]
+    quick.ViewObject.Proxy.panel.reject()
+    doc.recompute()
+    expect(feature.round_shift(fins) == shift and abs(turned() - TUBE_ANGLE) < d.TOLERANCE,
+           "Cancel of Quick fins on the tube keeps how far it was turned for the fins already there")
     select(tube, "Edge%d" % rim)
     Gui.runCommand("FinSnap_Tilt")
     doc.recompute()
@@ -1179,6 +1233,7 @@ def main():
         model = archive.read("3D/3dmodel.model").decode()
     expect(model.count("<object ") == 2, "export without a selection takes all fins with their parts")
     turned_tube(doc)
+    added_on_tube(doc)
 
     empty = doc.addObject("Part::Feature", "Empty")
     select(empty)

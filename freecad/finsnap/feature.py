@@ -702,6 +702,13 @@ def builder(obj, which):
     if not obj.CounterFace:
         return None
     part, face = _face(obj.CounterFace)
+    if orient.is_round_side(face):
+        # Its fin would stay under the lowest line and could move only by
+        # turning the part, which turns the main fin away as well.
+        def refuse(*_):
+            raise geometry.FinError(translate("FinSnap", "the counter fin goes under a flat face, not under the "
+                                                         "side of a cylinder or tube"))
+        return part, refuse
     return part, lambda left, shifts, heights: geometry.build(
         part, face, p, tine_count=p.counter_tine_count or None, left_out=left, shifts=shifts, heights=heights)
 
@@ -866,7 +873,10 @@ def set_fin_height(obj, which, number, mm):
 def turn_part(obj, mm):
     """Turn the part of `obj` about the axis of the round side its main fin
     stands under, so the fin comes to stand `mm` further along the side; see
-    geometry.turn_of(). Inside a Body, the whole Body is turned."""
+    geometry.turn_of(). Inside a Body, the whole Body is turned. No turn
+    leaves the placement as it is, so nothing is recomputed for it."""
+    if abs(mm) < d.TOLERANCE:
+        return
     change = geometry.turn_of(round_side(obj), mm)
     owner = outermost(obj.Base[0])
     owner.Placement = change.multiply(owner.Placement)
@@ -890,6 +900,24 @@ def round_shift(obj):
     """How far the part of `obj` was turned about its round side by hand, as
     the shift of its main fin (mm round the side); 0 if not."""
     return edits(obj, MAIN)[1].get(1, 0.0)
+
+
+def round_turns(owner, document):
+    """The fins of `owner` under a round side whose part was turned by hand,
+    by name, with how far (mm round the side), for put_back_turns()."""
+    return {obj.Name: round_shift(obj) for obj in fins_of(owner, document)
+            if round_shift(obj) and on_round_side(obj)}
+
+
+def put_back_turns(document, turns):
+    """Note again how far the part of the fins in `turns`, from round_turns(),
+    was turned, once it stands as it did then: the placement put back holds
+    the turn itself, so the part is not turned again. Fins deleted since are
+    passed over."""
+    for name, mm in turns.items():
+        obj = document.getObject(name)
+        if obj is not None:
+            set_fin_shift(obj, MAIN, 1, mm)
 
 
 def forget_turn(obj):

@@ -811,9 +811,10 @@ class FinSnapTaskPanel:
     def turns_part(self):
         """Whether moving the handled fin along the face turns the part instead:
         the main fin under the round side of a cylinder or tube stays under its
-        lowest line, and the part turns about its axis."""
-        found = self.handled_result()
-        return found is not None and self.handled[0] == feature.MAIN and found[0].radius > 0
+        lowest line, and the part turns about its axis. Asked of the face, not
+        of the last build, which a failed build leaves empty: a turn that fails
+        is still turned back."""
+        return self.handled is not None and self.handled[0] == feature.MAIN and feature.on_round_side(self.obj)
 
     def own_value(self, kind):
         """What the handled fin has by hand now: its shift along the face
@@ -1266,11 +1267,13 @@ class FinSnapTaskPanel:
 
     def reject(self):
         self.close()
+        # The part turns back about its round side first, also for fins just
+        # made, which are deleted after.
+        if feature.on_round_side(self.obj):
+            feature.set_round_shift(self.obj, self.original_turn)
         if self.created:
             discard_created(self.obj, self.on_cancel)
         else:
-            if feature.on_round_side(self.obj):
-                feature.set_round_shift(self.obj, self.original_turn)
             for name, value in self.original.items():
                 setattr(self.obj, name, value)
             for name, value in self.original_edits.items():
