@@ -508,6 +508,11 @@ def check_restart(cube, face):
     expect(not spread.dropped and gridded.dropped and spread.height > room - restart.layer_height - d.TOLERANCE,
            "above a hole the grid starts anew: no tine over it, the top tine at the top of the face: "
            "%.2f mm of %.2f" % (spread.height, room))
+    own = geometry.build(holed, holed_face, restart, heights={spread.numbers[0]: spread.height})
+    expect(spread.height > gridded.height and own.thickness == spread.thickness
+           and math.isclose(own.foot_half_width, spread.foot_half_width),
+           "a height of its own on a tine above those of the face gets the fin and foot it needs: %.2f mm"
+           % own.foot_half_width)
 
 
 def sunk_around(cube, face, low, high):

@@ -935,10 +935,10 @@ def build(part, face, p, tine_count=None, left_out=(), shifts=None, heights=None
     return alone
 
 
-# One fin as planned: where it starts, how high it is and whether that height
-# comes from its tines, the heights its tines are tried at, which of them
-# rest on the face, and every height at which a tine there would.
-PlannedFin = namedtuple("PlannedFin", "number t0 height from_tines candidate_z on_face touching")
+# One fin as planned: where it starts, how high it is, the heights its tines
+# are tried at, which of them rest on the face, and every height at which a
+# tine there would.
+PlannedFin = namedtuple("PlannedFin", "number t0 height candidate_z on_face touching")
 # The fins of a face as planned, before any is built.
 FacePlan = namedtuple("FacePlan", "frame height thickness tine_z gap_z narrow_heights positions face_start "
                                   "starts half_foot fins moved fins_left_out")
@@ -1052,12 +1052,11 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
             continue
         # An automatic fin ends at its highest tine left, so no part of it
         # stands above the last contact with the face.
-        from_tines = own is None and p.fin_height <= 0
         if own is not None:
             fin_height = own
         else:
             fin_height = p.fin_height if p.fin_height > 0 else kept_z[-1] + p.tine_height
-        fins.append(PlannedFin(number, t0, fin_height, from_tines, candidate_z, on_face, sorted(touching)))
+        fins.append(PlannedFin(number, t0, fin_height, candidate_z, on_face, sorted(touching)))
     if not fins:
         raise refused(translate("FinSnap", "no tine finds the face; it has a recess or hole at every tine"))
     return FacePlan(frame, height, thickness, tine_z, gap_z, narrow_heights, positions, face_start,
@@ -1073,11 +1072,11 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     # With the restart a fin can reach above the tines of the face as a
     # whole, up to the top of the stretch it stands on; the fins are planned
     # again, as thick and with as large a foot as the highest of them needs.
-    # The height planned for only grows, by a layer at least, and no fin is
-    # higher than the face, so this ends. A height set by hand counts as
-    # without the restart: not at all.
+    # The height planned for only grows, each time to that of a fin, and no
+    # fin is higher than the face, so this ends. A height set by hand counts
+    # too: it ends on a tine of its fin, which may lie above those of the face.
     while restart:
-        reach = max((fin.height for fin in plan.fins if fin.from_tines), default=0.0)
+        reach = max(fin.height for fin in plan.fins)
         if reach <= plan.height + d.TOLERANCE:
             break
         plan = _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out, shifts, heights)
