@@ -11,6 +11,8 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-29
+
 ### Added
 
 - Check stability, in the toolbar and the task panel: whether a part, with or without fins, stays standing while it is printed, layer by layer as its centre of mass moves, first on its own, then held by its fins from their lowest tine up; it says at which layer it would tip and which way, recommends a counter fin where it tips away from the fins, and shows in the 3D view the part coloured by height from green over yellow to red where it tips, the critical layer cut out of it, and the plumb line over what it stands on (#80)
@@ -217,7 +219,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.9.0
 [0.8.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.6.0
