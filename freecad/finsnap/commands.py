@@ -1096,6 +1096,17 @@ class IslandsWhileEditing:
         feature.set_islands_while_editing(checked)
 
 
+class SavingWatch:
+    """Document observer: fins being edited look, while their document is
+    saved, as they did before editing, so the file keeps that look."""
+
+    def slotStartSaveDocument(self, document, _name):  # noqa: N802 - FreeCAD API
+        handles.saving_document(document, True)
+
+    def slotFinishSaveDocument(self, document, _name):  # noqa: N802 - FreeCAD API
+        handles.saving_document(document, False)
+
+
 class StabilityWatch:
     """Document observer: the plumb line of a stability check goes once the
     part, its place or its fins change, as it no longer tells the truth."""
@@ -1122,6 +1133,7 @@ COMMANDS = (("FinSnap_QuickFins", QuickFins()),
 # with a document holding fins.
 App.addDocumentObserver(PartVisibility())
 App.addDocumentObserver(StabilityWatch())
+App.addDocumentObserver(SavingWatch())
 
 
 def register():

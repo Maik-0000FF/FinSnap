@@ -409,6 +409,36 @@ def chosen_stands(doc, quick, facing, messages):
     fins.ViewObject.Proxy.panel.reject()
 
 
+def saved_while_editing():
+    """Fins saved with their task panel open are saved as they looked before
+    editing, not see-through green; after, they look as while editing again."""
+    from freecad.finsnap import commands, feature
+    from freecad.finsnap.taskpanel import FinSnapTaskPanel
+    doc = App.newDocument("SavedWhileEditing")
+    cube = doc.addObject("Part::Feature", "Cube")
+    cube.Shape = tilted_cube()
+    fins = feature.create(cube, face_name(cube, lower_left_face(cube.Shape)))
+    commands.ViewProviderFinSnap(fins.ViewObject)
+    doc.recompute()
+    before = fins.ViewObject.Transparency
+    panel = FinSnapTaskPanel(fins)
+    editing = fins.ViewObject.Transparency
+    path = os.path.join(tempfile.mkdtemp(), "saved_while_editing.FCStd")
+    doc.saveAs(path)
+    after = fins.ViewObject.Transparency
+    with zipfile.ZipFile(path) as saved:
+        gui = saved.read("GuiDocument.xml").decode()
+    provider = gui[gui.index('<ViewProvider name="%s"' % fins.Name):]
+    provider = provider[:provider.index("</ViewProvider>")]
+    stored = provider[provider.index('name="Transparency"'):]
+    stored = int(stored[stored.index('value="') + len('value="'):].split('"')[0])
+    panel.release_handles()
+    App.closeDocument(doc.Name)
+    expect(editing != before and stored == before and after == editing,
+           "fins saved with the task panel open keep their look from before editing in the file, "
+           "and look as while editing after: %s, %s, %s, %s" % (before, editing, stored, after))
+
+
 def released_without_button(arrows, name):
     """Every arrow of `arrows`, a Handles, that Coin left active after its
     release, moved with no mouse button down, is let go at once, as the
@@ -1055,6 +1085,7 @@ def main():
     island_marks(doc)
     value_colors()
     stability_checked(doc, messages)
+    saved_while_editing()
     # Fins of the part laid flat keep their mark and shape over a Quick fins
     # cancelled: standing the part rebuilt them, Cancel gives them back.
     select(quick, "Edge%d" % on_bed)

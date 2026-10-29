@@ -741,18 +741,18 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="868"/>
+        <location filename="../feature.py" line="867"/>
         <source>Main fin: %s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="838"/>
-        <location filename="../feature.py" line="871"/>
+        <location filename="../feature.py" line="837"/>
+        <location filename="../feature.py" line="870"/>
         <source>Counter fin: %s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="874"/>
+        <location filename="../feature.py" line="873"/>
         <source>%d faces of %s overhang flatter than %.0f degrees without fins: %s</source>
         <translation type="unfinished"></translation>
     </message>
@@ -940,7 +940,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../handles.py" line="523"/>
+        <location filename="../handles.py" line="542"/>
         <source>No 3D view of %s is open to edit the fins in.</source>
         <translation type="unfinished"></translation>
     </message>

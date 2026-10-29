@@ -22,6 +22,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 - On a face that starts above the bed, as above a fillet the part rests on, the lowest tine goes on the first layer from the lower edge of the face up, where its end rests on the face, no longer half a millimetre higher
 
+### Fixed
+
+- Fins saved with their task panel open no longer stay see-through green: the file keeps the look they had before editing
+
 ## [0.8.0] - 2026-10-29
 
 ### Added

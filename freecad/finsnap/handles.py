@@ -503,6 +503,25 @@ class NoView(RuntimeError):
     """The document has no 3D view to show the arrows in."""
 
 
+# The arrows of every task panel open, so their objects can look as before
+# editing while their documents are saved (saving_document()).
+EDITING = []
+
+
+def saving_document(document, started):
+    """Before `document` is saved, `started` True, its objects being edited
+    take the look they had before editing, so it is that look the file keeps
+    and not the see-through green of editing; after, the look of editing again."""
+    for arrows in list(EDITING):
+        try:
+            mine = arrows.vobj.Object.Document is document
+        except ReferenceError:
+            # The object went with its panel still open; nothing to show.
+            continue
+        if mine:
+            arrows.saving(started)
+
+
 class Handles:
     """Two arrows on one fin of the object shown by `vobj`, one along the face
     and one up, with the object see-through until remove().
@@ -525,10 +544,13 @@ class Handles:
             view = views[0]
         self.vobj = vobj
         self.on_start, self.on_move, self.on_done = on_start, on_move, on_done
-        # How the object looked before, put back by remove().
+        # How the object looked before, put back by remove() and while its
+        # document is saved (saving()); the look while editing, kept then.
         self.look = (vobj.ShapeAppearance, vobj.Transparency)
+        self.editing_look = None
         vobj.Transparency = round(PREVIEW_TRANSPARENCY * PERCENT)
         self.tint(True)
+        EDITING.append(self)
 
         self.view = view
         self.callbacks = []
@@ -922,3 +944,16 @@ class Handles:
         # Not attached any more, also when the panel closes before it was.
         self.root = None
         self.vobj.ShapeAppearance, self.vobj.Transparency = self.look
+        if self in EDITING:
+            EDITING.remove(self)
+
+    def saving(self, started):
+        """While the document of the object is saved, `started` True, it looks
+        as it did before editing, so the file keeps that look; once saved, as
+        while editing again."""
+        if started:
+            self.editing_look = (self.vobj.ShapeAppearance, self.vobj.Transparency)
+            self.vobj.ShapeAppearance, self.vobj.Transparency = self.look
+        elif self.editing_look is not None:
+            self.vobj.ShapeAppearance, self.vobj.Transparency = self.editing_look
+            self.editing_look = None

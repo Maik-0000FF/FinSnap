@@ -724,13 +724,13 @@
         <translation>Kippt bei Schicht %d (%.1f mm) über ein Ende der Kante um, auf der es steht.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="868"/>
+        <location filename="../feature.py" line="867"/>
         <source>Main fin: %s</source>
         <translation>Hauptfinne: %s</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="838"/>
-        <location filename="../feature.py" line="871"/>
+        <location filename="../feature.py" line="837"/>
+        <location filename="../feature.py" line="870"/>
         <source>Counter fin: %s</source>
         <translation>Gegenfinne: %s</translation>
     </message>
@@ -740,7 +740,7 @@
         <translation>%d Insel(n): %s würde dort in der Luft zu drucken beginnen, ohne eigene Schicht darunter. Finnen tragen keine Insel, sie halten das Teil nur gegen Umfallen. So aufgestellt lässt es sich nicht drucken; die Inseln sind in der 3D-Ansicht markiert.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="874"/>
+        <location filename="../feature.py" line="873"/>
         <source>%d faces of %s overhang flatter than %.0f degrees without fins: %s</source>
         <translation>%d Flächen von %s hängen flacher als %.0f Grad über und tragen keine Finnen: %s</translation>
     </message>
@@ -1371,7 +1371,7 @@
         <translation>%s hat keine Form</translation>
     </message>
     <message>
-        <location filename="../handles.py" line="523"/>
+        <location filename="../handles.py" line="542"/>
         <source>No 3D view of %s is open to edit the fins in.</source>
         <translation>Von %s ist keine 3D-Ansicht offen, in der die Finnen bearbeitet werden können.</translation>
     </message>

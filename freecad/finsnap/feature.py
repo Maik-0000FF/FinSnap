@@ -680,8 +680,7 @@ def supports_of(part_obj, document):
     the fins of its FinSnap objects, each side as it is built with its changes
     by hand, and the height of its lowest tine, from which it holds the part;
     and the directions out of the part to its fins, main and counter, on the
-    bed. Fins laid
-    flat, or that cannot be built, hold nothing."""
+    bed. Fins laid flat, or that cannot be built, hold nothing."""
     supports, sides = [], []
     for fins in fins_of(outermost(part_obj), document):
         if not fins.Base or fins.Base[0] is not part_obj or is_laid_flat(fins):
