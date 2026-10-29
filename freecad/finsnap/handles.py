@@ -28,7 +28,7 @@ import functools
 import math
 
 from pivy import coin
-from PySide import QtCore
+from PySide import QtCore, QtWidgets
 
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -124,6 +124,8 @@ AUTO_ZOOM_PROBE = 0.1
 AUTO_ZOOM_DIVISOR = 5
 # The parts of a Coin disc dragger, which turns about its own z axis, at rest and held.
 TURN_PARTS = ("rotator", "rotatorActive")
+# The parts of a straight arrow's dragger it is drawn as, at rest and held.
+TRANSLATE_PARTS = ("translator", "translatorActive")
 
 
 def spots(points, color, transparency, size):
@@ -374,6 +376,9 @@ class Handles:
         # node shared by its two looks.
         self.offsets = {kind: coin.SoTranslation() for kind in KINDS}
         self.halves, self.ends = {}, {}
+        # The looks of each arrow, by the arrow (ALONG, UP or TURNING) and the
+        # part of its dragger they are, at rest or held.
+        self.looks = {}
         # Each straight arrow, and the arc that stands in for the one along the
         # face under a round side, switched on while it shows.
         self.shown = {}
@@ -381,8 +386,8 @@ class Handles:
             self.places[kind], self.draggers[kind] = self._add_dragger(kind, coin.SoTranslate1Dragger(),
                                                                        ("feedback", "feedbackActive"))
             self.halves[kind], self.ends[kind] = {}, (BACK, FORTH)
-            self._look(kind, "translatorActive", HELD_COLOR)
-        self._look(UP, "translator", axis_color("z"))
+            self._look(kind, TRANSLATE_PARTS[1], HELD_COLOR)
+        self._look(UP, TRANSLATE_PARTS[0], axis_color("z"))
         self.along_axis = None
         # The arc: it turns about its own z axis, the axis of the round side,
         # and moves the fin by mm_per_degree for every degree it is turned.
@@ -421,7 +426,7 @@ class Handles:
         Returns the place and the dragger."""
         for part in hidden_parts:
             dragger.setPart(part, coin.SoSeparator())
-        for name, method in (("addStartCallback", self._held), ("addMotionCallback", self._moved),
+        for name, method in (("addStartCallback", self._held), ("addMotionCallback", self._dragged),
                              ("addFinishCallback", self._let_go)):
             callback = self.view.addDraggerCallback(dragger, name, functools.partial(method, kind))
             self.callbacks.append((dragger, name, callback))
@@ -477,6 +482,7 @@ class Handles:
         ("translator") or held ("translatorActive"), showing the ends it shows."""
         node, halves = double_arrow(color, self.offsets[kind])
         self.draggers[kind].setPart(part, node)
+        self.looks[kind, part] = node
         self.halves[kind][part] = halves
         self.show_ends(kind, self.ends[kind])
 
@@ -499,7 +505,7 @@ class Handles:
         # The arrow along the face takes the colour of the axis it is nearest to.
         axis = "x" if abs(along.x) >= abs(along.y) else "y"
         if axis != self.along_axis:
-            self._look(ALONG, "translator", axis_color(axis))
+            self._look(ALONG, TRANSLATE_PARTS[0], axis_color(axis))
             self.along_axis = axis
         self.shown[ALONG].whichChild.setValue(coin.SO_SWITCH_NONE if turn else coin.SO_SWITCH_ALL)
         self.shown[UP].whichChild.setValue(coin.SO_SWITCH_ALL)
@@ -529,6 +535,7 @@ class Handles:
             for part, color in zip(TURN_PARTS, (axis_color(self.along_axis), HELD_COLOR)):
                 node, halves, self.arc_bodies[part] = arc_arrow(color)
                 self.turner.setPart(part, node)
+                self.looks[TURNING, part] = node
                 self.halves[ALONG][part] = halves
             self.show_ends(ALONG, self.ends[ALONG])
         self.mm_per_degree = mm_per_degree
@@ -598,8 +605,52 @@ class Handles:
 
     def _held(self, kind, _dragger):
         self.held = True
+        # Held: the look of a held arrow in its own colour again, should a
+        # drag before have been let go by _dragged().
+        self._tint_held(kind, HELD_COLOR)
         self.turned, self.last_turn = 0.0, self._turn()
         self.on_start(kind)
+
+    def _dragged(self, kind, dragger):
+        """A move of the arrow of `kind` from Coin. A drag goes on only while
+        the button that grabbed the arrow is down: should its release not reach
+        the dragger, the arrow would stay grabbed and follow the mouse with no
+        button pressed. Then it is let go here, as the release would, and Coin
+        is told to let it go too."""
+        if QtWidgets.QApplication.mouseButtons() & QtCore.Qt.LeftButton:
+            self._moved(kind, dragger)
+            return
+        # The dragger itself, not the plain one Coin passes: Coin left it
+        # active, and an active dragger follows every move of the mouse.
+        arrow = self.turner if kind == ALONG and self.turning() else self.draggers[kind]
+        arrow.isActive.setValue(False)
+        action = arrow.getHandleEventAction()
+        if action is not None and action.getGrabber() is not None:
+            action.releaseGrabber()
+        # Coin also leaves it showing its held look, which only it can switch
+        # back; that look takes the colour of the arrow at rest instead.
+        self._tint_held(kind, self._rest_color(kind))
+        if self.held:
+            self._let_go(kind, dragger)
+
+    def _held_look(self, kind):
+        """The look of the arrow of `kind` while it is held: of the arc where it
+        stands in for the arrow along the face."""
+        if kind == ALONG and self.turning():
+            return self.looks.get((TURNING, TURN_PARTS[1]))
+        return self.looks.get((kind, TRANSLATE_PARTS[1]))
+
+    def _tint_held(self, kind, color):
+        """Give the look of the arrow of `kind` while held the colour `color`,
+        its first node; no node changes, so a held arrow keeps its scene."""
+        look = self._held_look(kind)
+        if look is not None:
+            look.getChild(0).rgb.setValue(*color)
+
+    def _rest_color(self, kind):
+        """The colour of the arrow of `kind` at rest: that of the axis it is
+        nearest to, z for the arrow up."""
+        return axis_color("z") if kind == UP else axis_color(self.along_axis)
 
     def _moved(self, kind, _dragger):
         if kind == ALONG and self.turning():
