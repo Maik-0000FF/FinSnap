@@ -83,6 +83,11 @@ VIEW_PARAMETERS = "User parameter:BaseApp/Preferences/View"
 AXIS_COLORS = {"x": ("AxisXColor", 0xCC3333FF), "y": ("AxisYColor", 0x33CC33FF),
                "z": ("AxisZColor", 0x3333CCFF)}
 HELD_COLOR = (1.0, 1.0, 0.0)
+# While an arrow is dragged, its value as the task panel shows it stands past
+# its tip: in the colour of the held arrow, this many pixels high, this many
+# units of the arrow past the tip, drawn over everything else.
+VALUE_FONT_SIZE = 16
+VALUE_GAP = 0.3
 BYTE = 255
 # The type of FreeCAD's 3D views among the views of a document.
 VIEW_3D = "Gui::View3DInventor"
@@ -309,9 +314,11 @@ class Handles:
         self.arrows = coin.SoSwitch()
         self.preview = coin.SoSwitch()
         self.dropped = coin.SoSwitch()
-        for node in (self.arrows, self.preview, self.dropped):
+        self.value = coin.SoSwitch()
+        for node in (self.arrows, self.preview, self.dropped, self.value):
             node.whichChild.setValue(coin.SO_SWITCH_NONE)
             self.root.addChild(node)
+        self.value.addChild(self._value_group())
         # Each arrow: where it stands and how long it is, and the dragger; the
         # halves of its two looks, at rest and held, and which ends it shows.
         self.places, self.draggers = {}, {}
@@ -550,6 +557,39 @@ class Handles:
         self.held = False
         self.on_done(kind, self._mm(kind))
 
+    def _value_group(self):
+        """The nodes of the value shown past the tip of a dragged arrow, made
+        once: while an arrow is held only their fields change, as a scene
+        changed under a held dragger can lose the release of the mouse."""
+        self.value_at = coin.SoTransform()
+        zoom = coin.SoType.fromName(AUTO_ZOOM).createInstance()
+        zoom.scaleFactor.setValue(ARROW_SCREEN_SIZE)
+        self.value_past_tip = coin.SoTranslation()
+        color = coin.SoBaseColor()
+        color.rgb.setValue(*HELD_COLOR)
+        font = coin.SoFont()
+        font.size.setValue(VALUE_FONT_SIZE)
+        self.value_label = coin.SoText2()
+        group = coin.SoAnnotation()
+        for node in (self.value_at, zoom, self.value_past_tip, color, font, self.value_label):
+            group.addChild(node)
+        return group
+
+    def show_value(self, kind, text):
+        """Show `text`, the value of the arrow of `kind` as the task panel
+        shows it, past the tip of that arrow where it is dragged to."""
+        place = self.places[kind]
+        moved = place.rotation.getValue().multVec(self.draggers[kind].translation.getValue())
+        self.value_at.translation.setValue(place.translation.getValue() + moved)
+        self.value_at.rotation.setValue(place.rotation.getValue())
+        self.value_past_tip.translation.setValue(self.offsets[kind].translation.getValue()
+                                                 + coin.SbVec3f(1 + VALUE_GAP, 0, 0))
+        self.value_label.string.setValue(text)
+        self.value.whichChild.setValue(coin.SO_SWITCH_ALL)
+
+    def hide_value(self):
+        self.value.whichChild.setValue(coin.SO_SWITCH_NONE)
+
     @staticmethod
     def _clear(switch):
         switch.whichChild.setValue(coin.SO_SWITCH_NONE)
@@ -577,6 +617,7 @@ class Handles:
         self.zoom_timer.stop()
         self.arrows.whichChild.setValue(coin.SO_SWITCH_NONE)
         self._clear(self.preview)
+        self.hide_value()
 
     def remove(self):
         if self.root is None:

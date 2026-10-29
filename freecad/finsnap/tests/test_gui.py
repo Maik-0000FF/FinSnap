@@ -398,6 +398,18 @@ def chosen_stands(doc, quick, facing, messages):
     fins.ViewObject.Proxy.panel.reject()
 
 
+def _value_shown(arrows):
+    """The value standing at the dragged arrow of `arrows`, a Handles; None
+    while none is shown."""
+    if arrows.value.whichChild.getValue() == coin.SO_SWITCH_NONE:
+        return None
+    found = coin.SoSearchAction()
+    found.setType(coin.SoText2.getClassTypeId())
+    found.apply(arrows.value)
+    path = found.getPath()
+    return None if path is None else path.getTail().string[0]
+
+
 def _balls(marks, over=False):
     """How many balls the Coin node `marks` holds; with `over`, only those
     drawn over everything else, in an SoAnnotation."""
@@ -1122,6 +1134,9 @@ def main():
     moving.handle_moved(handles.ALONG, FIN_SHIFT)
     expect(abs(moving.fin_fields[handles.ALONG].value() - (place + FIN_SHIFT)) < d.TOLERANCE,
            "the field follows the arrow while it is dragged")
+    expect(_value_shown(moving.handles) == moving.fin_fields[handles.ALONG].text(),
+           "the value stands at the arrow while it is dragged, as the field shows it: %s"
+           % _value_shown(moving.handles))
     moving.drag_step()
     expect(abs(lined.Shape.Solids[0].BoundBox.Center.sub(before).Length - FIN_SHIFT) < d.TOLERANCE
            and feature.edits(lined, feature.MAIN)[1] == {1: FIN_SHIFT},
@@ -1130,6 +1145,7 @@ def main():
     expect(feature.edits(lined, feature.MAIN)[1] == {1: FIN_SHIFT}
            and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_NONE,
            "a fin let go stays there")
+    expect(_value_shown(moving.handles) is None, "let go, the value at the arrow goes")
     expect(all(moving.handles.draggers[kind] is held[kind] for kind in held),
            "the arrows stay the same after a move; Coin may still hold the one let go")
     expect(all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(handles.axis_color("z"), AXIS_Z_RGB)),

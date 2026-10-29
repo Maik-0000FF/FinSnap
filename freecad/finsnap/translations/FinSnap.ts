@@ -875,7 +875,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../handles.py" line="295"/>
+        <location filename="../handles.py" line="300"/>
         <source>No 3D view of %s is open to edit the fins in.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1236,17 +1236,17 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1327"/>
+        <location filename="../taskpanel.py" line="1330"/>
         <source>Not possible</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1347"/>
+        <location filename="../taskpanel.py" line="1350"/>
         <source>%d fin(s), %.2f mm high, %.2f mm thick</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1350"/>
+        <location filename="../taskpanel.py" line="1353"/>
         <source>Notes</source>
         <translation type="unfinished"></translation>
     </message>

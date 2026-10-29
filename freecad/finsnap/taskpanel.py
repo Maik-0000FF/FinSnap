@@ -1139,6 +1139,8 @@ class FinSnapTaskPanel:
         else:
             shown = self.drag_values[kind] + mm
         self.show_fin_values({kind: shown})
+        # The value at the arrow as well, as the field shows it, in mm or degrees.
+        self.handles.show_value(kind, self.fin_fields[kind].text())
         self.drag_timer.start()
 
     def drag_to(self, kind, mm):
@@ -1230,6 +1232,7 @@ class FinSnapTaskPanel:
             self.obj.Proxy.reuse = None
             self.handles.tint(True)
             self.handles.clear_preview()
+            self.handles.hide_value()
         self.place_handles()
         box = self.fin_fields[kind]
         box.setFocus()
