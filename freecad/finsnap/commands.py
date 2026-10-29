@@ -541,7 +541,7 @@ class QuickFins:
         if refused is not None:
             _message(str(refused))
             return
-        plan, fin_face, _ = plans[0]
+        plan, fin_face = plans[0].plan, plans[0].face
         doc = App.ActiveDocument
         doc.openTransaction(translate("FinSnap", "Quick fins"))
         owner = outermost(obj)
@@ -575,14 +575,14 @@ def quick_plan(obj, edge_names, face_names):
     its global shape, a side or rim split in halves taken whole (feature.whole_elements()).
     Returns the plan and the name on `obj` of the face it puts the fins under.
     OrientError or FinError where it cannot."""
-    plan, face, _ = quick_plans(obj, edge_names, face_names)[0]
-    return plan, face
+    way = quick_plans(obj, edge_names, face_names)[0]
+    return way.plan, way.face
 
 
 def quick_plans(obj, edge_names, face_names):
     """Every way Quick fins can stand `obj` for its edges and faces named that
-    prints without islands, as (plan, face name, island points), in the order
-    geometry.quick_plans() finds them, for the task panel to step through;
+    prints without islands, as QuickWays, in the order geometry.quick_plans()
+    finds them, for the task panel to step through;
     where every way has islands, all of them, the fewest first, see
     geometry.printable_plans(). OrientError or FinError where there is none.
 
@@ -598,8 +598,34 @@ def quick_plans(obj, edge_names, face_names):
         plans.extend(found)
     except Part.OCCError:
         pass
-    return [(plan, name_of(plan.number), points)
+    # The area from the shape the plans number their faces in, a side split
+    # in halves joined: on `obj` the number is another face.
+    return [QuickWay(plan, name_of(plan.number), points, shape.Faces[plan.number].Area, _edge_name(obj, plan.edge))
             for plan, points in geometry.printable_plans(shape, plans, quick_params())]
+
+
+def _edge_name(obj, edge):
+    """The name of `edge` on `obj` as FreeCAD shows it, "Edge7": the edge of
+    its global shape that is the same, or failing that, that has the same
+    ends and length, as an edge of a shape with halves joined may be another
+    one; None for no edge, or none found."""
+    if edge is None:
+        return None
+    ends = sorted(tuple(vertex.Point) for vertex in edge.Vertexes)
+    for number, candidate in enumerate(global_shape(obj).Edges, 1):
+        if candidate.isSame(edge) or (
+                abs(candidate.Length - edge.Length) < d.TOLERANCE
+                and len(candidate.Vertexes) == len(edge.Vertexes)
+                and all((App.Vector(*a) - App.Vector(*b)).Length < d.TOLERANCE
+                        for a, b in zip(sorted(tuple(v.Point) for v in candidate.Vertexes), ends))):
+            return "%s%d" % (EDGE_PREFIX, number)
+    return None
+
+
+# A way Quick fins found to stand a part: the plan, the name on the part of the
+# face the fins go under, the islands, the area of that face (mm2), and the
+# name on the part of the edge it stands on, None without one.
+QuickWay = namedtuple("QuickWay", "plan face islands area edge")
 
 
 class QuickStands:
@@ -620,13 +646,12 @@ class QuickStands:
         self.obj, self.owner, self.before, self.plans = obj, owner, before, plans
         self.current = 0
         # Under one face throughout, on edges, the plans differ by the edge.
-        self.by_edge = (len({plan.number for plan, _, _ in plans}) == 1
-                        and all(plan.edge is not None for plan, _, _ in plans))
-        shape = global_shape(obj)
-        # What tells the ways apart: the length of the edge (mm) or the area
-        # of the face (mm2), and how many islands the part has standing so.
-        self.rows = [(plan.edge.Length if self.by_edge else shape.Faces[plan.number].Area, len(points))
-                     for plan, _, points in plans]
+        self.by_edge = (len({way.plan.number for way in plans}) == 1
+                        and all(way.plan.edge is not None for way in plans))
+        # What tells the ways apart: the edge or the face by its name on the
+        # part, its length (mm) or area (mm2), and the islands standing so.
+        self.rows = [(way.edge or "", way.plan.edge.Length, len(way.islands)) if self.by_edge
+                     else (way.face, way.area, len(way.islands)) for way in plans]
 
     def __len__(self):
         return len(self.plans)
@@ -634,7 +659,7 @@ class QuickStands:
     def stand(self, fins, index):
         """Stand the part the way numbered `index` (from 0), the fins `fins`
         under its face as planned, and show it on the bed."""
-        plan, face, _ = self.plans[index]
+        plan, face = self.plans[index].plan, self.plans[index].face
         feature.remove_counter(fins)
         feature.reset_fins(fins)
         orient.put_back(self.owner, self.before)

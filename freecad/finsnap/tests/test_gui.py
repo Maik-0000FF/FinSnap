@@ -346,13 +346,14 @@ def chosen_stands(doc, quick, facing, messages):
                 and fins.Base[1][0] == face and fins.isValid() and fins.Shape.Solids)
 
     lengths = sorted((edge.Length for edge in edges), reverse=True)
+    names = ["Edge%d" % i for i, e in enumerate(quick.Shape.Edges, 1) if any(e.isSame(x) for x in edges)]
     expect(not messages and table is not None and table.rowCount() == len(edges) and marked(0)
-           and [table.item(row, 0).text() for row in range(len(edges))]
-           == [App.Qt.translate("FinSnap", taskpanel.STAND_EDGE) % (row + 1) for row in range(len(edges))]
+           and sorted(table.item(row, 0).text() for row in range(len(edges))) == sorted(names)
            and [table.item(row, 1).text() for row in range(len(edges))]
            == ["%.1f%s" % (length, taskpanel.LENGTH_SUFFIX) for length in lengths]
            and all(table.item(row, 2).text() == "0" for row in range(len(edges))),
-           "after Quick fins on a face the panel lists each edge it can stand on, its length, no islands: %s"
+           "after Quick fins on a face the panel lists each edge it can stand on by its name, its length, "
+           "no islands: %s"
            % messages)
     first = App.Placement(quick.Placement)
     table.setCurrentCell(2, 0)

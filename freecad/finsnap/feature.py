@@ -28,11 +28,12 @@ TYPE_NAME = "FinSnap"
 # provider marks them.
 OVERHANGS = "Overhangs"
 # Result property with the lowest points of the islands of the part, where it
-# would start printing in the air with these fins; the view provider marks them.
+# would start printing in the air; the view provider marks them.
 ISLANDS = "Islands"
 NOTE_ISLANDS = QT_TRANSLATE_NOOP(
-    "FinSnap", "%d island(s): %s would start printing in the air there, on no layer below, neither of the "
-    "part nor of a fin. It cannot print standing so; the islands are marked in the 3D view.")
+    "FinSnap", "%d island(s): %s would start printing in the air there, on no layer of it below. Fins do "
+    "not carry an island, they only keep the part from falling over. It cannot print standing so; the "
+    "islands are marked in the 3D view.")
 # Hidden marker on fins whose part was laid flat again with the fins kept:
 # they keep their last shape, moved along with the part, until it is moved again.
 LAID_FLAT = "LaidFlat"
@@ -380,7 +381,7 @@ def add_overhangs(obj):
 def add_islands(obj):
     obj.addProperty("App::PropertyVectorList", ISLANDS, GROUP_RESULT,
                     QT_TRANSLATE_NOOP("App::Property",
-                                      "Where the part would start printing in the air, with these fins"), 1)
+                                      "Where the part would start printing in the air"), 1)
 
 
 def params_of(obj):
@@ -546,32 +547,29 @@ REUSE_KEPT = 8
 # by part, shape, placement and names asked.
 WHOLE_KEPT = 16
 _whole_kept = {}
-# Islands of parts alone, by part, its shape, where it stands and the layers it
-# is cut in, worked out once: the fins change more often than the part.
+# Islands of parts, by part, its shape, where it stands and the layers it is
+# cut in, worked out once: the fins are built far more often.
 ISLANDS_KEPT = 8
 _islands_kept = {}
 
 
-def islands_of(obj, shapes, p):
+def islands_of(obj, p):
     """The islands (overhang.islands()) of the part of `obj` as it stands, on
-    the layers of `p`, with the fins `shapes` just built for it and the fins
-    of its other FinSnap objects beside it, those not merged into it."""
+    the layers of `p`; the fins do not count. Worked out once for each part,
+    shape, place and layers, as every build of the fins asks again."""
     part_obj = obj.Base[0]
     own = part_obj.Shape
     key = (part_obj.Document.Name, part_obj.Name, own.hashCode(), tuple(part_obj.getGlobalPlacement().toMatrix().A),
            p.first_layer_height, p.layer_height)
-    part = global_shape(part_obj)
     kept = _islands_kept.get(key)
     if kept is None or not kept[0].isSame(own):
         while len(_islands_kept) >= ISLANDS_KEPT:
             _islands_kept.pop(next(iter(_islands_kept)))
         # Held with the answer, as in whole_elements(): its memory cannot go
         # to a new shape that would share its hash.
-        kept = _islands_kept[key] = (own, overhang.part_islands(part, p.first_layer_height, p.layer_height))
-    others = [other.Shape for other in fins_of(outermost(part_obj), obj.Document)
-              if other is not obj and other.Base and other.Base[0] is part_obj
-              and other.Connection != d.CONNECTION_MERGED and not is_laid_flat(other)]
-    return overhang.islands(part, list(shapes) + others, p.first_layer_height, p.layer_height, kept[1])
+        kept = _islands_kept[key] = (own, overhang.islands(global_shape(part_obj), p.first_layer_height,
+                                                          p.layer_height))
+    return list(kept[1])
 
 
 class FinSnapFeature:
@@ -675,8 +673,7 @@ class FinSnapFeature:
         if overhanging:
             warnings.append(translate("FinSnap", "%d faces of %s overhang flatter than %.0f degrees without fins: %s")
                             % (len(overhanging), obj.Base[0].Label, d.OVERHANG_ANGLE, ", ".join(overhanging)))
-        # The fins stay the foundation they were while one fin is dragged.
-        found = self.during_drag(ISLANDS, lambda: islands_of(obj, shapes, p))
+        found = islands_of(obj, p)
         setattr(obj, ISLANDS, found)
         if found:
             warnings.append(translate("FinSnap", NOTE_ISLANDS) % (len(found), obj.Base[0].Label))

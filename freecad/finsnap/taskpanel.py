@@ -115,10 +115,11 @@ ICON_GAP = 8
 BUTTON_PADDING = 6
 # The ways Quick fins found to stand the part, one row each at the top of the
 # panel, chosen with a click: the edge it stands on or the face the fins go
-# under, its length or area, and how many islands the part has standing so.
+# under, by its name on the part as FreeCAD shows it, its length or area, and
+# how many islands the part has standing so.
 STAND_CAPTION = QT_TRANSLATE_NOOP("FinSnap", "Stand")
-STAND_EDGE = QT_TRANSLATE_NOOP("FinSnap", "Edge %d")
-STAND_FACE = QT_TRANSLATE_NOOP("FinSnap", "Face %d")
+# A way whose edge is not found on the part by name is shown by its row.
+STAND_ROW = "#%d"
 STAND_HEADERS = {True: (QT_TRANSLATE_NOOP("FinSnap", "Stands on"), QT_TRANSLATE_NOOP("FinSnap", "Length"),
                         QT_TRANSLATE_NOOP("FinSnap", "Islands")),
                  False: (QT_TRANSLATE_NOOP("FinSnap", "Fins under"), QT_TRANSLATE_NOOP("FinSnap", "Area"),
@@ -524,10 +525,9 @@ class FinSnapTaskPanel:
         self.stand_list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.stand_list.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.stand_list.setToolTip(_wrapped(translate("FinSnap", STAND_TIP)))
-        name = translate("FinSnap", STAND_EDGE if self.stands.by_edge else STAND_FACE)
         suffix = LENGTH_SUFFIX if self.stands.by_edge else AREA_SUFFIX
-        for row, (size, islands) in enumerate(self.stands.rows):
-            for column, text in enumerate((name % (row + 1), "%.1f%s" % (size, suffix), str(islands))):
+        for row, (name, size, islands) in enumerate(self.stands.rows):
+            for column, text in enumerate((name or STAND_ROW % (row + 1), "%.1f%s" % (size, suffix), str(islands))):
                 self.stand_list.setItem(row, column, QtWidgets.QTableWidgetItem(text))
         shown = min(len(self.stands), STAND_ROWS)
         self.stand_list.setFixedHeight(self.stand_list.horizontalHeader().height()

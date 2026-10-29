@@ -860,45 +860,39 @@ def check_islands():
     """Where a part would start printing in the air, as a slicer finds it."""
     first, layer = d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT
     box = Part.makeBox(30, 20, 20)
-    expect(overhang.part_islands(box, first, layer) == [], "a box lying on the bed has no island")
+    expect(overhang.islands(box, first, layer) == [], "a box lying on the bed has no island")
     bottom = [e for e in box.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
     standing = moved(box, orient.tilt(box, bottom, d.TILT_ANGLE))
-    expect(overhang.part_islands(standing, first, layer) == [], "a box standing on an edge has no island")
+    expect(overhang.islands(standing, first, layer) == [], "a box standing on an edge has no island")
 
     block_x = ISLAND_SPAN * 3 / 4
     block = Part.makeBox(ISLAND_SPAN / 4, ISLAND_DEPTH, ISLAND_TOP - ISLAND_BEAM - ISLAND_LOW,
                          V(block_x, 0, ISLAND_LOW))
-    hung = bridge(block)
-    alone = overhang.part_islands(hung, first, layer)
-    expect(len(alone) == 1 and abs(alone[0].point.z - ISLAND_LOW) < d.TOLERANCE
-           and block_x - d.TOLERANCE <= alone[0].point.x,
-           "a block hanging under a bridge is one island, at its bottom: %s" % [i.point for i in alone])
-    expect(len(overhang.islands(hung, [], first, layer)) == 1, "without fins every island of the part stays")
+    found = overhang.islands(bridge(block), first, layer)
+    expect(len(found) == 1 and abs(found[0].z - ISLAND_LOW) < d.TOLERANCE and block_x - d.TOLERANCE <= found[0].x,
+           "a block hanging under a bridge is one island, at its bottom: %s" % found)
     second = Part.makeBox(ISLAND_SPAN / 8, ISLAND_DEPTH, ISLAND_TOP - ISLAND_BEAM - ISLAND_LOW,
                           V(ISLAND_SPAN * 3 / 8, 0, ISLAND_LOW))
-    expect(len(overhang.part_islands(bridge(block.fuse(second)), first, layer)) == 2,
+    expect(len(overhang.islands(bridge(block.fuse(second)), first, layer)) == 2,
            "two blocks hanging side by side are two islands")
-    fin = Part.makeBox(ISLAND_SPAN / 4, ISLAND_DEPTH, ISLAND_LOW, V(block_x, 0, 0))
-    expect(overhang.islands(hung, [fin], first, layer, alone) == [], "a fin under the block is its foundation")
-    beside = Part.makeBox(ISLAND_SPAN / 4, ISLAND_DEPTH, ISLAND_LOW, V(block_x, ISLAND_DEPTH * 2, 0))
-    expect(len(overhang.islands(hung, [beside], first, layer, alone)) == 1, "a fin beside the block carries nothing")
 
     under = ISLAND_TOP - ISLAND_BEAM
     corners = [V(block_x, 0, under), V(ISLAND_SPAN, 0, under), V(block_x + ISLAND_SPAN / 8, 0, ISLAND_LOW)]
     ridge = Part.Face(Part.makePolygon(corners + corners[:1])).extrude(V(0, ISLAND_DEPTH, 0))
-    found = overhang.part_islands(bridge(ridge), first, layer)
-    expect(len(found) == 1 and abs(found[0].point.z - ISLAND_LOW) < d.TOLERANCE,
-           "a ridge pointing down under a bridge is one island, on the ridge: %s" % [i.point for i in found])
+    found = overhang.islands(bridge(ridge), first, layer)
+    expect(len(found) == 1 and abs(found[0].z - ISLAND_LOW) < d.TOLERANCE,
+           "a ridge pointing down under a bridge is one island, on the ridge: %s" % found)
 
     mushroom = Part.makeCylinder(ISLAND_STEM, ISLAND_TOP).fuse(
         Part.makeCylinder(ISLAND_CAP, ISLAND_BEAM, V(0, 0, ISLAND_TOP))).removeSplitter()
-    expect(overhang.part_islands(mushroom, first, layer) == [], "the cap of a mushroom rests on its stem")
+    expect(overhang.islands(mushroom, first, layer) == [], "the cap of a mushroom rests on its stem")
     holed = box.cut(Part.makeCylinder(ISLAND_STEM, 30, V(0, 10, 10), V(1, 0, 0)))
-    expect(overhang.part_islands(holed, first, layer) == [], "the top of a hole through a box is no island")
+    expect(overhang.islands(holed, first, layer) == [], "the top of a hole through a box is no island")
     floating = Part.makeCompound([box, Part.makeBox(5, 5, 5, V(40, 0, ISLAND_LOW))])
-    expect(len(overhang.part_islands(floating, first, layer)) == 1, "a solid floating above the bed is an island")
+    expect(len(overhang.islands(floating, first, layer)) == 1, "a solid floating above the bed is an island")
     low = Part.makeCompound([box, Part.makeBox(5, 5, 5, V(40, 0, first / 4))])
-    expect(overhang.part_islands(low, first, layer) == [], "a lowest point in the first layer rests on the bed")
+    expect(overhang.islands(low, first, layer) == [], "a lowest point in the first layer rests on the bed")
+    expect(overhang.islands(Part.Shape(), first, layer) == [], "an empty shape has no island said, nothing raised")
 
 
 def check_printable_plans():
@@ -907,6 +901,8 @@ def check_printable_plans():
     box = Part.makeBox(30, 20, 20)
     front = [i for i, f in enumerate(box.Faces) if f.BoundBox.YMax < d.TOLERANCE][0]
     plans = list(geometry.quick_plans(box, [], [(box.Faces[front], front)], p, d.TILT_ANGLE))
+    bottom = [e for e in box.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
+    alike = list(geometry.quick_plans(box, [(bottom, None)], [], p, d.TILT_ANGLE))
     real = overhang.islands
     try:
         for counts, wanted, what in (
@@ -918,6 +914,14 @@ def check_printable_plans():
             rated = geometry.printable_plans(box, plans, p)
             expect([plans.index(plan) for plan, _ in rated] == wanted
                    and all(len(points) == counts[plans.index(plan)] for plan, points in rated), what)
+        calls = []
+        overhang.islands = lambda *args, **kwargs: calls.append(args) or [V()]
+        rated = geometry.printable_plans(box, alike, p)
+        expect(len(alike) > 1 and len(calls) == 1 and all(len(points) == 1 for _, points in rated),
+               "ways standing the part alike, the fins under other faces, are checked once")
+        del calls[:]
+        expect(geometry.printable_plans(box, plans[:1], p) == [(plans[0], [])] and not calls,
+               "one way is taken unchecked: there is no choice")
     finally:
         overhang.islands = real
 

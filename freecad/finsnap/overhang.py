@@ -2,7 +2,7 @@
 # SPDX-License-Identifier: GPL-3.0-or-later
 
 """Faces of a part that overhang the bed too flatly to print without support,
-and islands, where it would start printing in the air, see part_islands().
+and islands, where it would start printing in the air, see islands().
 
 A face overhangs where its outward normal points down. The flatter it lies,
 the less the layer below carries the next one; below OVERHANG_ANGLE against
@@ -26,7 +26,6 @@ INPUTS this has to withstand (overhangs()):
 """
 
 import math
-from collections import namedtuple
 
 import FreeCAD as App
 import Part
@@ -74,23 +73,20 @@ def overhangs(shape, supported=(), limit_deg=d.OVERHANG_ANGLE):
         if any(-n.z > steepest + d.TOLERANCE for n in _normals_above(face, bed_z)):
             found.append(number)
     return found
-# An island of a part alone: its lowest point, the layer (from 0, the first)
-# it starts in and the section of the part there around it, for islands() to
-# look under for fins.
-Island = namedtuple("Island", "point layer section")
-
-
-def part_islands(part, first_layer, layer):
-    """The islands of `part` as it stands, without fins, as Islands: where it
-    would start printing in the air, as a slicer finds it. The layers are cut
-    at their middles, the first `first_layer` high on the bed, every other
-    `layer` high. A section of a layer rests on the one below where the two
-    overlap; one that overlaps nothing there starts in the air, at its lowest
-    point. A section beside another of its layer, on a foundation of its own,
-    is no island, joined to it in that layer or not.
+def islands(part, first_layer, layer):
+    """The points where `part`, as it stands, would start printing in the air,
+    as a slicer finds them. The layers are cut at their middles, the first
+    `first_layer` high on the bed, every other `layer` high. A section of a
+    layer rests on the one below where the two overlap; one that overlaps
+    nothing there starts in the air, at its lowest point. A section beside
+    another of its layer, on a foundation of its own, is no island, joined to
+    it in that layer or not. Fins are no foundation: they only keep the part
+    from falling over, and a layer printed in the air does not stick to them.
 
     Only the layers holding a lowest point of the part are cut, a point of
-    its mesh with no neighbour lower: an island can only start at one.
+    its mesh with no neighbour lower: an island can only start at one. A
+    fault in the kernel never raises: where it cannot mesh, cut or overlap,
+    no island is said there, so the fins are built all the same.
 
     INPUTS this has to withstand:
       box lying on the bed                  ->  []
@@ -103,13 +99,17 @@ def part_islands(part, first_layer, layer):
       lowest point in the first layer       ->  [] (the bed carries it)
       lowest points of one island           ->  one island, at the first found
       two blocks hanging side by side       ->  two islands
-      a layer the kernel cannot cut         ->  no island said there
+      an empty shape, a part the kernel
+        cannot mesh, or a layer it cannot
+        cut or overlap                      ->  no island said there
     """
+    if part.isNull():
+        return []
     bed = bounds(part).ZMin
     cut = {}
-    # Whether each section, by layer and number, rests on the layer below.
+    # Whether each section, by layer and number, rests on the layer below,
+    # and the sections reported, one island each, at the first lowest point.
     resting = {}
-    # The sections reported: one island each, at the first of its lowest points.
     reported = set()
     found = []
     for point in _lowest_points(part):
@@ -118,53 +118,28 @@ def part_islands(part, first_layer, layer):
             continue
         for key in (number, number - 1):
             if key not in cut:
-                cut[key] = _sections([part], bed + _layer_middle(key, first_layer, layer))
+                cut[key] = _sections(part, bed + _layer_middle(key, first_layer, layer), layer)
         if cut[number] is None or cut[number - 1] is None:
             continue
         # The sections lie in the plane of the bed, see _sections().
         middle = Part.Vertex(App.Vector(point.x, point.y, 0))
-        for index, section in enumerate(cut[number]):
-            if section.distToShape(middle)[0] > layer:
+        for index, (section, reach) in enumerate(cut[number]):
+            key = (number, index)
+            # The box around a section turns most points away before the
+            # distance to it is measured.
+            if key in reported or not reach.isInside(middle.Point):
                 continue
-            if (number, index) not in resting:
-                resting[number, index] = _rests_on(section, cut[number - 1])
-            if not resting[number, index] and (number, index) not in reported:
-                reported.add((number, index))
-                found.append(Island(App.Vector(point), number, section))
+            try:
+                if section.distToShape(middle)[0] > layer:
+                    continue
+                if key not in resting:
+                    resting[key] = any(_overlap(section, other) for other, _ in cut[number - 1])
+            except Part.OCCError:
+                resting[key] = True
+            if not resting[key]:
+                reported.add(key)
+                found.append(App.Vector(point))
     return found
-
-
-def islands(part, carriers, first_layer, layer, alone=None):
-    """The lowest points of the islands of `part` that the fins `carriers`,
-    standing beside it on the bed, do not carry either: an island rests on
-    them where its section overlaps theirs in the layer below. `alone` is
-    part_islands() of the part, if worked out before; the fins change more
-    often than the part.
-
-    INPUTS this has to withstand:
-      no islands                            ->  []
-      an island over a fin                  ->  [] (the fin is its foundation)
-      an island beside a fin                ->  its point
-      no carriers                           ->  every island of the part
-      a layer of the fins the kernel cannot
-        cut                                 ->  the island stays
-    """
-    if alone is None:
-        alone = part_islands(part, first_layer, layer)
-    bed = bounds(part).ZMin
-    shapes = [carrier for carrier in carriers if carrier is not None]
-    left = []
-    for island in alone:
-        below = _sections(shapes, bed + _layer_middle(island.layer - 1, first_layer, layer)) if shapes else []
-        if not below or not _rests_on(island.section, below):
-            left.append(island.point)
-    return left
-
-
-def _rests_on(section, below):
-    """Whether `section` of a layer overlaps one of the sections `below` of the
-    layer under it."""
-    return any(_overlap(section, other) for other in below)
 
 
 def _layer_middle(number, first_layer, layer):
@@ -181,8 +156,12 @@ def _layer_holding(height, first_layer, layer):
 
 
 def _lowest_points(shape):
-    """The points of the mesh of `shape` with no neighbour lower."""
-    points, triangles = shape.tessellate(d.ISLAND_MESH_DEFLECTION)
+    """The points of the mesh of `shape` with no neighbour lower; none where
+    the kernel cannot mesh it."""
+    try:
+        points, triangles = shape.tessellate(d.ISLAND_MESH_DEFLECTION)
+    except Part.OCCError:
+        return []
     neighbours = [set() for _ in points]
     for triangle in triangles:
         for corner in triangle:
@@ -191,23 +170,26 @@ def _lowest_points(shape):
             if all(points[other].z >= point.z for other in neighbours[corner])]
 
 
-def _sections(shapes, z):
-    """Where the plane at height `z` cuts `shapes`, one slab SECTION_SLAB thick
+def _sections(shape, z, reach):
+    """Where the plane at height `z` cuts `shape`, one slab SECTION_SLAB thick
     for each face of the cut, around the plane of the bed, z 0, so sections of
-    different layers can be overlapped; None where the kernel cannot make
-    them."""
-    faces = []
-    for shape in shapes:
+    different layers can be overlapped, each with its bounding box grown by
+    `reach` (mm); None where the kernel cannot make them."""
+    try:
         wires = shape.slice(App.Vector(0, 0, 1), z)
         if not wires:
-            continue
-        try:
-            bottom = App.Vector(0, 0, -z - SECTION_SLAB / 2)
-            faces.extend(face.translated(bottom).extrude(App.Vector(0, 0, SECTION_SLAB))
-                         for face in Part.makeFace(wires, FACE_MAKER).Faces)
-        except Part.OCCError:
-            return None
-    return faces
+            return []
+        bottom = App.Vector(0, 0, -z - SECTION_SLAB / 2)
+        slabs = [face.translated(bottom).extrude(App.Vector(0, 0, SECTION_SLAB))
+                 for face in Part.makeFace(wires, FACE_MAKER).Faces]
+    except Part.OCCError:
+        return None
+    found = []
+    for slab in slabs:
+        box = App.BoundBox(slab.BoundBox)
+        box.enlarge(reach)
+        found.append((slab, box))
+    return found
 
 
 def _overlap(first, second):

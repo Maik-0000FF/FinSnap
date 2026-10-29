@@ -1258,8 +1258,9 @@ def best_face(shape, p, tried=()):
 def faces_taking_fins(shape, p, tried=()):
     """The numbers (from 0) of the planar faces of `shape` leaning over the bed
     that the fins can be built under, the largest first, passing over those
-    numbered in `tried`. One at a time: taking the first builds no more than
-    best_face() did."""
+    numbered in `tried`. Each is built to see that the fins fit, one at a
+    time: best_face() takes the first and builds no further, Quick fins takes
+    them all, to offer each."""
     leaning = []
     for number, face in enumerate(shape.Faces):
         try:
@@ -1456,20 +1457,27 @@ def printable_plans(shape, plans, p):
     """The QuickPlans `plans` for `shape` that print without islands, each with
     its islands, as (plan, island points), in the order given; where every
     plan has islands, all of them, the fewest islands first. The islands are
-    those of the part stood by the plan with the fins built under its face
-    beside it, see overhang.islands().
+    those of the part stood by the plan, see overhang.islands(); the fins do
+    not count, they carry no layer. Plans standing the part alike, differing
+    only by the face for the fins, are checked once.
 
     INPUTS this has to withstand:
       plans without islands and with        ->  those without, in the order given
       every plan with islands               ->  all of them, the fewest first, the
                                                 order given among as many
-      one plan                              ->  it, with its islands
+      plans standing the part alike         ->  checked once, the same islands
+      one plan                              ->  it, unchecked: there is no choice,
+                                                and the fins warn of its islands
     """
+    if len(plans) == 1:
+        return [(plans[0], [])]
+    checked = {}
     rated = []
     for plan in plans:
-        stood = moved(shape, plan.change)
-        fins = build(stood, stood.Faces[plan.number], p).fins
-        rated.append((plan, overhang.islands(stood, [fins], p.first_layer_height, p.layer_height)))
+        key = tuple(plan.change.toMatrix().A)
+        if key not in checked:
+            checked[key] = overhang.islands(moved(shape, plan.change), p.first_layer_height, p.layer_height)
+        rated.append((plan, checked[key]))
     clean = [entry for entry in rated if not entry[1]]
     return clean or sorted(rated, key=lambda entry: len(entry[1]))
 
