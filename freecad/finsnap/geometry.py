@@ -1466,11 +1466,12 @@ def printable_plans(shape, plans, p):
       every plan with islands               ->  all of them, the fewest first, the
                                                 order given among as many
       plans standing the part alike         ->  checked once, the same islands
-      one plan                              ->  it, unchecked: there is no choice,
-                                                and the fins warn of its islands
+      one plan                              ->  it, with None for its islands: unchecked,
+                                                as there is no choice, and the fins
+                                                warn of them
     """
     if len(plans) == 1:
-        return [(plans[0], [])]
+        return [(plans[0], None)]
     checked = {}
     rated = []
     for plan in plans:
