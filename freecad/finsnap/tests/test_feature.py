@@ -23,7 +23,7 @@ from freecad.finsnap import check, export_3mf, export_step, feature, geometry, o
 from freecad.finsnap import presets
 from freecad.finsnap.params import FinParams, ParamError
 from freecad.finsnap.paths import PACKAGE_XML
-from freecad.finsnap.shapes import global_shape, moved, outermost
+from freecad.finsnap.shapes import bounds, global_shape, moved, outermost
 
 V = App.Vector
 # The version as package.xml states it, read independently of the workbench.
@@ -214,6 +214,8 @@ def lost_face(doc):
     kept = feature.create(part, name)
     lost = feature.create(part, name)
     lost.Base = (part, ["Face%d" % (len(part.Shape.Faces) + 1)])
+    # And no plane to find it by: the face is gone.
+    lost.BasePlane = []
     doc.recompute()
     expect(kept.isValid() and kept.Shape.Solids and not lost.isValid(),
            "fins on a face the part no longer has fail alone, the others are still built")
@@ -239,6 +241,8 @@ def marks_without_face(doc):
     expect(fins.Overhangs, "tilted flat, the other face overhangs: %s" % fins.Overhangs)
     part.Shape = standing(d.TILT_ANGLE)
     fins.Base = (part, ["Face%d" % (len(part.Shape.Faces) + 1)])
+    # And no plane to find it by: the face is gone.
+    fins.BasePlane = []
     doc.recompute()
     expect(not fins.isValid() and fins.Overhangs == [],
            "with its face lost the fins fail, and the marks follow the part: %s" % fins.Overhangs)
@@ -936,6 +940,64 @@ def check_objects(doc):
     doc.removeObject(body.Name)
 
 
+def fins_follow_the_body(doc):
+    """Fins under a face of a Pad stand under the face of its Body, and
+    follow a chamfer or a fillet added after them: rebuilt on the new shape,
+    the face found again by its plane; a pocket cutting the face away whole
+    is said."""
+    body = doc.addObject("PartDesign::Body", "Followed")
+    sketch = body.newObject("Sketcher::SketchObject", "FollowedSketch")
+    sketch.AttachmentSupport = [(body.Origin.OriginFeatures[XY_PLANE], "")]
+    sketch.MapMode = "FlatFace"
+    length, width, height = BOX
+    corners = [V(0, 0, 0), V(length, 0, 0), V(length, width, 0), V(0, width, 0)]
+    for i, corner in enumerate(corners):
+        sketch.addGeometry(Part.LineSegment(corner, corners[(i + 1) % len(corners)]))
+    pad = body.newObject("PartDesign::Pad", "FollowedPad")
+    pad.Profile = sketch
+    pad.Length = height
+    doc.recompute()
+    shape = global_shape(pad)
+    edge = [i for i, e in enumerate(shape.Edges, 1) if e.BoundBox.ZMax < d.TOLERANCE and e.Length == length][0]
+    body.Placement = orient.tilt(shape, shape.Edges[edge - 1], d.TILT_ANGLE).multiply(body.Placement)
+    doc.recompute()
+    tilted = global_shape(pad)
+    leaning = [i for i, f in enumerate(tilted.Faces, 1) if f.normalAt(0, 0).z < -d.TOLERANCE
+               and abs(f.normalAt(0, 0).y) > d.TOLERANCE]
+    fins = feature.create(pad, "Face%d" % leaning[0])
+    doc.recompute()
+    expect(fins.Base[0] is body and fins.BasePlane, "fins under a face of a Pad stand under the face of its Body")
+    # Saved by an older version, linking the Pad and keeping no plane: linked
+    # to the Body once opened.
+    fins.Base = (pad, ["Face%d" % leaning[0]])
+    fins.removeProperty("BasePlane")
+    fins.Proxy.onDocumentRestored(fins)
+    expect(fins.Base[0] is body and fins.BasePlane, "fins saved linking the Pad link its Body once opened")
+
+    for kind, prop in (("PartDesign::Chamfer", "Size"), ("PartDesign::Fillet", "Radius")):
+        changed = body.newObject(kind, kind.split(":")[-1])
+        changed.Base = (pad, ["Edge%d" % edge])
+        setattr(changed, prop, 2)
+        doc.recompute()
+        part = global_shape(body)
+        expect(fins.Shape.Solids and abs(fins.Shape.BoundBox.ZMin - bounds(part).ZMin) < d.TOLERANCE
+               and fins.Shape.common(part).Volume < d.TOLERANCE,
+               "after a %s on the edge it stands on, the fins are rebuilt on the bottom of the part, clear of it: "
+               "%.3f, %.3f" % (kind, fins.Shape.BoundBox.ZMin, bounds(part).ZMin))
+        body.removeObject(changed)
+        doc.removeObject(changed.Name)
+        doc.recompute()
+
+    # A face cut away whole: no face is left in its plane, here as a plane kept
+    # beside the part.
+    point, normal = fins.BasePlane
+    fins.BasePlane = [point - normal * height, normal]
+    doc.recompute()
+    gone = App.Qt.translate("FinSnap", feature.NOTE_FACE_GONE) % body.Label
+    expect(gone in fins.getStatusString(), "a face cut away whole is said: %s" % fins.getStatusString())
+    doc.removeObject(fins.Name)
+
+
 def main():
     doc = App.newDocument("FinSnapTest")
     cube = doc.addObject("Part::Feature", "Cube")
@@ -983,6 +1045,7 @@ def main():
     kept_islands(doc)
     stability_raised_and_counter(doc)
     check_objects(doc)
+    fins_follow_the_body(doc)
     step_with_offset_curves()
     print("all checks passed", file=sys.__stdout__)
 

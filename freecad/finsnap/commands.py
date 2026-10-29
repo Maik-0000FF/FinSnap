@@ -27,7 +27,7 @@ from .i18n import QT_TRANSLATE_NOOP, translate
 from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_LAY_FLAT, ICON_MESH,
                     ICON_CHECK_PART, ICON_ISLANDS, ICON_QUICK, ICON_STABILITY, ICON_TILT)
 from .presets import PREFERENCES
-from .shapes import FACE_PREFIX, global_shape, outermost
+from .shapes import FACE_PREFIX, global_shape, outermost, part_of
 from .taskpanel import (DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, check_params, check_part, check_stability,
                         discard_created)
 from .version import NAME
@@ -1036,7 +1036,8 @@ def _checked_part(obj):
     elif check.is_check(obj):
         part = obj.Part
     else:
-        part = obj
+        # A Pad is checked as its Body, with every feature after it.
+        part = part_of(obj)
     if getattr(part, "Shape", None) is None or part.Shape.isNull():
         return None
     return part, check_params(part)
