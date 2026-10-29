@@ -106,6 +106,7 @@ INPUTS this has to withstand (build()):
                                             more hold on the bed
 """
 
+import itertools
 import math
 from collections import namedtuple
 from dataclasses import dataclass, field, replace
@@ -116,7 +117,8 @@ import Part
 
 from . import defaults as d
 from . import orient
-from .i18n import translate
+from . import overhang
+from .i18n import QT_TRANSLATE_NOOP, translate
 from .shapes import bounds, middle_normal, moved
 
 V = App.Vector
@@ -129,6 +131,10 @@ SPAN_DEFLECTION = 0.01
 # The order rims_on_axis() tries rims in: a chamfered one, then one of the
 # side itself, then any other on the axis, which a part rarely stands on.
 RIM_CHAMFERED, RIM_OWN, RIM_OTHER = range(3)
+# Why Quick fins finds no way to stand a part: no face takes the fins, or
+# the face selected takes them on no edge it can stand on.
+NO_LEANING_FACE = QT_TRANSLATE_NOOP("FinSnap", "no face of the part leans over the bed and takes fins")
+NO_STAND_FOR_FACE = QT_TRANSLATE_NOOP("FinSnap", "the part cannot stand so that this face takes fins")
 
 
 class FinError(ValueError):
@@ -1246,6 +1252,15 @@ def best_face(shape, p, tried=()):
         (fins would run into the part)      ->  the next largest that takes them
       no face leans, or none takes fins     ->  FinError
     """
+    return next(_or_refused(faces_taking_fins(shape, p, tried), NO_LEANING_FACE))
+
+
+def faces_taking_fins(shape, p, tried=()):
+    """The numbers (from 0) of the planar faces of `shape` leaning over the bed
+    that the fins can be built under, the largest first, passing over those
+    numbered in `tried`. Each is built to see that the fins fit, one at a
+    time: best_face() takes the first and builds no further, Quick fins takes
+    them all, to offer each."""
     leaning = []
     for number, face in enumerate(shape.Faces):
         try:
@@ -1253,11 +1268,20 @@ def best_face(shape, p, tried=()):
         except FinError:
             continue
         leaning.append((face.Area, number))
-    numbers = [number for _, number in sorted(leaning, reverse=True) if number not in tried]
-    number = first_taking_fins(shape, numbers, p)
-    if number is None:
-        raise FinError(translate("FinSnap", "no face of the part leans over the bed and takes fins"))
-    return number
+    for _, number in sorted(leaning, reverse=True):
+        if number not in tried and first_taking_fins(shape, [number], p) is not None:
+            yield number
+
+
+def _or_refused(found, why):
+    """What the iterator `found` yields, one at a time; FinError with `why`,
+    translated, if it yields nothing at all."""
+    empty = True
+    for item in found:
+        empty = False
+        yield item
+    if empty:
+        raise FinError(translate("FinSnap", why))
 
 
 def first_taking_fins(shape, numbers, p, errors=(FinError,)):
@@ -1276,11 +1300,8 @@ def first_taking_fins(shape, numbers, p, errors=(FinError,)):
 
 def stand_for_face(shape, number, p, angle_deg):
     """Stand `shape` so that face `number` leans over the bed by angle_deg and
-    takes fins: (placement change, edge it stands on).
-
-    The face is laid onto the bed and the part turned about one of its straight
-    edges, the longest first, so it stands on the longest edge it can. A round
-    side stands the part on a rim on its axis instead, see rims_on_axis().
+    takes fins: (placement change, edge it stands on), the first of
+    stands_for_face(), so it stands on the longest edge it can.
 
     INPUTS this has to withstand:
       planar face with straight edges       ->  stood on its longest edge that works
@@ -1291,6 +1312,18 @@ def stand_for_face(shape, number, p, angle_deg):
                                                 that works
       face without a straight edge, or none
         works                               ->  FinError
+    """
+    return next(_or_refused(stands_for_face(shape, number, p, angle_deg), NO_STAND_FOR_FACE))
+
+
+def stands_for_face(shape, number, p, angle_deg):
+    """Every way to stand `shape` so that face `number` leans over the bed by
+    angle_deg and takes fins, as (placement change, edge it stands on), one at
+    a time.
+
+    The face is laid onto the bed and the part turned about one of its straight
+    edges, the longest first. A round side stands the part on a rim on its axis
+    instead, see rims_on_axis().
     """
     face = shape.Faces[number]
     if orient.is_round_side(face):
@@ -1310,8 +1343,7 @@ def stand_for_face(shape, number, p, angle_deg):
             build(standing, standing.Faces[number], p)
         except (orient.OrientError, FinError, Part.OCCError):
             continue
-        return change, edge
-    raise FinError(translate("FinSnap", "the part cannot stand so that this face takes fins"))
+        yield change, edge
 
 
 # How Quick fins stands a part: the placement change, the face (number from 0)
@@ -1357,6 +1389,18 @@ def quick_plan(shape, edges, faces, p, angle_deg):
         chosen                              ->  FinError
       anything else                         ->  FinError
     """
+    return next(quick_plans(shape, edges, faces, p, angle_deg))
+
+
+def quick_plans(shape, edges, faces, p, angle_deg):
+    """Every way Quick fins can stand `shape` for the elements selected, as
+    QuickPlans, one at a time: first the one quick_plan() takes, then the
+    others the task panel can step to. A face selected alone stands on each
+    of its edges that works; an edge, a rim or a part laid on a face or
+    resting between two takes the fins under each face that takes them; a
+    face with its edge, chamfer or fillet stands just one way. Raises what
+    quick_plan() raises, before the first plan.
+    """
     if len(edges) == 1 and not faces:
         edge = edges[0][0]
         if orient.is_rim(edge):
@@ -1369,39 +1413,80 @@ def quick_plan(shape, edges, faces, p, angle_deg):
             sides = [] if side is None else [i for i, face in enumerate(shape.Faces) if face.isSame(side)]
             # A kernel fault under the side passes to the other faces as well:
             # they are there to fall back on.
-            number = first_taking_fins(stood, sides, p, (FinError, Part.OCCError))
-            if number is None:
-                number = best_face(stood, p, sides)
-            return QuickPlan(change, number, edge, ())
+            under_side = first_taking_fins(stood, sides, p, (FinError, Part.OCCError))
+            numbers = itertools.chain([] if under_side is None else [under_side],
+                                      faces_taking_fins(stood, p, sides))
+            for number in _or_refused(numbers, NO_LEANING_FACE):
+                yield QuickPlan(change, number, edge, ())
+            return
         if not orient.on_bed(shape, edge) and orient.right_angle_faces(shape, edge) is None:
             raise FinError(translate("FinSnap", "This edge does not lie on the bed, and its faces do not meet at a "
                                                 "right angle. Use Stand on edge with the edge and the face that "
                                                 "is to lie on the bed, then Add fins."))
         angle = angle_deg if orient.on_bed(shape, edge) else orient.RIGHT_ANGLE_TILT
-        change = orient.stand(shape, edge, angle)
-        return QuickPlan(change, best_face(moved(shape, change), p), edge, ())
+        yield from _under_each_face(shape, orient.stand(shape, edge, angle), edge, (), p)
+        return
     if not edges and len(faces) == 1:
         face, number = faces[0]
         if not orient.is_round_side(face) and (face.findPlane() is None or is_chamfer(shape, face)):
-            change = orient.lay_flat(shape, face)
-            return QuickPlan(change, best_face(moved(shape, change), p), None, ())
-        change, edge = stand_for_face(shape, number, p, angle_deg)
-        return QuickPlan(change, number, edge, ())
+            yield from _under_each_face(shape, orient.lay_flat(shape, face), None, (), p)
+            return
+        for change, edge in _or_refused(stands_for_face(shape, number, p, angle_deg), NO_STAND_FOR_FACE):
+            yield QuickPlan(change, number, edge, ())
+        return
     if len(edges) == 1 and len(faces) == 1:
         (edge, _), (face, number) = edges[0], faces[0]
         # stand() refuses an edge of another face itself.
         change = orient.stand(shape, edge, angle_deg, face)
-        return _checked(shape, QuickPlan(change, number, edge, ()), p)
+        yield _checked(shape, QuickPlan(change, number, edge, ()), p)
+        return
     if not edges and len(faces) == 2:
         (first, number), (second, _) = faces
         beside = any(edge.isSame(other) for edge in first.Edges for other in second.Edges)
         if beside or second.findPlane() is None:
             change = orient.lay_flat(shape, second)
-            return _checked(shape, QuickPlan(change, number, None, ()), p)
-        change = orient.rest_between(shape, first, second)
-        return QuickPlan(change, best_face(moved(shape, change), p), None, (first, second))
+            yield _checked(shape, QuickPlan(change, number, None, ()), p)
+            return
+        yield from _under_each_face(shape, orient.rest_between(shape, first, second), None, (first, second), p)
+        return
     raise FinError(translate("FinSnap", "Select an edge or a face, a face and the edge or the chamfer or fillet "
                                         "it is to stand on, or the two faces beside a fillet."))
+
+
+def printable_plans(shape, plans, p):
+    """The QuickPlans `plans` for `shape` that print without islands, each with
+    its islands, as (plan, island points), in the order given; where every
+    plan has islands, all of them, the fewest islands first. The islands are
+    those of the part stood by the plan, see overhang.islands(); the fins do
+    not count, they carry no layer. Plans standing the part alike, differing
+    only by the face for the fins, are checked once.
+
+    INPUTS this has to withstand:
+      plans without islands and with        ->  those without, in the order given
+      every plan with islands               ->  all of them, the fewest first, the
+                                                order given among as many
+      plans standing the part alike         ->  checked once, the same islands
+      one plan                              ->  it, unchecked: there is no choice,
+                                                and the fins warn of its islands
+    """
+    if len(plans) == 1:
+        return [(plans[0], [])]
+    checked = {}
+    rated = []
+    for plan in plans:
+        key = tuple(plan.change.toMatrix().A)
+        if key not in checked:
+            checked[key] = overhang.islands(moved(shape, plan.change), p.first_layer_height, p.layer_height)
+        rated.append((plan, checked[key]))
+    clean = [entry for entry in rated if not entry[1]]
+    return clean or sorted(rated, key=lambda entry: len(entry[1]))
+
+
+def _under_each_face(shape, change, edge, beside, p):
+    """A QuickPlan for `shape` stood by `change` with the fins under each face
+    that takes them, the largest first; FinError if none does."""
+    for number in _or_refused(faces_taking_fins(moved(shape, change), p), NO_LEANING_FACE):
+        yield QuickPlan(change, number, edge, beside)
 
 
 def is_chamfer(shape, face):

@@ -107,6 +107,22 @@ AUTO_ZOOM_DIVISOR = 5
 TURN_PARTS = ("rotator", "rotatorActive")
 
 
+def spots(points, color, marker):
+    """A Coin node marking `points` in one colour with `marker`, the name of a
+    marker of SoMarkerSet: the same size on the screen at any zoom, and drawn
+    over everything else, so a spot under the part shows from above as well."""
+    material = coin.SoMaterial()
+    material.diffuseColor.setValue(*color)
+    coordinates = coin.SoCoordinate3()
+    coordinates.point.setValues(0, len(points), [(p.x, p.y, p.z) for p in points])
+    markers = coin.SoMarkerSet()
+    markers.markerIndex.setValue(getattr(coin.SoMarkerSet, marker))
+    group = coin.SoAnnotation()
+    for node in (material, coordinates, markers):
+        group.addChild(node)
+    return group
+
+
 def shaded(shapes, color, transparency):
     """A Coin node drawing the faces of `shapes` in one colour."""
     points, index = [], []

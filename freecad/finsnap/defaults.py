@@ -129,6 +129,12 @@ OVERHANG_ANGLE = 45.0
 OVERHANG_MIN_AREA = 1.0
 # Grid of normals sampled per direction on a curved face.
 OVERHANG_SAMPLES = 8
+# How closely the mesh the lowest points of a part are looked for on follows
+# its faces (mm): fine enough to find the lowest point of a fillet or a boss.
+ISLAND_MESH_DEFLECTION = 0.1
+# Two sections of neighbouring layers overlapping by less than this area carry
+# nothing (mm2): they only touch.
+ISLAND_MIN_OVERLAP = 1e-6
 # A tine shorter than this share of a bead is not printed to its end. Measured
 # with a 0.45 mm bead: a 0.28 mm tine fell short, a 0.35 mm tine reached.
 TINE_MIN_LENGTH_BEADS = 0.75

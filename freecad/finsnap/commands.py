@@ -59,6 +59,11 @@ FINS_SUFFIX = "_fins"
 # slightly in front of the part's own faces, which lie in the same place.
 OVERHANG_COLOR = (0.9, 0.1, 0.1)
 OVERHANG_TRANSPARENCY = 0.4
+# Marks on the islands, where the part would start printing in the air: a
+# filled circle the same size on the screen at any zoom, drawn over the part,
+# in a colour of its own beside the red of the overhangs.
+ISLAND_COLOR = (1.0, 0.0, 1.0)
+ISLAND_MARKER = "CIRCLE_FILLED_9_9"
 STATUS_TIMEOUT_MS = 10000
 # What an export writes, and the fins it leaves out because their part lies flat.
 Export = namedtuple("Export", "shapes left_out")
@@ -130,7 +135,7 @@ class ViewProviderFinSnap:
         self.mark(vobj.Object)
 
     def updateData(self, obj, prop):  # noqa: N802 - FreeCAD API
-        if prop == feature.OVERHANGS:
+        if prop in (feature.OVERHANGS, feature.ISLANDS):
             self.mark(obj)
 
     def onChanged(self, vobj, prop):  # noqa: N802 - FreeCAD API
@@ -147,19 +152,23 @@ class ViewProviderFinSnap:
         self.marks.whichChild.setValue(coin.SO_SWITCH_ALL if visible else coin.SO_SWITCH_NONE)
 
     def mark(self, obj):
-        """Cover the faces that overhang without fins with red marks."""
+        """Cover the faces that overhang without fins with red marks, and mark
+        the islands, where the part would start printing in the air."""
         if not hasattr(self, "marks"):
             return
         self.marks.removeAllChildren()
+        points = getattr(obj, feature.ISLANDS, [])
+        if points:
+            self.marks.addChild(handles.spots(points, ISLAND_COLOR, ISLAND_MARKER))
         names = getattr(obj, feature.OVERHANGS, [])
-        if not names or not obj.Base:
-            return
-        try:
-            shape = global_shape(obj.Base[0])
-        except ValueError:
-            return
-        faces = [shape.getElement(name) for name in names]
-        self.marks.addChild(handles.shaded(faces, OVERHANG_COLOR, OVERHANG_TRANSPARENCY))
+        if names and obj.Base:
+            try:
+                shape = global_shape(obj.Base[0])
+            except ValueError:
+                shape = None
+            if shape is not None:
+                faces = [shape.getElement(name) for name in names]
+                self.marks.addChild(handles.shaded(faces, OVERHANG_COLOR, OVERHANG_TRANSPARENCY))
         self.show_marks()
 
     def setEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API
@@ -169,8 +178,9 @@ class ViewProviderFinSnap:
             return False
         created, self.created = getattr(self, "created", False), False
         on_cancel, self.on_cancel = getattr(self, "on_cancel", None), None
+        stands, self.stands = getattr(self, "stands", None), None
         try:
-            panel = FinSnapTaskPanel(vobj.Object, created=created, on_cancel=on_cancel)
+            panel = FinSnapTaskPanel(vobj.Object, created=created, on_cancel=on_cancel, stands=stands)
         except handles.NoView as error:
             _message(str(error))
             return False
@@ -505,7 +515,10 @@ class QuickFins:
                     "edges as well to stand on that one, or, after the face, a chamfer or fillet to rest "
                     "on. A chamfer or fillet alone, or the two faces beside a fillet, carry the part as "
                     "well. The rim or the curved side of a cylinder or tube stands it on its rim, with one fin "
-                    "under its lowest line. A counter fin, where wanted, is added in the panel.")}
+                    "under its lowest line. A counter fin, where wanted, is added in the panel. Where the "
+                    "part can stand on another edge, or the fins can go under another face, a table at the "
+                    "top of the panel lists them to choose from; ways where the part would start printing "
+                    "in the air are left out while one without is found.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
         return App.ActiveDocument is not None
@@ -517,11 +530,18 @@ class QuickFins:
             return
         obj = picked[0][0]
         p = quick_params()
+        # Every way is checked for islands, which takes a moment on a large part.
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
         try:
-            plan, fin_face = quick_plan(obj, [n for _, n in edges], [n for _, n in faces])
+            plans, refused = quick_plans(obj, [n for _, n in edges], [n for _, n in faces]), None
         except (orient.OrientError, geometry.FinError) as error:
-            _message(str(error))
+            plans, refused = None, error
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+        if refused is not None:
+            _message(str(refused))
             return
+        plan, fin_face = plans[0].plan, plans[0].face
         doc = App.ActiveDocument
         doc.openTransaction(translate("FinSnap", "Quick fins"))
         owner = outermost(obj)
@@ -539,7 +559,8 @@ class QuickFins:
         doc.recompute()
         _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside))
         # Cancel deletes the fins and stands the part as it stood before.
-        _edit_new(fins, functools.partial(_put_back_quick, owner, before, laid_flat, turns))
+        _edit_new(fins, functools.partial(_put_back_quick, owner, before, laid_flat, turns),
+                  QuickStands(obj, owner, before, plans))
 
 
 def quick_params():
@@ -550,16 +571,102 @@ def quick_params():
 
 def quick_plan(obj, edge_names, face_names):
     """How Quick fins stands `obj` for its edges and faces named ("Edge3",
-    "Face12"), faces in the order selected: geometry.quick_plan() on its
-    global shape, a side or rim split in halves taken whole (feature.whole_elements()).
+    "Face12"), faces in the order selected: the first way of quick_plans(), on
+    its global shape, a side or rim split in halves taken whole (feature.whole_elements()).
     Returns the plan and the name on `obj` of the face it puts the fins under.
     OrientError or FinError where it cannot."""
+    way = quick_plans(obj, edge_names, face_names)[0]
+    return way.plan, way.face
+
+
+def quick_plans(obj, edge_names, face_names):
+    """Every way Quick fins can stand `obj` for its edges and faces named that
+    prints without islands, as QuickWays, in the order geometry.quick_plans()
+    finds them, for the task panel to step through;
+    where every way has islands, all of them, the fewest first, see
+    geometry.printable_plans(). OrientError or FinError where there is none.
+
+    A fault in the kernel while the others are looked for ends the search: the
+    plans found by then are kept, as the first one is a way to stand the part."""
     shape, elements, name_of = feature.whole_elements(obj, list(edge_names) + list(face_names))
     edges, faces = elements[:len(edge_names)], elements[len(edge_names):]
     numbers = [next(i for i, candidate in enumerate(shape.Faces) if candidate.isSame(face)) for face in faces]
-    plan = geometry.quick_plan(shape, [(edge, None) for edge in edges], list(zip(faces, numbers)),
-                               quick_params(), d.TILT_ANGLE)
-    return plan, name_of(plan.number)
+    found = geometry.quick_plans(shape, [(edge, None) for edge in edges], list(zip(faces, numbers)),
+                                 quick_params(), d.TILT_ANGLE)
+    plans = [next(found)]
+    try:
+        plans.extend(found)
+    except Part.OCCError:
+        pass
+    # The area from the shape the plans number their faces in, a side split
+    # in halves joined: on `obj` the number is another face.
+    return [QuickWay(plan, name_of(plan.number), points, shape.Faces[plan.number].Area, _edge_name(obj, plan.edge))
+            for plan, points in geometry.printable_plans(shape, plans, quick_params())]
+
+
+def _edge_name(obj, edge):
+    """The name of `edge` on `obj` as FreeCAD shows it, "Edge7": the edge of
+    its global shape that is the same, or failing that, that has the same
+    ends and length, as an edge of a shape with halves joined may be another
+    one; None for no edge, or none found."""
+    if edge is None:
+        return None
+    ends = sorted(tuple(vertex.Point) for vertex in edge.Vertexes)
+    for number, candidate in enumerate(global_shape(obj).Edges, 1):
+        if candidate.isSame(edge) or (
+                abs(candidate.Length - edge.Length) < d.TOLERANCE
+                and len(candidate.Vertexes) == len(edge.Vertexes)
+                and all((App.Vector(*a) - App.Vector(*b)).Length < d.TOLERANCE
+                        for a, b in zip(sorted(tuple(v.Point) for v in candidate.Vertexes), ends))):
+            return "%s%d" % (EDGE_PREFIX, number)
+    return None
+
+
+# A way Quick fins found to stand a part: the plan, the name on the part of the
+# face the fins go under, the islands, the area of that face (mm2), and the
+# name on the part of the edge it stands on, None without one.
+QuickWay = namedtuple("QuickWay", "plan face islands area edge")
+
+
+class QuickStands:
+    """The ways Quick fins found to stand a part, for its task panel to list
+    and choose from: `plans` as quick_plans() returns them, the first the one
+    the part stands in now. They differ by the edge the part stands on, or,
+    where it stands one way only, by the face the fins go under.
+
+    CHOICES this has to withstand (stand()):
+      another edge of the face              ->  the part stands on it from where Quick fins
+                                                found it, the fins planned anew under the face
+      another face for the fins             ->  the part stands as it did, the fins under it
+      fins changed by hand, a counter fin   ->  dropped: they belonged to the stand before
+      part turned about its round side      ->  stands unturned, the turn dropped with the shifts
+    """
+
+    def __init__(self, obj, owner, before, plans):
+        self.obj, self.owner, self.before, self.plans = obj, owner, before, plans
+        self.current = 0
+        # Under one face throughout, on edges, the plans differ by the edge.
+        self.by_edge = (len({way.plan.number for way in plans}) == 1
+                        and all(way.plan.edge is not None for way in plans))
+        # What tells the ways apart: the edge or the face by its name on the
+        # part, its length (mm) or area (mm2), and the islands standing so.
+        self.rows = [(way.edge or "", way.plan.edge.Length, len(way.islands)) if self.by_edge
+                     else (way.face, way.area, len(way.islands)) for way in plans]
+
+    def __len__(self):
+        return len(self.plans)
+
+    def stand(self, fins, index):
+        """Stand the part the way numbered `index` (from 0), the fins `fins`
+        under its face as planned, and show it on the bed."""
+        plan, face = self.plans[index].plan, self.plans[index].face
+        feature.remove_counter(fins)
+        feature.reset_fins(fins)
+        orient.put_back(self.owner, self.before)
+        _stand(self.obj, plan.change)
+        fins.Base = (self.obj, [face])
+        self.current = index
+        _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside))
 
 
 def _put_back_quick(owner, before, laid_flat, turns):
@@ -571,12 +678,13 @@ def _put_back_quick(owner, before, laid_flat, turns):
     feature.put_back_turns(owner.Document, turns)
 
 
-def _edit_new(fins, on_cancel=None):
+def _edit_new(fins, on_cancel=None, stands=None):
     """Open the task panel on fins just made, in edit mode as a double click
     does: the handles of the panel are shown only there. Cancel deletes the
-    fins, then calls `on_cancel` to undo what the command did besides."""
+    fins, then calls `on_cancel` to undo what the command did besides.
+    `stands`, a QuickStands, lets the panel stand the part another way."""
     proxy = fins.ViewObject.Proxy
-    proxy.created, proxy.on_cancel = True, on_cancel
+    proxy.created, proxy.on_cancel, proxy.stands = True, on_cancel, stands
     # Another task panel open keeps the fins' panel from opening; said below,
     # as FreeCAD says nothing then.
     busy = Gui.Control.activeDialog()
@@ -587,7 +695,7 @@ def _edit_new(fins, on_cancel=None):
         opened = Gui.ActiveDocument.setEdit(fins)
     finally:
         # Only for this opening: a later Cancel must not delete fins long kept.
-        proxy.created, proxy.on_cancel = False, None
+        proxy.created, proxy.on_cancel, proxy.stands = False, None, None
     # Without a panel there is no Cancel: what the command did is undone at
     # once, as Cancel would. Without a 3D view, setEdit has said why.
     if not opened:

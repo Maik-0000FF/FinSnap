@@ -38,6 +38,13 @@ SINK_INSET = 0.5       # how far that stretch ends inside the grid tines below a
 OUT_OF_REACH = 100.0   # a height or a width beyond any test part, in mm
 NOTCH_CLEAR = 1.0      # how far a notch in the end of a face stays from the grid tines, and its depth, in mm
 PIN_HOLE_RADIUS = 0.9  # a hole that splits the face under a tine, small enough to leave the tines beside it
+ISLAND_SPAN = 40.0     # length of the beam of the bridge islands hang from, in mm
+ISLAND_DEPTH = 10.0    # depth of the bridge and of what hangs from it
+ISLAND_TOP = 30.0      # height of the top of the bridge
+ISLAND_BEAM = 5.0      # thickness of its beam, and of the cap of a mushroom
+ISLAND_LOW = 10.0      # height of the bottom of what hangs from it, well above the bed
+ISLAND_STEM = 3.0      # radius of the stem of a mushroom, and of a hole through a box
+ISLAND_CAP = 10.0      # radius of the cap of a mushroom
 WIDE_FIN = 3.0         # a fin thick enough for a hole under its flank, clear of its tine, in mm
 FLANK_HOLE_RADIUS = 0.5  # that hole, across the side of the fin, in mm
 GROOVE_WIDTH = 2.0
@@ -810,6 +817,115 @@ def check_quick_plan():
            "the two faces beside a fillet carry the part")
 
 
+def check_quick_plans():
+    """The other ways Quick fins can stand a part, for the task panel to step to."""
+    p = FinParams()
+    box = Part.makeBox(30, 20, 20)
+    front = [i for i, f in enumerate(box.Faces) if f.BoundBox.YMax < d.TOLERANCE][0]
+    plans = list(geometry.quick_plans(box, [], [(box.Faces[front], front)], p, d.TILT_ANGLE))
+    first = geometry.quick_plan(box, [], [(box.Faces[front], front)], p, d.TILT_ANGLE)
+    expect(len(plans) == len(box.Faces[front].Edges) and plans[0].edge.isSame(first.edge)
+           and all(plan.number == front for plan in plans)
+           and [plan.edge.Length for plan in plans] == sorted((plan.edge.Length for plan in plans), reverse=True)
+           and all(not a.edge.isSame(b.edge) for i, a in enumerate(plans) for b in plans[i + 1:]),
+           "a face alone stands on each of its edges, the longest first, the fins always under it")
+    expect(all(abs(moved(box, plan.change).Faces[front].normalAt(0, 0).z + math.sqrt(0.5)) < 1e-6
+               and abs(resting_height(moved(box, plan.change))) < d.TOLERANCE for plan in plans),
+           "on every edge the face leans 45 degrees and the part rests on the bed")
+
+    bottom = [e for e in box.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
+    plans = list(geometry.quick_plans(box, [(bottom, None)], [], p, d.TILT_ANGLE))
+    stood = moved(box, plans[0].change)
+    expect(len(plans) > 1 and len({plan.number for plan in plans}) == len(plans)
+           and all(plan.change.isSame(plans[0].change, d.TOLERANCE) for plan in plans)
+           and plans[0].number == geometry.best_face(stood, p)
+           and [stood.Faces[plan.number].Area for plan in plans]
+           == sorted((stood.Faces[plan.number].Area for plan in plans), reverse=True),
+           "an edge stands one way, the fins under each face that takes them, the largest first")
+
+    short = [e for e in box.Faces[front].Edges if abs(e.Length - 20) < d.TOLERANCE][0]
+    plans = list(geometry.quick_plans(box, [(short, None)], [(box.Faces[front], front)], p, d.TILT_ANGLE))
+    expect(len(plans) == 1, "a face with one of its edges stands one way only")
+
+
+def bridge(hanging):
+    """A pillar on the bed with a beam across its top and `hanging`, a solid
+    under the far end of the beam: a bridge for islands to hang from."""
+    pillar = Part.makeBox(ISLAND_SPAN / 4, ISLAND_DEPTH, ISLAND_TOP)
+    beam = Part.makeBox(ISLAND_SPAN, ISLAND_DEPTH, ISLAND_BEAM, V(0, 0, ISLAND_TOP - ISLAND_BEAM))
+    return pillar.fuse([beam, hanging]).removeSplitter()
+
+
+def check_islands():
+    """Where a part would start printing in the air, as a slicer finds it."""
+    first, layer = d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT
+    box = Part.makeBox(30, 20, 20)
+    expect(overhang.islands(box, first, layer) == [], "a box lying on the bed has no island")
+    bottom = [e for e in box.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
+    standing = moved(box, orient.tilt(box, bottom, d.TILT_ANGLE))
+    expect(overhang.islands(standing, first, layer) == [], "a box standing on an edge has no island")
+
+    block_x = ISLAND_SPAN * 3 / 4
+    block = Part.makeBox(ISLAND_SPAN / 4, ISLAND_DEPTH, ISLAND_TOP - ISLAND_BEAM - ISLAND_LOW,
+                         V(block_x, 0, ISLAND_LOW))
+    found = overhang.islands(bridge(block), first, layer)
+    expect(len(found) == 1 and abs(found[0].z - ISLAND_LOW) < d.TOLERANCE and block_x - d.TOLERANCE <= found[0].x,
+           "a block hanging under a bridge is one island, at its bottom: %s" % found)
+    second = Part.makeBox(ISLAND_SPAN / 8, ISLAND_DEPTH, ISLAND_TOP - ISLAND_BEAM - ISLAND_LOW,
+                          V(ISLAND_SPAN * 3 / 8, 0, ISLAND_LOW))
+    expect(len(overhang.islands(bridge(block.fuse(second)), first, layer)) == 2,
+           "two blocks hanging side by side are two islands")
+
+    under = ISLAND_TOP - ISLAND_BEAM
+    corners = [V(block_x, 0, under), V(ISLAND_SPAN, 0, under), V(block_x + ISLAND_SPAN / 8, 0, ISLAND_LOW)]
+    ridge = Part.Face(Part.makePolygon(corners + corners[:1])).extrude(V(0, ISLAND_DEPTH, 0))
+    found = overhang.islands(bridge(ridge), first, layer)
+    expect(len(found) == 1 and abs(found[0].z - ISLAND_LOW) < d.TOLERANCE,
+           "a ridge pointing down under a bridge is one island, on the ridge: %s" % found)
+
+    mushroom = Part.makeCylinder(ISLAND_STEM, ISLAND_TOP).fuse(
+        Part.makeCylinder(ISLAND_CAP, ISLAND_BEAM, V(0, 0, ISLAND_TOP))).removeSplitter()
+    expect(overhang.islands(mushroom, first, layer) == [], "the cap of a mushroom rests on its stem")
+    holed = box.cut(Part.makeCylinder(ISLAND_STEM, 30, V(0, 10, 10), V(1, 0, 0)))
+    expect(overhang.islands(holed, first, layer) == [], "the top of a hole through a box is no island")
+    floating = Part.makeCompound([box, Part.makeBox(5, 5, 5, V(40, 0, ISLAND_LOW))])
+    expect(len(overhang.islands(floating, first, layer)) == 1, "a solid floating above the bed is an island")
+    low = Part.makeCompound([box, Part.makeBox(5, 5, 5, V(40, 0, first / 4))])
+    expect(overhang.islands(low, first, layer) == [], "a lowest point in the first layer rests on the bed")
+    expect(overhang.islands(Part.Shape(), first, layer) == [], "an empty shape has no island said, nothing raised")
+
+
+def check_printable_plans():
+    """Quick fins offers the ways without islands, or the fewest first."""
+    p = FinParams()
+    box = Part.makeBox(30, 20, 20)
+    front = [i for i, f in enumerate(box.Faces) if f.BoundBox.YMax < d.TOLERANCE][0]
+    plans = list(geometry.quick_plans(box, [], [(box.Faces[front], front)], p, d.TILT_ANGLE))
+    bottom = [e for e in box.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
+    alike = list(geometry.quick_plans(box, [(bottom, None)], [], p, d.TILT_ANGLE))
+    real = overhang.islands
+    try:
+        for counts, wanted, what in (
+                ([0, 2, 0, 1], [0, 2], "the ways without islands, in the order given"),
+                ([3, 1, 2, 1], [1, 3, 2, 0],
+                 "every way with islands: the fewest first, the order given among as many")):
+            left = list(counts)
+            overhang.islands = lambda *args, **kwargs: [V()] * left.pop(0)
+            rated = geometry.printable_plans(box, plans, p)
+            expect([plans.index(plan) for plan, _ in rated] == wanted
+                   and all(len(points) == counts[plans.index(plan)] for plan, points in rated), what)
+        calls = []
+        overhang.islands = lambda *args, **kwargs: calls.append(args) or [V()]
+        rated = geometry.printable_plans(box, alike, p)
+        expect(len(alike) > 1 and len(calls) == 1 and all(len(points) == 1 for _, points in rated),
+               "ways standing the part alike, the fins under other faces, are checked once")
+        del calls[:]
+        expect(geometry.printable_plans(box, plans[:1], p) == [(plans[0], [])] and not calls,
+               "one way is taken unchecked: there is no choice")
+    finally:
+        overhang.islands = real
+
+
 def round_side_of(shape, radius=ROD_RADIUS):
     """The number of the curved side of `shape` with `radius`."""
     return [i for i, f in enumerate(shape.Faces)
@@ -1320,6 +1436,9 @@ def main():
     check_split_face()
     check_quick_fins()
     check_quick_plan()
+    check_quick_plans()
+    check_islands()
+    check_printable_plans()
     check_round_side()
     check_split_side()
     check_left_out(cube, face)

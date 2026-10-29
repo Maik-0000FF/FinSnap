@@ -56,6 +56,10 @@ TUBE_ANGLE = 30.0  # how far the fin under the side of a tube is turned in the p
 PLACE_STEP = 1.0  # how far a fin is moved along the face in the panel, in mm
 ZOOM_OUT = 2.0  # how far the view is zoomed out to see the arc keep its size on the screen
 ARROW_SIZE_TOLERANCE = 0.01  # share by which the size of an arrow may differ from the one reckoned
+HOOK_REACH = 15.0  # how far the arm of a hook reaches past the side of the tilted cube, in mm
+HOOK_WIDTH = 5.0  # width and thickness of its arm and leg
+HOOK_DEPTH = 12.0  # how far below the top of the cube the arm comes out
+HOOK_DROP = 15.0  # how far the leg hangs from the arm
 
 
 def load_workbench():
@@ -315,6 +319,99 @@ def turned_tube(doc):
     doc.removeObject(fins.Name)
     doc.removeObject(tube.Name)
     doc.recompute()
+
+
+def chosen_stands(doc, quick, facing, messages):
+    """Quick fins on a face of the box `quick` lying flat: the panel lists the
+    edges the part can stand on, a click on a row stands it so, it asks before
+    dropping changes by hand, and Cancel lays the part back whichever way it
+    stands."""
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, orient, taskpanel
+    lying = orient.snapshot(quick)
+    select(quick, "Face%d" % facing)
+    Gui.runCommand("FinSnap_QuickFins")
+    fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick][0]
+    panel = fins.ViewObject.Proxy.panel
+    face = fins.Base[1][0]
+    edges = quick.Shape.Faces[facing - 1].Edges
+    table = panel.stand_list if panel.stands is not None else None
+
+    def marked(row):
+        return table.currentRow() == row and panel.stands.current == row
+
+    def standing():
+        leaning = quick.Shape.Faces[facing - 1].normalAt(0, 0).z
+        return (abs(leaning + math.sqrt(0.5)) < d.TOLERANCE and abs(quick.Shape.BoundBox.ZMin) < d.TOLERANCE
+                and fins.Base[1][0] == face and fins.isValid() and fins.Shape.Solids)
+
+    lengths = sorted((edge.Length for edge in edges), reverse=True)
+    names = ["Edge%d" % i for i, e in enumerate(quick.Shape.Edges, 1) if any(e.isSame(x) for x in edges)]
+    expect(not messages and table is not None and table.rowCount() == len(edges) and marked(0)
+           and sorted(table.item(row, 0).text() for row in range(len(edges))) == sorted(names)
+           and [table.item(row, 1).text() for row in range(len(edges))]
+           == ["%.1f%s" % (length, taskpanel.LENGTH_SUFFIX) for length in lengths]
+           and all(table.item(row, 2).text() == "0" for row in range(len(edges))),
+           "after Quick fins on a face the panel lists each edge it can stand on by its name, its length, "
+           "no islands: %s"
+           % messages)
+    first = App.Placement(quick.Placement)
+    table.setCurrentCell(2, 0)
+    expect(not quick.Placement.isSame(first, d.TOLERANCE) and marked(2) and standing(),
+           "a click on a row stands the part on that edge, the face leaning 45 degrees, the fins under it")
+    feature.shift_fin(fins, feature.MAIN, 1, PLACE_STEP)
+    panel.edited()
+    before = App.Placement(quick.Placement)
+    ANSWERS.append(QtWidgets.QMessageBox.No)
+    table.setCurrentCell(1, 0)
+    expect(not ANSWERS and quick.Placement.isSame(before, d.TOLERANCE) and marked(2)
+           and feature.changed_by_hand(fins), "No to the question keeps the part, the mark and the fin moved by hand")
+    ANSWERS.append(QtWidgets.QMessageBox.Yes)
+    table.setCurrentCell(0, 0)
+    expect(not ANSWERS and quick.Placement.isSame(first, d.TOLERANCE) and marked(0) and standing()
+           and not feature.changed_by_hand(fins), "Yes stands the part as in the row clicked, the fins planned anew")
+    panel.reject()
+    expect(fins.Name not in [o.Name for o in doc.Objects] and quick.Placement.isSame(lying[0], d.TOLERANCE)
+           and (orient.FLAT_PLACEMENT in quick.PropertiesList) == lying[1],
+           "Cancel after choosing deletes the fins and lays the part back as it was")
+
+    short = [i for i, e in enumerate(quick.Shape.Edges, 1)
+             if any(e.isSame(x) for x in quick.Shape.Faces[facing - 1].Edges)][0]
+    select(quick, "Face%d" % facing, "Edge%d" % short)
+    Gui.runCommand("FinSnap_QuickFins")
+    fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick][0]
+    expect(fins.ViewObject.Proxy.panel.stands is None, "a face with its edge stands one way: no table to choose from")
+    fins.ViewObject.Proxy.panel.reject()
+
+
+def island_marks(doc):
+    """Fins added by hand to the tilted cube with a hook hanging from its side,
+    whose foot would start printing in the air: a warning says so, and the
+    island is marked in the 3D view, over the part."""
+    from freecad.finsnap import commands, feature
+    from freecad.finsnap import defaults as d
+    cube = tilted_cube()
+    box = cube.BoundBox
+    # An arm out of the cube near its top, and a leg hanging from its far end
+    # beside the cube, its foot far above the bed.
+    arm = Part.makeBox(box.XMax + HOOK_REACH, HOOK_WIDTH, HOOK_WIDTH, App.Vector(0, 0, box.ZMax - HOOK_DEPTH))
+    foot = box.ZMax - HOOK_DEPTH - HOOK_DROP + HOOK_WIDTH
+    leg = Part.makeBox(HOOK_WIDTH, HOOK_WIDTH, HOOK_DROP, App.Vector(box.XMax + HOOK_REACH - HOOK_WIDTH, 0, foot))
+    hooked = doc.addObject("Part::Feature", "Hooked")
+    hooked.Shape = cube.fuse([arm, leg]).removeSplitter()
+    fins = feature.create(hooked, face_name(hooked, lower_left_face(hooked.Shape)))
+    commands.ViewProviderFinSnap(fins.ViewObject)
+    doc.recompute()
+    marks = fins.ViewObject.Proxy.marks
+    annotated = [marks.getChild(i) for i in range(marks.getNumChildren())
+                 if marks.getChild(i).isOfType(coin.SoAnnotation.getClassTypeId())]
+    expect(len(fins.Islands) == 1 and abs(fins.Islands[0].z - foot) < d.TOLERANCE
+           and any(hooked.Label in warning and warning.startswith("1 ") for warning in fins.Warnings)
+           and len(annotated) == 1,
+           "fins on a part with an island warn of it and mark it, over the part: %s, %s"
+           % (list(fins.Islands), list(fins.Warnings)))
+    doc.removeObject(fins.Name)
+    doc.removeObject(hooked.Name)
 
 
 def check_typed_fields(panel, fins, place):
@@ -676,6 +773,8 @@ def main():
         doc.removeObject(made[0].Name)
         quick.Placement = App.Placement()
         doc.recompute()
+    chosen_stands(doc, quick, facing, messages)
+    island_marks(doc)
     # Fins of the part laid flat keep their mark and shape over a Quick fins
     # cancelled: standing the part rebuilt them, Cancel gives them back.
     select(quick, "Edge%d" % on_bed)
