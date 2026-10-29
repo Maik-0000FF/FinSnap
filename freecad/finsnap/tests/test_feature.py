@@ -795,10 +795,14 @@ def kept_islands(doc):
         feature.islands_of = lambda *args: asked.append(args) or real_of(*args)
         try:
             fins.Proxy.reuse = {}
-            for _ in range(DRAG_STEPS):
-                fins.touch()
-                doc.recompute()
-            fins.Proxy.reuse = None
+            try:
+                for _ in range(DRAG_STEPS):
+                    fins.touch()
+                    doc.recompute()
+            finally:
+                # The drag over, also after a failed build, so no check after
+                # it runs as if a fin were still dragged.
+                fins.Proxy.reuse = None
             fins.touch()
             doc.recompute()
         finally:
