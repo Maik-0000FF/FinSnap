@@ -27,6 +27,12 @@ TYPE_NAME = "FinSnap"
 # Result property listing the faces that overhang without fins; the view
 # provider marks them.
 OVERHANGS = "Overhangs"
+# Result property with the lowest points of the islands of the part, where it
+# would start printing in the air with these fins; the view provider marks them.
+ISLANDS = "Islands"
+NOTE_ISLANDS = QT_TRANSLATE_NOOP(
+    "FinSnap", "%d island(s): %s would start printing in the air there, on no layer below, neither of the "
+    "part nor of a fin. It cannot print standing so; the islands are marked in the 3D view.")
 # Hidden marker on fins whose part was laid flat again with the fins kept:
 # they keep their last shape, moved along with the part, until it is moved again.
 LAID_FLAT = "LaidFlat"
@@ -362,12 +368,19 @@ def add_properties(obj):
         obj.addProperty(kind, name, GROUP_RESULT, "", 1)
     obj.addProperty("App::PropertyStringList", "Warnings", GROUP_RESULT, "", 1)
     add_overhangs(obj)
+    add_islands(obj)
 
 
 def add_overhangs(obj):
     obj.addProperty("App::PropertyStringList", OVERHANGS, GROUP_RESULT,
                     QT_TRANSLATE_NOOP("App::Property",
                                       "Faces of the part that overhang too flatly and carry no fins"), 1)
+
+
+def add_islands(obj):
+    obj.addProperty("App::PropertyVectorList", ISLANDS, GROUP_RESULT,
+                    QT_TRANSLATE_NOOP("App::Property",
+                                      "Where the part would start printing in the air, with these fins"), 1)
 
 
 def params_of(obj):
@@ -533,6 +546,32 @@ REUSE_KEPT = 8
 # by part, shape, placement and names asked.
 WHOLE_KEPT = 16
 _whole_kept = {}
+# Islands of parts alone, by part, its shape, where it stands and the layers it
+# is cut in, worked out once: the fins change more often than the part.
+ISLANDS_KEPT = 8
+_islands_kept = {}
+
+
+def islands_of(obj, shapes, p):
+    """The islands (overhang.islands()) of the part of `obj` as it stands, on
+    the layers of `p`, with the fins `shapes` just built for it and the fins
+    of its other FinSnap objects beside it, those not merged into it."""
+    part_obj = obj.Base[0]
+    own = part_obj.Shape
+    key = (part_obj.Document.Name, part_obj.Name, own.hashCode(), tuple(part_obj.getGlobalPlacement().toMatrix().A),
+           p.first_layer_height, p.layer_height)
+    part = global_shape(part_obj)
+    kept = _islands_kept.get(key)
+    if kept is None or not kept[0].isSame(own):
+        while len(_islands_kept) >= ISLANDS_KEPT:
+            _islands_kept.pop(next(iter(_islands_kept)))
+        # Held with the answer, as in whole_elements(): its memory cannot go
+        # to a new shape that would share its hash.
+        kept = _islands_kept[key] = (own, overhang.part_islands(part, p.first_layer_height, p.layer_height))
+    others = [other.Shape for other in fins_of(outermost(part_obj), obj.Document)
+              if other is not obj and other.Base and other.Base[0] is part_obj
+              and other.Connection != d.CONNECTION_MERGED and not is_laid_flat(other)]
+    return overhang.islands(part, list(shapes) + others, p.first_layer_height, p.layer_height, kept[1])
 
 
 class FinSnapFeature:
@@ -585,6 +624,7 @@ class FinSnapFeature:
             # The fins keep the shape they were moved to; the face they belong
             # to no longer leans over the bed until the part stands again.
             setattr(obj, OVERHANGS, [])
+            setattr(obj, ISLANDS, [])
             obj.Warnings = [translate("FinSnap", NOTE_LAID_FLAT)]
             return
         p = params_of(obj)
@@ -607,6 +647,7 @@ class FinSnapFeature:
             hidden_property(obj, CARRIED, "App::PropertyStringList")
             setattr(obj, CARRIED, [])
             setattr(obj, OVERHANGS, overhangs_of(obj.Base[0], obj.Document))
+            setattr(obj, ISLANDS, [])
             raise
         # Named on the part itself, the counter face as well: a split side was
         # built on the shape with its halves joined.
@@ -634,6 +675,11 @@ class FinSnapFeature:
         if overhanging:
             warnings.append(translate("FinSnap", "%d faces of %s overhang flatter than %.0f degrees without fins: %s")
                             % (len(overhanging), obj.Base[0].Label, d.OVERHANG_ANGLE, ", ".join(overhanging)))
+        # The fins stay the foundation they were while one fin is dragged.
+        found = self.during_drag(ISLANDS, lambda: islands_of(obj, shapes, p))
+        setattr(obj, ISLANDS, found)
+        if found:
+            warnings.append(translate("FinSnap", NOTE_ISLANDS) % (len(found), obj.Base[0].Label))
 
         tags = [fin_tag(MAIN, n) for n in result.numbers]
         if counter is not None:
@@ -661,6 +707,8 @@ class FinSnapFeature:
         obj.Proxy = self
         if OVERHANGS not in obj.PropertiesList:
             add_overhangs(obj)
+        if ISLANDS not in obj.PropertiesList:
+            add_islands(obj)
         # Saved when fins could only be removed: the count is taken over.
         for which, old in REMOVED_OF.items():
             if old in obj.PropertiesList:
@@ -1195,6 +1243,12 @@ def reset_fins(obj, which=None):
         for name in (SHIFTS[one], HEIGHTS[one]):
             if name in obj.PropertiesList:
                 setattr(obj, name, {})
+
+
+def changed_by_hand(obj):
+    """Whether a fin of `obj` was removed, moved or given a height of its own,
+    the part turned about its round side, or a counter fin added."""
+    return bool(obj.CounterFace) or any(any(edits(obj, which)) for which in (MAIN, COUNTER))
 
 
 def remove_fins(obj, fins):

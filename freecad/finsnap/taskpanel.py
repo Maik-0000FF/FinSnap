@@ -113,6 +113,26 @@ RESET_SIGN = "↺"
 BUTTON_ICON_SIZE = 20
 ICON_GAP = 8
 BUTTON_PADDING = 6
+# The ways Quick fins found to stand the part, one row each at the top of the
+# panel, chosen with a click: the edge it stands on or the face the fins go
+# under, its length or area, and how many islands the part has standing so.
+STAND_CAPTION = QT_TRANSLATE_NOOP("FinSnap", "Stand")
+STAND_EDGE = QT_TRANSLATE_NOOP("FinSnap", "Edge %d")
+STAND_FACE = QT_TRANSLATE_NOOP("FinSnap", "Face %d")
+STAND_HEADERS = {True: (QT_TRANSLATE_NOOP("FinSnap", "Stands on"), QT_TRANSLATE_NOOP("FinSnap", "Length"),
+                        QT_TRANSLATE_NOOP("FinSnap", "Islands")),
+                 False: (QT_TRANSLATE_NOOP("FinSnap", "Fins under"), QT_TRANSLATE_NOOP("FinSnap", "Area"),
+                         QT_TRANSLATE_NOOP("FinSnap", "Islands"))}
+AREA_SUFFIX = " mm\N{SUPERSCRIPT TWO}"
+STAND_TIP = QT_TRANSLATE_NOOP("FinSnap", "Quick fins found more than one way to stand the part. Click a row to "
+                                         "stand it so; the part and its fins follow in the 3D view. Ways where "
+                                         "the part would start printing in the air, an island, are left out "
+                                         "while one without is found.")
+STAND_ASK = QT_TRANSLATE_NOOP("FinSnap", "Stand the part another way? The fins are planned anew: fins removed, "
+                                         "moved or set to a height of their own, a turn of the part and the "
+                                         "counter fin are undone.")
+# Rows the table of ways shows at most; more scroll.
+STAND_ROWS = 6
 DRAWINGS = (
     (SIDE_VIEW, QT_TRANSLATE_NOOP("FinSnap", "Side view")),
     (TOP_VIEW, QT_TRANSLATE_NOOP("FinSnap", "Top view")),
@@ -297,11 +317,13 @@ def _same_mm(a, b):
 
 
 class FinSnapTaskPanel:
-    def __init__(self, obj, created=False, on_cancel=None):
+    def __init__(self, obj, created=False, on_cancel=None, stands=None):
         self.obj = obj
         # Fins just made: Cancel deletes them, then calls on_cancel, if any.
         self.created = created
         self.on_cancel = on_cancel
+        # The ways Quick fins found to stand the part, if more than one.
+        self.stands = stands if stands is not None and len(stands) > 1 else None
         self.widgets = {}
         self.labels = {}
         self.resets = {}
@@ -366,6 +388,8 @@ class FinSnapTaskPanel:
         Gui.Selection.addObserver(self)
         self.form.setWindowTitle("%s (%s)" % (translate("FinSnap", "FinSnap parameters"), application()))
         layout = QtWidgets.QVBoxLayout(self.form)
+        if self.stands is not None:
+            layout.addWidget(self.stand_table())
         intro = QtWidgets.QLabel(translate(
             "FinSnap", "Hover over a field for an explanation. Letters in brackets point to the drawings "
             "below. Every change is shown in the 3D view right away. Greyed-out fields have no effect "
@@ -486,6 +510,57 @@ class FinSnapTaskPanel:
         self.update_enabled()
         self.update_marks()
         self.preview()
+
+    def stand_table(self):
+        """The section at the top that lists the ways Quick fins found to stand
+        the part, one row each, the one it stands in now marked."""
+        box = QtWidgets.QGroupBox(translate("FinSnap", STAND_CAPTION))
+        headers = [translate("FinSnap", text) for text in STAND_HEADERS[self.stands.by_edge]]
+        self.stand_list = QtWidgets.QTableWidget(len(self.stands), len(headers))
+        self.stand_list.setHorizontalHeaderLabels(headers)
+        self.stand_list.verticalHeader().hide()
+        self.stand_list.horizontalHeader().setSectionResizeMode(QtWidgets.QHeaderView.Stretch)
+        self.stand_list.setSelectionBehavior(QtWidgets.QAbstractItemView.SelectRows)
+        self.stand_list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
+        self.stand_list.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
+        self.stand_list.setToolTip(_wrapped(translate("FinSnap", STAND_TIP)))
+        name = translate("FinSnap", STAND_EDGE if self.stands.by_edge else STAND_FACE)
+        suffix = LENGTH_SUFFIX if self.stands.by_edge else AREA_SUFFIX
+        for row, (size, islands) in enumerate(self.stands.rows):
+            for column, text in enumerate((name % (row + 1), "%.1f%s" % (size, suffix), str(islands))):
+                self.stand_list.setItem(row, column, QtWidgets.QTableWidgetItem(text))
+        shown = min(len(self.stands), STAND_ROWS)
+        self.stand_list.setFixedHeight(self.stand_list.horizontalHeader().height()
+                                       + shown * self.stand_list.rowHeight(0) + 2 * self.stand_list.frameWidth())
+        self.stand_list.currentCellChanged.connect(lambda row, *_: self.choose_stand(row))
+        self.show_stand()
+        QtWidgets.QVBoxLayout(box).addWidget(self.stand_list)
+        return box
+
+    def show_stand(self):
+        """Mark the row of the way the part stands in now."""
+        self.stand_list.blockSignals(True)
+        self.stand_list.setCurrentCell(self.stands.current, 0)
+        self.stand_list.blockSignals(False)
+
+    def choose_stand(self, row):
+        """Stand the part the way in `row` of the table. Changes by hand belong
+        to the way before and go with it, once the user agrees; otherwise the
+        mark goes back to the way it stands in."""
+        if row < 0 or row == self.stands.current:
+            return
+        self.take_typed()
+        if feature.changed_by_hand(self.obj):
+            answer = QtWidgets.QMessageBox.question(self.form, translate("FinSnap", "Stand another way"),
+                                                    translate("FinSnap", STAND_ASK))
+            if answer != QtWidgets.QMessageBox.Yes:
+                self.show_stand()
+                return
+        self.stands.stand(self.obj, row)
+        # The fin with the arrows is chosen anew on the face as it stands now.
+        self.handled = None
+        self.show_stand()
+        self.edited()
 
     def set_field(self, kind, spec):
         """Make the field of the handled fin for `kind` the one `spec` describes,
