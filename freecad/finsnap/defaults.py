@@ -124,6 +124,9 @@ RIGHT_ANGLE_TOLERANCE = 0.5
 # Faces lying flatter than this against the bed need support; those without
 # fins are reported and marked. 45 degrees is the usual limit of FDM printing.
 OVERHANG_ANGLE = 45.0
+# A part that stands, but whose plumb line comes closer to the edge of its
+# footprint than this while it is printed, is only just standing (mm).
+STABILITY_CLOSE = 2.0
 # Smaller overhanging faces, like the corner facets of a chamfer, bridge over
 # without support and are not reported (mm2).
 OVERHANG_MIN_AREA = 1.0

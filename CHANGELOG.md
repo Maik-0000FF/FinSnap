@@ -11,6 +11,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Check stability, in the toolbar and the task panel: whether a part, with or without fins, stays standing while it is printed, layer by layer as its centre of mass moves, first on its own, then held by its fins from their lowest tine up; it says at which layer it would tip and which way, recommends a counter fin where it tips away from the fins, and shows the plumb line and what the part stands on in the 3D view (#80)
+
 ## [0.8.0] - 2026-10-29
 
 ### Added

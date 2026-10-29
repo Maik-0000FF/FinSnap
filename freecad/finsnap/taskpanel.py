@@ -24,8 +24,9 @@ from . import handles
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
-from .paths import ICON_COUNTER, ICON_REMOVE_COUNTER, ICON_REMOVE_FIN, ICON_RESET_FINS, SIDE_VIEW, TOP_VIEW
-from .shapes import FACE_PREFIX
+from .paths import (ICON_COUNTER, ICON_REMOVE_COUNTER, ICON_REMOVE_FIN, ICON_RESET_FINS, ICON_STABILITY, SIDE_VIEW,
+                    TOP_VIEW)
+from .shapes import FACE_PREFIX, outermost
 from .version import application
 
 # Upper limits of the input fields; generous, the geometry rejects nonsense.
@@ -134,10 +135,46 @@ STAND_ASK = QT_TRANSLATE_NOOP("FinSnap", "Stand the part another way? The fins a
                                          "counter fin are undone.")
 # Rows the table of ways shows at most; more scroll.
 STAND_ROWS = 6
+# What a stability check found, in the colours of the fins while editing: green
+# where the part stands, yellow where only just, red where it tips; and the
+# label of the layer its plumb line is shown for, counted from 1.
+LEVEL_COLORS = {feature.STANDS: handles.VALID_COLOR, feature.CLOSE: handles.BETWEEN_COLOR,
+                feature.TIPS: handles.INVALID_COLOR}
+PLUMB_LABEL = QT_TRANSLATE_NOOP("FinSnap", "Layer %d (%.1f mm)")
+# The frame of the note of a stability check in the task panel, by what was
+# found, and once a change has made it out of date.
+STABILITY_FRAMES = {feature.STANDS: "#30a050", feature.CLOSE: WARNING_COLOR, feature.TIPS: ERROR_COLOR}
+OUTDATED_FRAME = "#808080"
+STABILITY_TIP = QT_TRANSLATE_NOOP(
+    "FinSnap", "Checks whether the part stays standing while it is printed, layer by layer, on its own and "
+    "held by these fins, which hold it only from their lowest tine up, and shows the plumb line from its "
+    "centre of mass to the bed. Takes a moment on a large part.")
+NOTE_STABILITY_OUTDATED = QT_TRANSLATE_NOOP("FinSnap", "Changed since the stability check: check again.")
 DRAWINGS = (
     (SIDE_VIEW, QT_TRANSLATE_NOOP("FinSnap", "Side view")),
     (TOP_VIEW, QT_TRANSLATE_NOOP("FinSnap", "Top view")),
 )
+
+
+def check_stability(part_obj, p):
+    """Check whether `part_obj` stays standing while it is printed in the
+    layers of `p` (feature.stability_of()), and show its plumb line in the 3D
+    view of its document, in the colour of what is found, until the part, its
+    place or its fins change. Returns the level and the note found."""
+    QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+    try:
+        level, note, shown = feature.stability_of(part_obj, p)
+    finally:
+        QtWidgets.QApplication.restoreOverrideCursor()
+    view = Gui.getDocument(part_obj.Document).ActiveView
+    if shown is None or not hasattr(view, "getSceneGraph"):
+        handles.STABILITY_MARK.clear()
+        return level, note
+    label = translate("FinSnap", PLUMB_LABEL) % (shown.layer + 1, shown.height)
+    owner = outermost(part_obj)
+    watched = [part_obj, owner] + feature.fins_of(owner, part_obj.Document)
+    handles.STABILITY_MARK.show(view, handles.plumb(shown, LEVEL_COLORS[level], label), watched)
+    return level, note
 
 
 def discard_created(obj, on_cancel=None):
@@ -507,6 +544,19 @@ class FinSnapTaskPanel:
         self.notes.setTextFormat(QtCore.Qt.RichText)
         self.notes.hide()
         layout.addWidget(self.notes)
+        # Whether the part stays standing while it is printed: checked on
+        # demand, as it takes a moment on a large part.
+        stability_button = _icon_button(ICON_STABILITY, translate("FinSnap", "Check stability"))
+        stability_button.setToolTip(_wrapped(translate("FinSnap", STABILITY_TIP)))
+        stability_button.clicked.connect(self.check_stability)
+        layout.addWidget(stability_button)
+        self.stability = QtWidgets.QLabel()
+        self.stability.setWordWrap(True)
+        self.stability.hide()
+        layout.addWidget(self.stability)
+        # Whether the note below the button tells the result of a check that
+        # still holds.
+        self.stability_checked = False
         self.update_steps()
         self.update_enabled()
         self.update_marks()
@@ -1329,8 +1379,27 @@ class FinSnapTaskPanel:
         self.status.setText("")
         self.show_notes(translate("FinSnap", "Not possible"), [str(error)], ERROR_COLOR)
 
+    def check_stability(self):
+        """Check whether the part stays standing while it is printed with these
+        fins as they are built now, and say so below the button."""
+        if self.timer.isActive():
+            self.preview()
+        level, note = check_stability(self.obj.Base[0], feature.params_of(self.obj))
+        self.stability.setText(note)
+        self.stability.setStyleSheet(NOTE_STYLE % STABILITY_FRAMES[level])
+        self.stability.show()
+        self.stability_checked = True
+
+    def stability_outdated(self):
+        """After a change: a stability check shown no longer holds."""
+        if self.stability_checked:
+            self.stability_checked = False
+            self.stability.setText(translate("FinSnap", NOTE_STABILITY_OUTDATED))
+            self.stability.setStyleSheet(NOTE_STYLE % OUTDATED_FRAME)
+
     def preview(self):
         self.timer.stop()
+        self.stability_outdated()
         try:
             self.apply()
         except ValueError as error:

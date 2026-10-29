@@ -90,6 +90,13 @@ HELD_COLOR = (1.0, 1.0, 0.0)
 VALUE_FONT_SIZE = 16
 VALUE_GAP = 0.3
 VALUE_ON_LIGHT = (0.1, 0.1, 0.1)
+# The plumb line of a stability check: this many pixels wide, dashed, a ball
+# of this size, in the units of the arrows, at either end, and the footprint
+# under it this see-through.
+PLUMB_WIDTH = 2
+PLUMB_PATTERN = 0xF0F0
+PLUMB_BALL = 0.15
+FOOTPRINT_TRANSPARENCY = 0.6
 # The background of the 3D view as FreeCAD keeps it, with FreeCAD's own
 # defaults: one colour, or a gradient from the second to the third colour,
 # through the fourth where the middle colour is on, packed as 0xRRGGBBAA.
@@ -149,6 +156,78 @@ def spots(points, color, transparency, size):
             spot.addChild(node)
         group.addChild(spot)
     return group
+
+
+def plumb(found, color, text):
+    """A Coin node showing `found`, a stability.Stability, in `color`, drawn
+    over everything else: the footprint see-through on the bed, the plumb
+    line dashed from the centre of mass of the part printed up to its layer
+    down to the bed, a ball at either end, and `text` at the centre."""
+    group = coin.SoAnnotation()
+    material = coin.SoMaterial()
+    material.diffuseColor.setValue(*color)
+    material.transparency.setValue(FOOTPRINT_TRANSPARENCY)
+    corners = coin.SoCoordinate3()
+    corners.point.setValues(0, len(found.footprint), [(p.x, p.y, p.z) for p in found.footprint])
+    outline = coin.SoFaceSet()
+    outline.numVertices.setValue(len(found.footprint))
+    footprint = coin.SoSeparator()
+    for node in (material, corners, outline):
+        footprint.addChild(node)
+    style = coin.SoDrawStyle()
+    style.lineWidth.setValue(PLUMB_WIDTH)
+    style.linePattern.setValue(PLUMB_PATTERN)
+    line_color = coin.SoBaseColor()
+    line_color.rgb.setValue(*color)
+    ends = coin.SoCoordinate3()
+    ends.point.setValues(0, 2, [tuple(found.centre), tuple(found.foot)])
+    line = coin.SoSeparator()
+    for node in (style, line_color, ends, coin.SoLineSet()):
+        line.addChild(node)
+    at = coin.SoTranslation()
+    at.translation.setValue(*found.centre)
+    font = coin.SoFont()
+    font.size.setValue(VALUE_FONT_SIZE)
+    label = coin.SoText2()
+    label.string.setValue(text)
+    caption = coin.SoSeparator()
+    for node in (at, line_color, font, label):
+        caption.addChild(node)
+    for node in (footprint, line, spots([found.centre, found.foot], color, 0.0, PLUMB_BALL), caption):
+        group.addChild(node)
+    return group
+
+
+class Mark:
+    """One node shown in a 3D view until cleared, as the plumb line of the last
+    stability check, with the objects whose change makes it out of date."""
+
+    def __init__(self):
+        self.view, self.node, self.watched = None, None, ()
+
+    def show(self, view, node, watched):
+        """Show `node` in `view` instead of what was shown before."""
+        self.clear()
+        view.getSceneGraph().addChild(node)
+        self.view, self.node, self.watched = view, node, tuple(watched)
+
+    def clear(self):
+        """Take the node out of its view, if it is still open."""
+        if self.node is not None:
+            try:
+                self.view.getSceneGraph().removeChild(self.node)
+            except (RuntimeError, ReferenceError):
+                # The view was closed with its document; the node went with it.
+                pass
+        self.view, self.node, self.watched = None, None, ()
+
+    def watches(self, obj):
+        """Whether a change of `obj` makes the node out of date."""
+        return any(obj is watched for watched in self.watched)
+
+
+# The plumb line of the last stability check, from the command or the task panel.
+STABILITY_MARK = Mark()
 
 
 def shaded(shapes, color, transparency):

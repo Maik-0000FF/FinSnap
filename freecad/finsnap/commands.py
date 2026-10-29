@@ -24,10 +24,10 @@ from . import orient
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_LAY_FLAT, ICON_MESH,
-                    ICON_QUICK, ICON_TILT)
+                    ICON_QUICK, ICON_STABILITY, ICON_TILT)
 from .presets import PREFERENCES
 from .shapes import FACE_PREFIX, global_shape, outermost
-from .taskpanel import DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, discard_created
+from .taskpanel import DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, check_stability, discard_created
 from .version import NAME
 
 EDGE_PREFIX = "Edge"
@@ -44,6 +44,11 @@ ISOMETRIC = App.Vector(-1, 1, -1).normalize()
 FILTER_3MF = QT_TRANSLATE_NOOP("FinSnap", "3MF files (*.3mf)")
 EXTENSIONS_3MF = (".3mf",)
 FILTER_STEP = QT_TRANSLATE_NOOP("FinSnap", "STEP files (*.step *.stp)")
+# Said when Check stability has no part to check.
+NOTE_SELECT_PART = QT_TRANSLATE_NOOP("FinSnap", "Select a part, or its fins, to check whether it stays standing "
+                                                "while it is printed.")
+# Properties whose change takes the plumb line of a stability check away.
+STABILITY_WATCHED = ("Placement", "Shape")
 # Said when new fins cannot be edited because another task panel is open.
 NOTE_BUSY = QT_TRANSLATE_NOOP("FinSnap", "Another task panel is open. Close it first, then make the fins again.")
 EXTENSIONS_STEP = (".step", ".stp")
@@ -983,11 +988,69 @@ def _write(writer, path, export, *settings):
                                       "export these fins.") % ", ".join(export.left_out))
 
 
+class CheckStability:
+    """Check whether a part stays standing while it is printed, layer by layer,
+    on its own and held by its fins, if it has any; see feature.stability_of().
+
+    SELECTIONS this has to withstand:
+      a part, standing or lying, with or
+        without fins                        ->  checked, its plumb line shown, the result said
+      fins                                  ->  their part checked
+      several objects                       ->  the first checked
+      nothing, a plumb line shown           ->  that plumb line taken away
+      nothing, none shown                   ->  message to select a part
+      an object without a shape             ->  message to select a part
+    """
+
+    def GetResources(self):  # noqa: N802 - FreeCAD API
+        return {"Pixmap": ICON_STABILITY,
+                "MenuText": QT_TRANSLATE_NOOP("FinSnap_CheckStability", "Check stability"),
+                "ToolTip": QT_TRANSLATE_NOOP(
+                    "FinSnap_CheckStability",
+                    "Checks whether the selected part stays standing while it is printed, layer by layer, as it "
+                    "grows and its centre of mass moves: first on its own, then, where it would tip over, held "
+                    "by its fins, which hold it only from their lowest tine up. Says at which layer it would "
+                    "tip and which way, and shows the plumb line from the centre of mass to the bed and what "
+                    "it stands on, until the part, its place or its fins change. With nothing selected, the "
+                    "plumb line shown goes.")}
+
+    def IsActive(self):  # noqa: N802 - FreeCAD API
+        return App.ActiveDocument is not None
+
+    def Activated(self):  # noqa: N802 - FreeCAD API
+        selected = Gui.Selection.getSelection()
+        if not selected:
+            shown = handles.STABILITY_MARK.node is not None
+            handles.STABILITY_MARK.clear()
+            if not shown:
+                _message(translate("FinSnap", NOTE_SELECT_PART))
+            return
+        obj = selected[0]
+        part = obj.Base[0] if feature.is_fins(obj) and obj.Base else obj
+        if getattr(part, "Shape", None) is None or part.Shape.isNull():
+            _message(translate("FinSnap", NOTE_SELECT_PART))
+            return
+        fins = [other for other in feature.fins_of(outermost(part), part.Document)
+                if other.Base and other.Base[0] is part]
+        p = feature.params_of(fins[0]) if fins else presets.standard()
+        _message(check_stability(part, p)[1])
+
+
+class StabilityWatch:
+    """Document observer: the plumb line of a stability check goes once the
+    part, its place or its fins change, as it no longer tells the truth."""
+
+    def slotChangedObject(self, obj, prop):  # noqa: N802 - FreeCAD API
+        if prop in STABILITY_WATCHED and handles.STABILITY_MARK.watches(obj):
+            handles.STABILITY_MARK.clear()
+
+
 COMMANDS = (("FinSnap_QuickFins", QuickFins()),
             ("FinSnap_Tilt", TiltOntoEdge()),
             ("FinSnap_LayFlat", LayFlat()),
             ("FinSnap_AddFins", AddFins()),
             ("FinSnap_AddCounterFin", AddCounterFin()),
+            ("FinSnap_CheckStability", CheckStability()),
             ("FinSnap_MeshToSolid", MeshToSolid()),
             ("FinSnap_Export3MF", Export3MF()),
             ("FinSnap_ExportSTEP", ExportSTEP()))
@@ -996,6 +1059,7 @@ COMMANDS = (("FinSnap_QuickFins", QuickFins()),
 # Registered once, when this module is first imported: with the workbench, or
 # with a document holding fins.
 App.addDocumentObserver(PartVisibility())
+App.addDocumentObserver(StabilityWatch())
 
 
 def register():

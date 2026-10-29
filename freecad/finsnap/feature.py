@@ -9,6 +9,7 @@ reading them back into FinParams and building the task panel all walk this
 table, so a new parameter is added in exactly one place (plus its default).
 """
 
+import math
 from collections import namedtuple
 
 import FreeCAD as App
@@ -19,6 +20,7 @@ from . import geometry
 from . import orient
 from . import overhang
 from . import presets
+from . import stability
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
 from .shapes import face_name, global_shape, moved, outermost
@@ -555,12 +557,45 @@ REUSE_KEPT = 8
 # by part, shape, placement and names asked.
 WHOLE_KEPT = 16
 _whole_kept = {}
+# What a stability check finds (stability_of()): the part stands, comes
+# close to tipping, within STABILITY_CLOSE mm, or tips; and the sentence that
+# says so. The layers are counted from 1, the first on the bed. A side of the
+# part counts as that of its fins within 45 degrees.
+STANDS, CLOSE, TIPS = "stands", "close", "tips"
+SIDE_SHARE = math.sqrt(0.5)
+NOTE_NOTHING_ON_BED = QT_TRANSLATE_NOOP("FinSnap", "Nothing of the part stands on the bed.")
+NOTE_STANDS = QT_TRANSLATE_NOOP(
+    "FinSnap", "Stands on its own while it is printed: at least %.1f mm from tipping, at layer %d (%.1f mm).")
+NOTE_STANDS_CLOSE = QT_TRANSLATE_NOOP(
+    "FinSnap", "Stands on its own, but only just: %.1f mm from tipping at layer %d (%.1f mm).")
+NOTE_NEEDS_FINS = QT_TRANSLATE_NOOP(
+    "FinSnap", "Tips over at layer %d (%.1f mm) while it is printed: fins under its leaning face hold it.")
+NOTE_HELD = QT_TRANSLATE_NOOP(
+    "FinSnap", "On its own it would tip over at layer %d (%.1f mm); its fins hold it: at least %.1f mm from "
+    "tipping, at layer %d (%.1f mm).")
+NOTE_HELD_CLOSE = QT_TRANSLATE_NOOP(
+    "FinSnap", "On its own it would tip over at layer %d (%.1f mm); its fins hold it, but only just: %.1f mm "
+    "from tipping at layer %d (%.1f mm).")
+NOTE_BEFORE_TINES = QT_TRANSLATE_NOOP(
+    "FinSnap", "Tips over at layer %d (%.1f mm), before its fins hold it from their lowest tine at %.1f mm: "
+    "set the first tine lower.")
+NOTE_AWAY_FROM_FINS = QT_TRANSLATE_NOOP(
+    "FinSnap", "Tips over at layer %d (%.1f mm), away from its fins: a counter fin on that side holds it.")
+NOTE_TOWARDS_FINS = QT_TRANSLATE_NOOP(
+    "FinSnap", "Tips over at layer %d (%.1f mm) towards its fins, past their feet: a longer foot or more "
+    "fins hold it.")
+NOTE_PAST_EDGE_END = QT_TRANSLATE_NOOP(
+    "FinSnap", "Tips over at layer %d (%.1f mm), past an end of the edge it stands on.")
+
 # Islands of parts, by part, its shape, where it stands and the layers it is
 # cut in, worked out once: the fins are built far more often. The volume and
 # area of the shape and its corners are compared to this many decimal places.
 ISLANDS_KEPT = 8
 ISLANDS_KEY_DIGITS = 6
 _islands_kept = {}
+# The centres of mass of parts while they are printed, by the same key as the
+# islands: stability_of() fills them as stability.check() works them out.
+_centres_kept = {}
 
 
 def set_islands(obj, found):
@@ -617,6 +652,98 @@ def _islands_key(part_obj, p):
                 len(shape.Faces), len(shape.Edges), corners)
     return (part_obj.Document.Name, part_obj.Name, measures, tuple(part_obj.getGlobalPlacement().toMatrix().A),
             p.first_layer_height, p.layer_height)
+
+
+def supports_of(part_obj, document):
+    """What holds `part_obj` up beside it on the bed, for stability.check():
+    the fins of its FinSnap objects, each side as it is built with its changes
+    by hand, and the height of its lowest tine, from which it holds the part;
+    and the directions out of the part to its main fins, on the bed. Fins laid
+    flat, or that cannot be built, hold nothing."""
+    supports, sides = [], []
+    for fins in fins_of(outermost(part_obj), document):
+        if not fins.Base or fins.Base[0] is not part_obj or is_laid_flat(fins):
+            continue
+        for which in (MAIN, COUNTER):
+            found = builder(fins, which)
+            if found is None:
+                continue
+            part, build = found
+            try:
+                result = build(*edits(fins, which))
+            except (geometry.FinError, Part.OCCError):
+                continue
+            if not result.tine_z:
+                continue
+            supports.append((result.fins, min(result.tine_z)))
+            if which == MAIN:
+                out = geometry.frame_of(part, _face(fins.Base)[1]).out
+                sides.append(App.Vector(out.x, out.y, 0))
+    return supports, sides
+
+
+def stability_of(part_obj, p):
+    """Whether `part_obj`, as it stands, stays standing while it is printed in
+    the layers of `p`, as (level, note, shown): first the part alone; where it
+    tips, whether the fins of its FinSnap objects hold it, and if not, why.
+    `level` is STANDS, CLOSE or TIPS, `note` says it in a sentence, and
+    `shown` is the stability.Stability to show the plumb line of: of the part
+    alone where it stands so, else held by its fins; None where nothing of
+    the part stands on the bed. The centres of mass are kept for the part as
+    it stands, so a check after the fins changed only measures their feet.
+
+    CASES this has to withstand:
+      stands alone, far from tipping       ->  STANDS, the closest layer
+      stands alone, within STABILITY_CLOSE ->  CLOSE
+      tips alone, no fins                  ->  TIPS, add fins
+      tips alone, the fins hold it         ->  STANDS or CLOSE, the layer it would tip at
+      tips before the lowest tine          ->  TIPS, the height of that tine
+      tips away from the fins              ->  TIPS, add a counter fin
+      tips towards the fins                ->  TIPS, past their feet
+      tips past an end of its edge         ->  TIPS, past an end of the edge
+      nothing on the bed                   ->  TIPS, None to show
+    """
+    key = _islands_key(part_obj, p)
+    if key not in _centres_kept:
+        while len(_centres_kept) >= ISLANDS_KEPT:
+            _centres_kept.pop(next(iter(_centres_kept)))
+        _centres_kept[key] = {}
+    centres = _centres_kept[key]
+    part = global_shape(part_obj)
+    alone = stability.check(part, [], p.first_layer_height, p.layer_height, centres)
+    if alone is None:
+        return TIPS, translate("FinSnap", NOTE_NOTHING_ON_BED), None
+    if not alone.tips:
+        close = alone.margin < d.STABILITY_CLOSE
+        note = NOTE_STANDS_CLOSE if close else NOTE_STANDS
+        return ((CLOSE if close else STANDS), translate("FinSnap", note)
+                % (alone.margin, alone.layer + 1, alone.height), alone)
+    tipping = (alone.layer + 1, alone.height)
+    supports, sides = supports_of(part_obj, part_obj.Document)
+    if not supports:
+        return TIPS, translate("FinSnap", NOTE_NEEDS_FINS) % tipping, alone
+    held = stability.check(part, supports, p.first_layer_height, p.layer_height, centres)
+    if held is None:
+        return TIPS, translate("FinSnap", NOTE_NOTHING_ON_BED), None
+    if not held.tips:
+        close = held.margin < d.STABILITY_CLOSE
+        note = NOTE_HELD_CLOSE if close else NOTE_HELD
+        return ((CLOSE if close else STANDS), translate("FinSnap", note)
+                % (tipping + (held.margin, held.layer + 1, held.height)), held)
+    at = (held.layer + 1, held.height)
+    # Over the bed, as the heights of the layers are.
+    lowest = min(height for _, height in supports) - held.foot.z
+    if held.height < lowest:
+        return TIPS, translate("FinSnap", NOTE_BEFORE_TINES) % (at + (lowest,)), held
+    towards = max((held.outward.dot(side.normalize()) for side in sides if side.Length > d.TOLERANCE),
+                  default=0.0)
+    away = min((held.outward.dot(side.normalize()) for side in sides if side.Length > d.TOLERANCE),
+               default=0.0)
+    if away < -SIDE_SHARE:
+        return TIPS, translate("FinSnap", NOTE_AWAY_FROM_FINS) % at, held
+    if towards > SIDE_SHARE:
+        return TIPS, translate("FinSnap", NOTE_TOWARDS_FINS) % at, held
+    return TIPS, translate("FinSnap", NOTE_PAST_EDGE_END) % at, held
 
 
 class FinSnapFeature:

@@ -597,6 +597,56 @@ def island_marks(doc):
     doc.removeObject(hooked.Name)
 
 
+def stability_checked(doc, messages):
+    """Check stability from the toolbar, for a part without fins and with,
+    and from the task panel: the result is said, the plumb line shown in the
+    colour of it, and taken away with nothing selected or once the part moves."""
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, handles, orient, taskpanel
+    slab = Part.makeBox(30, 20, 10)
+    bottom = [e for e in slab.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
+    part = doc.addObject("Part::Feature", "Leaning")
+    part.Shape = slab
+    part.Placement = orient.tilt(slab, bottom, d.TILT_ANGLE)
+    doc.recompute()
+    mark = handles.STABILITY_MARK
+    del messages[:]
+    select(part)
+    Gui.runCommand("FinSnap_CheckStability")
+    # What sets the note apart from the others: its words after the height.
+    needs_fins = App.Qt.translate("FinSnap", feature.NOTE_NEEDS_FINS).rsplit("mm)", 1)[1]
+    expect(len(messages) == 1 and messages[0].endswith(needs_fins) and mark.node is not None and mark.watches(part),
+           "Check stability says a leaning part without fins tips, and shows its plumb line: %s" % messages)
+    Gui.Selection.clearSelection()
+    Gui.runCommand("FinSnap_CheckStability")
+    expect(mark.node is None and len(messages) == 1, "with nothing selected the plumb line goes, nothing said")
+
+    fins = feature.create(part, face_name(part, lower_left_face_of(part.Shape)))
+    doc.recompute()
+    select(fins)
+    Gui.runCommand("FinSnap_CheckStability")
+    said = messages[-1]
+    expect(len(messages) == 2 and mark.node is not None and not said.endswith(needs_fins),
+           "with fins, Check stability says whether they hold it: %s" % said)
+    panel = taskpanel.FinSnapTaskPanel(fins)
+    panel.check_stability()
+    shown = panel.stability.text()
+    panel.preview()
+    expect(shown == said and panel.stability.text() == App.Qt.translate("FinSnap", taskpanel.NOTE_STABILITY_OUTDATED),
+           "the task panel says the same, and once the fins change, that it is out of date")
+    panel.release_handles()
+    panel.check_stability()
+    part.Placement = App.Placement(App.Vector(1, 0, 0), App.Rotation()).multiply(part.Placement)
+    expect(mark.node is None, "the plumb line goes once the part moves")
+    doc.removeObject(fins.Name)
+    doc.removeObject(part.Name)
+
+
+def lower_left_face_of(shape):
+    """The face of `shape` leaning most over the bed, its normal furthest down."""
+    return min(shape.Faces, key=lambda face: face.normalAt(*face.ParameterRange[::2]).z)
+
+
 def check_typed_fields(panel, fins, place):
     """A value typed into a field of the fin with the arrows is taken once
     typing pauses, where the fin can stand, and the field is left as typed;
@@ -959,6 +1009,7 @@ def main():
     chosen_stands(doc, quick, facing, messages)
     island_marks(doc)
     value_colors()
+    stability_checked(doc, messages)
     # Fins of the part laid flat keep their mark and shape over a Quick fins
     # cancelled: standing the part rebuilt them, Cancel gives them back.
     select(quick, "Edge%d" % on_bed)

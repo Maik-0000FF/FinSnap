@@ -31,6 +31,7 @@ ICON_COUNTER = os.path.join(ICONS, "counter_fin.svg")
 ICON_MESH = os.path.join(ICONS, "mesh_to_solid.svg")
 ICON_EXPORT = os.path.join(ICONS, "export_3mf.svg")
 ICON_EXPORT_STEP = os.path.join(ICONS, "export_step.svg")
+ICON_STABILITY = os.path.join(ICONS, "check_stability.svg")
 
 # Icons of the Edit fins buttons in the task panel; Add counter fin there uses
 # the command's.
