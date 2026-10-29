@@ -43,6 +43,17 @@ INVALID_COLOR = (1.0, 0.0, 0.0)
 # nearest tine when let go.
 BETWEEN_COLOR = (1.0, 0.85, 0.0)
 PREVIEW_TRANSPARENCY = 1.0 - 0.2
+# How much room View fit selection leaves round what it frames: none.
+FIT_SLACK = 1.0
+# The least size of what the view is fitted to (mm): a point or a thin face
+# shows with the part round it.
+FIT_MIN_SIZE = 10.0
+# Viewport mappings of a camera that crop the view, framed as a square.
+CROPPING_MAPPINGS = (coin.SoCamera.CROP_VIEWPORT_FILL_FRAME, coin.SoCamera.CROP_VIEWPORT_LINE_FRAME,
+                     coin.SoCamera.CROP_VIEWPORT_NO_FRAME)
+# What a clicked note is about but cannot be selected, marked less
+# see-through, so it stands out of the see-through fins it lies in.
+NOTED_TRANSPARENCY = 1.0 - 0.7
 # What a material of a face carries besides its colour, kept when one face is tinted.
 MATERIAL_FIELDS = ("AmbientColor", "SpecularColor", "EmissiveColor", "Shininess", "Transparency")
 # Transparency of a view object is set in percent.
@@ -118,6 +129,11 @@ GRADIENT_DEVIATION = 0.2
 # defaults: one colour, or a gradient from the second to the third colour,
 # through the fourth where the middle colour is on, packed as 0xRRGGBBAA.
 BACKGROUND_SINGLE = ("BackgroundColor", 0xEAE5DCFF)
+# FreeCAD's selection colour, which the user sets in the preferences: what a
+# clicked note is about but cannot be selected is marked in it.
+# Unset, FreeCAD draws the selection in 0.1, 0.8, 0.1, not the colour its
+# preferences dialog offers.
+SELECTION_COLOR = ("SelectionColor", 0x1ACC1AFF)
 BACKGROUND_GRADIENT = (("BackgroundColor2", 0x333365FF), ("BackgroundColor3", 0xABABC1FF))
 BACKGROUND_MIDDLE = ("BackgroundColor4", 0x6F6F93FF)
 BACKGROUND_FLAGS = (("Gradient", True), ("RadialGradient", False))
@@ -527,8 +543,9 @@ class Handles:
         self.arrows = coin.SoSwitch()
         self.preview = coin.SoSwitch()
         self.dropped = coin.SoSwitch()
+        self.noted = coin.SoSwitch()
         self.value = coin.SoSwitch()
-        for node in (self.arrows, self.preview, self.dropped, self.value):
+        for node in (self.arrows, self.preview, self.dropped, self.noted, self.value):
             node.whichChild.setValue(coin.SO_SWITCH_NONE)
             self.root.addChild(node)
         self.value.addChild(self._value_group())
@@ -890,6 +907,37 @@ class Handles:
         """Mark the tines in `tines`, which find no face, red until shown again."""
         self._fill(self.dropped, *([shaded(tines, INVALID_COLOR, PREVIEW_TRANSPARENCY)] if tines else []))
 
+    def show_noted(self, shapes, points=()):
+        """Mark `shapes` and `points`, what a clicked note is about but cannot
+        be selected, in the selection colour, the points as balls; none, nothing."""
+        color = _view_color(*SELECTION_COLOR)
+        nodes = [shaded(shapes, color, NOTED_TRANSPARENCY)] if shapes else []
+        if points:
+            nodes.append(spots(points, color, NOTED_TRANSPARENCY, ISLAND_SPOT_SIZE))
+        self._fill(self.noted, *nodes)
+
+    def fit(self, shapes, points=()):
+        """Fit the view to `shapes` and `points`, as View fit selection does to
+        what is selected: the camera framing their bounding box, at least
+        FIT_MIN_SIZE wide, so a single point is not zoomed into. Done here
+        rather than by that command, whose message not every FreeCAD acts on
+        at once."""
+        box = App.BoundBox()
+        for shape in shapes:
+            box.add(shape.BoundBox)
+        for point in points:
+            box.add(point)
+        if not box.isValid():
+            return
+        box.enlarge(max(0.0, (FIT_MIN_SIZE - min(box.XLength, box.YLength, box.ZLength)) / 2))
+        camera = self.view.getCameraNode()
+        aspect = self.viewer.getSoRenderManager().getViewportRegion().getViewportAspectRatio()
+        # A camera that crops the viewport fits a square, as FreeCAD does.
+        if camera.viewportMapping.getValue() in CROPPING_MAPPINGS:
+            aspect = 1.0
+        camera.viewBoundingBox(coin.SbBox3f(box.XMin, box.YMin, box.ZMin, box.XMax, box.YMax, box.ZMax), aspect,
+                               FIT_SLACK)
+
     def clear_preview(self):
         self._clear(self.preview)
 
@@ -907,6 +955,7 @@ class Handles:
             self.view.removeDraggerCallback(dragger, name, callback)
         self.callbacks = []
         self._clear(self.dropped)
+        self._clear(self.noted)
         if self.attached:
             self.viewer.resetEditingRoot()
         # Not attached any more, also when the panel closes before it was.

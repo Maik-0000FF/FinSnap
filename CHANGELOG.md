@@ -18,6 +18,7 @@ All notable changes to FinSnap are listed here. The format follows
 - Islands while editing, a switch in the toolbar: off, fins and Quick fins leave islands to Check part, which keeps a large part quick on a slow computer
 - Brim width, in the Slicer section: the brim the slicer prints round the part and the fins, which Check stability counts as standing on the bed with them
 - Checks are kept in the tree, one for each part and kind, saved with the document: the eye shows or hides what a check shows, deleting it removes it, and once the part, its place or its fins change it is marked out of date, to be checked again with a double click (#94)
+- Clicking a note in the task panel selects the fins or faces it names and fits the view to them; tines left out and islands are marked in the selection colour (#78)
 
 ### Changed
 

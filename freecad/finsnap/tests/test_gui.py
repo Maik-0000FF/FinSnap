@@ -963,6 +963,35 @@ def main():
     expect(not noted.notes.isHidden()
            and taskpanel.WARNING_COLOR in noted.notes.styleSheet() and marked.Warnings[0] in noted.notes.text(),
            "the panel shows the warnings in a framed box of their own")
+    # A note that names a place is a link: a click selects what it is about,
+    # as Check Geometry does, and fits the view to it.
+    overhang_note = next(i for i, w in enumerate(marked.Warnings) if hanging[0] in w)
+    linked = "href='%d'" % overhang_note in noted.notes.text()
+    camera = Gui.ActiveDocument.ActiveView.getCamera()
+    noted.show_note(str(overhang_note))
+    picked = [(s.Object, n) for s in Gui.Selection.getSelectionEx() for n in s.SubElementNames]
+    expect(linked and picked == [(box, hanging[0])] and Gui.ActiveDocument.ActiveView.getCamera() != camera,
+           "a click on the overhang note selects the face and fits the view to it: %s" % picked)
+    # A note naming a fin, as one moved beside a hole names it: its faces are
+    # selected, the arrows on it.
+    fin = noted.built_fins()[-1]
+    marked.Proxy.note_targets[overhang_note] = feature.NoteTarget(fin[0], [fin[1]], [], [], [])
+    noted.show_note(str(overhang_note))
+    picked = {feature.fin_at(marked, n) for s in Gui.Selection.getSelectionEx() for n in s.SubElementNames}
+    expect(noted.handled == fin and picked == {fin}, "a click on a note naming a fin selects it, the arrows on it")
+    # Tines left out are no faces of any object: marked in the selection colour.
+    # Islands whose first layer could not be cut out: balls at their lowest points.
+    for marks, points in (([Part.makeBox(1, 1, 1)], []), ([], [App.Vector(1, 2, 3)])):
+        marked.Proxy.note_targets[overhang_note] = feature.NoteTarget(None, [], [], marks, points)
+        camera = Gui.ActiveDocument.ActiveView.getCamera()
+        noted.show_note(str(overhang_note))
+        expect(noted.handles.noted.whichChild.getValue() == coin.SO_SWITCH_ALL and not Gui.Selection.hasSelection()
+               and Gui.ActiveDocument.ActiveView.getCamera() != camera,
+               "a click on a note naming what cannot be selected marks it and fits the view to it: %s, %s"
+               % (len(marks), len(points)))
+    noted.show_note("99")
+    expect(noted.handles.noted.whichChild.getValue() == coin.SO_SWITCH_NONE and not Gui.Selection.hasSelection(),
+           "a click without a place to show clears the selection and the marks")
     noted.reject()
     marks = marked.ViewObject.Proxy.marks
     expect(marks.getNumChildren() == 1 and marks.whichChild.getValue() == coin.SO_SWITCH_ALL,

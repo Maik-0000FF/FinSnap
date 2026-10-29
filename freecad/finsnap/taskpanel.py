@@ -750,6 +750,9 @@ class FinSnapTaskPanel:
         self.notes = QtWidgets.QLabel()
         self.notes.setWordWrap(True)
         self.notes.setTextFormat(QtCore.Qt.RichText)
+        # A note that names a place is a link: a click marks what it is about.
+        self.notes.setTextInteractionFlags(QtCore.Qt.LinksAccessibleByMouse)
+        self.notes.linkActivated.connect(self.show_note)
         self.notes.hide()
         layout.addWidget(self.notes)
         # Whether the part stays standing while it is printed: checked on
@@ -1002,15 +1005,77 @@ class FinSnapTaskPanel:
         if not self.obj.recompute():
             raise ValueError(self.obj.getStatusString())
 
-    def show_notes(self, title, lines, color):
-        """A framed box with a sign and a title, one line per note; hidden without notes."""
+    def show_notes(self, title, lines, color, linked=()):
+        """A framed box with a sign and a title, one line per note; hidden without
+        notes. The notes whose index is in `linked` are links to show_note()."""
         if not lines:
             self.notes.hide()
             return
-        items = "".join("<li>%s</li>" % html.escape(line) for line in lines)
+
+        def item(index, line):
+            text = html.escape(line)
+            return "<li><a href='%d'>%s</a></li>" % (index, text) if index in linked else "<li>%s</li>" % text
+        items = "".join(item(index, line) for index, line in enumerate(lines))
         self.notes.setText("<b>%s %s</b><ul style='margin: 0'>%s</ul>" % (WARNING_SIGN, html.escape(title), items))
         self.notes.setStyleSheet(NOTE_STYLE % color)
         self.notes.show()
+
+    def note_targets(self):
+        """What each note of the last build is about, a feature.NoteTarget or
+        None, in the order of Warnings; empty once they no longer match."""
+        targets = list(getattr(self.obj.Proxy, "note_targets", []))
+        return targets if len(targets) == len(self.obj.Warnings) else []
+
+    def show_note(self, link):
+        """A click on note `link`, its index: select what it is about, as Check
+        Geometry does, mark what cannot be selected in the selection colour,
+        and fit the view to it; the first fin it names gets the arrows.
+
+        INPUTS this has to withstand:
+          a note naming fins                    ->  their faces selected, the first fin
+                                                    with the arrows
+          a note naming the face or faces of
+            the part                            ->  those faces selected, the fin kept
+          a note naming tines left out or
+            islands                             ->  marked, as they are no faces of any object;
+                                                    an island without its first layer as a
+                                                    ball at its lowest point
+          a note naming a fin merged into the
+            part                                ->  its body marked, as it has no faces of its own
+          a fin named no longer built           ->  passed over
+          an index the last build has no target
+            for, or not a number                ->  selection and marks cleared, the view kept
+        """
+        targets = self.note_targets()
+        target = targets[int(link)] if link.isdigit() and int(link) < len(targets) else None
+        Gui.Selection.clearSelection()
+        if target is None:
+            self.handles.show_noted([])
+            return
+        results = getattr(self.obj.Proxy, "results", {})
+        fins = [(target.which, number) for number in target.fins
+                if results.get(target.which) and number in results[target.which].numbers]
+        marks = list(target.marks)
+        # What is selected, as shapes, to fit the view to it.
+        selected = []
+        for which, number in fins:
+            faces = feature.fin_faces(self.obj, which, number)
+            if faces:
+                Gui.Selection.addSelection(self.obj, [FACE_PREFIX + str(index + 1) for index in faces])
+                selected += [self.obj.Shape.Faces[index] for index in faces]
+            else:
+                built = results[which]
+                marks.append(built.bodies[built.numbers.index(number)])
+        for owner, name in target.faces:
+            Gui.Selection.addSelection(owner, name)
+            selected.append(global_shape(owner).getElement(name))
+        self.handles.show_noted(marks, target.points)
+        self.handles.fit(selected + marks, target.points)
+        # After the selection, which gives the arrows to the fin picked last.
+        if fins:
+            self.take_typed()
+            self.handled = fins[0]
+            self.place_handles()
 
     def addSelection(self, doc, name, sub, point):  # noqa: N802 - FreeCAD API
         """A fin picked in the 3D view gets the handles."""
@@ -1629,7 +1694,11 @@ class FinSnapTaskPanel:
         self.status.setText(translate("FinSnap", "%d fin(s), %.2f mm high, %.2f mm thick")
                             % (self.obj.ResultFinCount, self.obj.ResultHeight.Value,
                                self.obj.ResultThickness.Value))
-        self.show_notes(translate("FinSnap", "Notes"), list(self.obj.Warnings), WARNING_COLOR)
+        # A new build: what a note was about may have moved.
+        self.handles.show_noted([])
+        placed = [index for index, target in enumerate(self.note_targets())
+                  if target and (target.fins or target.faces or target.marks or target.points)]
+        self.show_notes(translate("FinSnap", "Notes"), list(self.obj.Warnings), WARNING_COLOR, placed)
 
     def accept(self):
         self.timer.stop()
