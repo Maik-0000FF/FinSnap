@@ -343,13 +343,14 @@ def quick_on_pad(doc):
     select(box, "Face%d" % side)
     Gui.runCommand("FinSnap_QuickFins")
     fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is body]
-    linked = bool(fins)
-    if fins:
-        panel = fins[0].ViewObject.Proxy.panel
-        if panel.stands is not None and panel.stand_list.rowCount() > 1:
-            panel.stand_list.setCurrentCell(1, 0)
-    expect(linked and fins[0].Base[0] is body and fins[0].isValid(),
-           "Quick fins on a face of a Pad stand the fins under the face of its Body, also after another row")
+    panel = fins[0].ViewObject.Proxy.panel if fins else None
+    # A face of a box stands on any of its edges: a table of at least two ways.
+    rows = panel.stand_list.rowCount() if panel is not None and panel.stands is not None else 0
+    if rows > 1:
+        panel.stand_list.setCurrentCell(1, 0)
+    expect(rows > 1 and fins[0].Base[0] is body and fins[0].isValid() and panel.stands.current == 1,
+           "Quick fins on a face of a Pad stand the fins under the face of its Body, also after another row: %d"
+           % rows)
     if fins:
         fins[0].ViewObject.Proxy.panel.reject()
     for name in (box.Name, body.Name):
