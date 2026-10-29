@@ -480,12 +480,15 @@ def keep_plane(obj, which):
     coordinates of its part; nothing for a side not linked or a face not planar."""
     hidden_property(obj, PLANE_OF[which], "App::PropertyVectorList")
     link = side_link(obj, which)
-    plane = None
-    if link and link[1]:
-        try:
-            plane = plane_of(global_shape(link[0]).getElement(link[1][0]))
-        except (ValueError, IndexError, Part.OCCError):
-            plane = None
+    if not link or not link[1]:
+        setattr(obj, PLANE_OF[which], [])
+        return
+    try:
+        plane = plane_of(global_shape(link[0]).getElement(link[1][0]))
+    except (ValueError, IndexError, Part.OCCError):
+        # A name FreeCAD marked lost after a feature changed the part: the
+        # plane kept is what finds the face again.
+        return
     if plane is None:
         setattr(obj, PLANE_OF[which], [])
         return
@@ -500,7 +503,11 @@ def on_part(obj, name):
     part = part_of(obj)
     if part is obj:
         return obj, name
-    return part, face_like(global_shape(part), global_shape(obj).getElement(name)) or name
+    found = face_like(global_shape(part), global_shape(obj).getElement(name))
+    if found is None:
+        # Its name on the Body would be another face, with features after it.
+        raise geometry.FinError(translate("FinSnap", NOTE_FACE_GONE) % part.Label)
+    return part, found
 
 
 def whole_elements(obj, names):
@@ -1003,6 +1010,14 @@ class FinSnapFeature:
         if getattr(self, "editing", False):
             self.note_targets = targets
 
+    def onChanged(self, obj, prop):  # noqa: N802 - FreeCAD API
+        # A side linked to another face, by Quick fins, Cancel or by hand:
+        # its plane follows, or the old one would find the old face again.
+        # Not while the file is read: the plane saved with it holds.
+        sides = {link: which for which, link in SIDE_LINK.items()}
+        if prop in sides and "Restore" not in obj.State and PLANE_OF[sides[prop]] in obj.PropertiesList:
+            keep_plane(obj, sides[prop])
+
     def onDocumentRestored(self, obj):  # noqa: N802 - FreeCAD API
         obj.Proxy = self
         if OVERHANGS not in obj.PropertiesList:
@@ -1045,7 +1060,7 @@ class FinSnapFeature:
                 try:
                     part, name = on_part(link[0], link[1][0])
                     setattr(obj, SIDE_LINK[which], (part, [name]))
-                except (ValueError, IndexError, Part.OCCError):
+                except (ValueError, IndexError, Part.OCCError, geometry.FinError):
                     # The face is gone already; the build says so.
                     pass
             if PLANE_OF[which] not in obj.PropertiesList:

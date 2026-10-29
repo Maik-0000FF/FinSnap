@@ -973,6 +973,16 @@ def fins_follow_the_body(doc):
     fins.removeProperty("BasePlane")
     fins.Proxy.onDocumentRestored(fins)
     expect(fins.Base[0] is body and fins.BasePlane, "fins saved linking the Pad link its Body once opened")
+    # Linked to another face, as Quick fins, Cancel or a change by hand do:
+    # the plane follows, so the fins stand under that face.
+    first = fins.Base[1][0]
+    other = next("Face%d" % i for i, f in enumerate(global_shape(body).Faces, 1)
+                 if f.normalAt(0, 0).z < -d.TOLERANCE and "Face%d" % i != first)
+    fins.Base = (body, [other])
+    doc.recompute()
+    expect(other in fins.CarriedFaces, "fins linked to another face stand under it: %s" % list(fins.CarriedFaces))
+    fins.Base = (body, [first])
+    doc.recompute()
 
     for kind, prop in (("PartDesign::Chamfer", "Size"), ("PartDesign::Fillet", "Radius")):
         changed = body.newObject(kind, kind.split(":")[-1])

@@ -674,7 +674,9 @@ class QuickStands:
         orient.put_back(self.owner, self.before)
         _stand(self.obj, plan.change)
         _keep_checked(self.obj, self.plans[index])
-        fins.Base = (self.obj, [face])
+        # Under the face of the Body for a Pad, as feature.create() links it.
+        part, name = feature.on_part(self.obj, face)
+        fins.Base = (part, [name])
         self.current = index
         _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside))
 
