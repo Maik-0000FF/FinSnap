@@ -60,6 +60,9 @@ HOOK_REACH = 15.0  # how far the arm of a hook reaches past the side of the tilt
 HOOK_WIDTH = 5.0  # width and thickness of its arm and leg
 HOOK_DEPTH = 12.0  # how far below the top of the cube the arm comes out
 HOOK_DROP = 15.0  # how far the leg hangs from the arm
+ARC_TURN_TOLERANCE = 0.01  # degrees a turn read back from Coin may be off
+WHITE_PACKED = 0xFFFFFFFF  # a white background of the 3D view, packed as FreeCAD keeps it
+DARK_PACKED = 0x202020FF  # a dark one
 
 
 def load_workbench():
@@ -259,8 +262,14 @@ def turned_tube(doc):
            and abs(angle() - TUBE_ANGLE) < d.TOLERANCE,
            "an angle typed for the fin turns the tube that far round its axis, the fin stays")
     arc._held(handles.ALONG, None)
+    arc._moved(handles.ALONG, None)
+    # A copy: the field gives its own vector, which follows it.
+    unturned = coin.SbVec3f(arc.value_at.translation.getValue())
     arc.turner.rotation.setValue(coin.SbRotation(coin.SbVec3f(0, 0, 1), math.radians(-TUBE_ANGLE)))
     arc._moved(handles.ALONG, None)
+    expect(_on_arc(arc, unturned) and _on_arc(arc, arc.value_at.translation.getValue())
+           and abs(_turned_by(arc, unturned, arc.value_at.translation.getValue()) - TUBE_ANGLE) < ARC_TURN_TOLERANCE,
+           "the value of the arc stands past its tip, round the axis, and turns with it")
     expect(abs(panel.fin_fields[handles.ALONG].value() - 2 * TUBE_ANGLE) < d.TOLERANCE,
            "while the arc is dragged, the field shows the angle the fin goes to")
     arc.held = False
@@ -396,6 +405,62 @@ def chosen_stands(doc, quick, facing, messages):
     fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick][0]
     expect(fins.ViewObject.Proxy.panel.stands is None, "a face with its edge stands one way: no table to choose from")
     fins.ViewObject.Proxy.panel.reject()
+
+
+def value_colors():
+    """The value of a dragged arrow is written yellow over a dark background
+    of the 3D view, nearly black over a light one; FreeCAD's settings are
+    put back as they were after."""
+    from freecad.finsnap import handles
+    view = App.ParamGet(handles.VIEW_PARAMETERS)
+    bools = {name for name in view.GetBools()}
+    unsigneds = {name for name in view.GetUnsigneds()}
+    saved_bools = {name: view.GetBool(name) for name in bools}
+    saved_unsigneds = {name: view.GetUnsigned(name) for name in unsigneds}
+    flags = [name for name, _ in handles.BACKGROUND_FLAGS]
+    try:
+        for flag in flags:
+            view.SetBool(flag, False)
+        view.SetUnsigned(handles.BACKGROUND_SINGLE[0], WHITE_PACKED)
+        on_white = handles.value_color()
+        view.SetUnsigned(handles.BACKGROUND_SINGLE[0], DARK_PACKED)
+        on_dark = handles.value_color()
+        view.SetBool(flags[0], True)
+        for name, _ in handles.BACKGROUND_GRADIENT:
+            view.SetUnsigned(name, WHITE_PACKED)
+        on_light_gradient = handles.value_color()
+    finally:
+        for name in flags + [handles.BACKGROUND_SINGLE[0]] + [name for name, _ in handles.BACKGROUND_GRADIENT]:
+            if name in saved_bools:
+                view.SetBool(name, saved_bools[name])
+            elif name in saved_unsigneds:
+                view.SetUnsigned(name, saved_unsigneds[name])
+            elif name in flags:
+                view.RemBool(name)
+            else:
+                view.RemUnsigned(name)
+    expect(on_white == handles.VALUE_ON_LIGHT and on_dark == handles.HELD_COLOR
+           and on_light_gradient == handles.VALUE_ON_LIGHT,
+           "the value is written nearly black over a light background, yellow over a dark one")
+
+
+def _on_arc(arc, point):
+    """Whether `point` (an SbVec3f) lies on the circle the arc of `arc`, a
+    Handles, is drawn round."""
+    from freecad.finsnap import defaults as d
+    foot, turn = arc.turn_place.translation.getValue(), arc.turn_place.rotation.getValue()
+    axis = turn.multVec(coin.SbVec3f(0, 0, 1))
+    off = point - foot
+    return abs((off - axis * off.dot(axis)).length() - arc.arc_radius) < d.TOLERANCE
+
+
+def _turned_by(arc, start, end):
+    """How far round the axis of the arc of `arc` `end` lies from `start` (degrees)."""
+    foot, turn = arc.turn_place.translation.getValue(), arc.turn_place.rotation.getValue()
+    axis = turn.multVec(coin.SbVec3f(0, 0, 1))
+    first, second = start - foot, end - foot
+    first, second = first - axis * first.dot(axis), second - axis * second.dot(axis)
+    return math.degrees(math.acos(max(-1.0, min(1.0, first.dot(second) / (first.length() * second.length())))))
 
 
 def _value_shown(arrows):
@@ -845,6 +910,7 @@ def main():
         doc.recompute()
     chosen_stands(doc, quick, facing, messages)
     island_marks(doc)
+    value_colors()
     # Fins of the part laid flat keep their mark and shape over a Quick fins
     # cancelled: standing the part rebuilt them, Cancel gives them back.
     select(quick, "Edge%d" % on_bed)
