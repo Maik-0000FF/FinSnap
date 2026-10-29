@@ -70,7 +70,9 @@ FIN_HEIGHT_AUTO = 0.0       # 0: the top tine defines the height
 # Distance kept from the top edge of the supported face, so the fin does not
 # reach into the edge or chamfer above it.
 FACE_TOP_MARGIN = 0.5
-# The same above the lower edge of a face that ends above the bed.
+# The same above the lower edge of a face that ends above the bed, for the one
+# grid from the bed. Tines restarted on the face start right at its lower edge
+# instead: they are placed only where their whole end lies on the face.
 FACE_BOTTOM_MARGIN = FACE_TOP_MARGIN
 
 # --- Placement along the supported face ---------------------------------------

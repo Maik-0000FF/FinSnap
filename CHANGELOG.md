@@ -17,6 +17,10 @@ All notable changes to FinSnap are listed here. The format follows
 - Check part, in the toolbar: overhangs, islands and stability of a part at once, with a line for each
 - Islands while editing, a switch in the toolbar: off, fins and Quick fins leave islands to Check part, which keeps a large part quick on a slow computer
 
+### Changed
+
+- On a face that starts above the bed, as above a fillet the part rests on, the lowest tine goes on the first layer from the lower edge of the face up, where its end rests on the face, no longer half a millimetre higher
+
 ## [0.8.0] - 2026-10-29
 
 ### Added

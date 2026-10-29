@@ -51,6 +51,7 @@ STABLE_BASE = 10.0     # side of a column on the bed, and of the arm out of its 
 STABLE_HEIGHT = 20.0   # height of that column
 STABLE_REACH = 30.0    # how far its arm reaches out, carrying the centre of mass past the column
 STABLE_BRIM = 20.0     # a brim wide enough to hold a slab standing on its edge
+FILLET_RADIUS = 3.0    # a fillet along the edge a part rests on, its leaning face starting above it
 WIDE_FIN = 3.0         # a fin thick enough for a hole under its flank, clear of its tine, in mm
 FLANK_HOLE_RADIUS = 0.5  # that hole, across the side of the fin, in mm
 GROOVE_WIDTH = 2.0
@@ -546,6 +547,27 @@ def sunk_around(cube, face, low, high):
     stretch = next(f for f in sunk.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE
                    and abs(f.BoundBox.ZMin - frame.bed_z - low) < d.TOLERANCE)
     return sunk, stretch
+
+
+def check_restart_above_fillet():
+    """A face that starts above a fillet the part rests on: its first tine on
+    the first layer from the lower edge of the face up, right above the
+    fillet, and resting on the face."""
+    p = FinParams()
+    box = Part.makeBox(30, 20, 20)
+    bottom = [e for e in box.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE]
+    filleted = box.makeFillet(FILLET_RADIUS, bottom)
+    fillet = [i for i, f in enumerate(filleted.Faces) if f.findPlane() is None][0]
+    plan = geometry.quick_plan(filleted, [], [(filleted.Faces[fillet], fillet)], p, d.TILT_ANGLE)
+    stood = moved(filleted, plan.change)
+    face = stood.Faces[plan.number]
+    frame = geometry.frame_of(stood, face)
+    floor = frame.face_bottom_z - frame.bed_z
+    built = geometry.build(stood, face, p)
+    expect(floor > d.TOLERANCE and abs(built.tine_z[0] - geometry._snap_up(p, floor)) < d.TOLERANCE
+           and built.tine_z[0] < floor + p.layer_height and not built.dropped,
+           "above a fillet the first tine starts on the first layer from the face up: %.2f over %.2f"
+           % (built.tine_z[0], floor))
 
 
 def check_restart_planned(cube, face):
@@ -1493,6 +1515,7 @@ def main():
     check_tine_clearance(cube, face)
     check_shortened(cube, face)
     check_restart(cube, face)
+    check_restart_above_fillet()
     check_restart_planned(cube, face)
     check_restart_narrow(cube, face)
     check_restart_flank_hole(cube, face)

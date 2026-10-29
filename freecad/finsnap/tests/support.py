@@ -22,7 +22,7 @@ CHAMFER = 1.0
 TILT = 45.0
 HALF_TURN = 180.0  # degrees
 RECESS_RADIUS = 1.5    # wider than a tine, so a tine above it touches nothing
-GROOVE_TOP_GAP = 1.0   # face left above a groove, so the groove does not split the face
+GROOVE_TOP_GAP = 0.5   # face left above a groove, so the groove does not split the face, too low for a tine
 V = App.Vector
 
 
