@@ -1037,7 +1037,9 @@ class FinSnapTaskPanel:
           a note naming the face or faces of
             the part                            ->  those faces selected, the fin kept
           a note naming tines left out or
-            islands                             ->  marked, as they are no faces of any object
+            islands                             ->  marked, as they are no faces of any object;
+                                                    an island without its first layer as a
+                                                    ball at its lowest point
           a note naming a fin merged into the
             part                                ->  its body marked, as it has no faces of its own
           a fin named no longer built           ->  passed over
@@ -1054,20 +1056,21 @@ class FinSnapTaskPanel:
         fins = [(target.which, number) for number in target.fins
                 if results.get(target.which) and number in results[target.which].numbers]
         marks = list(target.marks)
+        # What is selected, as shapes, to fit the view to it.
+        selected = []
         for which, number in fins:
             faces = feature.fin_faces(self.obj, which, number)
             if faces:
                 Gui.Selection.addSelection(self.obj, [FACE_PREFIX + str(index + 1) for index in faces])
+                selected += [self.obj.Shape.Faces[index] for index in faces]
             else:
                 built = results[which]
                 marks.append(built.bodies[built.numbers.index(number)])
         for owner, name in target.faces:
             Gui.Selection.addSelection(owner, name)
-        self.handles.show_noted(marks)
-        if Gui.Selection.hasSelection():
-            Gui.SendMsgToActiveView("ViewSelection")
-        elif marks:
-            self.handles.fit_noted()
+            selected.append(global_shape(owner).getElement(name))
+        self.handles.show_noted(marks, target.points)
+        self.handles.fit(selected + marks, target.points)
         # After the selection, which gives the arrows to the fin picked last.
         if fins:
             self.take_typed()
@@ -1694,7 +1697,7 @@ class FinSnapTaskPanel:
         # A new build: what a note was about may have moved.
         self.handles.show_noted([])
         placed = [index for index, target in enumerate(self.note_targets())
-                  if target and (target.fins or target.faces or target.marks)]
+                  if target and (target.fins or target.faces or target.marks or target.points)]
         self.show_notes(translate("FinSnap", "Notes"), list(self.obj.Warnings), WARNING_COLOR, placed)
 
     def accept(self):

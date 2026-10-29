@@ -975,15 +975,20 @@ def main():
     # A note naming a fin, as one moved beside a hole names it: its faces are
     # selected, the arrows on it.
     fin = noted.built_fins()[-1]
-    marked.Proxy.note_targets[overhang_note] = feature.NoteTarget(fin[0], [fin[1]], [], [])
+    marked.Proxy.note_targets[overhang_note] = feature.NoteTarget(fin[0], [fin[1]], [], [], [])
     noted.show_note(str(overhang_note))
     picked = {feature.fin_at(marked, n) for s in Gui.Selection.getSelectionEx() for n in s.SubElementNames}
     expect(noted.handled == fin and picked == {fin}, "a click on a note naming a fin selects it, the arrows on it")
     # Tines left out are no faces of any object: marked in the selection colour.
-    marked.Proxy.note_targets[overhang_note] = feature.NoteTarget(fin[0], [], [], [Part.makeBox(1, 1, 1)])
-    noted.show_note(str(overhang_note))
-    expect(noted.handles.noted.whichChild.getValue() == coin.SO_SWITCH_ALL and not Gui.Selection.hasSelection(),
-           "a click on a note naming what cannot be selected marks it")
+    # Islands whose first layer could not be cut out: balls at their lowest points.
+    for marks, points in (([Part.makeBox(1, 1, 1)], []), ([], [App.Vector(1, 2, 3)])):
+        marked.Proxy.note_targets[overhang_note] = feature.NoteTarget(None, [], [], marks, points)
+        camera = Gui.ActiveDocument.ActiveView.getCamera()
+        noted.show_note(str(overhang_note))
+        expect(noted.handles.noted.whichChild.getValue() == coin.SO_SWITCH_ALL and not Gui.Selection.hasSelection()
+               and Gui.ActiveDocument.ActiveView.getCamera() != camera,
+               "a click on a note naming what cannot be selected marks it and fits the view to it: %s, %s"
+               % (len(marks), len(points)))
     noted.show_note("99")
     expect(noted.handles.noted.whichChild.getValue() == coin.SO_SWITCH_NONE and not Gui.Selection.hasSelection(),
            "a click without a place to show clears the selection and the marks")
