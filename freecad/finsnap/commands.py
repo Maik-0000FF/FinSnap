@@ -27,7 +27,7 @@ from .i18n import QT_TRANSLATE_NOOP, translate
 from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_LAY_FLAT, ICON_MESH,
                     ICON_CHECK_PART, ICON_ISLANDS, ICON_QUICK, ICON_STABILITY, ICON_TILT)
 from .presets import PREFERENCES
-from .shapes import FACE_PREFIX, global_shape, outermost
+from .shapes import FACE_PREFIX, global_shape, outermost, part_of
 from .taskpanel import (DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, check_params, check_part, check_stability,
                         discard_created)
 from .version import NAME
@@ -674,7 +674,9 @@ class QuickStands:
         orient.put_back(self.owner, self.before)
         _stand(self.obj, plan.change)
         _keep_checked(self.obj, self.plans[index])
-        fins.Base = (self.obj, [face])
+        # Under the face of the Body for a Pad, as feature.create() links it.
+        part, name = feature.on_part(self.obj, face)
+        fins.Base = (part, [name])
         self.current = index
         _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside))
 
@@ -1036,7 +1038,8 @@ def _checked_part(obj):
     elif check.is_check(obj):
         part = obj.Part
     else:
-        part = obj
+        # A Pad is checked as its Body, with every feature after it.
+        part = part_of(obj)
     if getattr(part, "Shape", None) is None or part.Shape.isNull():
         return None
     return part, check_params(part)

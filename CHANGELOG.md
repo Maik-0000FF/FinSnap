@@ -26,6 +26,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Fixed
 
+- Fins under a face of a Pad in a Body follow a chamfer, a fillet or any other feature added to the Body after them: they stand under the face of the Body, rebuilt once it changes, the face found again by its plane where its name changed (#96)
 - Fins saved with their task panel open no longer stay see-through green: the file keeps the look they had before editing
 
 ## [0.8.0] - 2026-10-29

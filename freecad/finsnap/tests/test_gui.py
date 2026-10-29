@@ -332,6 +332,31 @@ def turned_tube(doc):
     doc.recompute()
 
 
+def quick_on_pad(doc):
+    """Quick fins on a face of a Pad, then another row chosen: the fins stand
+    under the face of its Body, which follows the features added after them."""
+    from freecad.finsnap import feature
+    body = doc.addObject("PartDesign::Body", "QuickBody")
+    box = body.newObject("PartDesign::AdditiveBox", "QuickBox")
+    doc.recompute()
+    side = next(i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).y < -0.9)
+    select(box, "Face%d" % side)
+    Gui.runCommand("FinSnap_QuickFins")
+    fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is body]
+    panel = fins[0].ViewObject.Proxy.panel if fins else None
+    # A face of a box stands on any of its edges: a table of at least two ways.
+    rows = panel.stand_list.rowCount() if panel is not None and panel.stands is not None else 0
+    if rows > 1:
+        panel.stand_list.setCurrentCell(1, 0)
+    expect(rows > 1 and fins[0].Base[0] is body and fins[0].isValid() and panel.stands.current == 1,
+           "Quick fins on a face of a Pad stand the fins under the face of its Body, also after another row: %d"
+           % rows)
+    if fins:
+        fins[0].ViewObject.Proxy.panel.reject()
+    for name in (box.Name, body.Name):
+        doc.removeObject(name)
+
+
 def chosen_stands(doc, quick, facing, messages):
     """Quick fins on a face of the box `quick` lying flat: the panel lists the
     edges the part can stand on, a click on a row stands it so, it asks before
@@ -1155,6 +1180,7 @@ def main():
         quick.Placement = App.Placement()
         doc.recompute()
     chosen_stands(doc, quick, facing, messages)
+    quick_on_pad(doc)
     island_marks(doc)
     value_colors()
     stability_checked(doc, messages)
