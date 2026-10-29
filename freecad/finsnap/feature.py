@@ -208,7 +208,7 @@ PROPERTIES = (
          QT_TRANSLATE_NOOP("FinSnap", "Brim width"),
          QT_TRANSLATE_NOOP("App::Property", "Width of the brim the slicer prints round the part and the fins on "
                            "the bed, 0 without. Check stability counts it as standing on the bed with them."),
-         "brim_width", None, STEP_PROFILE),
+         "brim_width", None),
     Prop("Connection", CHOICE, GROUP_CONNECTION,
          QT_TRANSLATE_NOOP("FinSnap", "Connection"),
          QT_TRANSLATE_NOOP("App::Property",
