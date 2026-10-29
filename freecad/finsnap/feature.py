@@ -75,6 +75,11 @@ NOTE_HEIGHTS_DROPPED = QT_TRANSLATE_NOOP(
     "FinSnap", "The tines lie at other heights now, so fin heights of their own are undone: each fin ends at "
     "its highest tine again.")
 MAIN, COUNTER = "main", "counter"
+# What a warning is about, for the task panel to show it: MAIN or COUNTER,
+# or None for the part; the numbers of the fins it names; faces of the part
+# to select, as (object, sub-element name); and shapes to mark that cannot be
+# selected, as tines left out or the first layer of an island.
+NoteTarget = namedtuple("NoteTarget", "which fins faces marks")
 # Said when a single fin is to be removed from fins merged into the part.
 NOTE_MERGED_SINGLE = QT_TRANSLATE_NOOP(
     "FinSnap", "Single fins can be removed with the separate connection only; merged into the part they "
@@ -816,6 +821,9 @@ class FinSnapFeature:
         # The last build, for the arrows of an open task panel only: a failed
         # build leaves none, and without a panel none is kept.
         self.results = {}
+        # What each warning is about, a NoteTarget or None, in the same order;
+        # kept as the results are, for the task panel to show it.
+        self.note_targets = []
         if not obj.Base:
             return
         # Fins built anew, or new ones: the checks of their part no longer hold.
@@ -868,13 +876,17 @@ class FinSnapFeature:
         shapes = [result.fins]
         # Each warning says which fin it is about, the main or the counter fin.
         warnings = [translate("FinSnap", "Main fin: %s") % w for w in result.warnings]
+        targets = [note_target(obj, MAIN, target) for target in result.warning_targets]
         if counter is not None:
             shapes.append(counter.fins)
             warnings += [translate("FinSnap", "Counter fin: %s") % w for w in counter.warnings]
+            targets += [note_target(obj, COUNTER, target) for target in counter.warning_targets]
         warnings += notes
+        targets += [None] * len(notes)
         if overhanging:
             warnings.append(translate("FinSnap", "%d faces of %s overhang flatter than %.0f degrees without fins: %s")
                             % (len(overhanging), obj.Base[0].Label, d.OVERHANG_ANGLE, ", ".join(overhanging)))
+            targets.append(NoteTarget(None, [], [(obj.Base[0], name) for name in overhanging], []))
         # The part stays as it is while one fin is dragged, and the islands do
         # not depend on the fins: asked once, as working out the key takes a
         # moment on a large part. A drag that turns the part asks each step.
@@ -882,6 +894,7 @@ class FinSnapFeature:
         set_islands(obj, found)
         if found:
             warnings.append(translate("FinSnap", NOTE_ISLANDS) % (len(found), obj.Base[0].Label))
+            targets.append(NoteTarget(None, [], [], [island.first for island in found if island.first is not None]))
 
         tags = [fin_tag(MAIN, n) for n in result.numbers]
         if counter is not None:
@@ -904,6 +917,8 @@ class FinSnapFeature:
             for warning in warnings:
                 App.Console.PrintWarning("FinSnap: %s\n" % warning)
         obj.Warnings = warnings
+        if getattr(self, "editing", False):
+            self.note_targets = targets
 
     def onDocumentRestored(self, obj):  # noqa: N802 - FreeCAD API
         obj.Proxy = self
@@ -1232,6 +1247,14 @@ def build_keeping_edits(obj, which, build_fn, notes):
     reset_fins(obj, which)
     notes.append(translate("FinSnap", NOTE_EDITS_DROPPED))
     return build_fn((), {}, {})
+
+
+def note_target(obj, which, target):
+    """The NoteTarget of a geometry.WarningTarget `target` of side `which` of
+    the fins object `obj`: its face named on the part it belongs to."""
+    side = obj.Base if which == MAIN else obj.CounterFace
+    faces = [(side[0], side[1][0])] if target.on_face and side and side[1] else []
+    return NoteTarget(which, list(target.fins), faces, list(target.tines))
 
 
 def fin_at(obj, sub):

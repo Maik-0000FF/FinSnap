@@ -43,6 +43,9 @@ INVALID_COLOR = (1.0, 0.0, 0.0)
 # nearest tine when let go.
 BETWEEN_COLOR = (1.0, 0.85, 0.0)
 PREVIEW_TRANSPARENCY = 1.0 - 0.2
+# What a clicked note is about but cannot be selected, marked less
+# see-through, so it stands out of the see-through fins it lies in.
+NOTED_TRANSPARENCY = 1.0 - 0.7
 # What a material of a face carries besides its colour, kept when one face is tinted.
 MATERIAL_FIELDS = ("AmbientColor", "SpecularColor", "EmissiveColor", "Shininess", "Transparency")
 # Transparency of a view object is set in percent.
@@ -118,6 +121,9 @@ GRADIENT_DEVIATION = 0.2
 # defaults: one colour, or a gradient from the second to the third colour,
 # through the fourth where the middle colour is on, packed as 0xRRGGBBAA.
 BACKGROUND_SINGLE = ("BackgroundColor", 0xEAE5DCFF)
+# FreeCAD's selection colour, which the user sets in the preferences: what a
+# clicked note is about but cannot be selected is marked in it.
+SELECTION_COLOR = ("SelectionColor", 0x1CAD1CFF)
 BACKGROUND_GRADIENT = (("BackgroundColor2", 0x333365FF), ("BackgroundColor3", 0xABABC1FF))
 BACKGROUND_MIDDLE = ("BackgroundColor4", 0x6F6F93FF)
 BACKGROUND_FLAGS = (("Gradient", True), ("RadialGradient", False))
@@ -527,8 +533,9 @@ class Handles:
         self.arrows = coin.SoSwitch()
         self.preview = coin.SoSwitch()
         self.dropped = coin.SoSwitch()
+        self.noted = coin.SoSwitch()
         self.value = coin.SoSwitch()
-        for node in (self.arrows, self.preview, self.dropped, self.value):
+        for node in (self.arrows, self.preview, self.dropped, self.noted, self.value):
             node.whichChild.setValue(coin.SO_SWITCH_NONE)
             self.root.addChild(node)
         self.value.addChild(self._value_group())
@@ -890,6 +897,17 @@ class Handles:
         """Mark the tines in `tines`, which find no face, red until shown again."""
         self._fill(self.dropped, *([shaded(tines, INVALID_COLOR, PREVIEW_TRANSPARENCY)] if tines else []))
 
+    def show_noted(self, shapes):
+        """Mark `shapes`, what a clicked note is about but cannot be selected,
+        in the selection colour; none, nothing."""
+        color = _view_color(*SELECTION_COLOR)
+        self._fill(self.noted, *([shaded(shapes, color, NOTED_TRANSPARENCY)] if shapes else []))
+
+    def fit_noted(self):
+        """Fit the view to the marks of show_noted(), as View fit selection does
+        to what is selected."""
+        self.view.getCameraNode().viewAll(self.noted, self.viewer.getSoRenderManager().getViewportRegion())
+
     def clear_preview(self):
         self._clear(self.preview)
 
@@ -907,6 +925,7 @@ class Handles:
             self.view.removeDraggerCallback(dragger, name, callback)
         self.callbacks = []
         self._clear(self.dropped)
+        self._clear(self.noted)
         if self.attached:
             self.viewer.resetEditingRoot()
         # Not attached any more, also when the panel closes before it was.
