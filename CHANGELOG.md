@@ -14,7 +14,7 @@ All notable changes to FinSnap are listed here. The format follows
 ### Added
 
 - After Quick fins, a table at the top of the task panel lists the other edges the part can stand on, or the other faces the fins can go under, with their length or area and their islands; a click on a row stands the part so, and fins changed by hand are dropped only once the user agrees (#75)
-- Fins check the part for islands, where it would start printing in the air with no layer of it below, as a slicer finds them; fins carry no island. A warning names them, and they are marked in the 3D view. Quick fins takes a way to stand the part without islands where there is one (#75)
+- Fins check the part for islands, where it would start printing in the air with no layer of it below, as a slicer finds them; fins carry no island. A warning names them, and the first layer that would print in the air is shown see-through red. Quick fins takes a way to stand the part without islands where there is one (#75)
 
 ## [0.7.0] - 2026-10-28
 

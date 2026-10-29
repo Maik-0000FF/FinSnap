@@ -30,6 +30,12 @@ OVERHANGS = "Overhangs"
 # Result property with the lowest points of the islands of the part, where it
 # would start printing in the air; the view provider marks them.
 ISLANDS = "Islands"
+# And the part there up to the top of the first layer of each island, hidden,
+# for the view provider to show how far it reaches.
+ISLAND_LAYERS = "IslandLayers"
+# And the lowest points of the islands whose first layer could not be cut
+# out, hidden: the view provider marks them by a ball instead.
+ISLANDS_UNCUT = "IslandsUncut"
 NOTE_ISLANDS = QT_TRANSLATE_NOOP(
     "FinSnap", "%d island(s): %s would start printing in the air there, on no layer of it below. Fins do "
     "not carry an island, they only keep the part from falling over. It cannot print standing so; the "
@@ -382,6 +388,8 @@ def add_islands(obj):
     obj.addProperty("App::PropertyVectorList", ISLANDS, GROUP_RESULT,
                     QT_TRANSLATE_NOOP("App::Property",
                                       "Where the part would start printing in the air"), 1)
+    hidden_property(obj, ISLAND_LAYERS, "Part::PropertyPartShape")
+    hidden_property(obj, ISLANDS_UNCUT, "App::PropertyVectorList")
 
 
 def params_of(obj):
@@ -553,6 +561,16 @@ ISLANDS_KEPT = 8
 _islands_kept = {}
 
 
+def set_islands(obj, found):
+    """Keep the Islands `found` on `obj`: their lowest points, the first layers
+    of those whose layer could be cut out, as one shape, and the lowest points
+    of the others."""
+    setattr(obj, ISLANDS, [island.point for island in found])
+    layers = [island.first for island in found if island.first is not None]
+    setattr(obj, ISLAND_LAYERS, Part.makeCompound(layers) if layers else Part.Shape())
+    setattr(obj, ISLANDS_UNCUT, [island.point for island in found if island.first is None])
+
+
 def islands_of(obj, p):
     """The islands (overhang.islands()) of the part of `obj` as it stands, on
     the layers of `p`; the fins do not count. Worked out once for each part,
@@ -622,7 +640,7 @@ class FinSnapFeature:
             # The fins keep the shape they were moved to; the face they belong
             # to no longer leans over the bed until the part stands again.
             setattr(obj, OVERHANGS, [])
-            setattr(obj, ISLANDS, [])
+            set_islands(obj, [])
             obj.Warnings = [translate("FinSnap", NOTE_LAID_FLAT)]
             return
         p = params_of(obj)
@@ -645,7 +663,7 @@ class FinSnapFeature:
             hidden_property(obj, CARRIED, "App::PropertyStringList")
             setattr(obj, CARRIED, [])
             setattr(obj, OVERHANGS, overhangs_of(obj.Base[0], obj.Document))
-            setattr(obj, ISLANDS, [])
+            set_islands(obj, [])
             raise
         # Named on the part itself, the counter face as well: a split side was
         # built on the shape with its halves joined.
@@ -674,7 +692,7 @@ class FinSnapFeature:
             warnings.append(translate("FinSnap", "%d faces of %s overhang flatter than %.0f degrees without fins: %s")
                             % (len(overhanging), obj.Base[0].Label, d.OVERHANG_ANGLE, ", ".join(overhanging)))
         found = islands_of(obj, p)
-        setattr(obj, ISLANDS, found)
+        set_islands(obj, found)
         if found:
             warnings.append(translate("FinSnap", NOTE_ISLANDS) % (len(found), obj.Base[0].Label))
 
@@ -706,6 +724,8 @@ class FinSnapFeature:
             add_overhangs(obj)
         if ISLANDS not in obj.PropertiesList:
             add_islands(obj)
+        hidden_property(obj, ISLAND_LAYERS, "Part::PropertyPartShape")
+        hidden_property(obj, ISLANDS_UNCUT, "App::PropertyVectorList")
         # Saved when fins could only be removed: the count is taken over.
         for which, old in REMOVED_OF.items():
             if old in obj.PropertiesList:

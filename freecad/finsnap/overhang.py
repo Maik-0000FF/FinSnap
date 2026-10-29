@@ -26,6 +26,7 @@ INPUTS this has to withstand (overhangs()):
 """
 
 import math
+from collections import namedtuple
 
 import FreeCAD as App
 import Part
@@ -73,9 +74,17 @@ def overhangs(shape, supported=(), limit_deg=d.OVERHANG_ANGLE):
         if any(-n.z > steepest + d.TOLERANCE for n in _normals_above(face, bed_z)):
             found.append(number)
     return found
+
+
+# An island: its lowest point, and the part there up to the top of the first
+# layer that would print in the air, to show how far it reaches (an edge it
+# starts on, a face); None where the kernel cannot cut that out.
+Island = namedtuple("Island", "point first")
+
+
 def islands(part, first_layer, layer):
-    """The points where `part`, as it stands, would start printing in the air,
-    as a slicer finds them. The layers are cut at their middles, the first
+    """The Islands of `part` as it stands: where it would start printing in the
+    air, as a slicer finds them. The layers are cut at their middles, the first
     `first_layer` high on the bed, every other `layer` high. A section of a
     layer rests on the one below where the two overlap; one that overlaps
     nothing there starts in the air, at its lowest point. A section beside
@@ -122,7 +131,7 @@ def islands(part, first_layer, layer):
             continue
         # The sections lie in the plane of the bed, see _sections().
         middle = Part.Vertex(App.Vector(point.x, point.y, 0))
-        for index, (section, reach) in enumerate(cut[number]):
+        for index, (section, reach, outline) in enumerate(cut[number]):
             key = (number, index)
             # A section decided before is passed over, and the box around one
             # turns most points away before the distance to it is measured.
@@ -131,12 +140,25 @@ def islands(part, first_layer, layer):
             try:
                 if section.distToShape(middle)[0] > layer:
                     continue
-                resting[key] = any(_overlap(section, other) for other, _ in cut[number - 1])
+                resting[key] = any(_overlap(section, other) for other, _, _ in cut[number - 1])
             except Part.OCCError:
                 resting[key] = True
             if not resting[key]:
-                found.append(App.Vector(point))
+                top = bed + _layer_middle(number, first_layer, layer) + layer / 2
+                found.append(Island(App.Vector(point), _first_layer(part, outline, point.z, top)))
     return found
+
+
+def _first_layer(part, outline, bottom, top):
+    """The part from `bottom`, the lowest point of an island, up to `top`, the
+    top of its first layer, within `outline`, the face where the middle of
+    that layer cuts it; None where the kernel cannot cut it out."""
+    try:
+        footprint = outline.translated(App.Vector(0, 0, bottom - d.TOLERANCE - outline.BoundBox.ZMin))
+        piece = part.common(footprint.extrude(App.Vector(0, 0, top - bottom + d.TOLERANCE)))
+    except Part.OCCError:
+        return None
+    return piece if piece.Volume > 0 else None
 
 
 def _layer_middle(number, first_layer, layer):
@@ -171,21 +193,22 @@ def _sections(shape, z, reach):
     """Where the plane at height `z` cuts `shape`, one slab SECTION_SLAB thick
     for each face of the cut, around the plane of the bed, z 0, so sections of
     different layers can be overlapped, each with its bounding box grown by
-    `reach` (mm); None where the kernel cannot make them."""
+    `reach` (mm) and the face of the cut where it lies; None where the kernel
+    cannot make them."""
     try:
         wires = shape.slice(App.Vector(0, 0, 1), z)
         if not wires:
             return []
         bottom = App.Vector(0, 0, -z - SECTION_SLAB / 2)
-        slabs = [face.translated(bottom).extrude(App.Vector(0, 0, SECTION_SLAB))
-                 for face in Part.makeFace(wires, FACE_MAKER).Faces]
+        faces = Part.makeFace(wires, FACE_MAKER).Faces
+        slabs = [face.translated(bottom).extrude(App.Vector(0, 0, SECTION_SLAB)) for face in faces]
     except Part.OCCError:
         return None
     found = []
-    for slab in slabs:
+    for slab, face in zip(slabs, faces):
         box = App.BoundBox(slab.BoundBox)
         box.enlarge(reach)
-        found.append((slab, box))
+        found.append((slab, box, face))
     return found
 
 

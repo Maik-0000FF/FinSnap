@@ -384,6 +384,35 @@ def chosen_stands(doc, quick, facing, messages):
     fins.ViewObject.Proxy.panel.reject()
 
 
+def _balls(marks, over=False):
+    """How many balls the Coin node `marks` holds; with `over`, only those
+    drawn over everything else, in an SoAnnotation."""
+    found = coin.SoSearchAction()
+    found.setType(coin.SoSphere.getClassTypeId())
+    found.setInterest(coin.SoSearchAction.ALL)
+    found.apply(marks)
+    paths = found.getPaths()
+    annotation = coin.SoAnnotation.getClassTypeId()
+    return sum(1 for i in range(paths.getLength())
+               if not over or any(paths[i].getNode(j).isOfType(annotation) for j in range(paths[i].getLength())))
+
+
+def _layer_marked(marks):
+    """Whether the Coin node `marks` holds a mark in the red a fin shows where
+    it cannot stand, as see-through as islands are drawn: the first layer of an
+    island."""
+    from freecad.finsnap import commands, handles
+    found = coin.SoSearchAction()
+    found.setType(coin.SoMaterial.getClassTypeId())
+    found.setInterest(coin.SoSearchAction.ALL)
+    found.apply(marks)
+    paths = found.getPaths()
+    materials = [paths[i].getTail() for i in range(paths.getLength())]
+    return any(rgb_close(material.diffuseColor[0].getValue(), handles.INVALID_COLOR)
+               and abs(material.transparency[0] - commands.ISLAND_TRANSPARENCY) < COLOR_TOLERANCE
+               for material in materials)
+
+
 def island_marks(doc):
     """Fins added by hand to the tilted cube with a hook hanging from its side,
     whose foot would start printing in the air: a warning says so, and the
@@ -403,13 +432,28 @@ def island_marks(doc):
     commands.ViewProviderFinSnap(fins.ViewObject)
     doc.recompute()
     marks = fins.ViewObject.Proxy.marks
-    annotated = [marks.getChild(i) for i in range(marks.getNumChildren())
-                 if marks.getChild(i).isOfType(coin.SoAnnotation.getClassTypeId())]
     expect(len(fins.Islands) == 1 and abs(fins.Islands[0].z - foot) < d.TOLERANCE
            and any(hooked.Label in warning and warning.startswith("1 ") for warning in fins.Warnings)
-           and len(annotated) == 1,
-           "fins on a part with an island warn of it and mark it, over the part: %s, %s"
+           and not fins.IslandLayers.isNull() and abs(fins.IslandLayers.BoundBox.ZMin - foot) < d.TOLERANCE
+           and _layer_marked(marks),
+           "fins on a part with an island warn of it and show its first layer in the air see-through red: %s, %s"
            % (list(fins.Islands), list(fins.Warnings)))
+    expect(_balls(marks) == 0, "an island shown by its first layer has no ball beside it")
+    # The kernel failing to cut the first layer out: the island is marked by a
+    # ball at its lowest point instead.
+    from freecad.finsnap import overhang
+    real = overhang._first_layer
+    overhang._first_layer = lambda *args: None
+    try:
+        feature._islands_kept.clear()
+        fins.touch()
+        doc.recompute()
+    finally:
+        overhang._first_layer = real
+        feature._islands_kept.clear()
+    expect(len(fins.Islands) == 1 and fins.IslandLayers.isNull() and list(fins.IslandsUncut) == list(fins.Islands)
+           and _balls(marks, over=True) == 1,
+           "an island whose first layer cannot be cut out is marked by a ball at its lowest point, over the part")
     doc.removeObject(fins.Name)
     doc.removeObject(hooked.Name)
 

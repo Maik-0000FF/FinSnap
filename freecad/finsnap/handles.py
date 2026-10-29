@@ -107,19 +107,26 @@ AUTO_ZOOM_DIVISOR = 5
 TURN_PARTS = ("rotator", "rotatorActive")
 
 
-def spots(points, color, marker):
-    """A Coin node marking `points` in one colour with `marker`, the name of a
-    marker of SoMarkerSet: the same size on the screen at any zoom, and drawn
-    over everything else, so a spot under the part shows from above as well."""
+def spots(points, color, transparency, size):
+    """A Coin node marking `points` with see-through balls in one colour, of
+    radius `size` in the units of FreeCAD's node that keeps them the same size
+    on the screen at any zoom, as the arrows; drawn over everything else, so a
+    ball under the part shows from above as well."""
+    group = coin.SoAnnotation()
     material = coin.SoMaterial()
     material.diffuseColor.setValue(*color)
-    coordinates = coin.SoCoordinate3()
-    coordinates.point.setValues(0, len(points), [(p.x, p.y, p.z) for p in points])
-    markers = coin.SoMarkerSet()
-    markers.markerIndex.setValue(getattr(coin.SoMarkerSet, marker))
-    group = coin.SoAnnotation()
-    for node in (material, coordinates, markers):
-        group.addChild(node)
+    material.transparency.setValue(transparency)
+    group.addChild(material)
+    for point in points:
+        spot = coin.SoSeparator()
+        place = coin.SoTranslation()
+        place.translation.setValue(point.x, point.y, point.z)
+        zoom = coin.SoType.fromName(AUTO_ZOOM).createInstance()
+        ball = coin.SoSphere()
+        ball.radius.setValue(size)
+        for node in (place, zoom, ball):
+            spot.addChild(node)
+        group.addChild(spot)
     return group
 
 
