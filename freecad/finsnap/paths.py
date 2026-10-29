@@ -34,6 +34,7 @@ ICON_EXPORT_STEP = os.path.join(ICONS, "export_step.svg")
 ICON_STABILITY = os.path.join(ICONS, "check_stability.svg")
 ICON_CHECK_PART = os.path.join(ICONS, "check_part.svg")
 ICON_ISLANDS = os.path.join(ICONS, "islands_live.svg")
+ICON_CHECK_OUTDATED = os.path.join(ICONS, "check_outdated.svg")
 
 # Icons of the Edit fins buttons in the task panel; Add counter fin there uses
 # the command's.

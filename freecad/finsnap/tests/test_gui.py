@@ -629,34 +629,39 @@ def island_marks(doc):
 
 
 def stability_checked(doc, messages):
-    """Check stability from the toolbar, for a part without fins and with,
-    and from the task panel: the result is said, the plumb line shown in the
-    colour of it, and taken away with nothing selected or once the part moves."""
+    """Check stability and Check part from the toolbar, for a part without
+    fins and with, and from the task panel: the result is said and kept as a
+    check in the tree, one for each part and kind, which shows it while it is
+    up to date; once the part moves it is out of date, its marks gone, and a
+    double click checks again. Deleting it removes it; saved, it shows again."""
+    from freecad.finsnap import check, commands, feature, orient, paths, taskpanel
     from freecad.finsnap import defaults as d
-    from freecad.finsnap import commands, feature, handles, orient, taskpanel
     slab = Part.makeBox(30, 20, 10)
     bottom = [e for e in slab.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
     part = doc.addObject("Part::Feature", "Leaning")
     part.Shape = slab
     part.Placement = orient.tilt(slab, bottom, d.TILT_ANGLE)
     doc.recompute()
-    mark = handles.STABILITY_MARK
     del messages[:]
     select(part)
     Gui.runCommand("FinSnap_CheckStability")
+    stable = check.find(part, check.STABILITY)
     # What sets the note apart from the others: its words after the height.
     needs_fins = App.Qt.translate("FinSnap", feature.NOTE_NEEDS_FINS).rsplit("mm)", 1)[1]
-    expect(len(messages) == 1 and needs_fins in messages[0] and mark.node is not None and mark.watches(part),
-           "Check stability says a leaning part without fins tips, and shows its plumb line: %s" % messages)
-    Gui.Selection.clearSelection()
-    Gui.runCommand("FinSnap_CheckStability")
-    expect(mark.node is None and len(messages) == 1, "with nothing selected the plumb line goes, nothing said")
-    group = doc.addObject("App::DocumentObjectGroup", "NoShape")
-    select(group)
-    Gui.runCommand("FinSnap_CheckStability")
-    expect(len(messages) == 2 and messages[-1] == App.Qt.translate("FinSnap", commands.NOTE_SELECT_PART),
-           "an object without a shape is asked to be a part")
-    doc.removeObject(group.Name)
+    expect(len(messages) == 1 and needs_fins in messages[0] and stable is not None and stable.Result == messages[0]
+           and not stable.OutOfDate and isinstance(stable.ViewObject.Proxy, taskpanel.ViewProviderCheck)
+           and stable.ViewObject.Proxy.root.getNumChildren() > 0,
+           "Check stability says a leaning part without fins tips and keeps it as a check in the tree, shown: %s"
+           % messages)
+    for selected in (None, doc.addObject("App::DocumentObjectGroup", "NoShape")):
+        Gui.Selection.clearSelection()
+        if selected is not None:
+            select(selected)
+        Gui.runCommand("FinSnap_CheckStability")
+        expect(messages[-1] == App.Qt.translate("FinSnap", commands.NOTE_SELECT_PART),
+               "with nothing selected, or an object without a shape, a part is asked for")
+        if selected is not None:
+            doc.removeObject(selected.Name)
     del messages[1:]
 
     fins = feature.create(part, face_name(part, lower_left_face_of(part.Shape)))
@@ -664,8 +669,9 @@ def stability_checked(doc, messages):
     select(fins)
     Gui.runCommand("FinSnap_CheckStability")
     said = messages[-1]
-    expect(len(messages) == 2 and mark.node is not None and needs_fins not in said,
-           "with fins, Check stability says whether they hold it: %s" % said)
+    checks = [obj for obj in doc.Objects if check.is_check(obj)]
+    expect(len(messages) == 2 and needs_fins not in said and checks == [stable] and stable.Result == said
+           and fins in stable.Fins, "checked again with fins, the same check holds what they do: %s" % said)
     panel = taskpanel.FinSnapTaskPanel(fins)
     panel.check_stability()
     shown = panel.stability.text()
@@ -673,25 +679,63 @@ def stability_checked(doc, messages):
     expect(shown == said and panel.stability.text() == App.Qt.translate("FinSnap", taskpanel.NOTE_STABILITY_OUTDATED),
            "the task panel says the same, and once the fins change, that it is out of date")
     panel.release_handles()
-    panel.check_stability()
-    part.Placement = App.Placement(App.Vector(1, 0, 0), App.Rotation()).multiply(part.Placement)
-    expect(mark.node is None, "the plumb line goes once the part moves")
     select(part)
     Gui.runCommand("FinSnap_CheckPart")
+    whole = check.find(part, check.PART)
     lines = messages[-1].split("\n")
-    expect(len(lines) == 4 and messages[-1].endswith(said) and mark.node is not None and _coloured_by_height(mark.node)
-           and _layer_cut_shown(mark.node),
-           "Check part says overhangs, islands and stability, the part coloured by height, its layer cut: %s"
-           % lines)
-    Gui.Selection.clearSelection()
-    Gui.runCommand("FinSnap_CheckPart")
-    expect(mark.node is None, "Check part with nothing selected takes away what it shows")
+    marks = whole.ViewObject.Proxy.root
+    expect(whole is not None and whole is not stable and len(lines) == 4 and messages[-1].endswith(said)
+           and _coloured_by_height(marks) and _layer_cut_shown(marks),
+           "Check part keeps a check of its own: overhangs, islands and stability, coloured by height: %s" % lines)
+
+    part.Placement = App.Placement(App.Vector(1, 0, 0), App.Rotation()).multiply(part.Placement)
+    doc.recompute()
+    expect(stable.OutOfDate and whole.OutOfDate and stable.ViewObject.Proxy.root.getNumChildren() == 0
+           and stable.ViewObject.Proxy.getIcon() == paths.ICON_CHECK_OUTDATED,
+           "once the part moves its checks are out of date, their marks gone, their icon a warning")
+    information = QtWidgets.QMessageBox.information
+    QtWidgets.QMessageBox.information = staticmethod(lambda *args: messages.append(args[2]))
+    proxy = stable.ViewObject.Proxy
+    draws, real_draw = [], proxy.draw
+    # Noted only where it draws marks, not where it finds the check out of date.
+    proxy.draw = lambda: draws.append(not stable.OutOfDate) or real_draw()
+    try:
+        stable.ViewObject.Proxy.doubleClicked(stable.ViewObject)
+    finally:
+        QtWidgets.QMessageBox.information = information
+        proxy.draw = real_draw
+    expect(not stable.OutOfDate and stable.ViewObject.Proxy.root.getNumChildren() > 0
+           and messages[-1] == stable.Result and sum(draws) == 1,
+           "a double click checks again, draws its marks once, and says what it found: %d" % sum(draws))
+
+    # A copy: the document itself stays as it is, and opens as a second one.
+    path = os.path.join(tempfile.mkdtemp(), "checked.FCStd")
+    doc.saveCopy(path)
+    reopened = App.openDocument(path)
+    again = [obj for obj in reopened.Objects if check.is_check(obj)]
+    kept = next((obj for obj in again if obj.Kind == check.STABILITY), None)
+    expect(len(again) == 2 and kept is not None and kept.Result == stable.Result and not kept.OutOfDate
+           and kept.ViewObject.Proxy.root.getNumChildren() > 0,
+           "saved and opened again, the checks show as they were")
+    App.closeDocument(reopened.Name)
+    App.setActiveDocument(doc.Name)
+    doc.removeObject(whole.Name)
+    expect(check.find(part, check.PART) is None and check.find(part, check.STABILITY) is stable,
+           "deleting a check removes it alone")
     Gui.runCommand("FinSnap_IslandsWhileEditing", 0)
     off = feature.islands_while_editing()
     Gui.runCommand("FinSnap_IslandsWhileEditing", 1)
     expect(not off and feature.islands_while_editing(), "Islands while editing switches the island check off and on")
     doc.removeObject(fins.Name)
     doc.removeObject(part.Name)
+    QtWidgets.QMessageBox.information = staticmethod(lambda *args: messages.append(args[2]))
+    try:
+        stable.ViewObject.Proxy.doubleClicked(stable.ViewObject)
+    finally:
+        QtWidgets.QMessageBox.information = information
+    expect(messages[-1] == App.Qt.translate("FinSnap", taskpanel.NOTE_PART_GONE),
+           "a double click on a check whose part is gone says so")
+    doc.removeObject(stable.Name)
 
 
 def _coloured_by_height(node):
