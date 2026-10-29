@@ -107,6 +107,28 @@ AUTO_ZOOM_DIVISOR = 5
 TURN_PARTS = ("rotator", "rotatorActive")
 
 
+def spots(points, color, transparency, size):
+    """A Coin node marking `points` with see-through balls in one colour, of
+    radius `size` in the units of FreeCAD's node that keeps them the same size
+    on the screen at any zoom, as the arrows."""
+    group = coin.SoSeparator()
+    material = coin.SoMaterial()
+    material.diffuseColor.setValue(*color)
+    material.transparency.setValue(transparency)
+    group.addChild(material)
+    for point in points:
+        spot = coin.SoSeparator()
+        place = coin.SoTranslation()
+        place.translation.setValue(point.x, point.y, point.z)
+        zoom = coin.SoType.fromName(AUTO_ZOOM).createInstance()
+        ball = coin.SoSphere()
+        ball.radius.setValue(size)
+        for node in (place, zoom, ball):
+            spot.addChild(node)
+        group.addChild(spot)
+    return group
+
+
 def shaded(shapes, color, transparency):
     """A Coin node drawing the faces of `shapes` in one colour."""
     points, index = [], []

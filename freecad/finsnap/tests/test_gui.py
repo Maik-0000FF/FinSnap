@@ -384,6 +384,15 @@ def chosen_stands(doc, quick, facing, messages):
     fins.ViewObject.Proxy.panel.reject()
 
 
+def _balls(marks):
+    """How many balls the Coin node `marks` holds."""
+    found = coin.SoSearchAction()
+    found.setType(coin.SoSphere.getClassTypeId())
+    found.setInterest(coin.SoSearchAction.ALL)
+    found.apply(marks)
+    return found.getPaths().getLength()
+
+
 def _layer_marked(marks):
     """Whether the Coin node `marks` holds a mark in the red a fin shows where
     it cannot stand, as see-through as islands are drawn: the first layer of an
@@ -425,6 +434,21 @@ def island_marks(doc):
            and _layer_marked(marks),
            "fins on a part with an island warn of it and show its first layer in the air see-through red: %s, %s"
            % (list(fins.Islands), list(fins.Warnings)))
+    expect(_balls(marks) == 0, "an island shown by its first layer has no ball beside it")
+    # The kernel failing to cut the first layer out: the island is marked by a
+    # ball at its lowest point instead.
+    from freecad.finsnap import overhang
+    real = overhang._first_layer
+    overhang._first_layer = lambda *args: None
+    try:
+        feature._islands_kept.clear()
+        fins.touch()
+        doc.recompute()
+    finally:
+        overhang._first_layer = real
+        feature._islands_kept.clear()
+    expect(len(fins.Islands) == 1 and fins.IslandLayers.isNull() and _balls(marks) == 1,
+           "an island whose first layer cannot be cut out is marked by a ball at its lowest point")
     doc.removeObject(fins.Name)
     doc.removeObject(hooked.Name)
 

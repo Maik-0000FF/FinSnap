@@ -74,6 +74,8 @@ def overhangs(shape, supported=(), limit_deg=d.OVERHANG_ANGLE):
         if any(-n.z > steepest + d.TOLERANCE for n in _normals_above(face, bed_z)):
             found.append(number)
     return found
+
+
 # An island: its lowest point, and the part there up to the top of the first
 # layer that would print in the air, to show how far it reaches (an edge it
 # starts on, a face); None where the kernel cannot cut that out.

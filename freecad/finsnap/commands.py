@@ -59,13 +59,27 @@ FINS_SUFFIX = "_fins"
 # slightly in front of the part's own faces, which lie in the same place.
 OVERHANG_COLOR = (0.9, 0.1, 0.1)
 OVERHANG_TRANSPARENCY = 0.4
-# The first layers of islands in the air: see-through, but red enough to stay
-# red over a part of any colour; as see-through as a fin while editing, the
-# colour of the part shows through and the red is lost.
+# The first layers of islands in the air: see-through, yet red over a part of
+# any colour. As see-through as a fin while editing, the colour of the part
+# would show through and the red be lost.
 ISLAND_TRANSPARENCY = 0.4
+# An island whose first layer the kernel could not cut out is marked at its
+# lowest point instead, by a ball of this radius, in the units of the node
+# that keeps it the same size on the screen at any zoom.
+ISLAND_SPOT_SIZE = 0.3
 STATUS_TIMEOUT_MS = 10000
 # What an export writes, and the fins it leaves out because their part lies flat.
 Export = namedtuple("Export", "shapes left_out")
+
+
+def _in_any(point, solids):
+    """Whether `point` lies in the box round one of `solids`."""
+    for solid in solids:
+        box = App.BoundBox(solid.BoundBox)
+        box.enlarge(d.TOLERANCE)
+        if box.isInside(point):
+            return True
+    return False
 
 
 def _shown(obj):
@@ -160,8 +174,12 @@ class ViewProviderFinSnap:
         # The first layer of each island that the printer would lay in the
         # air, in the red a fin shows where it cannot stand.
         layers = getattr(obj, feature.ISLAND_LAYERS, None)
-        if layers is not None and not layers.isNull():
+        shown = [] if layers is None or layers.isNull() else layers.Solids
+        if shown:
             self.marks.addChild(handles.shaded([layers], handles.INVALID_COLOR, ISLAND_TRANSPARENCY))
+        alone = [point for point in getattr(obj, feature.ISLANDS, []) if not _in_any(point, shown)]
+        if alone:
+            self.marks.addChild(handles.spots(alone, handles.INVALID_COLOR, ISLAND_TRANSPARENCY, ISLAND_SPOT_SIZE))
         names = getattr(obj, feature.OVERHANGS, [])
         if names and obj.Base:
             try:
