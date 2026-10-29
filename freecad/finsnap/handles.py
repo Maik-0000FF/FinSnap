@@ -28,7 +28,7 @@ import functools
 import math
 
 from pivy import coin
-from PySide import QtCore
+from PySide import QtCore, QtWidgets
 
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -83,6 +83,25 @@ VIEW_PARAMETERS = "User parameter:BaseApp/Preferences/View"
 AXIS_COLORS = {"x": ("AxisXColor", 0xCC3333FF), "y": ("AxisYColor", 0x33CC33FF),
                "z": ("AxisZColor", 0x3333CCFF)}
 HELD_COLOR = (1.0, 1.0, 0.0)
+# While an arrow is dragged, its value as the task panel shows it stands past
+# its tip: this many pixels high, this many units of the arrow past the tip,
+# drawn over everything else; in the colour of the held arrow over a dark
+# background of the 3D view, nearly black over a light one.
+VALUE_FONT_SIZE = 16
+VALUE_GAP = 0.3
+VALUE_ON_LIGHT = (0.1, 0.1, 0.1)
+# The background of the 3D view as FreeCAD keeps it, with FreeCAD's own
+# defaults: one colour, or a gradient from the second to the third colour,
+# through the fourth where the middle colour is on, packed as 0xRRGGBBAA.
+BACKGROUND_SINGLE = ("BackgroundColor", 0xEAE5DCFF)
+BACKGROUND_GRADIENT = (("BackgroundColor2", 0x333365FF), ("BackgroundColor3", 0xABABC1FF))
+BACKGROUND_MIDDLE = ("BackgroundColor4", 0x6F6F93FF)
+BACKGROUND_FLAGS = (("Gradient", True), ("RadialGradient", False))
+BACKGROUND_USE_MIDDLE = ("UseBackgroundColorMid", False)
+# A background lighter than this (0 black, 1 white) counts as light; the
+# lightness of a colour is weighed as the eye sees it (ITU-R BT.709).
+LIGHT_BACKGROUND = 0.5
+LIGHTNESS_WEIGHTS = (0.2126, 0.7152, 0.0722)
 BYTE = 255
 # The type of FreeCAD's 3D views among the views of a document.
 VIEW_3D = "Gui::View3DInventor"
@@ -105,6 +124,31 @@ AUTO_ZOOM_PROBE = 0.1
 AUTO_ZOOM_DIVISOR = 5
 # The parts of a Coin disc dragger, which turns about its own z axis, at rest and held.
 TURN_PARTS = ("rotator", "rotatorActive")
+# The parts of a straight arrow's dragger it is drawn as, at rest and held.
+TRANSLATE_PARTS = ("translator", "translatorActive")
+
+
+def spots(points, color, transparency, size):
+    """A Coin node marking `points` with see-through balls in one colour, of
+    radius `size` in the units of FreeCAD's node that keeps them the same size
+    on the screen at any zoom, as the arrows; drawn over everything else, so a
+    ball under the part shows from above as well."""
+    group = coin.SoAnnotation()
+    material = coin.SoMaterial()
+    material.diffuseColor.setValue(*color)
+    material.transparency.setValue(transparency)
+    group.addChild(material)
+    for point in points:
+        spot = coin.SoSeparator()
+        place = coin.SoTranslation()
+        place.translation.setValue(point.x, point.y, point.z)
+        zoom = coin.SoType.fromName(AUTO_ZOOM).createInstance()
+        ball = coin.SoSphere()
+        ball.radius.setValue(size)
+        for node in (place, zoom, ball):
+            spot.addChild(node)
+        group.addChild(spot)
+    return group
 
 
 def shaded(shapes, color, transparency):
@@ -133,12 +177,39 @@ def shaded(shapes, color, transparency):
     return group
 
 
-def axis_color(axis):
-    """The colour of `axis` ("x", "y" or "z") in FreeCAD's preferences, as RGB from 0 to 1."""
-    name, standard = AXIS_COLORS[axis]
+def _view_color(name, standard):
+    """The colour `name` of FreeCAD's view preferences, `standard` if unset, as RGB from 0 to 1."""
     packed = App.ParamGet(VIEW_PARAMETERS).GetUnsigned(name, standard)
     # Packed as 0xRRGGBBAA.
     return tuple((packed >> shift & BYTE) / BYTE for shift in (24, 16, 8))
+
+
+def axis_color(axis):
+    """The colour of `axis` ("x", "y" or "z") in FreeCAD's preferences, as RGB from 0 to 1."""
+    return _view_color(*AXIS_COLORS[axis])
+
+
+def value_color():
+    """The colour the value of a dragged arrow is written in: that of the
+    held arrow over a dark background of the 3D view, nearly black over a
+    light one, the background taken as the mean of its colours.
+
+    INPUTS this has to withstand:
+      one dark colour                       ->  HELD_COLOR
+      one light colour, as white            ->  VALUE_ON_LIGHT
+      a gradient, FreeCAD's own             ->  by the mean of its two colours
+      a gradient through a middle colour    ->  by the mean of its three colours
+      nothing set                           ->  FreeCAD's defaults, a gradient
+    """
+    view = App.ParamGet(VIEW_PARAMETERS)
+    if any(view.GetBool(*flag) for flag in BACKGROUND_FLAGS):
+        colors = [_view_color(*entry) for entry in BACKGROUND_GRADIENT]
+        if view.GetBool(*BACKGROUND_USE_MIDDLE):
+            colors.append(_view_color(*BACKGROUND_MIDDLE))
+    else:
+        colors = [_view_color(*BACKGROUND_SINGLE)]
+    lightness = sum(sum(w * c for w, c in zip(LIGHTNESS_WEIGHTS, color)) for color in colors) / len(colors)
+    return VALUE_ON_LIGHT if lightness > LIGHT_BACKGROUND else HELD_COLOR
 
 
 def double_arrow(color, offset):
@@ -215,18 +286,25 @@ def arc_arrow(color):
     return group, halves, bodies
 
 
+def arc_point(radius, unit, sense, length):
+    """The point `length` mm along half an arc arrow from (radius, 0, 0), as
+    fill_half_arc() draws it: round the z axis, the right way round for
+    `sense` 1, the other for -1, shortened alike where the arrow, whose unit
+    is `unit` mm, would go further round than ARC_MAX_HALF_TURN."""
+    share = min(1.0, ARC_MAX_HALF_TURN * radius / unit)
+    angle = sense * length * share / radius
+    return coin.SbVec3f(radius * math.cos(angle), radius * math.sin(angle), 0)
+
+
 def fill_half_arc(body, radius, unit, sense):
     """Draw into `body` half an arrow from (radius, 0, 0) round the circle of
     `radius` about the z axis (mm): the right way round for `sense` 1, the
     other for -1. It is as long and as thick as half a straight arrow whose
     unit is `unit` mm, but goes no further round than ARC_MAX_HALF_TURN."""
     body.removeAllChildren()
-    # Along the arc, in mm, shortened alike where it would go too far round.
-    share = min(1.0, ARC_MAX_HALF_TURN * radius / unit)
 
     def point(length):
-        angle = sense * length * share / radius
-        return coin.SbVec3f(radius * math.cos(angle), radius * math.sin(angle), 0)
+        return arc_point(radius, unit, sense, length)
 
     def placed(node, start, end):
         """`node`, standing along y round the origin, moved to stand from `start` to `end`."""
@@ -286,9 +364,11 @@ class Handles:
         self.arrows = coin.SoSwitch()
         self.preview = coin.SoSwitch()
         self.dropped = coin.SoSwitch()
-        for node in (self.arrows, self.preview, self.dropped):
+        self.value = coin.SoSwitch()
+        for node in (self.arrows, self.preview, self.dropped, self.value):
             node.whichChild.setValue(coin.SO_SWITCH_NONE)
             self.root.addChild(node)
+        self.value.addChild(self._value_group())
         # Each arrow: where it stands and how long it is, and the dragger; the
         # halves of its two looks, at rest and held, and which ends it shows.
         self.places, self.draggers = {}, {}
@@ -296,6 +376,9 @@ class Handles:
         # node shared by its two looks.
         self.offsets = {kind: coin.SoTranslation() for kind in KINDS}
         self.halves, self.ends = {}, {}
+        # The looks of each arrow, by the arrow (ALONG, UP or TURNING) and the
+        # part of its dragger they are, at rest or held.
+        self.looks = {}
         # Each straight arrow, and the arc that stands in for the one along the
         # face under a round side, switched on while it shows.
         self.shown = {}
@@ -303,8 +386,8 @@ class Handles:
             self.places[kind], self.draggers[kind] = self._add_dragger(kind, coin.SoTranslate1Dragger(),
                                                                        ("feedback", "feedbackActive"))
             self.halves[kind], self.ends[kind] = {}, (BACK, FORTH)
-            self._look(kind, "translatorActive", HELD_COLOR)
-        self._look(UP, "translator", axis_color("z"))
+            self._look(kind, TRANSLATE_PARTS[1], HELD_COLOR)
+        self._look(UP, TRANSLATE_PARTS[0], axis_color("z"))
         self.along_axis = None
         # The arc: it turns about its own z axis, the axis of the round side,
         # and moves the fin by mm_per_degree for every degree it is turned.
@@ -317,6 +400,7 @@ class Handles:
         self.arc_bodies = {}
         self.arc_at = None
         self.arc_unit = 0.0
+        self.arc_radius = 0.0
         self.mm_per_degree = 0.0
         # Draws the arc anew once the zoom has changed.
         self.zoom_timer = QtCore.QTimer()
@@ -342,7 +426,7 @@ class Handles:
         Returns the place and the dragger."""
         for part in hidden_parts:
             dragger.setPart(part, coin.SoSeparator())
-        for name, method in (("addStartCallback", self._held), ("addMotionCallback", self._moved),
+        for name, method in (("addStartCallback", self._held), ("addMotionCallback", self._dragged),
                              ("addFinishCallback", self._let_go)):
             callback = self.view.addDraggerCallback(dragger, name, functools.partial(method, kind))
             self.callbacks.append((dragger, name, callback))
@@ -398,6 +482,7 @@ class Handles:
         ("translator") or held ("translatorActive"), showing the ends it shows."""
         node, halves = double_arrow(color, self.offsets[kind])
         self.draggers[kind].setPart(part, node)
+        self.looks[kind, part] = node
         self.halves[kind][part] = halves
         self.show_ends(kind, self.ends[kind])
 
@@ -420,7 +505,7 @@ class Handles:
         # The arrow along the face takes the colour of the axis it is nearest to.
         axis = "x" if abs(along.x) >= abs(along.y) else "y"
         if axis != self.along_axis:
-            self._look(ALONG, "translator", axis_color(axis))
+            self._look(ALONG, TRANSLATE_PARTS[0], axis_color(axis))
             self.along_axis = axis
         self.shown[ALONG].whichChild.setValue(coin.SO_SWITCH_NONE if turn else coin.SO_SWITCH_ALL)
         self.shown[UP].whichChild.setValue(coin.SO_SWITCH_ALL)
@@ -450,6 +535,7 @@ class Handles:
             for part, color in zip(TURN_PARTS, (axis_color(self.along_axis), HELD_COLOR)):
                 node, halves, self.arc_bodies[part] = arc_arrow(color)
                 self.turner.setPart(part, node)
+                self.looks[TURNING, part] = node
                 self.halves[ALONG][part] = halves
             self.show_ends(ALONG, self.ends[ALONG])
         self.mm_per_degree = mm_per_degree
@@ -480,9 +566,15 @@ class Handles:
         frame = App.Rotation(radial, axis.cross(radial), axis, "ZXY")
         self.turn_place.translation.setValue(foot.x, foot.y, foot.z)
         self.turn_place.rotation.setValue(*frame.Q)
+        self.arc_radius = radial.Length
         for bodies in self.arc_bodies.values():
             for end, body in bodies.items():
-                fill_half_arc(body, radial.Length, self.arc_unit, end * math.copysign(1, self.mm_per_degree))
+                fill_half_arc(body, self.arc_radius, self.arc_unit, self._arc_sense(end))
+
+    def _arc_sense(self, end):
+        """Which way round the end BACK or FORTH of the arc goes, as
+        fill_half_arc() takes it: the way the fin moves along the face."""
+        return end * math.copysign(1, self.mm_per_degree)
 
     def _zoomed(self):
         """Draw the arc anew where the zoom has changed since it was drawn;
@@ -513,8 +605,52 @@ class Handles:
 
     def _held(self, kind, _dragger):
         self.held = True
+        # Held: the look of a held arrow in its own colour again, should a
+        # drag before have been let go by _dragged().
+        self._tint_held(kind, HELD_COLOR)
         self.turned, self.last_turn = 0.0, self._turn()
         self.on_start(kind)
+
+    def _dragged(self, kind, dragger):
+        """A move of the arrow of `kind` from Coin. A drag goes on only while
+        the button that grabbed the arrow is down: should its release not reach
+        the dragger, the arrow would stay grabbed and follow the mouse with no
+        button pressed. Then it is let go here, as the release would, and Coin
+        is told to let it go too."""
+        if QtWidgets.QApplication.mouseButtons() & QtCore.Qt.LeftButton:
+            self._moved(kind, dragger)
+            return
+        # The dragger itself, not the plain one Coin passes: Coin left it
+        # active, and an active dragger follows every move of the mouse.
+        arrow = self.turner if kind == ALONG and self.turning() else self.draggers[kind]
+        arrow.isActive.setValue(False)
+        action = arrow.getHandleEventAction()
+        if action is not None and action.getGrabber() is not None:
+            action.releaseGrabber()
+        # Coin also leaves it showing its held look, which only it can switch
+        # back; that look takes the colour of the arrow at rest instead.
+        self._tint_held(kind, self._rest_color(kind))
+        if self.held:
+            self._let_go(kind, dragger)
+
+    def _held_look(self, kind):
+        """The look of the arrow of `kind` while it is held: of the arc where it
+        stands in for the arrow along the face."""
+        if kind == ALONG and self.turning():
+            return self.looks.get((TURNING, TURN_PARTS[1]))
+        return self.looks.get((kind, TRANSLATE_PARTS[1]))
+
+    def _tint_held(self, kind, color):
+        """Give the look of the arrow of `kind` while held the colour `color`,
+        its first node; no node changes, so a held arrow keeps its scene."""
+        look = self._held_look(kind)
+        if look is not None:
+            look.getChild(0).rgb.setValue(*color)
+
+    def _rest_color(self, kind):
+        """The colour of the arrow of `kind` at rest: that of the axis it is
+        nearest to, z for the arrow up."""
+        return axis_color("z") if kind == UP else axis_color(self.along_axis)
 
     def _moved(self, kind, _dragger):
         if kind == ALONG and self.turning():
@@ -526,6 +662,50 @@ class Handles:
     def _let_go(self, kind, _dragger):
         self.held = False
         self.on_done(kind, self._mm(kind))
+
+    def _value_group(self):
+        """The nodes of the value shown past the tip of a dragged arrow, made
+        once: while an arrow is held only their fields change, as a scene
+        changed under a held dragger can lose the release of the mouse."""
+        self.value_at = coin.SoTransform()
+        zoom = coin.SoType.fromName(AUTO_ZOOM).createInstance()
+        zoom.scaleFactor.setValue(ARROW_SCREEN_SIZE)
+        self.value_past_tip = coin.SoTranslation()
+        color = coin.SoBaseColor()
+        color.rgb.setValue(*value_color())
+        font = coin.SoFont()
+        font.size.setValue(VALUE_FONT_SIZE)
+        self.value_label = coin.SoText2()
+        group = coin.SoAnnotation()
+        for node in (self.value_at, zoom, self.value_past_tip, color, font, self.value_label):
+            group.addChild(node)
+        return group
+
+    def show_value(self, kind, text):
+        """Show `text`, the value of the arrow of `kind` as the task panel
+        shows it, past the tip of that arrow where it is dragged to: of the
+        arc, where it stands in for the arrow along the face, past the tip of
+        its end FORTH, turning with it."""
+        if kind == ALONG and self.turning():
+            past = arc_point(self.arc_radius, self.arc_unit, self._arc_sense(FORTH),
+                             (1 + VALUE_GAP) * self.arc_unit)
+            turned = self.turner.rotation.getValue().multVec(past)
+            self.value_at.translation.setValue(self.turn_place.translation.getValue()
+                                               + self.turn_place.rotation.getValue().multVec(turned))
+            self.value_at.rotation.setValue(coin.SbRotation())
+            self.value_past_tip.translation.setValue(0, 0, 0)
+        else:
+            place = self.places[kind]
+            moved = place.rotation.getValue().multVec(self.draggers[kind].translation.getValue())
+            self.value_at.translation.setValue(place.translation.getValue() + moved)
+            self.value_at.rotation.setValue(place.rotation.getValue())
+            self.value_past_tip.translation.setValue(self.offsets[kind].translation.getValue()
+                                                     + coin.SbVec3f(1 + VALUE_GAP, 0, 0))
+        self.value_label.string.setValue(text)
+        self.value.whichChild.setValue(coin.SO_SWITCH_ALL)
+
+    def hide_value(self):
+        self.value.whichChild.setValue(coin.SO_SWITCH_NONE)
 
     @staticmethod
     def _clear(switch):
@@ -554,6 +734,7 @@ class Handles:
         self.zoom_timer.stop()
         self.arrows.whichChild.setValue(coin.SO_SWITCH_NONE)
         self._clear(self.preview)
+        self.hide_value()
 
     def remove(self):
         if self.root is None:

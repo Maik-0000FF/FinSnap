@@ -56,6 +56,13 @@ TUBE_ANGLE = 30.0  # how far the fin under the side of a tube is turned in the p
 PLACE_STEP = 1.0  # how far a fin is moved along the face in the panel, in mm
 ZOOM_OUT = 2.0  # how far the view is zoomed out to see the arc keep its size on the screen
 ARROW_SIZE_TOLERANCE = 0.01  # share by which the size of an arrow may differ from the one reckoned
+HOOK_REACH = 15.0  # how far the arm of a hook reaches past the side of the tilted cube, in mm
+HOOK_WIDTH = 5.0  # width and thickness of its arm and leg
+HOOK_DEPTH = 12.0  # how far below the top of the cube the arm comes out
+HOOK_DROP = 15.0  # how far the leg hangs from the arm
+ARC_TURN_TOLERANCE = 0.01  # degrees a turn read back from Coin may be off
+WHITE_PACKED = 0xFFFFFFFF  # a white background of the 3D view, packed as FreeCAD keeps it
+DARK_PACKED = 0x202020FF  # a dark one
 
 
 def load_workbench():
@@ -255,14 +262,21 @@ def turned_tube(doc):
            and abs(angle() - TUBE_ANGLE) < d.TOLERANCE,
            "an angle typed for the fin turns the tube that far round its axis, the fin stays")
     arc._held(handles.ALONG, None)
+    arc._moved(handles.ALONG, None)
+    # A copy: the field gives its own vector, which follows it.
+    unturned = coin.SbVec3f(arc.value_at.translation.getValue())
     arc.turner.rotation.setValue(coin.SbRotation(coin.SbVec3f(0, 0, 1), math.radians(-TUBE_ANGLE)))
     arc._moved(handles.ALONG, None)
+    expect(_on_arc(arc, unturned) and _on_arc(arc, arc.value_at.translation.getValue())
+           and abs(_turned_by(arc, unturned, arc.value_at.translation.getValue()) - TUBE_ANGLE) < ARC_TURN_TOLERANCE,
+           "the value of the arc stands past its tip, round the axis, and turns with it")
     expect(abs(panel.fin_fields[handles.ALONG].value() - 2 * TUBE_ANGLE) < d.TOLERANCE,
            "while the arc is dragged, the field shows the angle the fin goes to")
     arc.held = False
     panel.finish_drag(handles.ALONG, arc._mm(handles.ALONG))
     expect(abs(turned() - 2 * TUBE_ANGLE) < d.TOLERANCE and abs(angle() - 2 * TUBE_ANGLE) < d.TOLERANCE,
            "dragging the arc turns the tube further, as near as Coin reads its turn")
+    released_without_button(arc, "a tube")
     panel.fin_fields[handles.ALONG].setValue(geometry.FULL_CIRCLE - TUBE_ANGLE)
     panel.field_entered(handles.ALONG)
     expect(abs(turned() - TUBE_ANGLE) < d.TOLERANCE
@@ -315,6 +329,272 @@ def turned_tube(doc):
     doc.removeObject(fins.Name)
     doc.removeObject(tube.Name)
     doc.recompute()
+
+
+def chosen_stands(doc, quick, facing, messages):
+    """Quick fins on a face of the box `quick` lying flat: the panel lists the
+    edges the part can stand on, a click on a row stands it so, it asks before
+    dropping changes by hand, and Cancel lays the part back whichever way it
+    stands. The part is cut for its islands once for each way, by Quick
+    fins; the fins take them from there, also after a click on a row."""
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, orient, overhang, taskpanel
+    lying = orient.snapshot(quick)
+    select(quick, "Face%d" % facing)
+    real, cuts = overhang.islands, []
+    overhang.islands = lambda *args: cuts.append(args) or real(*args)
+    try:
+        Gui.runCommand("FinSnap_QuickFins")
+        first_cuts = len(cuts)
+        ways = len(quick.Shape.Faces[facing - 1].Edges)
+        fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick][0]
+        fins.ViewObject.Proxy.panel.stand_list.setCurrentCell(1, 0)
+    finally:
+        overhang.islands = real
+    expect(first_cuts == ways and len(cuts) == first_cuts,
+           "Quick fins cuts the part once for each way, the fins take the islands from there, also after a "
+           "click on a row: %d, %d" % (first_cuts, len(cuts)))
+    fins.ViewObject.Proxy.panel.stand_list.setCurrentCell(0, 0)
+    fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick][0]
+    panel = fins.ViewObject.Proxy.panel
+    face = fins.Base[1][0]
+    edges = quick.Shape.Faces[facing - 1].Edges
+    table = panel.stand_list if panel.stands is not None else None
+
+    def marked(row):
+        return table.currentRow() == row and panel.stands.current == row
+
+    def standing():
+        leaning = quick.Shape.Faces[facing - 1].normalAt(0, 0).z
+        return (abs(leaning + math.sqrt(0.5)) < d.TOLERANCE and abs(quick.Shape.BoundBox.ZMin) < d.TOLERANCE
+                and fins.Base[1][0] == face and fins.isValid() and fins.Shape.Solids)
+
+    lengths = sorted((edge.Length for edge in edges), reverse=True)
+    names = ["Edge%d" % i for i, e in enumerate(quick.Shape.Edges, 1) if any(e.isSame(x) for x in edges)]
+    expect(not messages and table is not None and table.rowCount() == len(edges) and marked(0)
+           and sorted(table.item(row, 0).text() for row in range(len(edges))) == sorted(names)
+           and [table.item(row, 1).text() for row in range(len(edges))]
+           == ["%.1f%s" % (length, taskpanel.LENGTH_SUFFIX) for length in lengths]
+           and all(table.item(row, 2).text() == "0" for row in range(len(edges))),
+           "after Quick fins on a face the panel lists each edge it can stand on by its name, its length, "
+           "no islands: %s"
+           % messages)
+    first = App.Placement(quick.Placement)
+    table.setCurrentCell(2, 0)
+    expect(not quick.Placement.isSame(first, d.TOLERANCE) and marked(2) and standing(),
+           "a click on a row stands the part on that edge, the face leaning 45 degrees, the fins under it")
+    feature.shift_fin(fins, feature.MAIN, 1, PLACE_STEP)
+    panel.edited()
+    before = App.Placement(quick.Placement)
+    ANSWERS.append(QtWidgets.QMessageBox.No)
+    table.setCurrentCell(1, 0)
+    expect(not ANSWERS and quick.Placement.isSame(before, d.TOLERANCE) and marked(2)
+           and feature.changed_by_hand(fins), "No to the question keeps the part, the mark and the fin moved by hand")
+    ANSWERS.append(QtWidgets.QMessageBox.Yes)
+    table.setCurrentCell(0, 0)
+    expect(not ANSWERS and quick.Placement.isSame(first, d.TOLERANCE) and marked(0) and standing()
+           and not feature.changed_by_hand(fins), "Yes stands the part as in the row clicked, the fins planned anew")
+    panel.reject()
+    expect(fins.Name not in [o.Name for o in doc.Objects] and quick.Placement.isSame(lying[0], d.TOLERANCE)
+           and (orient.FLAT_PLACEMENT in quick.PropertiesList) == lying[1],
+           "Cancel after choosing deletes the fins and lays the part back as it was")
+
+    short = [i for i, e in enumerate(quick.Shape.Edges, 1)
+             if any(e.isSame(x) for x in quick.Shape.Faces[facing - 1].Edges)][0]
+    select(quick, "Face%d" % facing, "Edge%d" % short)
+    Gui.runCommand("FinSnap_QuickFins")
+    fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick][0]
+    expect(fins.ViewObject.Proxy.panel.stands is None, "a face with its edge stands one way: no table to choose from")
+    fins.ViewObject.Proxy.panel.reject()
+
+
+def released_without_button(arrows, name):
+    """Every arrow of `arrows`, a Handles, that Coin left active after its
+    release, moved with no mouse button down, is let go at once, as the
+    release would: made inactive, so it follows the mouse no more, its held
+    look in its colour at rest, until it is grabbed again. `name` says which
+    arrows these are."""
+    from freecad.finsnap import handles
+    # Grabbing and letting go are noted only: the panel is not drawn into it.
+    done, real_start, real_done = [], arrows.on_start, arrows.on_done
+    arrows.on_start = lambda kind: None
+    arrows.on_done = lambda kind, mm: done.append(kind)
+    try:
+        for kind in handles.KINDS:
+            turning = kind == handles.ALONG and arrows.turning()
+            arrow = arrows.turner if turning else arrows.draggers[kind]
+            look = arrows.looks[(handles.TURNING, handles.TURN_PARTS[1]) if turning
+                                else (kind, handles.TRANSLATE_PARTS[1])]
+            del done[:]
+            arrows._held(kind, None)
+            # As Coin left it after a lost release.
+            arrow.isActive.setValue(True)
+            # No button is down while the tests run: the move is one without it.
+            arrows._dragged(kind, arrow)
+            at_rest = coin.SbColor(look.getChild(0).rgb[0])
+            arrows._held(kind, None)
+            again = coin.SbColor(look.getChild(0).rgb[0])
+            arrows.held = False
+            expect(not arrow.isActive.getValue() and done == [kind]
+                   and rgb_close(at_rest.getValue(), arrows._rest_color(kind))
+                   and rgb_close(again.getValue(), handles.HELD_COLOR),
+                   "%s, %s: moved with no button down, let go at once, inactive, in its colour at rest until "
+                   "grabbed again" % (name, "arc" if turning else kind))
+    finally:
+        arrows.on_start, arrows.on_done = real_start, real_done
+
+
+def value_colors():
+    """The value of a dragged arrow is written yellow over a dark background
+    of the 3D view, nearly black over a light one, a gradient by the mean of
+    its colours, its middle colour as well where that is on. Every setting
+    the cases depend on is set here, so FreeCAD's own make no difference,
+    and put back as it was after."""
+    from freecad.finsnap import handles
+    view = App.ParamGet(handles.VIEW_PARAMETERS)
+    flags = [name for name, _ in handles.BACKGROUND_FLAGS] + [handles.BACKGROUND_USE_MIDDLE[0]]
+    colors = [handles.BACKGROUND_SINGLE[0], handles.BACKGROUND_MIDDLE[0]] + [
+        name for name, _ in handles.BACKGROUND_GRADIENT]
+    had_bools, had_colors = set(view.GetBools()), set(view.GetUnsigneds())
+    saved_bools = {name: view.GetBool(name) for name in flags if name in had_bools}
+    saved_colors = {name: view.GetUnsigned(name) for name in colors if name in had_colors}
+    gradient, _, middle = flags
+    try:
+        for flag in flags:
+            view.SetBool(flag, False)
+        view.SetUnsigned(handles.BACKGROUND_SINGLE[0], WHITE_PACKED)
+        on_white = handles.value_color()
+        view.SetUnsigned(handles.BACKGROUND_SINGLE[0], DARK_PACKED)
+        on_dark = handles.value_color()
+        view.SetBool(gradient, True)
+        for name, _ in handles.BACKGROUND_GRADIENT:
+            view.SetUnsigned(name, WHITE_PACKED)
+        on_light_gradient = handles.value_color()
+        # A dark middle colour pulls the mean of a light gradient below the limit.
+        view.SetUnsigned(handles.BACKGROUND_GRADIENT[1][0], DARK_PACKED)
+        view.SetUnsigned(handles.BACKGROUND_MIDDLE[0], DARK_PACKED)
+        view.SetBool(middle, True)
+        through_dark_middle = handles.value_color()
+    finally:
+        for name in flags:
+            if name in saved_bools:
+                view.SetBool(name, saved_bools[name])
+            else:
+                view.RemBool(name)
+        for name in colors:
+            if name in saved_colors:
+                view.SetUnsigned(name, saved_colors[name])
+            else:
+                view.RemUnsigned(name)
+    expect(on_white == handles.VALUE_ON_LIGHT and on_dark == handles.HELD_COLOR
+           and on_light_gradient == handles.VALUE_ON_LIGHT and through_dark_middle == handles.HELD_COLOR,
+           "the value is written nearly black over a light background, yellow over a dark one, a gradient "
+           "by the mean of its colours, its middle colour too where it is on")
+
+
+def _on_arc(arc, point):
+    """Whether `point` (an SbVec3f) lies on the circle the arc of `arc`, a
+    Handles, is drawn round."""
+    from freecad.finsnap import defaults as d
+    foot, turn = arc.turn_place.translation.getValue(), arc.turn_place.rotation.getValue()
+    axis = turn.multVec(coin.SbVec3f(0, 0, 1))
+    off = point - foot
+    return abs((off - axis * off.dot(axis)).length() - arc.arc_radius) < d.TOLERANCE
+
+
+def _turned_by(arc, start, end):
+    """How far round the axis of the arc of `arc` `end` lies from `start` (degrees)."""
+    foot, turn = arc.turn_place.translation.getValue(), arc.turn_place.rotation.getValue()
+    axis = turn.multVec(coin.SbVec3f(0, 0, 1))
+    first, second = start - foot, end - foot
+    first, second = first - axis * first.dot(axis), second - axis * second.dot(axis)
+    return math.degrees(math.acos(max(-1.0, min(1.0, first.dot(second) / (first.length() * second.length())))))
+
+
+def _value_shown(arrows):
+    """The value standing at the dragged arrow of `arrows`, a Handles; None
+    while none is shown."""
+    if arrows.value.whichChild.getValue() == coin.SO_SWITCH_NONE:
+        return None
+    found = coin.SoSearchAction()
+    found.setType(coin.SoText2.getClassTypeId())
+    found.apply(arrows.value)
+    path = found.getPath()
+    return None if path is None else path.getTail().string[0]
+
+
+def _balls(marks, over=False):
+    """How many balls the Coin node `marks` holds; with `over`, only those
+    drawn over everything else, in an SoAnnotation."""
+    found = coin.SoSearchAction()
+    found.setType(coin.SoSphere.getClassTypeId())
+    found.setInterest(coin.SoSearchAction.ALL)
+    found.apply(marks)
+    paths = found.getPaths()
+    annotation = coin.SoAnnotation.getClassTypeId()
+    return sum(1 for i in range(paths.getLength())
+               if not over or any(paths[i].getNode(j).isOfType(annotation) for j in range(paths[i].getLength())))
+
+
+def _layer_marked(marks):
+    """Whether the Coin node `marks` holds a mark in the red a fin shows where
+    it cannot stand, as see-through as islands are drawn: the first layer of an
+    island."""
+    from freecad.finsnap import commands, handles
+    found = coin.SoSearchAction()
+    found.setType(coin.SoMaterial.getClassTypeId())
+    found.setInterest(coin.SoSearchAction.ALL)
+    found.apply(marks)
+    paths = found.getPaths()
+    materials = [paths[i].getTail() for i in range(paths.getLength())]
+    return any(rgb_close(material.diffuseColor[0].getValue(), handles.INVALID_COLOR)
+               and abs(material.transparency[0] - commands.ISLAND_TRANSPARENCY) < COLOR_TOLERANCE
+               for material in materials)
+
+
+def island_marks(doc):
+    """Fins added by hand to the tilted cube with a hook hanging from its side,
+    whose foot would start printing in the air: a warning says so, and the
+    island is marked in the 3D view, over the part."""
+    from freecad.finsnap import commands, feature
+    from freecad.finsnap import defaults as d
+    cube = tilted_cube()
+    box = cube.BoundBox
+    # An arm out of the cube near its top, and a leg hanging from its far end
+    # beside the cube, its foot far above the bed.
+    arm = Part.makeBox(box.XMax + HOOK_REACH, HOOK_WIDTH, HOOK_WIDTH, App.Vector(0, 0, box.ZMax - HOOK_DEPTH))
+    foot = box.ZMax - HOOK_DEPTH - HOOK_DROP + HOOK_WIDTH
+    leg = Part.makeBox(HOOK_WIDTH, HOOK_WIDTH, HOOK_DROP, App.Vector(box.XMax + HOOK_REACH - HOOK_WIDTH, 0, foot))
+    hooked = doc.addObject("Part::Feature", "Hooked")
+    hooked.Shape = cube.fuse([arm, leg]).removeSplitter()
+    fins = feature.create(hooked, face_name(hooked, lower_left_face(hooked.Shape)))
+    commands.ViewProviderFinSnap(fins.ViewObject)
+    doc.recompute()
+    marks = fins.ViewObject.Proxy.marks
+    expect(len(fins.Islands) == 1 and abs(fins.Islands[0].z - foot) < d.TOLERANCE
+           and any(hooked.Label in warning and warning.startswith("1 ") for warning in fins.Warnings)
+           and not fins.IslandLayers.isNull() and abs(fins.IslandLayers.BoundBox.ZMin - foot) < d.TOLERANCE
+           and _layer_marked(marks),
+           "fins on a part with an island warn of it and show its first layer in the air see-through red: %s, %s"
+           % (list(fins.Islands), list(fins.Warnings)))
+    expect(_balls(marks) == 0, "an island shown by its first layer has no ball beside it")
+    # The kernel failing to cut the first layer out: the island is marked by a
+    # ball at its lowest point instead.
+    from freecad.finsnap import overhang
+    real = overhang._first_layer
+    overhang._first_layer = lambda *args: None
+    try:
+        feature._islands_kept.clear()
+        fins.touch()
+        doc.recompute()
+    finally:
+        overhang._first_layer = real
+        feature._islands_kept.clear()
+    expect(len(fins.Islands) == 1 and fins.IslandLayers.isNull() and list(fins.IslandsUncut) == list(fins.Islands)
+           and _balls(marks, over=True) == 1,
+           "an island whose first layer cannot be cut out is marked by a ball at its lowest point, over the part")
+    doc.removeObject(fins.Name)
+    doc.removeObject(hooked.Name)
 
 
 def check_typed_fields(panel, fins, place):
@@ -676,6 +956,9 @@ def main():
         doc.removeObject(made[0].Name)
         quick.Placement = App.Placement()
         doc.recompute()
+    chosen_stands(doc, quick, facing, messages)
+    island_marks(doc)
+    value_colors()
     # Fins of the part laid flat keep their mark and shape over a Quick fins
     # cancelled: standing the part rebuilt them, Cancel gives them back.
     select(quick, "Edge%d" % on_bed)
@@ -965,6 +1248,9 @@ def main():
     moving.handle_moved(handles.ALONG, FIN_SHIFT)
     expect(abs(moving.fin_fields[handles.ALONG].value() - (place + FIN_SHIFT)) < d.TOLERANCE,
            "the field follows the arrow while it is dragged")
+    expect(_value_shown(moving.handles) == moving.fin_fields[handles.ALONG].text(),
+           "the value stands at the arrow while it is dragged, as the field shows it: %s"
+           % _value_shown(moving.handles))
     moving.drag_step()
     expect(abs(lined.Shape.Solids[0].BoundBox.Center.sub(before).Length - FIN_SHIFT) < d.TOLERANCE
            and feature.edits(lined, feature.MAIN)[1] == {1: FIN_SHIFT},
@@ -973,8 +1259,10 @@ def main():
     expect(feature.edits(lined, feature.MAIN)[1] == {1: FIN_SHIFT}
            and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_NONE,
            "a fin let go stays there")
+    expect(_value_shown(moving.handles) is None, "let go, the value at the arrow goes")
     expect(all(moving.handles.draggers[kind] is held[kind] for kind in held),
            "the arrows stay the same after a move; Coin may still hold the one let go")
+    released_without_button(moving.handles, "a box")
     expect(all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(handles.axis_color("z"), AXIS_Z_RGB)),
            "the arrow up has the colour of the z axis: %s" % (handles.axis_color("z"),))
     result = lined.Proxy.results[feature.MAIN]

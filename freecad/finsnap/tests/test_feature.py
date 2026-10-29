@@ -19,11 +19,11 @@ import FreeCAD as App
 import Part
 from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left_face, run, split_cylinder, tilted_cube
 from freecad.finsnap import defaults as d
-from freecad.finsnap import export_3mf, export_step, feature, geometry, orient
+from freecad.finsnap import export_3mf, export_step, feature, geometry, orient, overhang
 from freecad.finsnap import presets
 from freecad.finsnap.params import FinParams, ParamError
 from freecad.finsnap.paths import PACKAGE_XML
-from freecad.finsnap.shapes import global_shape, outermost
+from freecad.finsnap.shapes import global_shape, moved, outermost
 
 V = App.Vector
 # The version as package.xml states it, read independently of the workbench.
@@ -55,6 +55,10 @@ POCKET_DEPTH = 4.0
 STEP_VOLUME_TOLERANCE = 1e-3  # mm3, what reading the file back may differ by
 TUBE_RADIUS = 10.0
 TUBE_BORE = 6.0
+HOLE_RADIUS = 2.0     # a hole through the tilted cube, moved sideways to keep its measures
+HOLE_LENGTH = 200.0
+HOLE_SHIFT = 3.0
+DRAG_STEPS = 3        # builds of the fins while one is dragged
 TUBE_HEIGHT = 40.0
 TUBE_TURN = 5.0  # how far the fin under the side of a tube is moved by hand, in mm round it
 FINE_TURN = 1.23456789  # a turn finer than the shift is kept, in mm round the side
@@ -756,6 +760,89 @@ def turned_tube(doc):
            "laid flat, the fin keeps no turn of the tube, and the count its changes were made for")
 
 
+def kept_islands(doc):
+    """Islands handed to the fins, as Quick fins does, are taken as they are
+    while the part stands so; moved, it is cut for them anew. A part whose
+    side a STEP file splits has the islands of its joined shape."""
+    cube = doc.addObject("Part::Feature", "KeptCube")
+    cube.Shape = tilted_cube()
+    fins = feature.create(cube, face_name(cube.Shape, lower_left_face(cube.Shape)))
+    real, calls = overhang.islands, []
+
+    def counted(*args):
+        calls.append(args)
+        return real(*args)
+
+    # Whatever else waits to be recomputed is first, so only these fins count.
+    doc.recompute()
+    cube.touch()
+    marker = overhang.Island(V(1, 2, 3), None)
+    overhang.islands = counted
+    try:
+        feature._islands_kept.clear()
+        feature.keep_islands(cube, feature.params_of(fins), [marker])
+        doc.recompute()
+        expect(not calls and list(fins.Islands) == [marker.point],
+               "islands handed over for the part as it stands are taken, the part not cut again: %d, %s"
+               % (len(calls), list(fins.Islands)))
+        cube.Placement = App.Placement(V(1, 0, 0), App.Rotation()).multiply(cube.Placement)
+        doc.recompute()
+        expect(len(calls) == 1 and not fins.Islands, "moved, the part is cut for its islands anew: %d, %s"
+               % (len(calls), list(fins.Islands)))
+        # While a fin is dragged the islands are asked once: the part stays.
+        asked = []
+        real_of = feature.islands_of
+        feature.islands_of = lambda *args: asked.append(args) or real_of(*args)
+        try:
+            fins.Proxy.reuse = {}
+            try:
+                for _ in range(DRAG_STEPS):
+                    fins.touch()
+                    doc.recompute()
+            finally:
+                # The drag over, also after a failed build, so no check after
+                # it runs as if a fin were still dragged.
+                fins.Proxy.reuse = None
+            fins.touch()
+            doc.recompute()
+        finally:
+            feature.islands_of = real_of
+        expect(len(asked) == 2, "while a fin is dragged its islands are asked once, after it again: %d" % len(asked))
+        # A hole moved leaves volume, area and every count as they were; its
+        # corners tell the shapes apart.
+        middle = tilted_cube().BoundBox.Center
+        holed = [tilted_cube().cut(Part.makeCylinder(HOLE_RADIUS, HOLE_LENGTH,
+                                                     V(middle.x + shift, -HOLE_LENGTH / 2, middle.z), V(0, 1, 0)))
+                 for shift in (-HOLE_SHIFT, HOLE_SHIFT)]
+        keys = []
+        for shape in holed:
+            cube.Shape = shape
+            keys.append(feature._islands_key(cube, feature.params_of(fins)))
+        expect(abs(holed[0].Volume - holed[1].Volume) < d.TOLERANCE
+               and abs(holed[0].Area - holed[1].Area) < d.TOLERANCE and keys[0] != keys[1],
+               "a hole moved, the measures of the part the same, its islands are asked anew")
+    finally:
+        overhang.islands = real
+        feature._islands_kept.clear()
+    doc.removeObject(fins.Name)
+    doc.removeObject(cube.Name)
+
+    tube = doc.addObject("Part::Feature", "KeptTube")
+    tube.Shape = split_cylinder(TUBE_RADIUS, TUBE_HEIGHT, TUBE_BORE)
+    side = next(i for i, f in enumerate(tube.Shape.Faces, 1) if isinstance(f.Surface, Part.Cylinder)
+                and abs(f.Surface.Radius - TUBE_RADIUS) < d.TOLERANCE)
+    joined, (face,), _ = feature.whole_elements(tube, ["Face%d" % side])
+    number = next(i for i, f in enumerate(joined.Faces) if f.isSame(face))
+    p = FinParams()
+    for plan in geometry.quick_plans(joined, [], [(face, number)], p, d.TILT_ANGLE):
+        tube.Placement = plan.change
+        on_joined = overhang.islands(moved(joined, plan.change), p.first_layer_height, p.layer_height)
+        on_tube = overhang.islands(global_shape(tube), p.first_layer_height, p.layer_height)
+        expect(sorted(tuple(i.point) for i in on_joined) == sorted(tuple(i.point) for i in on_tube),
+               "a split tube has the same islands joined as it is: %d" % len(on_tube))
+    doc.removeObject(tube.Name)
+
+
 def main():
     doc = App.newDocument("FinSnapTest")
     cube = doc.addObject("Part::Feature", "Cube")
@@ -800,6 +887,7 @@ def main():
     counter_on_thin_tube(doc)
     tapered_pad(doc)
     warnings_and_old_files(doc)
+    kept_islands(doc)
     step_with_offset_curves()
     print("all checks passed", file=sys.__stdout__)
 

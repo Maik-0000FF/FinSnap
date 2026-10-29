@@ -135,7 +135,7 @@ def main():
     # Where Quick fins will stand the part, worked out by the command's own
     # plan, to show the tilt as a movement that ends where the command stands
     # it, and to look at the fin from outside.
-    plan = commands.quick_plan(part, [], [face_name])
+    plan, _ = commands.quick_plan(part, [], [face_name])
     standing = moved(global_shape(part), plan.change)
     face_frame = geometry.frame_of(standing, standing.Faces[plan.number])
     owner = outermost(part)

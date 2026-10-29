@@ -27,6 +27,19 @@ TYPE_NAME = "FinSnap"
 # Result property listing the faces that overhang without fins; the view
 # provider marks them.
 OVERHANGS = "Overhangs"
+# Result property with the lowest points of the islands of the part, where it
+# would start printing in the air; the view provider marks them.
+ISLANDS = "Islands"
+# And the part there up to the top of the first layer of each island, hidden,
+# for the view provider to show how far it reaches.
+ISLAND_LAYERS = "IslandLayers"
+# And the lowest points of the islands whose first layer could not be cut
+# out, hidden: the view provider marks them by a ball instead.
+ISLANDS_UNCUT = "IslandsUncut"
+NOTE_ISLANDS = QT_TRANSLATE_NOOP(
+    "FinSnap", "%d island(s): %s would start printing in the air there, on no layer of it below. Fins do "
+    "not carry an island, they only keep the part from falling over. It cannot print standing so; the "
+    "islands are marked in the 3D view.")
 # Hidden marker on fins whose part was laid flat again with the fins kept:
 # they keep their last shape, moved along with the part, until it is moved again.
 LAID_FLAT = "LaidFlat"
@@ -362,12 +375,21 @@ def add_properties(obj):
         obj.addProperty(kind, name, GROUP_RESULT, "", 1)
     obj.addProperty("App::PropertyStringList", "Warnings", GROUP_RESULT, "", 1)
     add_overhangs(obj)
+    add_islands(obj)
 
 
 def add_overhangs(obj):
     obj.addProperty("App::PropertyStringList", OVERHANGS, GROUP_RESULT,
                     QT_TRANSLATE_NOOP("App::Property",
                                       "Faces of the part that overhang too flatly and carry no fins"), 1)
+
+
+def add_islands(obj):
+    obj.addProperty("App::PropertyVectorList", ISLANDS, GROUP_RESULT,
+                    QT_TRANSLATE_NOOP("App::Property",
+                                      "Where the part would start printing in the air"), 1)
+    hidden_property(obj, ISLAND_LAYERS, "Part::PropertyPartShape")
+    hidden_property(obj, ISLANDS_UNCUT, "App::PropertyVectorList")
 
 
 def params_of(obj):
@@ -533,6 +555,68 @@ REUSE_KEPT = 8
 # by part, shape, placement and names asked.
 WHOLE_KEPT = 16
 _whole_kept = {}
+# Islands of parts, by part, its shape, where it stands and the layers it is
+# cut in, worked out once: the fins are built far more often. The volume and
+# area of the shape and its corners are compared to this many decimal places.
+ISLANDS_KEPT = 8
+ISLANDS_KEY_DIGITS = 6
+_islands_kept = {}
+
+
+def set_islands(obj, found):
+    """Keep the Islands `found` on `obj`: their lowest points, the first layers
+    of those whose layer could be cut out, as one shape, and the lowest points
+    of the others."""
+    setattr(obj, ISLANDS, [island.point for island in found])
+    layers = [island.first for island in found if island.first is not None]
+    setattr(obj, ISLAND_LAYERS, Part.makeCompound(layers) if layers else Part.Shape())
+    setattr(obj, ISLANDS_UNCUT, [island.point for island in found if island.first is None])
+
+
+def islands_of(obj, p):
+    """The islands (overhang.islands()) of the part of `obj` as it stands, on
+    the layers of `p`; the fins do not count. Worked out once for each part,
+    shape, place and layers, as every build of the fins asks again, unless
+    keep_islands() was told them before."""
+    part_obj = obj.Base[0]
+    kept = _islands_kept.get(_islands_key(part_obj, p))
+    if kept is None:
+        kept = overhang.islands(global_shape(part_obj), p.first_layer_height, p.layer_height)
+        keep_islands(part_obj, p, kept)
+    return list(kept)
+
+
+def keep_islands(part_obj, p, found):
+    """Keep `found`, the islands of `part_obj` as it stands now on the layers
+    of `p`, for islands_of(), as Quick fins has worked them out already.
+
+    INPUTS this has to withstand:
+      islands of the part as it stands      ->  taken by islands_of(), not worked out again
+      the part recomputed, shape the same   ->  the same key: taken
+      the part moved or changed after       ->  another key: worked out anew
+      a hole or pocket moved, the measures
+        of the shape the same               ->  its corners moved: another key, worked
+                                                out anew
+      other layers asked                    ->  another key: worked out anew
+      many parts in turn                    ->  the oldest goes past ISLANDS_KEPT
+    """
+    while len(_islands_kept) >= ISLANDS_KEPT:
+        _islands_kept.pop(next(iter(_islands_kept)))
+    _islands_kept[_islands_key(part_obj, p)] = list(found)
+
+
+def _islands_key(part_obj, p):
+    """What the islands of `part_obj` depend on: the part, its shape, where it
+    stands and the layers of `p`. The shape by its measures and where its
+    corners lie, not its hash: FreeCAD gives a part a new hash each time it is
+    recomputed, the same shape or not. The corners tell a shape whose measures
+    stay apart, as with a hole moved."""
+    shape = part_obj.Shape
+    corners = tuple(sorted(tuple(round(c, ISLANDS_KEY_DIGITS) for c in vertex.Point) for vertex in shape.Vertexes))
+    measures = (round(shape.Volume, ISLANDS_KEY_DIGITS), round(shape.Area, ISLANDS_KEY_DIGITS),
+                len(shape.Faces), len(shape.Edges), corners)
+    return (part_obj.Document.Name, part_obj.Name, measures, tuple(part_obj.getGlobalPlacement().toMatrix().A),
+            p.first_layer_height, p.layer_height)
 
 
 class FinSnapFeature:
@@ -585,6 +669,7 @@ class FinSnapFeature:
             # The fins keep the shape they were moved to; the face they belong
             # to no longer leans over the bed until the part stands again.
             setattr(obj, OVERHANGS, [])
+            set_islands(obj, [])
             obj.Warnings = [translate("FinSnap", NOTE_LAID_FLAT)]
             return
         p = params_of(obj)
@@ -607,6 +692,7 @@ class FinSnapFeature:
             hidden_property(obj, CARRIED, "App::PropertyStringList")
             setattr(obj, CARRIED, [])
             setattr(obj, OVERHANGS, overhangs_of(obj.Base[0], obj.Document))
+            set_islands(obj, [])
             raise
         # Named on the part itself, the counter face as well: a split side was
         # built on the shape with its halves joined.
@@ -634,6 +720,13 @@ class FinSnapFeature:
         if overhanging:
             warnings.append(translate("FinSnap", "%d faces of %s overhang flatter than %.0f degrees without fins: %s")
                             % (len(overhanging), obj.Base[0].Label, d.OVERHANG_ANGLE, ", ".join(overhanging)))
+        # The part stays as it is while one fin is dragged, and the islands do
+        # not depend on the fins: asked once, as working out the key takes a
+        # moment on a large part. A drag that turns the part asks each step.
+        found = self.during_drag(ISLANDS, lambda: islands_of(obj, p))
+        set_islands(obj, found)
+        if found:
+            warnings.append(translate("FinSnap", NOTE_ISLANDS) % (len(found), obj.Base[0].Label))
 
         tags = [fin_tag(MAIN, n) for n in result.numbers]
         if counter is not None:
@@ -661,6 +754,10 @@ class FinSnapFeature:
         obj.Proxy = self
         if OVERHANGS not in obj.PropertiesList:
             add_overhangs(obj)
+        if ISLANDS not in obj.PropertiesList:
+            add_islands(obj)
+        hidden_property(obj, ISLAND_LAYERS, "Part::PropertyPartShape")
+        hidden_property(obj, ISLANDS_UNCUT, "App::PropertyVectorList")
         # Saved when fins could only be removed: the count is taken over.
         for which, old in REMOVED_OF.items():
             if old in obj.PropertiesList:
@@ -1195,6 +1292,12 @@ def reset_fins(obj, which=None):
         for name in (SHIFTS[one], HEIGHTS[one]):
             if name in obj.PropertiesList:
                 setattr(obj, name, {})
+
+
+def changed_by_hand(obj):
+    """Whether a fin of `obj` was removed, moved or given a height of its own,
+    the part turned about its round side, or a counter fin added."""
+    return bool(obj.CounterFace) or any(any(edits(obj, which)) for which in (MAIN, COUNTER))
 
 
 def remove_fins(obj, fins):

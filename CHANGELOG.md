@@ -11,6 +11,18 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-29
+
+### Added
+
+- After Quick fins, a table at the top of the task panel lists the other edges the part can stand on, or the other faces the fins can go under, with their length or area and their islands; a click on a row stands the part so, and fins changed by hand are dropped only once the user agrees (#75)
+- Fins check the part for islands, where it would start printing in the air with no layer of it below, as a slicer finds them; fins carry no island. A warning names them, and the first layer that would print in the air is shown see-through red. Quick fins takes a way to stand the part without islands where there is one (#75)
+- While an arrow on a fin is dragged, its value, the place on the face, the angle on a round side or the height, stands past its tip in the 3D view, as the task panel shows it (#76)
+
+### Fixed
+
+- An arrow, as the arc under the side of a cylinder or tube, that went on following the mouse after its button was let go, is let go with it, back in its colour at rest (#87)
+
 ## [0.7.0] - 2026-10-28
 
 ### Added
@@ -187,7 +199,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.6.0
 [0.5.2]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.5.2
