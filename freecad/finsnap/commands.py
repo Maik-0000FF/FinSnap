@@ -560,6 +560,7 @@ class QuickFins:
         # Standing it anew forgets how far it was turned about a round side; Cancel notes it again.
         turns = feature.round_turns(owner, doc)
         _stand(obj, plan.change)
+        _keep_checked(obj, plans[0])
         # The main fin only; a counter fin is added in the panel or with Add counter fin.
         fins = feature.create(obj, fin_face)
         fins.FinPlacement = p.placement
@@ -632,7 +633,8 @@ def _edge_name(obj, edge):
 
 
 # A way Quick fins found to stand a part: the plan, the name on the part of the
-# face the fins go under, the islands, the area of that face (mm2), and the
+# face the fins go under, the islands, None where there was only one way and
+# they were not checked, the area of that face (mm2), and the
 # name on the part of the edge it stands on, None without one.
 QuickWay = namedtuple("QuickWay", "plan face islands area edge")
 
@@ -659,8 +661,8 @@ class QuickStands:
                         and all(way.plan.edge is not None for way in plans))
         # What tells the ways apart: the edge or the face by its name on the
         # part, its length (mm) or area (mm2), and the islands standing so.
-        self.rows = [(way.edge or "", way.plan.edge.Length, len(way.islands)) if self.by_edge
-                     else (way.face, way.area, len(way.islands)) for way in plans]
+        self.rows = [(way.edge or "", way.plan.edge.Length, len(way.islands or ())) if self.by_edge
+                     else (way.face, way.area, len(way.islands or ())) for way in plans]
 
     def __len__(self):
         return len(self.plans)
@@ -673,9 +675,18 @@ class QuickStands:
         feature.reset_fins(fins)
         orient.put_back(self.owner, self.before)
         _stand(self.obj, plan.change)
+        _keep_checked(self.obj, self.plans[index])
         fins.Base = (self.obj, [face])
         self.current = index
         _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside))
+
+
+def _keep_checked(obj, way):
+    """Hand the islands Quick fins checked for `way`, the way `obj` stands now,
+    to the fins, so their first build does not cut the part for them again.
+    A way not checked, the only one, leaves the fins to work them out."""
+    if way.islands is not None:
+        feature.keep_islands(obj, quick_params(), way.islands)
 
 
 def _put_back_quick(owner, before, laid_flat, turns):

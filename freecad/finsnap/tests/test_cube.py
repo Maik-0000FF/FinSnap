@@ -929,8 +929,8 @@ def check_printable_plans():
         expect(len(alike) > 1 and len(calls) == 1 and all(len(points) == 1 for _, points in rated),
                "ways standing the part alike, the fins under other faces, are checked once")
         del calls[:]
-        expect(geometry.printable_plans(box, plans[:1], p) == [(plans[0], [])] and not calls,
-               "one way is taken unchecked: there is no choice")
+        expect(geometry.printable_plans(box, plans[:1], p) == [(plans[0], None)] and not calls,
+               "one way is taken unchecked, its islands None: there is no choice")
     finally:
         overhang.islands = real
 

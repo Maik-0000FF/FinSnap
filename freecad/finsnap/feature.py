@@ -556,8 +556,10 @@ REUSE_KEPT = 8
 WHOLE_KEPT = 16
 _whole_kept = {}
 # Islands of parts, by part, its shape, where it stands and the layers it is
-# cut in, worked out once: the fins are built far more often.
+# cut in, worked out once: the fins are built far more often. The volume and
+# area of the shape are compared to this many decimal places.
 ISLANDS_KEPT = 8
+ISLANDS_KEY_DIGITS = 6
 _islands_kept = {}
 
 
@@ -574,20 +576,42 @@ def set_islands(obj, found):
 def islands_of(obj, p):
     """The islands (overhang.islands()) of the part of `obj` as it stands, on
     the layers of `p`; the fins do not count. Worked out once for each part,
-    shape, place and layers, as every build of the fins asks again."""
+    shape, place and layers, as every build of the fins asks again, unless
+    keep_islands() was told them before."""
     part_obj = obj.Base[0]
-    own = part_obj.Shape
-    key = (part_obj.Document.Name, part_obj.Name, own.hashCode(), tuple(part_obj.getGlobalPlacement().toMatrix().A),
-           p.first_layer_height, p.layer_height)
-    kept = _islands_kept.get(key)
-    if kept is None or not kept[0].isSame(own):
-        while len(_islands_kept) >= ISLANDS_KEPT:
-            _islands_kept.pop(next(iter(_islands_kept)))
-        # Held with the answer, as in whole_elements(): its memory cannot go
-        # to a new shape that would share its hash.
-        kept = _islands_kept[key] = (own, overhang.islands(global_shape(part_obj), p.first_layer_height,
-                                                          p.layer_height))
-    return list(kept[1])
+    kept = _islands_kept.get(_islands_key(part_obj, p))
+    if kept is None:
+        kept = overhang.islands(global_shape(part_obj), p.first_layer_height, p.layer_height)
+        keep_islands(part_obj, p, kept)
+    return list(kept)
+
+
+def keep_islands(part_obj, p, found):
+    """Keep `found`, the islands of `part_obj` as it stands now on the layers
+    of `p`, for islands_of(), as Quick fins has worked them out already.
+
+    INPUTS this has to withstand:
+      islands of the part as it stands      ->  taken by islands_of(), not worked out again
+      the part recomputed, shape the same   ->  the same key: taken
+      the part moved or changed after       ->  another key: worked out anew
+      other layers asked                    ->  another key: worked out anew
+      many parts in turn                    ->  the oldest goes past ISLANDS_KEPT
+    """
+    while len(_islands_kept) >= ISLANDS_KEPT:
+        _islands_kept.pop(next(iter(_islands_kept)))
+    _islands_kept[_islands_key(part_obj, p)] = list(found)
+
+
+def _islands_key(part_obj, p):
+    """What the islands of `part_obj` depend on: the part, its shape, where it
+    stands and the layers of `p`. The shape by its measures, not its hash:
+    FreeCAD gives a part a new hash each time it is recomputed, the same shape
+    or not."""
+    shape = part_obj.Shape
+    measures = (round(shape.Volume, ISLANDS_KEY_DIGITS), round(shape.Area, ISLANDS_KEY_DIGITS),
+                len(shape.Faces), len(shape.Edges), len(shape.Vertexes))
+    return (part_obj.Document.Name, part_obj.Name, measures, tuple(part_obj.getGlobalPlacement().toMatrix().A),
+            p.first_layer_height, p.layer_height)
 
 
 class FinSnapFeature:

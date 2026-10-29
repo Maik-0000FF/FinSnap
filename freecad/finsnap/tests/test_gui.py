@@ -325,12 +325,26 @@ def chosen_stands(doc, quick, facing, messages):
     """Quick fins on a face of the box `quick` lying flat: the panel lists the
     edges the part can stand on, a click on a row stands it so, it asks before
     dropping changes by hand, and Cancel lays the part back whichever way it
-    stands."""
+    stands. The part is cut for its islands once for each way, by Quick
+    fins; the fins take them from there, also after a click on a row."""
     from freecad.finsnap import defaults as d
-    from freecad.finsnap import feature, orient, taskpanel
+    from freecad.finsnap import feature, orient, overhang, taskpanel
     lying = orient.snapshot(quick)
     select(quick, "Face%d" % facing)
-    Gui.runCommand("FinSnap_QuickFins")
+    real, cuts = overhang.islands, []
+    overhang.islands = lambda *args: cuts.append(args) or real(*args)
+    try:
+        Gui.runCommand("FinSnap_QuickFins")
+        first_cuts = len(cuts)
+        ways = len(quick.Shape.Faces[facing - 1].Edges)
+        fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick][0]
+        fins.ViewObject.Proxy.panel.stand_list.setCurrentCell(1, 0)
+    finally:
+        overhang.islands = real
+    expect(first_cuts == ways and len(cuts) == first_cuts,
+           "Quick fins cuts the part once for each way, the fins take the islands from there, also after a "
+           "click on a row: %d, %d" % (first_cuts, len(cuts)))
+    fins.ViewObject.Proxy.panel.stand_list.setCurrentCell(0, 0)
     fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick][0]
     panel = fins.ViewObject.Proxy.panel
     face = fins.Base[1][0]
