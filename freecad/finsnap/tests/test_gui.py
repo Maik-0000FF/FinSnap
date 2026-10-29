@@ -409,15 +409,19 @@ def chosen_stands(doc, quick, facing, messages):
 
 def value_colors():
     """The value of a dragged arrow is written yellow over a dark background
-    of the 3D view, nearly black over a light one; FreeCAD's settings are
-    put back as they were after."""
+    of the 3D view, nearly black over a light one, a gradient by the mean of
+    its colours, its middle colour as well where that is on. Every setting
+    the cases depend on is set here, so FreeCAD's own make no difference,
+    and put back as it was after."""
     from freecad.finsnap import handles
     view = App.ParamGet(handles.VIEW_PARAMETERS)
-    bools = {name for name in view.GetBools()}
-    unsigneds = {name for name in view.GetUnsigneds()}
-    saved_bools = {name: view.GetBool(name) for name in bools}
-    saved_unsigneds = {name: view.GetUnsigned(name) for name in unsigneds}
-    flags = [name for name, _ in handles.BACKGROUND_FLAGS]
+    flags = [name for name, _ in handles.BACKGROUND_FLAGS] + [handles.BACKGROUND_USE_MIDDLE[0]]
+    colors = [handles.BACKGROUND_SINGLE[0], handles.BACKGROUND_MIDDLE[0]] + [
+        name for name, _ in handles.BACKGROUND_GRADIENT]
+    had_bools, had_colors = set(view.GetBools()), set(view.GetUnsigneds())
+    saved_bools = {name: view.GetBool(name) for name in flags if name in had_bools}
+    saved_colors = {name: view.GetUnsigned(name) for name in colors if name in had_colors}
+    gradient, _, middle = flags
     try:
         for flag in flags:
             view.SetBool(flag, False)
@@ -425,23 +429,30 @@ def value_colors():
         on_white = handles.value_color()
         view.SetUnsigned(handles.BACKGROUND_SINGLE[0], DARK_PACKED)
         on_dark = handles.value_color()
-        view.SetBool(flags[0], True)
+        view.SetBool(gradient, True)
         for name, _ in handles.BACKGROUND_GRADIENT:
             view.SetUnsigned(name, WHITE_PACKED)
         on_light_gradient = handles.value_color()
+        # A dark middle colour pulls the mean of a light gradient below the limit.
+        view.SetUnsigned(handles.BACKGROUND_GRADIENT[1][0], DARK_PACKED)
+        view.SetUnsigned(handles.BACKGROUND_MIDDLE[0], DARK_PACKED)
+        view.SetBool(middle, True)
+        through_dark_middle = handles.value_color()
     finally:
-        for name in flags + [handles.BACKGROUND_SINGLE[0]] + [name for name, _ in handles.BACKGROUND_GRADIENT]:
+        for name in flags:
             if name in saved_bools:
                 view.SetBool(name, saved_bools[name])
-            elif name in saved_unsigneds:
-                view.SetUnsigned(name, saved_unsigneds[name])
-            elif name in flags:
+            else:
                 view.RemBool(name)
+        for name in colors:
+            if name in saved_colors:
+                view.SetUnsigned(name, saved_colors[name])
             else:
                 view.RemUnsigned(name)
     expect(on_white == handles.VALUE_ON_LIGHT and on_dark == handles.HELD_COLOR
-           and on_light_gradient == handles.VALUE_ON_LIGHT,
-           "the value is written nearly black over a light background, yellow over a dark one")
+           and on_light_gradient == handles.VALUE_ON_LIGHT and through_dark_middle == handles.HELD_COLOR,
+           "the value is written nearly black over a light background, yellow over a dark one, a gradient "
+           "by the mean of its colours, its middle colour too where it is on")
 
 
 def _on_arc(arc, point):
