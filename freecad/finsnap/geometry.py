@@ -1455,7 +1455,7 @@ def quick_plans(shape, edges, faces, p, angle_deg):
 
 def printable_plans(shape, plans, p):
     """The QuickPlans `plans` for `shape` that print without islands, each with
-    its islands, as (plan, island points), in the order given; where every
+    its Islands, as (plan, Islands), in the order given; where every
     plan has islands, all of them, the fewest islands first. The islands are
     those of the part stood by the plan, see overhang.islands(); the fins do
     not count, they carry no layer. Plans standing the part alike, differing

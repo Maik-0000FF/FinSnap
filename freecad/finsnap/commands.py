@@ -59,11 +59,10 @@ FINS_SUFFIX = "_fins"
 # slightly in front of the part's own faces, which lie in the same place.
 OVERHANG_COLOR = (0.9, 0.1, 0.1)
 OVERHANG_TRANSPARENCY = 0.4
-# Marks on the islands, where the part would start printing in the air: a
-# filled circle the same size on the screen at any zoom, drawn over the part,
-# in a colour of its own beside the red of the overhangs.
-ISLAND_COLOR = (1.0, 0.0, 1.0)
-ISLAND_MARKER = "CIRCLE_FILLED_9_9"
+# The first layers of islands in the air: see-through, but red enough to stay
+# red over a part of any colour; as see-through as a fin while editing, the
+# colour of the part shows through and the red is lost.
+ISLAND_TRANSPARENCY = 0.4
 STATUS_TIMEOUT_MS = 10000
 # What an export writes, and the fins it leaves out because their part lies flat.
 Export = namedtuple("Export", "shapes left_out")
@@ -135,7 +134,7 @@ class ViewProviderFinSnap:
         self.mark(vobj.Object)
 
     def updateData(self, obj, prop):  # noqa: N802 - FreeCAD API
-        if prop in (feature.OVERHANGS, feature.ISLANDS):
+        if prop in (feature.OVERHANGS, feature.ISLANDS, feature.ISLAND_LAYERS):
             self.mark(obj)
 
     def onChanged(self, vobj, prop):  # noqa: N802 - FreeCAD API
@@ -152,14 +151,17 @@ class ViewProviderFinSnap:
         self.marks.whichChild.setValue(coin.SO_SWITCH_ALL if visible else coin.SO_SWITCH_NONE)
 
     def mark(self, obj):
-        """Cover the faces that overhang without fins with red marks, and mark
-        the islands, where the part would start printing in the air."""
+        """Cover the faces that overhang without fins with red marks, and the
+        first layer of each island, where the part would start printing in the
+        air."""
         if not hasattr(self, "marks"):
             return
         self.marks.removeAllChildren()
-        points = getattr(obj, feature.ISLANDS, [])
-        if points:
-            self.marks.addChild(handles.spots(points, ISLAND_COLOR, ISLAND_MARKER))
+        # The first layer of each island that the printer would lay in the
+        # air, in the red a fin shows where it cannot stand.
+        layers = getattr(obj, feature.ISLAND_LAYERS, None)
+        if layers is not None and not layers.isNull():
+            self.marks.addChild(handles.shaded([layers], handles.INVALID_COLOR, ISLAND_TRANSPARENCY))
         names = getattr(obj, feature.OVERHANGS, [])
         if names and obj.Base:
             try:

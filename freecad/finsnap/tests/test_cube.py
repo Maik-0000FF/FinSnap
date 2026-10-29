@@ -869,8 +869,13 @@ def check_islands():
     block = Part.makeBox(ISLAND_SPAN / 4, ISLAND_DEPTH, ISLAND_TOP - ISLAND_BEAM - ISLAND_LOW,
                          V(block_x, 0, ISLAND_LOW))
     found = overhang.islands(bridge(block), first, layer)
-    expect(len(found) == 1 and abs(found[0].z - ISLAND_LOW) < d.TOLERANCE and block_x - d.TOLERANCE <= found[0].x,
-           "a block hanging under a bridge is one island, at its bottom: %s" % found)
+    expect(len(found) == 1 and abs(found[0].point.z - ISLAND_LOW) < d.TOLERANCE
+           and block_x - d.TOLERANCE <= found[0].point.x,
+           "a block hanging under a bridge is one island, at its bottom: %s" % [i.point for i in found])
+    piece = found[0].first.BoundBox if found and found[0].first else None
+    expect(piece is not None and abs(piece.XLength - ISLAND_SPAN / 4) < d.TOLERANCE
+           and abs(piece.ZMin - ISLAND_LOW) < d.TOLERANCE and piece.ZLength <= first + layer,
+           "its first layer in the air is the whole bottom of the block, a layer thick: %s" % piece)
     second = Part.makeBox(ISLAND_SPAN / 8, ISLAND_DEPTH, ISLAND_TOP - ISLAND_BEAM - ISLAND_LOW,
                           V(ISLAND_SPAN * 3 / 8, 0, ISLAND_LOW))
     expect(len(overhang.islands(bridge(block.fuse(second)), first, layer)) == 2,
@@ -880,8 +885,12 @@ def check_islands():
     corners = [V(block_x, 0, under), V(ISLAND_SPAN, 0, under), V(block_x + ISLAND_SPAN / 8, 0, ISLAND_LOW)]
     ridge = Part.Face(Part.makePolygon(corners + corners[:1])).extrude(V(0, ISLAND_DEPTH, 0))
     found = overhang.islands(bridge(ridge), first, layer)
-    expect(len(found) == 1 and abs(found[0].z - ISLAND_LOW) < d.TOLERANCE,
-           "a ridge pointing down under a bridge is one island, on the ridge: %s" % found)
+    expect(len(found) == 1 and abs(found[0].point.z - ISLAND_LOW) < d.TOLERANCE,
+           "a ridge pointing down under a bridge is one island, on the ridge: %s" % [i.point for i in found])
+    piece = found[0].first.BoundBox if found and found[0].first else None
+    expect(piece is not None and abs(piece.YLength - ISLAND_DEPTH) < d.TOLERANCE
+           and piece.XLength < 2 * layer and abs(piece.ZMin - ISLAND_LOW) < d.TOLERANCE,
+           "its first layer in the air is a thin band along the whole ridge: %s" % piece)
 
     mushroom = Part.makeCylinder(ISLAND_STEM, ISLAND_TOP).fuse(
         Part.makeCylinder(ISLAND_CAP, ISLAND_BEAM, V(0, 0, ISLAND_TOP))).removeSplitter()
