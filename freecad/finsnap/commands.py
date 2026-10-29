@@ -1011,21 +1011,30 @@ class CheckStability:
         return App.ActiveDocument is not None
 
     def Activated(self):  # noqa: N802 - FreeCAD API
-        checked = _checked_part()
-        if checked is None:
-            _clear_or_ask()
-            return
-        _message(check_stability(*checked)[1])
+        _run_check(check_stability)
 
 
-def _checked_part():
-    """The part to check and the parameters to check it with, from the
-    selection: a part or the fins of one, and the parameters of its first
-    fins, or the standard for new fins without; None for no part."""
+def _run_check(check):
+    """Run `check`, check_stability() or check_part(), on the part selected
+    and say what it found; with nothing selected, take away what a check
+    shows, or ask for a part where nothing is shown; for an object without
+    a shape, ask for a part."""
     selected = Gui.Selection.getSelection()
     if not selected:
-        return None
-    obj = selected[0]
+        _clear_or_ask()
+        return
+    checked = _checked_part(selected[0])
+    if checked is None:
+        _message(translate("FinSnap", NOTE_SELECT_PART))
+        return
+    _message(check(*checked)[1])
+
+
+def _checked_part(obj):
+    """The part to check and the parameters to check it with, for `obj`, the
+    first object selected: it or the part its fins stand on, and the
+    parameters of its first fins, or the standard for new fins without; None
+    for an object without a shape."""
     part = obj.Base[0] if feature.is_fins(obj) and obj.Base else obj
     if getattr(part, "Shape", None) is None or part.Shape.isNull():
         return None
@@ -1063,11 +1072,7 @@ class CheckPart:
         return App.ActiveDocument is not None
 
     def Activated(self):  # noqa: N802 - FreeCAD API
-        checked = _checked_part()
-        if checked is None:
-            _clear_or_ask()
-            return
-        _message(check_part(*checked)[1])
+        _run_check(check_part)
 
 
 class IslandsWhileEditing:

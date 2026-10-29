@@ -23,7 +23,7 @@ from . import presets
 from . import stability
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
-from .shapes import face_name, global_shape, moved, outermost
+from .shapes import bounds, face_name, global_shape, moved, outermost
 
 TYPE_NAME = "FinSnap"
 # Result property listing the faces that overhang without fins; the view
@@ -679,7 +679,8 @@ def supports_of(part_obj, document):
     """What holds `part_obj` up beside it on the bed, for stability.check():
     the fins of its FinSnap objects, each side as it is built with its changes
     by hand, and the height of its lowest tine, from which it holds the part;
-    and the directions out of the part to its main fins, on the bed. Fins laid
+    and the directions out of the part to its fins, main and counter, on the
+    bed. Fins laid
     flat, or that cannot be built, hold nothing."""
     supports, sides = [], []
     for fins in fins_of(outermost(part_obj), document):
@@ -696,10 +697,11 @@ def supports_of(part_obj, document):
                 continue
             if not result.tine_z:
                 continue
-            supports.append((result.fins, min(result.tine_z)))
-            if which == MAIN:
-                out = geometry.frame_of(part, _face(fins.Base)[1]).out
-                sides.append(App.Vector(out.x, out.y, 0))
+            # The tines are measured from the bed, the bottom of the part.
+            supports.append((result.fins, bounds(part).ZMin + min(result.tine_z)))
+            link = fins.Base if which == MAIN else fins.CounterFace
+            out = geometry.frame_of(part, _face(link)[1]).out
+            sides.append(App.Vector(out.x, out.y, 0))
     return supports, sides
 
 
@@ -719,8 +721,10 @@ def stability_of(part_obj, p):
       tips alone, no fins                  ->  TIPS, add fins
       tips alone, the fins hold it         ->  STANDS or CLOSE, the layer it would tip at
       tips before the lowest tine          ->  TIPS, the height of that tine
-      tips away from the fins              ->  TIPS, add a counter fin
-      tips towards the fins                ->  TIPS, past their feet
+      tips away from its fins, none on that
+        side                               ->  TIPS, add a counter fin
+      tips towards a fin, main or counter  ->  TIPS, past their feet
+      a part off the bed at z 0            ->  the tines measured from its bottom
       tips past an end of its edge         ->  TIPS, past an end of the edge
       nothing on the bed                   ->  TIPS, None to show
     """
@@ -760,10 +764,11 @@ def stability_of(part_obj, p):
                   default=0.0)
     away = min((held.outward.dot(side.normalize()) for side in sides if side.Length > d.TOLERANCE),
                default=0.0)
-    if away < -SIDE_SHARE:
-        return TIPS, translate("FinSnap", NOTE_AWAY_FROM_FINS) % at, held
+    # Towards a fin first: with a counter fin, the side it tips to has one.
     if towards > SIDE_SHARE:
         return TIPS, translate("FinSnap", NOTE_TOWARDS_FINS) % at, held
+    if away < -SIDE_SHARE:
+        return TIPS, translate("FinSnap", NOTE_AWAY_FROM_FINS) % at, held
     return TIPS, translate("FinSnap", NOTE_PAST_EDGE_END) % at, held
 
 

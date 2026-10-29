@@ -603,7 +603,7 @@ def stability_checked(doc, messages):
     and from the task panel: the result is said, the plumb line shown in the
     colour of it, and taken away with nothing selected or once the part moves."""
     from freecad.finsnap import defaults as d
-    from freecad.finsnap import feature, handles, orient, taskpanel
+    from freecad.finsnap import commands, feature, handles, orient, taskpanel
     slab = Part.makeBox(30, 20, 10)
     bottom = [e for e in slab.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
     part = doc.addObject("Part::Feature", "Leaning")
@@ -621,6 +621,13 @@ def stability_checked(doc, messages):
     Gui.Selection.clearSelection()
     Gui.runCommand("FinSnap_CheckStability")
     expect(mark.node is None and len(messages) == 1, "with nothing selected the plumb line goes, nothing said")
+    group = doc.addObject("App::DocumentObjectGroup", "NoShape")
+    select(group)
+    Gui.runCommand("FinSnap_CheckStability")
+    expect(len(messages) == 2 and messages[-1] == App.Qt.translate("FinSnap", commands.NOTE_SELECT_PART),
+           "an object without a shape is asked to be a part")
+    doc.removeObject(group.Name)
+    del messages[1:]
 
     fins = feature.create(part, face_name(part, lower_left_face_of(part.Shape)))
     doc.recompute()

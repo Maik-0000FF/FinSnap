@@ -98,6 +98,9 @@ LAYER_FIELD = "layer_height"
 # box with a sign, so they stand out from the result line above.
 WARNING_COLOR = "#e0a000"
 ERROR_COLOR = "#d03030"
+# A stability check that finds the part standing, and one out of date.
+STANDS_COLOR = "#30a050"
+OUTDATED_COLOR = "#808080"
 NOTE_STYLE = "QLabel { border: 2px solid %s; border-radius: 4px; padding: 6px; }"
 WARNING_SIGN = "⚠"
 # A field whose value differs from the standard for new fins: its label in
@@ -156,9 +159,8 @@ NOTE_NO_OVERHANGS = QT_TRANSLATE_NOOP("FinSnap", "No face overhangs without fins
 NOTE_ISLANDS_FOUND = QT_TRANSLATE_NOOP("FinSnap", "%d island(s): it would start printing in the air there.")
 NOTE_NO_ISLANDS = QT_TRANSLATE_NOOP("FinSnap", "No islands.")
 # The frame of the note of a stability check in the task panel, by what was
-# found, and once a change has made it out of date.
-STABILITY_FRAMES = {feature.STANDS: "#30a050", feature.CLOSE: WARNING_COLOR, feature.TIPS: ERROR_COLOR}
-OUTDATED_FRAME = "#808080"
+# found; OUTDATED_COLOR once a change has made it out of date.
+STABILITY_FRAMES = {feature.STANDS: STANDS_COLOR, feature.CLOSE: WARNING_COLOR, feature.TIPS: ERROR_COLOR}
 STABILITY_TIP = QT_TRANSLATE_NOOP(
     "FinSnap", "Checks whether the part stays standing while it is printed, layer by layer, on its own and "
     "held by these fins, which hold it only from their lowest tine up, and shows the plumb line from its "
@@ -1508,7 +1510,7 @@ class FinSnapTaskPanel:
         if self.stability_checked:
             self.stability_checked = False
             self.stability.setText(translate("FinSnap", NOTE_STABILITY_OUTDATED))
-            self.stability.setStyleSheet(NOTE_STYLE % OUTDATED_FRAME)
+            self.stability.setStyleSheet(NOTE_STYLE % OUTDATED_COLOR)
 
     def preview(self):
         self.timer.stop()
