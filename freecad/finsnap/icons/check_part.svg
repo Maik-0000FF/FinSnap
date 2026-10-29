@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="64" height="64" viewBox="0 0 64 64">
+  <!-- Written by freecad/finsnap/tools/make_icons.py; change the script, not this file. -->
+  <rect x="2.0" y="58.0" width="60.0" height="3.0" rx="1" fill="#5c6670"/>
+  <polygon points="38.0,58.0 20.0,40.0 38.0,22.0 56.0,40.0" fill="#3d8fd6" stroke="#1f4f7a" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="14.0,58.0 31.0,58.0 31.0,55.0 19.0,43.0 14.0,43.0" fill="#f0a030" stroke="#8a5512" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="12.0,55.0 31.0,55.0 31.0,58.0 12.0,58.0" fill="#f0a030" stroke="#8a5512" stroke-width="1.5" stroke-linejoin="round"/>
+  <polygon points="26.0,50.0 30.0,50.0 32.0,52.0 28.0,52.0" fill="#8a5512"/>
+  <polygon points="20.0,44.0 24.0,44.0 26.0,46.0 22.0,46.0" fill="#8a5512"/>
+  <line x1="38.0" y1="40.0" x2="38.0" y2="58.0" stroke="#2b2b2b" stroke-width="1.5" stroke-dasharray="3 2"/>
+  <polygon points="34.0,58.0 42.0,58.0 38.0,54.0" fill="#3fa34d" stroke="#1d5e26" stroke-width="1"/>
+  <circle cx="38.0" cy="40.0" r="4.0" fill="#ffffff" stroke="#2b2b2b" stroke-width="1.5"/>
+  <circle cx="52" cy="12" r="10" fill="#3fa34d" stroke="#1d5e26" stroke-width="2"/>
+  <polyline points="47,12 51,16 58,7" fill="none" stroke="#ffffff" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

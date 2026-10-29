@@ -24,10 +24,10 @@ from . import orient
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_LAY_FLAT, ICON_MESH,
-                    ICON_QUICK, ICON_STABILITY, ICON_TILT)
+                    ICON_CHECK_PART, ICON_ISLANDS, ICON_QUICK, ICON_STABILITY, ICON_TILT)
 from .presets import PREFERENCES
 from .shapes import FACE_PREFIX, global_shape, outermost
-from .taskpanel import DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, check_stability, discard_created
+from .taskpanel import DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, check_part, check_stability, discard_created
 from .version import NAME
 
 EDGE_PREFIX = "Edge"
@@ -60,18 +60,6 @@ MESH_LINEAR_DECIMALS = 3
 MESH_ANGULAR_DECIMALS = 1
 SOLID_SUFFIX = "_solid"
 FINS_SUFFIX = "_fins"
-# Marks on faces that overhang without fins: red, half see-through, drawn
-# slightly in front of the part's own faces, which lie in the same place.
-OVERHANG_COLOR = (0.9, 0.1, 0.1)
-OVERHANG_TRANSPARENCY = 0.4
-# The first layers of islands in the air: see-through, yet red over a part of
-# any colour. As see-through as a fin while editing, the colour of the part
-# would show through and the red be lost.
-ISLAND_TRANSPARENCY = 0.4
-# An island whose first layer the kernel could not cut out is marked at its
-# lowest point instead, by a ball of this radius, in the units of the node
-# that keeps it the same size on the screen at any zoom.
-ISLAND_SPOT_SIZE = 0.3
 STATUS_TIMEOUT_MS = 10000
 # What an export writes, and the fins it leaves out because their part lies flat.
 Export = namedtuple("Export", "shapes left_out")
@@ -170,10 +158,10 @@ class ViewProviderFinSnap:
         # air, in the red a fin shows where it cannot stand.
         layers = getattr(obj, feature.ISLAND_LAYERS, None)
         if layers is not None and not layers.isNull():
-            self.marks.addChild(handles.shaded([layers], handles.INVALID_COLOR, ISLAND_TRANSPARENCY))
+            self.marks.addChild(handles.island_layers(layers))
         uncut = getattr(obj, feature.ISLANDS_UNCUT, [])
         if uncut:
-            self.marks.addChild(handles.spots(uncut, handles.INVALID_COLOR, ISLAND_TRANSPARENCY, ISLAND_SPOT_SIZE))
+            self.marks.addChild(handles.island_spots(uncut))
         names = getattr(obj, feature.OVERHANGS, [])
         if names and obj.Base:
             try:
@@ -182,7 +170,7 @@ class ViewProviderFinSnap:
                 shape = None
             if shape is not None:
                 faces = [shape.getElement(name) for name in names]
-                self.marks.addChild(handles.shaded(faces, OVERHANG_COLOR, OVERHANG_TRANSPARENCY))
+                self.marks.addChild(handles.overhang_faces(faces))
         self.show_marks()
 
     def setEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API
@@ -615,8 +603,12 @@ def quick_plans(obj, edge_names, face_names):
         pass
     # The area from the shape the plans number their faces in, a side split
     # in halves joined: on `obj` the number is another face.
+    # Without islands checked while editing, the ways stand in the order found,
+    # their islands not known.
+    rated = (geometry.printable_plans(shape, plans, quick_params()) if feature.islands_while_editing()
+             else [(plan, None) for plan in plans])
     return [QuickWay(plan, name_of(plan.number), points, shape.Faces[plan.number].Area, _edge_name(obj, plan.edge))
-            for plan, points in geometry.printable_plans(shape, plans, quick_params())]
+            for plan, points in rated]
 
 
 def _edge_name(obj, edge):
@@ -666,8 +658,9 @@ class QuickStands:
                         and all(way.plan.edge is not None for way in plans))
         # What tells the ways apart: the edge or the face by its name on the
         # part, its length (mm) or area (mm2), and the islands standing so.
-        self.rows = [(way.edge or "", way.plan.edge.Length, len(way.islands or ())) if self.by_edge
-                     else (way.face, way.area, len(way.islands or ())) for way in plans]
+        self.rows = [(way.edge or "", way.plan.edge.Length, None if way.islands is None else len(way.islands))
+                     if self.by_edge else (way.face, way.area, None if way.islands is None else len(way.islands))
+                     for way in plans]
 
     def __len__(self):
         return len(self.plans)
@@ -1018,22 +1011,84 @@ class CheckStability:
         return App.ActiveDocument is not None
 
     def Activated(self):  # noqa: N802 - FreeCAD API
-        selected = Gui.Selection.getSelection()
-        if not selected:
-            shown = handles.STABILITY_MARK.node is not None
-            handles.STABILITY_MARK.clear()
-            if not shown:
-                _message(translate("FinSnap", NOTE_SELECT_PART))
+        checked = _checked_part()
+        if checked is None:
+            _clear_or_ask()
             return
-        obj = selected[0]
-        part = obj.Base[0] if feature.is_fins(obj) and obj.Base else obj
-        if getattr(part, "Shape", None) is None or part.Shape.isNull():
-            _message(translate("FinSnap", NOTE_SELECT_PART))
+        _message(check_stability(*checked)[1])
+
+
+def _checked_part():
+    """The part to check and the parameters to check it with, from the
+    selection: a part or the fins of one, and the parameters of its first
+    fins, or the standard for new fins without; None for no part."""
+    selected = Gui.Selection.getSelection()
+    if not selected:
+        return None
+    obj = selected[0]
+    part = obj.Base[0] if feature.is_fins(obj) and obj.Base else obj
+    if getattr(part, "Shape", None) is None or part.Shape.isNull():
+        return None
+    fins = [other for other in feature.fins_of(outermost(part), part.Document)
+            if other.Base and other.Base[0] is part]
+    return part, (feature.params_of(fins[0]) if fins else presets.standard())
+
+
+def _clear_or_ask():
+    """With nothing to check: take away what a check shows, or, with
+    nothing shown, ask for a part."""
+    shown = handles.STABILITY_MARK.node is not None
+    handles.STABILITY_MARK.clear()
+    if not shown:
+        _message(translate("FinSnap", NOTE_SELECT_PART))
+
+
+class CheckPart:
+    """Check a part, as it stands, for everything that keeps it from printing:
+    faces overhanging without fins, islands and whether it stays standing;
+    see taskpanel.check_part(). Selections as for CheckStability."""
+
+    def GetResources(self):  # noqa: N802 - FreeCAD API
+        return {"Pixmap": ICON_CHECK_PART,
+                "MenuText": QT_TRANSLATE_NOOP("FinSnap_CheckPart", "Check part"),
+                "ToolTip": QT_TRANSLATE_NOOP(
+                    "FinSnap_CheckPart",
+                    "Checks the selected part, with or without fins, as it stands, for everything that keeps it "
+                    "from printing, all at once: faces overhanging without fins, islands, where it would start "
+                    "printing in the air, and whether it stays standing while it is printed. Shows them in the "
+                    "3D view until the part, its place or its fins change, and says what it found. With "
+                    "nothing selected, what is shown goes.")}
+
+    def IsActive(self):  # noqa: N802 - FreeCAD API
+        return App.ActiveDocument is not None
+
+    def Activated(self):  # noqa: N802 - FreeCAD API
+        checked = _checked_part()
+        if checked is None:
+            _clear_or_ask()
             return
-        fins = [other for other in feature.fins_of(outermost(part), part.Document)
-                if other.Base and other.Base[0] is part]
-        p = feature.params_of(fins[0]) if fins else presets.standard()
-        _message(check_stability(part, p)[1])
+        _message(check_part(*checked)[1])
+
+
+class IslandsWhileEditing:
+    """Switch the island check while fins are made and edited on or off: on a
+    slow computer it can be left to Check part. Kept in FinSnap's preferences."""
+
+    def GetResources(self):  # noqa: N802 - FreeCAD API
+        return {"Pixmap": ICON_ISLANDS,
+                "MenuText": QT_TRANSLATE_NOOP("FinSnap_IslandsWhileEditing", "Islands while editing"),
+                "ToolTip": QT_TRANSLATE_NOOP(
+                    "FinSnap_IslandsWhileEditing",
+                    "While on, fins check their part for islands as they are made and edited, and Quick fins "
+                    "prefers ways to stand it without. Off, they are not checked then, which keeps a large part "
+                    "quick on a slow computer; Check part checks them at the end."),
+                "Checkable": feature.islands_while_editing()}
+
+    def IsActive(self):  # noqa: N802 - FreeCAD API
+        return True
+
+    def Activated(self, checked):  # noqa: N802 - FreeCAD API
+        feature.set_islands_while_editing(checked)
 
 
 class StabilityWatch:
@@ -1051,6 +1106,8 @@ COMMANDS = (("FinSnap_QuickFins", QuickFins()),
             ("FinSnap_AddFins", AddFins()),
             ("FinSnap_AddCounterFin", AddCounterFin()),
             ("FinSnap_CheckStability", CheckStability()),
+            ("FinSnap_CheckPart", CheckPart()),
+            ("FinSnap_IslandsWhileEditing", IslandsWhileEditing()),
             ("FinSnap_MeshToSolid", MeshToSolid()),
             ("FinSnap_Export3MF", Export3MF()),
             ("FinSnap_ExportSTEP", ExportSTEP()))

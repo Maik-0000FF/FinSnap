@@ -50,6 +50,7 @@ STABLE_TOLERANCE = 0.05  # how far a plumb line or a margin may be off what is r
 STABLE_BASE = 10.0     # side of a column on the bed, and of the arm out of its top
 STABLE_HEIGHT = 20.0   # height of that column
 STABLE_REACH = 30.0    # how far its arm reaches out, carrying the centre of mass past the column
+STABLE_BRIM = 20.0     # a brim wide enough to hold a slab standing on its edge
 WIDE_FIN = 3.0         # a fin thick enough for a hole under its flank, clear of its tine, in mm
 FLANK_HOLE_RADIUS = 0.5  # that hole, across the side of the fin, in mm
 GROOVE_WIDTH = 2.0
@@ -957,6 +958,10 @@ def check_stability():
     expect(alone is not None and alone.tips and alone.height < standing.BoundBox.ZLength,
            "a slab standing on an edge without fins tips while it is printed: layer %s" % (alone and alone.layer))
 
+    braced = stability.check(standing, [], first, layer, {}, STABLE_BRIM)
+    expect(braced is not None and not braced.tips and abs(braced.margin - alone.profile[-1][1] - STABLE_BRIM) < 1
+           and len(braced.footprint) > len(alone.footprint),
+           "a wide brim holds the slab: its footprint grown by the brim, the margin by its width")
     reach = standing.BoundBox
     beside = Part.makeBox(reach.XLength, reach.YLength, first, V(reach.XMin, reach.YMin, 0))
     held = stability.check(standing, [(beside.translated(V(0, 0, 0)), 0.0)], first, layer, {})
@@ -975,6 +980,13 @@ def check_stability():
     stability.check(leaning, [], first, layer, centres)
     again = stability.check(leaning, [], first, layer, centres)
     expect(again == tipped, "the centres kept for a part are taken again, the result the same")
+    heights = [height for height, _ in tipped.profile]
+    expect(heights == sorted(heights) and tipped.profile[-1][1] < 0 < tipped.profile[0][1],
+           "the profile runs from the bed up, from standing to tipping")
+    cut = stability.section(leaning, tipped.height)
+    expect(cut is not None and abs(cut.BoundBox.ZMin - tipped.height) < d.TOLERANCE
+           and cut.Area > STABLE_BASE * STABLE_BASE,
+           "the critical layer is cut out of the part at its height, the arm in it")
     expect(stability.check(Part.Shape(), [], first, layer, {}) is None, "an empty part has no result")
 
 

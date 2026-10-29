@@ -13,7 +13,9 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Added
 
-- Check stability, in the toolbar and the task panel: whether a part, with or without fins, stays standing while it is printed, layer by layer as its centre of mass moves, first on its own, then held by its fins from their lowest tine up; it says at which layer it would tip and which way, recommends a counter fin where it tips away from the fins, and shows the plumb line and what the part stands on in the 3D view (#80)
+- Check stability, in the toolbar and the task panel: whether a part, with or without fins, stays standing while it is printed, layer by layer as its centre of mass moves, first on its own, then held by its fins from their lowest tine up; it says at which layer it would tip and which way, recommends a counter fin where it tips away from the fins, and shows in the 3D view the part coloured by height from green over yellow to red where it tips, the critical layer cut out of it, and the plumb line over what it stands on (#80)
+- Check part, in the toolbar: overhangs, islands and stability of a part at once, with a line for each
+- Islands while editing, a switch in the toolbar: off, fins and Quick fins leave islands to Check part, which keeps a large part quick on a slow computer
 
 ## [0.8.0] - 2026-10-29
 

@@ -25,7 +25,8 @@ from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left
 
 WORKBENCH = "FinSnapWorkbench"
 COMMANDS = ("FinSnap_QuickFins", "FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCounterFin",
-            "FinSnap_MeshToSolid", "FinSnap_Export3MF", "FinSnap_ExportSTEP")
+            "FinSnap_CheckStability", "FinSnap_CheckPart", "FinSnap_IslandsWhileEditing", "FinSnap_MeshToSolid",
+            "FinSnap_Export3MF", "FinSnap_ExportSTEP")
 DIALOG_ACCEPTED = 1
 # Answers to the questions commands ask, taken in order by answer_dialogs().
 ANSWERS = []
@@ -540,7 +541,7 @@ def _layer_marked(marks):
     """Whether the Coin node `marks` holds a mark in the red a fin shows where
     it cannot stand, as see-through as islands are drawn: the first layer of an
     island."""
-    from freecad.finsnap import commands, handles
+    from freecad.finsnap import handles
     found = coin.SoSearchAction()
     found.setType(coin.SoMaterial.getClassTypeId())
     found.setInterest(coin.SoSearchAction.ALL)
@@ -548,7 +549,7 @@ def _layer_marked(marks):
     paths = found.getPaths()
     materials = [paths[i].getTail() for i in range(paths.getLength())]
     return any(rgb_close(material.diffuseColor[0].getValue(), handles.INVALID_COLOR)
-               and abs(material.transparency[0] - commands.ISLAND_TRANSPARENCY) < COLOR_TOLERANCE
+               and abs(material.transparency[0] - handles.ISLAND_TRANSPARENCY) < COLOR_TOLERANCE
                for material in materials)
 
 
@@ -615,7 +616,7 @@ def stability_checked(doc, messages):
     Gui.runCommand("FinSnap_CheckStability")
     # What sets the note apart from the others: its words after the height.
     needs_fins = App.Qt.translate("FinSnap", feature.NOTE_NEEDS_FINS).rsplit("mm)", 1)[1]
-    expect(len(messages) == 1 and messages[0].endswith(needs_fins) and mark.node is not None and mark.watches(part),
+    expect(len(messages) == 1 and needs_fins in messages[0] and mark.node is not None and mark.watches(part),
            "Check stability says a leaning part without fins tips, and shows its plumb line: %s" % messages)
     Gui.Selection.clearSelection()
     Gui.runCommand("FinSnap_CheckStability")
@@ -626,7 +627,7 @@ def stability_checked(doc, messages):
     select(fins)
     Gui.runCommand("FinSnap_CheckStability")
     said = messages[-1]
-    expect(len(messages) == 2 and mark.node is not None and not said.endswith(needs_fins),
+    expect(len(messages) == 2 and mark.node is not None and needs_fins not in said,
            "with fins, Check stability says whether they hold it: %s" % said)
     panel = taskpanel.FinSnapTaskPanel(fins)
     panel.check_stability()
@@ -638,8 +639,45 @@ def stability_checked(doc, messages):
     panel.check_stability()
     part.Placement = App.Placement(App.Vector(1, 0, 0), App.Rotation()).multiply(part.Placement)
     expect(mark.node is None, "the plumb line goes once the part moves")
+    select(part)
+    Gui.runCommand("FinSnap_CheckPart")
+    lines = messages[-1].split("\n")
+    expect(len(lines) == 4 and messages[-1].endswith(said) and mark.node is not None and _coloured_by_height(mark.node)
+           and _layer_cut_shown(mark.node),
+           "Check part says overhangs, islands and stability, the part coloured by height, its layer cut: %s"
+           % lines)
+    Gui.Selection.clearSelection()
+    Gui.runCommand("FinSnap_CheckPart")
+    expect(mark.node is None, "Check part with nothing selected takes away what it shows")
+    Gui.runCommand("FinSnap_IslandsWhileEditing", 0)
+    off = feature.islands_while_editing()
+    Gui.runCommand("FinSnap_IslandsWhileEditing", 1)
+    expect(not off and feature.islands_while_editing(), "Islands while editing switches the island check off and on")
     doc.removeObject(fins.Name)
     doc.removeObject(part.Name)
+
+
+def _coloured_by_height(node):
+    """Whether `node` colours faces corner by corner, as the part by height."""
+    found = coin.SoSearchAction()
+    found.setType(coin.SoMaterialBinding.getClassTypeId())
+    found.setInterest(coin.SoSearchAction.ALL)
+    found.apply(node)
+    paths = found.getPaths()
+    return any(paths[i].getTail().value.getValue() == coin.SoMaterialBinding.PER_VERTEX
+               for i in range(paths.getLength()))
+
+
+def _layer_cut_shown(node):
+    """Whether `node` shows faces drawn over everything else, as the layer cut out."""
+    found = coin.SoSearchAction()
+    found.setType(coin.SoAnnotation.getClassTypeId())
+    found.setInterest(coin.SoSearchAction.ALL)
+    found.apply(node)
+    paths = found.getPaths()
+    faces = coin.SoIndexedFaceSet.getClassTypeId()
+    return any(paths[i].getTail().getNumChildren() and paths[i].getTail().getChild(0).getNumChildren() > 3
+               and paths[i].getTail().getChild(0).getChild(3).isOfType(faces) for i in range(paths.getLength()))
 
 
 def lower_left_face_of(shape):

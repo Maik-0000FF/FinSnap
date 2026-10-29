@@ -17,6 +17,9 @@ NOZZLE_DIAMETER = 0.4
 BEAD_WIDTH = 0.45
 LAYER_HEIGHT = 0.2
 FIRST_LAYER_HEIGHT = 0.2
+# Brim the slicer prints round what stands on the bed (mm); it holds the part
+# like a wider footprint while it is printed. None by default.
+BRIM_WIDTH = 0.0
 
 # --- Connection ---------------------------------------------------------------
 # "separate": the fin is its own object, tines only touch the part, no

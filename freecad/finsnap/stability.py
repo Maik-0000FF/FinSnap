@@ -29,6 +29,7 @@ INPUTS this has to withstand (check()):
                                             centre of mass past the edge
   plumb line past an end of the edge    ->  tips, its outward direction along the edge
   plumb line just inside                ->  stands, the margin small
+  a brim                                ->  the footprint grown by its width all round
   an empty part, or one with nothing on
     the bed                             ->  None
   a layer the kernel cannot cut out     ->  passed over
@@ -50,25 +51,31 @@ SAMPLE_STEP = 1.0
 CUT_MARGIN = 1.0
 # How closely curved edges of a footprint are followed (mm).
 FOOTPRINT_DEFLECTION = 0.1
+# Points round each corner of a footprint grown by a brim, for its outline.
+BRIM_CORNER_POINTS = 16
+# Turns the wires of a cut into faces, holes inside their outlines.
+FACE_MAKER = "Part::FaceMakerBullseye"
 
 # The result of check(): whether the part tips; the layer (from 0, the first)
 # it tips at or, if it stands, comes closest to tipping at, and the height of
 # its top over the bed (mm); the centre of mass of the part printed up to it
 # and the foot of its plumb line on the bed; the margin, how far that foot
 # lies inside the footprint (mm, below 0 outside); the direction on the bed
-# out of the footprint nearest the foot; and the footprint, as points round
-# it on the bed.
-Stability = namedtuple("Stability", "tips layer height centre foot margin outward footprint")
+# out of the footprint nearest the foot; the footprint, as points round it on
+# the bed; and the margins found on the way, as (height over the bed, margin)
+# pairs from the bed up, the layers checked only.
+Stability = namedtuple("Stability", "tips layer height centre foot margin outward footprint profile")
 
 
-def check(part, supports, first_layer, layer, centres):
+def check(part, supports, first_layer, layer, centres, brim=0.0):
     """Whether `part`, as it stands, stays standing while it is printed in
     layers, the first `first_layer` high, every other `layer` high, held by
     `supports`, (shape, height) pairs: what stands beside it on the bed, the
-    fins, and the height from which each holds it, its lowest tine. A
-    Stability, or None for a part with nothing on the bed. `centres`, a dict
-    the caller keeps for this part as it stands, holds the centres of mass
-    worked out, by layer."""
+    fins, and the height from which each holds it, its lowest tine. A brim
+    `brim` mm wide round it all on the bed holds it as well: the footprint
+    grows by that much all round. A Stability, or None for a part with
+    nothing on the bed. `centres`, a dict the caller keeps for this part as
+    it stands, holds the centres of mass worked out, by layer."""
     if part.isNull():
         return None
     box = bounds(part)
@@ -95,9 +102,18 @@ def check(part, supports, first_layer, layer, centres):
         points = own + [point for points, height in feet if height <= top(number) for point in points]
         hull = _hull(points)
         margin, outward = _margin(hull, (centre.x, centre.y))
-        return Stability(margin < 0, number, top(number) - bed, centre, App.Vector(centre.x, centre.y, bed),
-                         margin, outward, [App.Vector(x, y, bed) for x, y in hull])
+        # The hull grown by the brim all round: every point inside it lies that
+        # much deeper, every point outside that much nearer.
+        margin += brim
+        shown = _hull([(x + brim * math.cos(turn), y + brim * math.sin(turn)) for x, y in hull for turn in
+                       (2 * math.pi * k / BRIM_CORNER_POINTS for k in range(BRIM_CORNER_POINTS))]) if brim > 0 else hull
+        result = Stability(margin < 0, number, top(number) - bed, centre, App.Vector(centre.x, centre.y, bed),
+                           margin, outward, [App.Vector(x, y, bed) for x, y in shown], None)
+        seen[number] = result
+        return result
 
+    # Every layer checked, for the profile of the result.
+    seen = {}
     step = max(1, round(SAMPLE_STEP / layer))
     samples = set(range(0, count, step)) | {count - 1}
     # Where a fin starts to hold the part, and the layer below.
@@ -116,13 +132,31 @@ def check(part, supports, first_layer, layer, centres):
         first = min(tipping, key=lambda result: result.layer)
         before = max([number for number in ordered if number < first.layer] or [first.layer])
         between = [measure(number) for number in range(before + 1, first.layer)]
-        return next((result for result in between if result is not None and result.tips), first)
+        return _with_profile(next((result for result in between if result is not None and result.tips), first),
+                             seen)
     closest = min(found, key=lambda result: result.margin)
     at = ordered.index(closest.layer)
     low = ordered[at - 1] if at > 0 else closest.layer
     high = ordered[at + 1] if at + 1 < len(ordered) else closest.layer
     around = [measure(number) for number in range(low + 1, high) if number != closest.layer]
-    return min([closest] + [result for result in around if result is not None], key=lambda result: result.margin)
+    return _with_profile(min([closest] + [result for result in around if result is not None],
+                             key=lambda result: result.margin), seen)
+
+
+def _with_profile(result, seen):
+    """`result` with the margins of every layer checked, from the bed up."""
+    return result._replace(profile=[(found.height, found.margin) for _, found in sorted(seen.items())])
+
+
+def section(part, z):
+    """Where the plane at height `z` cuts `part`, as a shape of faces, to show
+    a layer in the part; None where nothing is there or the kernel cannot
+    make it."""
+    try:
+        wires = part.slice(App.Vector(0, 0, 1), z)
+        return Part.makeFace(wires, FACE_MAKER) if wires else None
+    except Part.OCCError:
+        return None
 
 
 def _centre_below(part, box, height):

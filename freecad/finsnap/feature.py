@@ -204,6 +204,11 @@ PROPERTIES = (
          QT_TRANSLATE_NOOP("FinSnap", "First layer height"),
          QT_TRANSLATE_NOOP("App::Property", "Height of the first layer"),
          "first_layer_height", None, STEP_PROFILE),
+    Prop("BrimWidth", LENGTH, GROUP_SLICER,
+         QT_TRANSLATE_NOOP("FinSnap", "Brim width"),
+         QT_TRANSLATE_NOOP("App::Property", "Width of the brim the slicer prints round the part and the fins on "
+                           "the bed, 0 without. Check stability counts it as standing on the bed with them."),
+         "brim_width", None, STEP_PROFILE),
     Prop("Connection", CHOICE, GROUP_CONNECTION,
          QT_TRANSLATE_NOOP("FinSnap", "Connection"),
          QT_TRANSLATE_NOOP("App::Property",
@@ -593,6 +598,9 @@ NOTE_PAST_EDGE_END = QT_TRANSLATE_NOOP(
 ISLANDS_KEPT = 8
 ISLANDS_KEY_DIGITS = 6
 _islands_kept = {}
+# Whether islands are checked while fins are made and edited, in FinSnap's
+# preferences: on a slow computer they can be left to Check part.
+ISLANDS_WHILE_EDITING = "IslandsWhileEditing"
 # The centres of mass of parts while they are printed, by the same key as the
 # islands: stability_of() fills them as stability.check() works them out.
 _centres_kept = {}
@@ -612,13 +620,26 @@ def islands_of(obj, p):
     """The islands (overhang.islands()) of the part of `obj` as it stands, on
     the layers of `p`; the fins do not count. Worked out once for each part,
     shape, place and layers, as every build of the fins asks again, unless
-    keep_islands() was told them before."""
+    keep_islands() was told them before. While islands_while_editing() is off,
+    none are worked out: [], and the fins say nothing of islands."""
+    if not islands_while_editing():
+        return []
     part_obj = obj.Base[0]
     kept = _islands_kept.get(_islands_key(part_obj, p))
     if kept is None:
         kept = overhang.islands(global_shape(part_obj), p.first_layer_height, p.layer_height)
         keep_islands(part_obj, p, kept)
     return list(kept)
+
+
+def islands_while_editing():
+    """Whether islands are checked while fins are made and edited, as the
+    user set it with Islands while editing; on, if never set."""
+    return App.ParamGet(presets.PREFERENCES).GetBool(ISLANDS_WHILE_EDITING, True)
+
+
+def set_islands_while_editing(on):
+    App.ParamGet(presets.PREFERENCES).SetBool(ISLANDS_WHILE_EDITING, bool(on))
 
 
 def keep_islands(part_obj, p, found):
@@ -710,7 +731,7 @@ def stability_of(part_obj, p):
         _centres_kept[key] = {}
     centres = _centres_kept[key]
     part = global_shape(part_obj)
-    alone = stability.check(part, [], p.first_layer_height, p.layer_height, centres)
+    alone = stability.check(part, [], p.first_layer_height, p.layer_height, centres, p.brim_width)
     if alone is None:
         return TIPS, translate("FinSnap", NOTE_NOTHING_ON_BED), None
     if not alone.tips:
@@ -722,7 +743,7 @@ def stability_of(part_obj, p):
     supports, sides = supports_of(part_obj, part_obj.Document)
     if not supports:
         return TIPS, translate("FinSnap", NOTE_NEEDS_FINS) % tipping, alone
-    held = stability.check(part, supports, p.first_layer_height, p.layer_height, centres)
+    held = stability.check(part, supports, p.first_layer_height, p.layer_height, centres, p.brim_width)
     if held is None:
         return TIPS, translate("FinSnap", NOTE_NOTHING_ON_BED), None
     if not held.tips:

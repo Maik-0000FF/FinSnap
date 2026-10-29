@@ -159,6 +159,20 @@ def plumb():
             % (cx, cy, PLUMB_CENTRE_RADIUS, WHITE, PLUMB_LINE, LINE_WIDTH)]
 
 
+def check_badge():
+    """A tick on green: everything checked."""
+    return ['<circle cx="52" cy="12" r="10" fill="%s" stroke="%s" stroke-width="2"/>' % (ADD_FILL, ADD_LINE),
+            '<polyline points="47,12 51,16 58,7" fill="none" stroke="%s" stroke-width="3" stroke-linecap="round" '
+            'stroke-linejoin="round"/>' % WHITE]
+
+
+def island_badge():
+    """A layer printed in the air, on red: the islands checked while editing."""
+    return ['<circle cx="52" cy="12" r="10" fill="%s" stroke="%s" stroke-width="2"/>' % (REMOVE_FILL, REMOVE_LINE),
+            '<rect x="46" y="13" width="12" height="3" rx="1" fill="%s"/>' % WHITE,
+            '<line x1="52" y1="5" x2="52" y2="10" stroke="%s" stroke-width="2" stroke-dasharray="2 1"/>' % WHITE]
+
+
 def svg(body, width=SIZE, height=SIZE):
     return "\n".join(['<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">'
                       % (width, height, width, height),
@@ -201,6 +215,8 @@ def icons():
         "add_fins.svg": workbench() + plus_badge(),
         "quick_fins.svg": workbench() + bolt_badge(),
         "check_stability.svg": workbench() + plumb(),
+        "check_part.svg": workbench() + plumb() + check_badge(),
+        "islands_live.svg": workbench() + island_badge(),
         "counter_fin.svg": bed() + part_shape() + fin_shapes() + fin_shapes(mirrored=True) + plus_badge(),
         "remove_fin.svg": workbench() + minus_badge(),
         "reset_fins.svg": workbench() + back_badge(),

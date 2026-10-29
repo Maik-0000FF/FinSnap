@@ -15,18 +15,21 @@ import math
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
+from pivy import coin
 from PySide import QtCore, QtGui, QtWidgets
 
 from . import defaults as d
 from . import feature
 from . import geometry
 from . import handles
+from . import overhang
 from . import presets
+from . import stability
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
 from .paths import (ICON_COUNTER, ICON_REMOVE_COUNTER, ICON_REMOVE_FIN, ICON_RESET_FINS, ICON_STABILITY, SIDE_VIEW,
                     TOP_VIEW)
-from .shapes import FACE_PREFIX, outermost
+from .shapes import FACE_PREFIX, global_shape, outermost
 from .version import application
 
 # Upper limits of the input fields; generous, the geometry rejects nonsense.
@@ -137,10 +140,21 @@ STAND_ASK = QT_TRANSLATE_NOOP("FinSnap", "Stand the part another way? The fins a
 STAND_ROWS = 6
 # What a stability check found, in the colours of the fins while editing: green
 # where the part stands, yellow where only just, red where it tips; and the
-# label of the layer its plumb line is shown for, counted from 1.
+# label of the layer its plumb line is shown for, counted from 1, beside it.
 LEVEL_COLORS = {feature.STANDS: handles.VALID_COLOR, feature.CLOSE: handles.BETWEEN_COLOR,
                 feature.TIPS: handles.INVALID_COLOR}
-PLUMB_LABEL = QT_TRANSLATE_NOOP("FinSnap", "Layer %d (%.1f mm)")
+LAYER_TIPS = QT_TRANSLATE_NOOP("FinSnap", "Tips at layer %d, %.1f mm high")
+LAYER_CLOSEST = QT_TRANSLATE_NOOP("FinSnap", "Closest to tipping at layer %d, %.1f mm high")
+# What the colours of a stability check mean, said with its result.
+NOTE_COLOURS = QT_TRANSLATE_NOOP(
+    "FinSnap", "Colours by height: green stands, yellow comes within %.0f mm of tipping, red tips from there.")
+# The part coloured by height in a stability check, this see-through.
+GRADIENT_TRANSPARENCY = 0.5
+# The lines of Check part, one for each check.
+NOTE_OVERHANGS = QT_TRANSLATE_NOOP("FinSnap", "%d faces overhang flatter than %.0f degrees without fins.")
+NOTE_NO_OVERHANGS = QT_TRANSLATE_NOOP("FinSnap", "No face overhangs without fins.")
+NOTE_ISLANDS_FOUND = QT_TRANSLATE_NOOP("FinSnap", "%d island(s): it would start printing in the air there.")
+NOTE_NO_ISLANDS = QT_TRANSLATE_NOOP("FinSnap", "No islands.")
 # The frame of the note of a stability check in the task panel, by what was
 # found, and once a change has made it out of date.
 STABILITY_FRAMES = {feature.STANDS: "#30a050", feature.CLOSE: WARNING_COLOR, feature.TIPS: ERROR_COLOR}
@@ -158,23 +172,120 @@ DRAWINGS = (
 
 def check_stability(part_obj, p):
     """Check whether `part_obj` stays standing while it is printed in the
-    layers of `p` (feature.stability_of()), and show its plumb line in the 3D
-    view of its document, in the colour of what is found, until the part, its
-    place or its fins change. Returns the level and the note found."""
+    layers of `p` (feature.stability_of()), and show it in the 3D view of
+    its document until the part, its place or its fins change (_stability_marks()).
+    Returns the level and the note found."""
     QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
     try:
         level, note, shown = feature.stability_of(part_obj, p)
+        marks = _stability_marks(part_obj, p, level, shown)
     finally:
         QtWidgets.QApplication.restoreOverrideCursor()
+    _show_marks(part_obj, marks)
+    return level, _with_colours(note, shown)
+
+
+def check_part(part_obj, p):
+    """Check `part_obj` as it stands for everything that keeps it from
+    printing: faces overhanging without fins, islands and whether it stays
+    standing, in the layers of `p`, and show it all in the 3D view of its
+    document until the part, its place or its fins change. Returns the level
+    of the worst found, and a note with a line for each check."""
+    QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+    try:
+        part = global_shape(part_obj)
+        names = feature.overhangs_of(part_obj, part_obj.Document)
+        found = overhang.islands(part, p.first_layer_height, p.layer_height)
+        level, note, shown = feature.stability_of(part_obj, p)
+        marks = _stability_marks(part_obj, p, level, shown)
+        if names:
+            marks.append(handles.overhang_faces([part.getElement(name) for name in names]))
+        layers = [island.first for island in found if island.first is not None]
+        if layers:
+            marks.append(handles.island_layers(Part.makeCompound(layers)))
+        uncut = [island.point for island in found if island.first is None]
+        if uncut:
+            marks.append(handles.island_spots(uncut))
+    finally:
+        QtWidgets.QApplication.restoreOverrideCursor()
+    _show_marks(part_obj, marks)
+    lines = [translate("FinSnap", NOTE_OVERHANGS) % (len(names), d.OVERHANG_ANGLE) if names
+             else translate("FinSnap", NOTE_NO_OVERHANGS),
+             translate("FinSnap", NOTE_ISLANDS_FOUND) % len(found) if found
+             else translate("FinSnap", NOTE_NO_ISLANDS),
+             _with_colours(note, shown)]
+    worst = feature.TIPS if names or found else level
+    return worst, "\n".join(lines)
+
+
+def _stability_marks(part_obj, p, level, shown):
+    """The nodes showing `shown`, a stability.Stability of `part_obj` found at
+    `level`: the part coloured by height from green, where it stands, over
+    yellow, where it comes close to tipping, to red, where it tips; the layer
+    it tips at, or comes closest to tipping at, cut out of it; and the plumb
+    line of that layer over what it stands on. None for nothing shown."""
+    if shown is None:
+        return []
+    bed = shown.foot.z
+    profile = [(bed + height, margin) for height, margin in shown.profile]
+
+    def color_at(z):
+        return margin_color(_margin_at(profile, z))
+
+    part = global_shape(part_obj)
+    marks = [handles.gradient(part, color_at, [z for z, _ in profile], GRADIENT_TRANSPARENCY)]
+    cut = stability.section(part, bed + shown.height - p.layer_height / 2)
+    if cut is not None:
+        marks.append(handles.layer_cut(cut, LEVEL_COLORS[level]))
+    label = translate("FinSnap", LAYER_TIPS if shown.tips else LAYER_CLOSEST) % (shown.layer + 1, shown.height)
+    # Beside the layer cut out, where the plumb line passes it.
+    at = App.Vector(shown.foot.x, shown.foot.y, bed + shown.height)
+    marks.append(handles.plumb(shown, LEVEL_COLORS[level], label, at))
+    return marks
+
+
+def _show_marks(part_obj, marks):
+    """Show `marks` in the 3D view of the document of `part_obj`, instead of
+    those shown before, until the part, its place or its fins change."""
     view = Gui.getDocument(part_obj.Document).ActiveView
-    if shown is None or not hasattr(view, "getSceneGraph"):
+    if not marks or not hasattr(view, "getSceneGraph"):
         handles.STABILITY_MARK.clear()
-        return level, note
-    label = translate("FinSnap", PLUMB_LABEL) % (shown.layer + 1, shown.height)
+        return
+    group = coin.SoSeparator()
+    for node in marks:
+        group.addChild(node)
     owner = outermost(part_obj)
     watched = [part_obj, owner] + feature.fins_of(owner, part_obj.Document)
-    handles.STABILITY_MARK.show(view, handles.plumb(shown, LEVEL_COLORS[level], label), watched)
-    return level, note
+    handles.STABILITY_MARK.show(view, group, watched)
+
+
+def _with_colours(note, shown):
+    """`note`, followed by what the colours of the part mean, where they show."""
+    if shown is None:
+        return note
+    return note + "\n" + translate("FinSnap", NOTE_COLOURS) % d.STABILITY_CLOSE
+
+
+def _margin_at(profile, z):
+    """The margin at height `z`, between those of `profile`, (height, margin)
+    pairs from the bed up; that of the nearest end beyond them."""
+    if z <= profile[0][0]:
+        return profile[0][1]
+    for (low, below), (high, above) in zip(profile, profile[1:]):
+        if z <= high:
+            share = (z - low) / (high - low) if high > low else 1.0
+            return below + (above - below) * share
+    return profile[-1][1]
+
+
+def margin_color(margin):
+    """The colour of a layer whose plumb line lies `margin` mm inside its
+    footprint: green from STABILITY_CLOSE on, blended over to yellow at 0,
+    red below, where it tips."""
+    if margin < 0:
+        return handles.INVALID_COLOR
+    share = min(1.0, margin / d.STABILITY_CLOSE)
+    return tuple(close + (far - close) * share for close, far in zip(handles.BETWEEN_COLOR, handles.VALID_COLOR))
 
 
 def discard_created(obj, on_cancel=None):
@@ -577,7 +688,9 @@ class FinSnapTaskPanel:
         self.stand_list.setToolTip(_wrapped(translate("FinSnap", STAND_TIP)))
         suffix = LENGTH_SUFFIX if self.stands.by_edge else AREA_SUFFIX
         for row, (name, size, islands) in enumerate(self.stands.rows):
-            for column, text in enumerate((name or STAND_ROW % (row + 1), "%.1f%s" % (size, suffix), str(islands))):
+            # Islands not checked, with Islands while editing off, are left blank.
+            counted = "" if islands is None else str(islands)
+            for column, text in enumerate((name or STAND_ROW % (row + 1), "%.1f%s" % (size, suffix), counted)):
                 self.stand_list.setItem(row, column, QtWidgets.QTableWidgetItem(text))
         shown = min(len(self.stands), STAND_ROWS)
         self.stand_list.setFixedHeight(self.stand_list.horizontalHeader().height()

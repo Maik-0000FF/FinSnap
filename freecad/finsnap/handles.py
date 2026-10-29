@@ -97,6 +97,23 @@ PLUMB_WIDTH = 2
 PLUMB_PATTERN = 0xF0F0
 PLUMB_BALL = 0.15
 FOOTPRINT_TRANSPARENCY = 0.6
+# Marks on faces that overhang without fins: red, half see-through, drawn
+# slightly in front of the part's own faces, which lie in the same place.
+OVERHANG_COLOR = (0.9, 0.1, 0.1)
+OVERHANG_TRANSPARENCY = 0.4
+# The first layers of islands in the air: see-through, yet red over a part of
+# any colour. As see-through as a fin while editing, the colour of the part
+# would show through and the red be lost.
+ISLAND_TRANSPARENCY = 0.4
+# An island whose first layer the kernel could not cut out is marked at its
+# lowest point instead, by a ball of this radius, in the units of the node
+# that keeps it the same size on the screen at any zoom.
+ISLAND_SPOT_SIZE = 0.3
+# The layer a stability check shows cut out of the part, this see-through.
+LAYER_CUT_TRANSPARENCY = 0.3
+# How closely the colours of a stability check follow the faces of the part
+# (mm): coarser than the overhang marks, as the faces are cut by height.
+GRADIENT_DEVIATION = 0.2
 # The background of the 3D view as FreeCAD keeps it, with FreeCAD's own
 # defaults: one colour, or a gradient from the second to the third colour,
 # through the fourth where the middle colour is on, packed as 0xRRGGBBAA.
@@ -158,11 +175,11 @@ def spots(points, color, transparency, size):
     return group
 
 
-def plumb(found, color, text):
+def plumb(found, color, text, text_at):
     """A Coin node showing `found`, a stability.Stability, in `color`, drawn
     over everything else: the footprint see-through on the bed, the plumb
     line dashed from the centre of mass of the part printed up to its layer
-    down to the bed, a ball at either end, and `text` at the centre."""
+    down to the bed, a ball at either end, and `text` at `text_at`, the layer."""
     group = coin.SoAnnotation()
     material = coin.SoMaterial()
     material.diffuseColor.setValue(*color)
@@ -185,7 +202,7 @@ def plumb(found, color, text):
     for node in (style, line_color, ends, coin.SoLineSet()):
         line.addChild(node)
     at = coin.SoTranslation()
-    at.translation.setValue(*found.centre)
+    at.translation.setValue(*text_at)
     font = coin.SoFont()
     font.size.setValue(VALUE_FONT_SIZE)
     label = coin.SoText2()
@@ -196,6 +213,83 @@ def plumb(found, color, text):
     for node in (footprint, line, spots([found.centre, found.foot], color, 0.0, PLUMB_BALL), caption):
         group.addChild(node)
     return group
+
+
+def overhang_faces(faces):
+    """A Coin node marking `faces`, which overhang without fins."""
+    return shaded(faces, OVERHANG_COLOR, OVERHANG_TRANSPARENCY)
+
+
+def island_layers(layers):
+    """A Coin node showing `layers`, the first layers of islands in the air."""
+    return shaded([layers], INVALID_COLOR, ISLAND_TRANSPARENCY)
+
+
+def layer_cut(cut, color):
+    """A Coin node showing `cut`, a layer cut out of the part, in `color`,
+    drawn over everything else, so it shows inside the part."""
+    group = coin.SoAnnotation()
+    group.addChild(shaded([cut], color, LAYER_CUT_TRANSPARENCY))
+    return group
+
+
+def island_spots(points):
+    """A Coin node marking `points`, the lowest points of islands whose first
+    layer the kernel could not cut out."""
+    return spots(points, INVALID_COLOR, ISLAND_TRANSPARENCY, ISLAND_SPOT_SIZE)
+
+
+def gradient(shape, color_at, heights, transparency):
+    """A Coin node colouring the faces of `shape` see-through by height:
+    `color_at(z)` gives the colour at a height. Its triangles are cut at
+    `heights`, the heights the colours are known at, so the colours follow
+    them over a tall face as well, blended between."""
+    points, triangles = shape.tessellate(GRADIENT_DEVIATION)
+    corners, colors, counts = [], [], []
+    cuts = sorted(heights)
+    for triangle in triangles:
+        polygon = [points[corner] for corner in triangle]
+        low = min(point.z for point in polygon)
+        high = max(point.z for point in polygon)
+        levels = [low] + [z for z in cuts if low < z < high] + [high]
+        for bottom, top in zip(levels, levels[1:]):
+            piece = _clipped(_clipped(polygon, bottom, 1), top, -1)
+            if len(piece) < 3:
+                continue
+            corners += [(p.x, p.y, p.z) for p in piece]
+            colors += [color_at(p.z) for p in piece]
+            counts.append(len(piece))
+    material = coin.SoMaterial()
+    material.diffuseColor.setValues(0, len(colors), colors)
+    material.transparency.setValues(0, len(colors), [transparency] * len(colors))
+    binding = coin.SoMaterialBinding()
+    binding.value.setValue(coin.SoMaterialBinding.PER_VERTEX)
+    offset = coin.SoPolygonOffset()
+    offset.factor.setValue(FACE_OFFSET)
+    offset.units.setValue(FACE_OFFSET)
+    coordinates = coin.SoCoordinate3()
+    coordinates.point.setValues(0, len(corners), corners)
+    faces = coin.SoFaceSet()
+    faces.numVertices.setValues(0, len(counts), counts)
+    group = coin.SoSeparator()
+    for node in (material, binding, offset, coordinates, faces):
+        group.addChild(node)
+    return group
+
+
+def _clipped(polygon, z, keep):
+    """The part of `polygon`, a list of App.Vectors, above the height `z` for
+    `keep` 1, below it for -1: the polygon cut by that plane."""
+    kept = []
+    for start, end in zip(polygon, polygon[1:] + polygon[:1]):
+        start_in = (start.z - z) * keep >= 0
+        end_in = (end.z - z) * keep >= 0
+        if start_in:
+            kept.append(start)
+        if start_in != end_in:
+            share = (z - start.z) / (end.z - start.z)
+            kept.append(start + (end - start) * share)
+    return kept
 
 
 class Mark:
