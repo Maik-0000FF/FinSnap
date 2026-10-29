@@ -110,8 +110,9 @@ TURN_PARTS = ("rotator", "rotatorActive")
 def spots(points, color, transparency, size):
     """A Coin node marking `points` with see-through balls in one colour, of
     radius `size` in the units of FreeCAD's node that keeps them the same size
-    on the screen at any zoom, as the arrows."""
-    group = coin.SoSeparator()
+    on the screen at any zoom, as the arrows; drawn over everything else, so a
+    ball under the part shows from above as well."""
+    group = coin.SoAnnotation()
     material = coin.SoMaterial()
     material.diffuseColor.setValue(*color)
     material.transparency.setValue(transparency)

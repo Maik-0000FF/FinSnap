@@ -33,6 +33,9 @@ ISLANDS = "Islands"
 # And the part there up to the top of the first layer of each island, hidden,
 # for the view provider to show how far it reaches.
 ISLAND_LAYERS = "IslandLayers"
+# And the lowest points of the islands whose first layer could not be cut
+# out, hidden: the view provider marks them by a ball instead.
+ISLANDS_UNCUT = "IslandsUncut"
 NOTE_ISLANDS = QT_TRANSLATE_NOOP(
     "FinSnap", "%d island(s): %s would start printing in the air there, on no layer of it below. Fins do "
     "not carry an island, they only keep the part from falling over. It cannot print standing so; the "
@@ -386,6 +389,7 @@ def add_islands(obj):
                     QT_TRANSLATE_NOOP("App::Property",
                                       "Where the part would start printing in the air"), 1)
     hidden_property(obj, ISLAND_LAYERS, "Part::PropertyPartShape")
+    hidden_property(obj, ISLANDS_UNCUT, "App::PropertyVectorList")
 
 
 def params_of(obj):
@@ -558,11 +562,13 @@ _islands_kept = {}
 
 
 def set_islands(obj, found):
-    """Keep the Islands `found` on `obj`: their lowest points, and the first
-    layers of those whose layer could be cut out, as one shape."""
+    """Keep the Islands `found` on `obj`: their lowest points, the first layers
+    of those whose layer could be cut out, as one shape, and the lowest points
+    of the others."""
     setattr(obj, ISLANDS, [island.point for island in found])
     layers = [island.first for island in found if island.first is not None]
     setattr(obj, ISLAND_LAYERS, Part.makeCompound(layers) if layers else Part.Shape())
+    setattr(obj, ISLANDS_UNCUT, [island.point for island in found if island.first is None])
 
 
 def islands_of(obj, p):
@@ -719,6 +725,7 @@ class FinSnapFeature:
         if ISLANDS not in obj.PropertiesList:
             add_islands(obj)
         hidden_property(obj, ISLAND_LAYERS, "Part::PropertyPartShape")
+        hidden_property(obj, ISLANDS_UNCUT, "App::PropertyVectorList")
         # Saved when fins could only be removed: the count is taken over.
         for which, old in REMOVED_OF.items():
             if old in obj.PropertiesList:

@@ -72,16 +72,6 @@ STATUS_TIMEOUT_MS = 10000
 Export = namedtuple("Export", "shapes left_out")
 
 
-def _in_any(point, solids):
-    """Whether `point` lies in the box round one of `solids`."""
-    for solid in solids:
-        box = App.BoundBox(solid.BoundBox)
-        box.enlarge(d.TOLERANCE)
-        if box.isInside(point):
-            return True
-    return False
-
-
 def _shown(obj):
     """Whether `obj` is shown: it and every container it lies in, such as a Body."""
     while obj is not None:
@@ -148,7 +138,7 @@ class ViewProviderFinSnap:
         self.mark(vobj.Object)
 
     def updateData(self, obj, prop):  # noqa: N802 - FreeCAD API
-        if prop in (feature.OVERHANGS, feature.ISLANDS, feature.ISLAND_LAYERS):
+        if prop in (feature.OVERHANGS, feature.ISLANDS, feature.ISLAND_LAYERS, feature.ISLANDS_UNCUT):
             self.mark(obj)
 
     def onChanged(self, vobj, prop):  # noqa: N802 - FreeCAD API
@@ -174,12 +164,11 @@ class ViewProviderFinSnap:
         # The first layer of each island that the printer would lay in the
         # air, in the red a fin shows where it cannot stand.
         layers = getattr(obj, feature.ISLAND_LAYERS, None)
-        shown = [] if layers is None or layers.isNull() else layers.Solids
-        if shown:
+        if layers is not None and not layers.isNull():
             self.marks.addChild(handles.shaded([layers], handles.INVALID_COLOR, ISLAND_TRANSPARENCY))
-        alone = [point for point in getattr(obj, feature.ISLANDS, []) if not _in_any(point, shown)]
-        if alone:
-            self.marks.addChild(handles.spots(alone, handles.INVALID_COLOR, ISLAND_TRANSPARENCY, ISLAND_SPOT_SIZE))
+        uncut = getattr(obj, feature.ISLANDS_UNCUT, [])
+        if uncut:
+            self.marks.addChild(handles.spots(uncut, handles.INVALID_COLOR, ISLAND_TRANSPARENCY, ISLAND_SPOT_SIZE))
         names = getattr(obj, feature.OVERHANGS, [])
         if names and obj.Base:
             try:

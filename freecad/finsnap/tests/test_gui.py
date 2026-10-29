@@ -384,13 +384,17 @@ def chosen_stands(doc, quick, facing, messages):
     fins.ViewObject.Proxy.panel.reject()
 
 
-def _balls(marks):
-    """How many balls the Coin node `marks` holds."""
+def _balls(marks, over=False):
+    """How many balls the Coin node `marks` holds; with `over`, only those
+    drawn over everything else, in an SoAnnotation."""
     found = coin.SoSearchAction()
     found.setType(coin.SoSphere.getClassTypeId())
     found.setInterest(coin.SoSearchAction.ALL)
     found.apply(marks)
-    return found.getPaths().getLength()
+    paths = found.getPaths()
+    annotation = coin.SoAnnotation.getClassTypeId()
+    return sum(1 for i in range(paths.getLength())
+               if not over or any(paths[i].getNode(j).isOfType(annotation) for j in range(paths[i].getLength())))
 
 
 def _layer_marked(marks):
@@ -447,8 +451,9 @@ def island_marks(doc):
     finally:
         overhang._first_layer = real
         feature._islands_kept.clear()
-    expect(len(fins.Islands) == 1 and fins.IslandLayers.isNull() and _balls(marks) == 1,
-           "an island whose first layer cannot be cut out is marked by a ball at its lowest point")
+    expect(len(fins.Islands) == 1 and fins.IslandLayers.isNull() and list(fins.IslandsUncut) == list(fins.Islands)
+           and _balls(marks, over=True) == 1,
+           "an island whose first layer cannot be cut out is marked by a ball at its lowest point, over the part")
     doc.removeObject(fins.Name)
     doc.removeObject(hooked.Name)
 
