@@ -17,6 +17,9 @@ NOZZLE_DIAMETER = 0.4
 BEAD_WIDTH = 0.45
 LAYER_HEIGHT = 0.2
 FIRST_LAYER_HEIGHT = 0.2
+# Brim the slicer prints round what stands on the bed (mm); it holds the part
+# like a wider footprint while it is printed. None by default.
+BRIM_WIDTH = 0.0
 
 # --- Connection ---------------------------------------------------------------
 # "separate": the fin is its own object, tines only touch the part, no
@@ -67,7 +70,9 @@ FIN_HEIGHT_AUTO = 0.0       # 0: the top tine defines the height
 # Distance kept from the top edge of the supported face, so the fin does not
 # reach into the edge or chamfer above it.
 FACE_TOP_MARGIN = 0.5
-# The same above the lower edge of a face that ends above the bed.
+# The same above the lower edge of a face that ends above the bed, for the one
+# grid from the bed. Tines restarted on the face start right at its lower edge
+# instead: they are placed only where their whole end lies on the face.
 FACE_BOTTOM_MARGIN = FACE_TOP_MARGIN
 
 # --- Placement along the supported face ---------------------------------------
@@ -124,6 +129,9 @@ RIGHT_ANGLE_TOLERANCE = 0.5
 # Faces lying flatter than this against the bed need support; those without
 # fins are reported and marked. 45 degrees is the usual limit of FDM printing.
 OVERHANG_ANGLE = 45.0
+# A part that stands, but whose plumb line comes closer to the edge of its
+# footprint than this while it is printed, is only just standing (mm).
+STABILITY_CLOSE = 2.0
 # Smaller overhanging faces, like the corner facets of a chamfer, bridge over
 # without support and are not reported (mm2).
 OVERHANG_MIN_AREA = 1.0

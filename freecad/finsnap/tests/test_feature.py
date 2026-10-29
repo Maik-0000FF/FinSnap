@@ -19,7 +19,7 @@ import FreeCAD as App
 import Part
 from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left_face, run, split_cylinder, tilted_cube
 from freecad.finsnap import defaults as d
-from freecad.finsnap import export_3mf, export_step, feature, geometry, orient, overhang
+from freecad.finsnap import export_3mf, export_step, feature, geometry, orient, overhang, stability
 from freecad.finsnap import presets
 from freecad.finsnap.params import FinParams, ParamError
 from freecad.finsnap.paths import PACKAGE_XML
@@ -59,6 +59,7 @@ HOLE_RADIUS = 2.0     # a hole through the tilted cube, moved sideways to keep i
 HOLE_LENGTH = 200.0
 HOLE_SHIFT = 3.0
 DRAG_STEPS = 3        # builds of the fins while one is dragged
+RAISED_BY = 10.0      # how far a part stands above z 0, its bed with it
 TUBE_HEIGHT = 40.0
 TUBE_TURN = 5.0  # how far the fin under the side of a tube is moved by hand, in mm round it
 FINE_TURN = 1.23456789  # a turn finer than the shift is kept, in mm round the side
@@ -843,6 +844,51 @@ def kept_islands(doc):
     doc.removeObject(tube.Name)
 
 
+def stability_raised_and_counter(doc):
+    """The tines that hold a part are measured from its bottom, wherever it
+    stands; and a part that tips towards its counter fin is told so, not to
+    add one."""
+    slab = Part.makeBox(30, 20, 10)
+    bottom = [e for e in slab.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
+    turn = orient.tilt(slab, bottom, d.TILT_ANGLE)
+    results = []
+    for lift in (0.0, RAISED_BY):
+        part = doc.addObject("Part::Feature", "Raised")
+        part.Shape = slab
+        part.Placement = App.Placement(V(0, 0, lift), App.Rotation()).multiply(turn)
+        doc.recompute()
+        leaning = min(part.Shape.Faces, key=lambda face: face.normalAt(*face.ParameterRange[::2]).z)
+        fins = feature.create(part, face_name(part.Shape, leaning))
+        doc.recompute()
+        supports, _ = feature.supports_of(part, doc)
+        results.append((part.Shape.BoundBox.ZMin, supports[0][1], feature.stability_of(part, feature.params_of(fins))))
+        doc.removeObject(fins.Name)
+        doc.removeObject(part.Name)
+    (low, low_tine, low_found), (high, high_tine, high_found) = results
+    expect(abs((high_tine - high) - (low_tine - low)) < d.TOLERANCE and high_found[:2] == low_found[:2],
+           "a part standing higher is held by its fins from the same height over its bottom, the result the same")
+
+    real_supports, real_check = feature.supports_of, stability.check
+    main, counter = V(0, -1, 0), V(0, 1, 0)
+    tipping = stability.Stability(True, 50, 10.0, V(), V(), -1.0, counter, [V()], [(10.0, -1.0)])
+    # Alone it tips lower; held, at the layer whose direction is asked.
+    stability.check = lambda part, supports, *rest: tipping if supports else tipping._replace(height=5.0)
+    try:
+        notes = []
+        for sides in ([main], [main, counter]):
+            feature.supports_of = lambda part_obj, document, sides=sides: ([(Part.makeBox(1, 1, 1), 0.0)], sides)
+            box = doc.addObject("Part::Feature", "Fake")
+            box.Shape = Part.makeBox(10, 10, 10)
+            notes.append(feature.stability_of(box, FinParams())[1])
+            doc.removeObject(box.Name)
+    finally:
+        feature.supports_of, stability.check = real_supports, real_check
+    at = (tipping.layer + 1, tipping.height)
+    expect(notes == [App.Qt.translate("FinSnap", feature.NOTE_AWAY_FROM_FINS) % at,
+                     App.Qt.translate("FinSnap", feature.NOTE_TOWARDS_FINS) % at],
+           "tipping away from its fins it is told to add a counter fin; towards its counter fin, not: %s" % notes)
+
+
 def main():
     doc = App.newDocument("FinSnapTest")
     cube = doc.addObject("Part::Feature", "Cube")
@@ -888,6 +934,7 @@ def main():
     tapered_pad(doc)
     warnings_and_old_files(doc)
     kept_islands(doc)
+    stability_raised_and_counter(doc)
     step_with_offset_curves()
     print("all checks passed", file=sys.__stdout__)
 

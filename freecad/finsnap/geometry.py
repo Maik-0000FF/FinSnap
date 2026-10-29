@@ -734,12 +734,12 @@ def _spread(p, bands, limit, count):
     no further apart than the tine spacing, at least one free layer between
     two of them. None above `limit`, `count` at most if given."""
     zs = []
-    for index, (bottom, top) in enumerate(bands):
-        # The margins of the face at its own lower edge and below its top, as
-        # the one grid keeps them; at the edges of a gap the tine only has to
-        # rest on the face, which contact_share() checks after.
-        margin = d.FACE_BOTTOM_MARGIN if index == 0 and bottom > d.TOLERANCE else 0.0
-        first = _snap_up(p, max(bottom + margin, p.first_tine))
+    for bottom, top in bands:
+        # A stretch is where the whole end of a tine lies on the face, so the
+        # lowest tine goes on the first layer from its lower edge up, right
+        # above a fillet or a gap below; the margin below the top of the face
+        # is kept, as the one grid keeps it.
+        first = _snap_up(p, max(bottom, p.first_tine))
         if zs:
             first = max(first, _snap_up(p, zs[-1] + p.least_tine_spacing))
         last = _snap_down(p, min(top, limit) - p.tine_height)
@@ -800,7 +800,8 @@ def restarted_tines(p, frame, face, t0, thickness, limit, count):
     INPUTS this has to withstand:
       a face from the bed up, no gap        ->  None: the one grid, as without the
                                                 restart
-      a face starting above the bed         ->  the first tine just above its lower edge
+      a face starting above the bed         ->  the first tine on the first layer from its
+                                                lower edge up, right above a fillet below it
       a hole under the fin                  ->  one just below it, one just above it
       a stretch lower than a tine           ->  no tine in it
       a stretch with room for one tine      ->  that tine at its lower edge

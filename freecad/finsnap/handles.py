@@ -90,6 +90,30 @@ HELD_COLOR = (1.0, 1.0, 0.0)
 VALUE_FONT_SIZE = 16
 VALUE_GAP = 0.3
 VALUE_ON_LIGHT = (0.1, 0.1, 0.1)
+# The plumb line of a stability check: this many pixels wide, dashed, a ball
+# of this size, in the units of the arrows, at either end, and the footprint
+# under it this see-through.
+PLUMB_WIDTH = 2
+PLUMB_PATTERN = 0xF0F0
+PLUMB_BALL = 0.15
+FOOTPRINT_TRANSPARENCY = 0.6
+# Marks on faces that overhang without fins: red, half see-through, drawn
+# slightly in front of the part's own faces, which lie in the same place.
+OVERHANG_COLOR = (0.9, 0.1, 0.1)
+OVERHANG_TRANSPARENCY = 0.4
+# The first layers of islands in the air: see-through, yet red over a part of
+# any colour. As see-through as a fin while editing, the colour of the part
+# would show through and the red be lost.
+ISLAND_TRANSPARENCY = 0.4
+# An island whose first layer the kernel could not cut out is marked at its
+# lowest point instead, by a ball of this radius, in the units of the node
+# that keeps it the same size on the screen at any zoom.
+ISLAND_SPOT_SIZE = 0.3
+# The layer a stability check shows cut out of the part, this see-through.
+LAYER_CUT_TRANSPARENCY = 0.3
+# How closely the colours of a stability check follow the faces of the part
+# (mm): coarser than the overhang marks, as the faces are cut by height.
+GRADIENT_DEVIATION = 0.2
 # The background of the 3D view as FreeCAD keeps it, with FreeCAD's own
 # defaults: one colour, or a gradient from the second to the third colour,
 # through the fourth where the middle colour is on, packed as 0xRRGGBBAA.
@@ -149,6 +173,155 @@ def spots(points, color, transparency, size):
             spot.addChild(node)
         group.addChild(spot)
     return group
+
+
+def plumb(found, color, text, text_at):
+    """A Coin node showing `found`, a stability.Stability, in `color`, drawn
+    over everything else: the footprint see-through on the bed, the plumb
+    line dashed from the centre of mass of the part printed up to its layer
+    down to the bed, a ball at either end, and `text` at `text_at`, the layer."""
+    group = coin.SoAnnotation()
+    material = coin.SoMaterial()
+    material.diffuseColor.setValue(*color)
+    material.transparency.setValue(FOOTPRINT_TRANSPARENCY)
+    corners = coin.SoCoordinate3()
+    corners.point.setValues(0, len(found.footprint), [(p.x, p.y, p.z) for p in found.footprint])
+    outline = coin.SoFaceSet()
+    outline.numVertices.setValue(len(found.footprint))
+    footprint = coin.SoSeparator()
+    for node in (material, corners, outline):
+        footprint.addChild(node)
+    style = coin.SoDrawStyle()
+    style.lineWidth.setValue(PLUMB_WIDTH)
+    style.linePattern.setValue(PLUMB_PATTERN)
+    line_color = coin.SoBaseColor()
+    line_color.rgb.setValue(*color)
+    ends = coin.SoCoordinate3()
+    ends.point.setValues(0, 2, [tuple(found.centre), tuple(found.foot)])
+    line = coin.SoSeparator()
+    for node in (style, line_color, ends, coin.SoLineSet()):
+        line.addChild(node)
+    at = coin.SoTranslation()
+    at.translation.setValue(*text_at)
+    font = coin.SoFont()
+    font.size.setValue(VALUE_FONT_SIZE)
+    label = coin.SoText2()
+    label.string.setValue(text)
+    caption = coin.SoSeparator()
+    for node in (at, line_color, font, label):
+        caption.addChild(node)
+    for node in (footprint, line, spots([found.centre, found.foot], color, 0.0, PLUMB_BALL), caption):
+        group.addChild(node)
+    return group
+
+
+def overhang_faces(faces):
+    """A Coin node marking `faces`, which overhang without fins."""
+    return shaded(faces, OVERHANG_COLOR, OVERHANG_TRANSPARENCY)
+
+
+def island_layers(layers):
+    """A Coin node showing `layers`, the first layers of islands in the air."""
+    return shaded([layers], INVALID_COLOR, ISLAND_TRANSPARENCY)
+
+
+def layer_cut(cut, color):
+    """A Coin node showing `cut`, a layer cut out of the part, in `color`,
+    drawn over everything else, so it shows inside the part."""
+    group = coin.SoAnnotation()
+    group.addChild(shaded([cut], color, LAYER_CUT_TRANSPARENCY))
+    return group
+
+
+def island_spots(points):
+    """A Coin node marking `points`, the lowest points of islands whose first
+    layer the kernel could not cut out."""
+    return spots(points, INVALID_COLOR, ISLAND_TRANSPARENCY, ISLAND_SPOT_SIZE)
+
+
+def gradient(shape, color_at, heights, transparency):
+    """A Coin node colouring the faces of `shape` see-through by height:
+    `color_at(z)` gives the colour at a height. Its triangles are cut at
+    `heights`, the heights the colours are known at, so the colours follow
+    them over a tall face as well, blended between."""
+    points, triangles = shape.tessellate(GRADIENT_DEVIATION)
+    corners, colors, counts = [], [], []
+    cuts = sorted(heights)
+    for triangle in triangles:
+        polygon = [points[corner] for corner in triangle]
+        low = min(point.z for point in polygon)
+        high = max(point.z for point in polygon)
+        levels = [low] + [z for z in cuts if low < z < high] + [high]
+        for bottom, top in zip(levels, levels[1:]):
+            piece = _clipped(_clipped(polygon, bottom, 1), top, -1)
+            if len(piece) < 3:
+                continue
+            corners += [(p.x, p.y, p.z) for p in piece]
+            colors += [color_at(p.z) for p in piece]
+            counts.append(len(piece))
+    material = coin.SoMaterial()
+    material.diffuseColor.setValues(0, len(colors), colors)
+    material.transparency.setValues(0, len(colors), [transparency] * len(colors))
+    binding = coin.SoMaterialBinding()
+    binding.value.setValue(coin.SoMaterialBinding.PER_VERTEX)
+    offset = coin.SoPolygonOffset()
+    offset.factor.setValue(FACE_OFFSET)
+    offset.units.setValue(FACE_OFFSET)
+    coordinates = coin.SoCoordinate3()
+    coordinates.point.setValues(0, len(corners), corners)
+    faces = coin.SoFaceSet()
+    faces.numVertices.setValues(0, len(counts), counts)
+    group = coin.SoSeparator()
+    for node in (material, binding, offset, coordinates, faces):
+        group.addChild(node)
+    return group
+
+
+def _clipped(polygon, z, keep):
+    """The part of `polygon`, a list of App.Vectors, above the height `z` for
+    `keep` 1, below it for -1: the polygon cut by that plane."""
+    kept = []
+    for start, end in zip(polygon, polygon[1:] + polygon[:1]):
+        start_in = (start.z - z) * keep >= 0
+        end_in = (end.z - z) * keep >= 0
+        if start_in:
+            kept.append(start)
+        if start_in != end_in:
+            share = (z - start.z) / (end.z - start.z)
+            kept.append(start + (end - start) * share)
+    return kept
+
+
+class Mark:
+    """One node shown in a 3D view until cleared, as the plumb line of the last
+    stability check, with the objects whose change makes it out of date."""
+
+    def __init__(self):
+        self.view, self.node, self.watched = None, None, ()
+
+    def show(self, view, node, watched):
+        """Show `node` in `view` instead of what was shown before."""
+        self.clear()
+        view.getSceneGraph().addChild(node)
+        self.view, self.node, self.watched = view, node, tuple(watched)
+
+    def clear(self):
+        """Take the node out of its view, if it is still open."""
+        if self.node is not None:
+            try:
+                self.view.getSceneGraph().removeChild(self.node)
+            except (RuntimeError, ReferenceError):
+                # The view was closed with its document; the node went with it.
+                pass
+        self.view, self.node, self.watched = None, None, ()
+
+    def watches(self, obj):
+        """Whether a change of `obj` makes the node out of date."""
+        return any(obj is watched for watched in self.watched)
+
+
+# The plumb line of the last stability check, from the command or the task panel.
+STABILITY_MARK = Mark()
 
 
 def shaded(shapes, color, transparency):
@@ -330,6 +503,25 @@ class NoView(RuntimeError):
     """The document has no 3D view to show the arrows in."""
 
 
+# The arrows of every task panel open, so their objects can look as before
+# editing while their documents are saved (saving_document()).
+EDITING = []
+
+
+def saving_document(document, started):
+    """Before `document` is saved, `started` True, its objects being edited
+    take the look they had before editing, so it is that look the file keeps
+    and not the see-through green of editing; after, the look of editing again."""
+    for arrows in list(EDITING):
+        try:
+            mine = arrows.vobj.Object.Document is document
+        except ReferenceError:
+            # The object went with its panel still open; nothing to show.
+            continue
+        if mine:
+            arrows.saving(started)
+
+
 class Handles:
     """Two arrows on one fin of the object shown by `vobj`, one along the face
     and one up, with the object see-through until remove().
@@ -352,10 +544,13 @@ class Handles:
             view = views[0]
         self.vobj = vobj
         self.on_start, self.on_move, self.on_done = on_start, on_move, on_done
-        # How the object looked before, put back by remove().
+        # How the object looked before, put back by remove() and while its
+        # document is saved (saving()); the look while editing, kept then.
         self.look = (vobj.ShapeAppearance, vobj.Transparency)
+        self.editing_look = None
         vobj.Transparency = round(PREVIEW_TRANSPARENCY * PERCENT)
         self.tint(True)
+        EDITING.append(self)
 
         self.view = view
         self.callbacks = []
@@ -749,3 +944,16 @@ class Handles:
         # Not attached any more, also when the panel closes before it was.
         self.root = None
         self.vobj.ShapeAppearance, self.vobj.Transparency = self.look
+        if self in EDITING:
+            EDITING.remove(self)
+
+    def saving(self, started):
+        """While the document of the object is saved, `started` True, it looks
+        as it did before editing, so the file keeps that look; once saved, as
+        while editing again."""
+        if started:
+            self.editing_look = (self.vobj.ShapeAppearance, self.vobj.Transparency)
+            self.vobj.ShapeAppearance, self.vobj.Transparency = self.look
+        elif self.editing_look is not None:
+            self.vobj.ShapeAppearance, self.vobj.Transparency = self.editing_look
+            self.editing_look = None

@@ -22,6 +22,7 @@ INPUTS this has to withstand (validate()):
     foot_half_width, counter_tine_count
     < 0                                 ->  ParamError; 0 means automatic
   foot_overhang < 0                     ->  ParamError; 0 ends the foot at the fin
+  brim_width < 0                        ->  ParamError; 0 means no brim
   fin_count < 1 with "distributed"      ->  ParamError
   unknown connection / placement / foot ->  ParamError listing the choices
   tine wider than a manual fin_thickness ->  ParamError: tine would stick out
@@ -46,6 +47,7 @@ class FinParams:
     bead_width: float = d.BEAD_WIDTH
     layer_height: float = d.LAYER_HEIGHT
     first_layer_height: float = d.FIRST_LAYER_HEIGHT
+    brim_width: float = d.BRIM_WIDTH
     # Connection
     connection: str = d.CONNECTION
     gap: float = d.GAP
@@ -98,6 +100,8 @@ class FinParams:
             raise ParamError(translate("FinSnap", "tine_clearance must be 0 (touching) or greater"))
         if self.foot_overhang < 0:
             raise ParamError(translate("FinSnap", "foot_overhang must be 0 or greater"))
+        if self.brim_width < 0:
+            raise ParamError(translate("FinSnap", "brim_width must be 0 (no brim) or greater"))
         if self.bead_width < self.nozzle_diameter / 2:
             raise ParamError(translate("FinSnap", "bead_width is less than half the nozzle diameter"))
         if self.layer_height > self.nozzle_diameter:

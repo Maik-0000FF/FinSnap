@@ -40,6 +40,13 @@ REMOVE_LINE = "#7a1d1d"
 # The badge of Quick fins: a lightning bolt on yellow, one step instead of several.
 QUICK_FILL = "#f2c230"
 QUICK_LINE = "#8a6d12"
+# The plumb line of Check stability: dashed from the centre of mass of the
+# part down to the bed, a ring round that centre and a green foot where it
+# meets the bed, inside what the part stands on.
+PLUMB_LINE = "#2b2b2b"
+PLUMB_DASH = "3 2"
+PLUMB_CENTRE_RADIUS = 4.0
+PLUMB_FOOT_HALF = 4.0
 WHITE = "#ffffff"
 PAPER = "#f4f6f8"
 LINE_WIDTH = 1.5
@@ -141,6 +148,31 @@ def bolt_badge():
             % (bolt, WHITE, QUICK_LINE)]
 
 
+def plumb():
+    """The plumb line from the centre of mass of the part to the bed."""
+    cx, cy = PART_CENTRE
+    foot = [(cx - PLUMB_FOOT_HALF, BED_Y), (cx + PLUMB_FOOT_HALF, BED_Y), (cx, BED_Y - PLUMB_FOOT_HALF)]
+    return ['<line x1="%.1f" y1="%.1f" x2="%.1f" y2="%.1f" stroke="%s" stroke-width="%s" stroke-dasharray="%s"/>'
+            % (cx, cy, cx, BED_Y, PLUMB_LINE, LINE_WIDTH, PLUMB_DASH),
+            '<polygon points="%s" fill="%s" stroke="%s" stroke-width="1"/>' % (points(foot), ADD_FILL, ADD_LINE),
+            '<circle cx="%.1f" cy="%.1f" r="%.1f" fill="%s" stroke="%s" stroke-width="%s"/>'
+            % (cx, cy, PLUMB_CENTRE_RADIUS, WHITE, PLUMB_LINE, LINE_WIDTH)]
+
+
+def check_badge():
+    """A tick on green: everything checked."""
+    return ['<circle cx="52" cy="12" r="10" fill="%s" stroke="%s" stroke-width="2"/>' % (ADD_FILL, ADD_LINE),
+            '<polyline points="47,12 51,16 58,7" fill="none" stroke="%s" stroke-width="3" stroke-linecap="round" '
+            'stroke-linejoin="round"/>' % WHITE]
+
+
+def island_badge():
+    """A layer printed in the air, on red: the islands checked while editing."""
+    return ['<circle cx="52" cy="12" r="10" fill="%s" stroke="%s" stroke-width="2"/>' % (REMOVE_FILL, REMOVE_LINE),
+            '<rect x="46" y="13" width="12" height="3" rx="1" fill="%s"/>' % WHITE,
+            '<line x1="52" y1="5" x2="52" y2="10" stroke="%s" stroke-width="2" stroke-dasharray="2 1"/>' % WHITE]
+
+
 def svg(body, width=SIZE, height=SIZE):
     return "\n".join(['<svg xmlns="http://www.w3.org/2000/svg" width="%d" height="%d" viewBox="0 0 %d %d">'
                       % (width, height, width, height),
@@ -182,6 +214,9 @@ def icons():
         "finsnap.svg": workbench(),
         "add_fins.svg": workbench() + plus_badge(),
         "quick_fins.svg": workbench() + bolt_badge(),
+        "check_stability.svg": workbench() + plumb(),
+        "check_part.svg": workbench() + plumb() + check_badge(),
+        "islands_live.svg": workbench() + island_badge(),
         "counter_fin.svg": bed() + part_shape() + fin_shapes() + fin_shapes(mirrored=True) + plus_badge(),
         "remove_fin.svg": workbench() + minus_badge(),
         "reset_fins.svg": workbench() + back_badge(),

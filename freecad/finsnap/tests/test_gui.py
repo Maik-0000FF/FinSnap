@@ -25,7 +25,8 @@ from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left
 
 WORKBENCH = "FinSnapWorkbench"
 COMMANDS = ("FinSnap_QuickFins", "FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCounterFin",
-            "FinSnap_MeshToSolid", "FinSnap_Export3MF", "FinSnap_ExportSTEP")
+            "FinSnap_CheckStability", "FinSnap_CheckPart", "FinSnap_IslandsWhileEditing", "FinSnap_MeshToSolid",
+            "FinSnap_Export3MF", "FinSnap_ExportSTEP")
 DIALOG_ACCEPTED = 1
 # Answers to the questions commands ask, taken in order by answer_dialogs().
 ANSWERS = []
@@ -408,6 +409,36 @@ def chosen_stands(doc, quick, facing, messages):
     fins.ViewObject.Proxy.panel.reject()
 
 
+def saved_while_editing():
+    """Fins saved with their task panel open are saved as they looked before
+    editing, not see-through green; after, they look as while editing again."""
+    from freecad.finsnap import commands, feature
+    from freecad.finsnap.taskpanel import FinSnapTaskPanel
+    doc = App.newDocument("SavedWhileEditing")
+    cube = doc.addObject("Part::Feature", "Cube")
+    cube.Shape = tilted_cube()
+    fins = feature.create(cube, face_name(cube, lower_left_face(cube.Shape)))
+    commands.ViewProviderFinSnap(fins.ViewObject)
+    doc.recompute()
+    before = fins.ViewObject.Transparency
+    panel = FinSnapTaskPanel(fins)
+    editing = fins.ViewObject.Transparency
+    path = os.path.join(tempfile.mkdtemp(), "saved_while_editing.FCStd")
+    doc.saveAs(path)
+    after = fins.ViewObject.Transparency
+    with zipfile.ZipFile(path) as saved:
+        gui = saved.read("GuiDocument.xml").decode()
+    provider = gui[gui.index('<ViewProvider name="%s"' % fins.Name):]
+    provider = provider[:provider.index("</ViewProvider>")]
+    stored = provider[provider.index('name="Transparency"'):]
+    stored = int(stored[stored.index('value="') + len('value="'):].split('"')[0])
+    panel.release_handles()
+    App.closeDocument(doc.Name)
+    expect(editing != before and stored == before and after == editing,
+           "fins saved with the task panel open keep their look from before editing in the file, "
+           "and look as while editing after: %s, %s, %s, %s" % (before, editing, stored, after))
+
+
 def released_without_button(arrows, name):
     """Every arrow of `arrows`, a Handles, that Coin left active after its
     release, moved with no mouse button down, is let go at once, as the
@@ -540,7 +571,7 @@ def _layer_marked(marks):
     """Whether the Coin node `marks` holds a mark in the red a fin shows where
     it cannot stand, as see-through as islands are drawn: the first layer of an
     island."""
-    from freecad.finsnap import commands, handles
+    from freecad.finsnap import handles
     found = coin.SoSearchAction()
     found.setType(coin.SoMaterial.getClassTypeId())
     found.setInterest(coin.SoSearchAction.ALL)
@@ -548,7 +579,7 @@ def _layer_marked(marks):
     paths = found.getPaths()
     materials = [paths[i].getTail() for i in range(paths.getLength())]
     return any(rgb_close(material.diffuseColor[0].getValue(), handles.INVALID_COLOR)
-               and abs(material.transparency[0] - commands.ISLAND_TRANSPARENCY) < COLOR_TOLERANCE
+               and abs(material.transparency[0] - handles.ISLAND_TRANSPARENCY) < COLOR_TOLERANCE
                for material in materials)
 
 
@@ -595,6 +626,100 @@ def island_marks(doc):
            "an island whose first layer cannot be cut out is marked by a ball at its lowest point, over the part")
     doc.removeObject(fins.Name)
     doc.removeObject(hooked.Name)
+
+
+def stability_checked(doc, messages):
+    """Check stability from the toolbar, for a part without fins and with,
+    and from the task panel: the result is said, the plumb line shown in the
+    colour of it, and taken away with nothing selected or once the part moves."""
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import commands, feature, handles, orient, taskpanel
+    slab = Part.makeBox(30, 20, 10)
+    bottom = [e for e in slab.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
+    part = doc.addObject("Part::Feature", "Leaning")
+    part.Shape = slab
+    part.Placement = orient.tilt(slab, bottom, d.TILT_ANGLE)
+    doc.recompute()
+    mark = handles.STABILITY_MARK
+    del messages[:]
+    select(part)
+    Gui.runCommand("FinSnap_CheckStability")
+    # What sets the note apart from the others: its words after the height.
+    needs_fins = App.Qt.translate("FinSnap", feature.NOTE_NEEDS_FINS).rsplit("mm)", 1)[1]
+    expect(len(messages) == 1 and needs_fins in messages[0] and mark.node is not None and mark.watches(part),
+           "Check stability says a leaning part without fins tips, and shows its plumb line: %s" % messages)
+    Gui.Selection.clearSelection()
+    Gui.runCommand("FinSnap_CheckStability")
+    expect(mark.node is None and len(messages) == 1, "with nothing selected the plumb line goes, nothing said")
+    group = doc.addObject("App::DocumentObjectGroup", "NoShape")
+    select(group)
+    Gui.runCommand("FinSnap_CheckStability")
+    expect(len(messages) == 2 and messages[-1] == App.Qt.translate("FinSnap", commands.NOTE_SELECT_PART),
+           "an object without a shape is asked to be a part")
+    doc.removeObject(group.Name)
+    del messages[1:]
+
+    fins = feature.create(part, face_name(part, lower_left_face_of(part.Shape)))
+    doc.recompute()
+    select(fins)
+    Gui.runCommand("FinSnap_CheckStability")
+    said = messages[-1]
+    expect(len(messages) == 2 and mark.node is not None and needs_fins not in said,
+           "with fins, Check stability says whether they hold it: %s" % said)
+    panel = taskpanel.FinSnapTaskPanel(fins)
+    panel.check_stability()
+    shown = panel.stability.text()
+    panel.preview()
+    expect(shown == said and panel.stability.text() == App.Qt.translate("FinSnap", taskpanel.NOTE_STABILITY_OUTDATED),
+           "the task panel says the same, and once the fins change, that it is out of date")
+    panel.release_handles()
+    panel.check_stability()
+    part.Placement = App.Placement(App.Vector(1, 0, 0), App.Rotation()).multiply(part.Placement)
+    expect(mark.node is None, "the plumb line goes once the part moves")
+    select(part)
+    Gui.runCommand("FinSnap_CheckPart")
+    lines = messages[-1].split("\n")
+    expect(len(lines) == 4 and messages[-1].endswith(said) and mark.node is not None and _coloured_by_height(mark.node)
+           and _layer_cut_shown(mark.node),
+           "Check part says overhangs, islands and stability, the part coloured by height, its layer cut: %s"
+           % lines)
+    Gui.Selection.clearSelection()
+    Gui.runCommand("FinSnap_CheckPart")
+    expect(mark.node is None, "Check part with nothing selected takes away what it shows")
+    Gui.runCommand("FinSnap_IslandsWhileEditing", 0)
+    off = feature.islands_while_editing()
+    Gui.runCommand("FinSnap_IslandsWhileEditing", 1)
+    expect(not off and feature.islands_while_editing(), "Islands while editing switches the island check off and on")
+    doc.removeObject(fins.Name)
+    doc.removeObject(part.Name)
+
+
+def _coloured_by_height(node):
+    """Whether `node` colours faces corner by corner, as the part by height."""
+    found = coin.SoSearchAction()
+    found.setType(coin.SoMaterialBinding.getClassTypeId())
+    found.setInterest(coin.SoSearchAction.ALL)
+    found.apply(node)
+    paths = found.getPaths()
+    return any(paths[i].getTail().value.getValue() == coin.SoMaterialBinding.PER_VERTEX
+               for i in range(paths.getLength()))
+
+
+def _layer_cut_shown(node):
+    """Whether `node` shows faces drawn over everything else, as the layer cut out."""
+    found = coin.SoSearchAction()
+    found.setType(coin.SoAnnotation.getClassTypeId())
+    found.setInterest(coin.SoSearchAction.ALL)
+    found.apply(node)
+    paths = found.getPaths()
+    faces = coin.SoIndexedFaceSet.getClassTypeId()
+    return any(paths[i].getTail().getNumChildren() and paths[i].getTail().getChild(0).getNumChildren() > 3
+               and paths[i].getTail().getChild(0).getChild(3).isOfType(faces) for i in range(paths.getLength()))
+
+
+def lower_left_face_of(shape):
+    """The face of `shape` leaning most over the bed, its normal furthest down."""
+    return min(shape.Faces, key=lambda face: face.normalAt(*face.ParameterRange[::2]).z)
 
 
 def check_typed_fields(panel, fins, place):
@@ -959,6 +1084,8 @@ def main():
     chosen_stands(doc, quick, facing, messages)
     island_marks(doc)
     value_colors()
+    stability_checked(doc, messages)
+    saved_while_editing()
     # Fins of the part laid flat keep their mark and shape over a Quick fins
     # cancelled: standing the part rebuilt them, Cancel gives them back.
     select(quick, "Edge%d" % on_bed)

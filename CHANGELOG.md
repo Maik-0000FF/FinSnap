@@ -11,6 +11,21 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Check stability, in the toolbar and the task panel: whether a part, with or without fins, stays standing while it is printed, layer by layer as its centre of mass moves, first on its own, then held by its fins from their lowest tine up; it says at which layer it would tip and which way, recommends a counter fin where it tips away from the fins, and shows in the 3D view the part coloured by height from green over yellow to red where it tips, the critical layer cut out of it, and the plumb line over what it stands on (#80)
+- Check part, in the toolbar: overhangs, islands and stability of a part at once, with a line for each
+- Islands while editing, a switch in the toolbar: off, fins and Quick fins leave islands to Check part, which keeps a large part quick on a slow computer
+- Brim width, in the Slicer section: the brim the slicer prints round the part and the fins, which Check stability counts as standing on the bed with them
+
+### Changed
+
+- On a face that starts above the bed, as above a fillet the part rests on, the lowest tine goes on the first layer from the lower edge of the face up, where its end rests on the face, no longer half a millimetre higher
+
+### Fixed
+
+- Fins saved with their task panel open no longer stay see-through green: the file keeps the look they had before editing
+
 ## [0.8.0] - 2026-10-29
 
 ### Added
