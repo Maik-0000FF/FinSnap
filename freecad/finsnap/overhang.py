@@ -107,10 +107,9 @@ def islands(part, first_layer, layer):
         return []
     bed = bounds(part).ZMin
     cut = {}
-    # Whether each section, by layer and number, rests on the layer below,
-    # and the sections reported, one island each, at the first lowest point.
+    # Whether each section, by layer and number, rests on the layer below;
+    # one that does not is an island, reported once, at its first lowest point.
     resting = {}
-    reported = set()
     found = []
     for point in _lowest_points(part):
         number = _layer_holding(point.z - bed, first_layer, layer)
@@ -125,19 +124,17 @@ def islands(part, first_layer, layer):
         middle = Part.Vertex(App.Vector(point.x, point.y, 0))
         for index, (section, reach) in enumerate(cut[number]):
             key = (number, index)
-            # The box around a section turns most points away before the
-            # distance to it is measured.
-            if key in reported or not reach.isInside(middle.Point):
+            # A section decided before is passed over, and the box around one
+            # turns most points away before the distance to it is measured.
+            if key in resting or not reach.isInside(middle.Point):
                 continue
             try:
                 if section.distToShape(middle)[0] > layer:
                     continue
-                if key not in resting:
-                    resting[key] = any(_overlap(section, other) for other, _ in cut[number - 1])
+                resting[key] = any(_overlap(section, other) for other, _ in cut[number - 1])
             except Part.OCCError:
                 resting[key] = True
             if not resting[key]:
-                reported.add(key)
                 found.append(App.Vector(point))
     return found
 
