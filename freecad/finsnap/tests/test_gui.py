@@ -60,6 +60,9 @@ HOOK_REACH = 15.0  # how far the arm of a hook reaches past the side of the tilt
 HOOK_WIDTH = 5.0  # width and thickness of its arm and leg
 HOOK_DEPTH = 12.0  # how far below the top of the cube the arm comes out
 HOOK_DROP = 15.0  # how far the leg hangs from the arm
+ARC_TURN_TOLERANCE = 0.01  # degrees a turn read back from Coin may be off
+WHITE_PACKED = 0xFFFFFFFF  # a white background of the 3D view, packed as FreeCAD keeps it
+DARK_PACKED = 0x202020FF  # a dark one
 
 
 def load_workbench():
@@ -259,8 +262,14 @@ def turned_tube(doc):
            and abs(angle() - TUBE_ANGLE) < d.TOLERANCE,
            "an angle typed for the fin turns the tube that far round its axis, the fin stays")
     arc._held(handles.ALONG, None)
+    arc._moved(handles.ALONG, None)
+    # A copy: the field gives its own vector, which follows it.
+    unturned = coin.SbVec3f(arc.value_at.translation.getValue())
     arc.turner.rotation.setValue(coin.SbRotation(coin.SbVec3f(0, 0, 1), math.radians(-TUBE_ANGLE)))
     arc._moved(handles.ALONG, None)
+    expect(_on_arc(arc, unturned) and _on_arc(arc, arc.value_at.translation.getValue())
+           and abs(_turned_by(arc, unturned, arc.value_at.translation.getValue()) - TUBE_ANGLE) < ARC_TURN_TOLERANCE,
+           "the value of the arc stands past its tip, round the axis, and turns with it")
     expect(abs(panel.fin_fields[handles.ALONG].value() - 2 * TUBE_ANGLE) < d.TOLERANCE,
            "while the arc is dragged, the field shows the angle the fin goes to")
     arc.held = False
@@ -396,6 +405,85 @@ def chosen_stands(doc, quick, facing, messages):
     fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick][0]
     expect(fins.ViewObject.Proxy.panel.stands is None, "a face with its edge stands one way: no table to choose from")
     fins.ViewObject.Proxy.panel.reject()
+
+
+def value_colors():
+    """The value of a dragged arrow is written yellow over a dark background
+    of the 3D view, nearly black over a light one, a gradient by the mean of
+    its colours, its middle colour as well where that is on. Every setting
+    the cases depend on is set here, so FreeCAD's own make no difference,
+    and put back as it was after."""
+    from freecad.finsnap import handles
+    view = App.ParamGet(handles.VIEW_PARAMETERS)
+    flags = [name for name, _ in handles.BACKGROUND_FLAGS] + [handles.BACKGROUND_USE_MIDDLE[0]]
+    colors = [handles.BACKGROUND_SINGLE[0], handles.BACKGROUND_MIDDLE[0]] + [
+        name for name, _ in handles.BACKGROUND_GRADIENT]
+    had_bools, had_colors = set(view.GetBools()), set(view.GetUnsigneds())
+    saved_bools = {name: view.GetBool(name) for name in flags if name in had_bools}
+    saved_colors = {name: view.GetUnsigned(name) for name in colors if name in had_colors}
+    gradient, _, middle = flags
+    try:
+        for flag in flags:
+            view.SetBool(flag, False)
+        view.SetUnsigned(handles.BACKGROUND_SINGLE[0], WHITE_PACKED)
+        on_white = handles.value_color()
+        view.SetUnsigned(handles.BACKGROUND_SINGLE[0], DARK_PACKED)
+        on_dark = handles.value_color()
+        view.SetBool(gradient, True)
+        for name, _ in handles.BACKGROUND_GRADIENT:
+            view.SetUnsigned(name, WHITE_PACKED)
+        on_light_gradient = handles.value_color()
+        # A dark middle colour pulls the mean of a light gradient below the limit.
+        view.SetUnsigned(handles.BACKGROUND_GRADIENT[1][0], DARK_PACKED)
+        view.SetUnsigned(handles.BACKGROUND_MIDDLE[0], DARK_PACKED)
+        view.SetBool(middle, True)
+        through_dark_middle = handles.value_color()
+    finally:
+        for name in flags:
+            if name in saved_bools:
+                view.SetBool(name, saved_bools[name])
+            else:
+                view.RemBool(name)
+        for name in colors:
+            if name in saved_colors:
+                view.SetUnsigned(name, saved_colors[name])
+            else:
+                view.RemUnsigned(name)
+    expect(on_white == handles.VALUE_ON_LIGHT and on_dark == handles.HELD_COLOR
+           and on_light_gradient == handles.VALUE_ON_LIGHT and through_dark_middle == handles.HELD_COLOR,
+           "the value is written nearly black over a light background, yellow over a dark one, a gradient "
+           "by the mean of its colours, its middle colour too where it is on")
+
+
+def _on_arc(arc, point):
+    """Whether `point` (an SbVec3f) lies on the circle the arc of `arc`, a
+    Handles, is drawn round."""
+    from freecad.finsnap import defaults as d
+    foot, turn = arc.turn_place.translation.getValue(), arc.turn_place.rotation.getValue()
+    axis = turn.multVec(coin.SbVec3f(0, 0, 1))
+    off = point - foot
+    return abs((off - axis * off.dot(axis)).length() - arc.arc_radius) < d.TOLERANCE
+
+
+def _turned_by(arc, start, end):
+    """How far round the axis of the arc of `arc` `end` lies from `start` (degrees)."""
+    foot, turn = arc.turn_place.translation.getValue(), arc.turn_place.rotation.getValue()
+    axis = turn.multVec(coin.SbVec3f(0, 0, 1))
+    first, second = start - foot, end - foot
+    first, second = first - axis * first.dot(axis), second - axis * second.dot(axis)
+    return math.degrees(math.acos(max(-1.0, min(1.0, first.dot(second) / (first.length() * second.length())))))
+
+
+def _value_shown(arrows):
+    """The value standing at the dragged arrow of `arrows`, a Handles; None
+    while none is shown."""
+    if arrows.value.whichChild.getValue() == coin.SO_SWITCH_NONE:
+        return None
+    found = coin.SoSearchAction()
+    found.setType(coin.SoText2.getClassTypeId())
+    found.apply(arrows.value)
+    path = found.getPath()
+    return None if path is None else path.getTail().string[0]
 
 
 def _balls(marks, over=False):
@@ -833,6 +921,7 @@ def main():
         doc.recompute()
     chosen_stands(doc, quick, facing, messages)
     island_marks(doc)
+    value_colors()
     # Fins of the part laid flat keep their mark and shape over a Quick fins
     # cancelled: standing the part rebuilt them, Cancel gives them back.
     select(quick, "Edge%d" % on_bed)
@@ -1122,6 +1211,9 @@ def main():
     moving.handle_moved(handles.ALONG, FIN_SHIFT)
     expect(abs(moving.fin_fields[handles.ALONG].value() - (place + FIN_SHIFT)) < d.TOLERANCE,
            "the field follows the arrow while it is dragged")
+    expect(_value_shown(moving.handles) == moving.fin_fields[handles.ALONG].text(),
+           "the value stands at the arrow while it is dragged, as the field shows it: %s"
+           % _value_shown(moving.handles))
     moving.drag_step()
     expect(abs(lined.Shape.Solids[0].BoundBox.Center.sub(before).Length - FIN_SHIFT) < d.TOLERANCE
            and feature.edits(lined, feature.MAIN)[1] == {1: FIN_SHIFT},
@@ -1130,6 +1222,7 @@ def main():
     expect(feature.edits(lined, feature.MAIN)[1] == {1: FIN_SHIFT}
            and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_NONE,
            "a fin let go stays there")
+    expect(_value_shown(moving.handles) is None, "let go, the value at the arrow goes")
     expect(all(moving.handles.draggers[kind] is held[kind] for kind in held),
            "the arrows stay the same after a move; Coin may still hold the one let go")
     expect(all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(handles.axis_color("z"), AXIS_Z_RGB)),
