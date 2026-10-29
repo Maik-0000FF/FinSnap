@@ -11,6 +11,8 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-10-29
+
 ### Added
 
 - After Quick fins, a table at the top of the task panel lists the other edges the part can stand on, or the other faces the fins can go under, with their length or area and their islands; a click on a row stands the part so, and fins changed by hand are dropped only once the user agrees (#75)
@@ -197,7 +199,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.7.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.8.0...HEAD
+[0.8.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.6.0
 [0.5.2]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.5.2
