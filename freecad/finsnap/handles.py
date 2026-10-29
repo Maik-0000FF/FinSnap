@@ -292,8 +292,6 @@ def _clipped(polygon, z, keep):
     return kept
 
 
-
-
 def shaded(shapes, color, transparency):
     """A Coin node drawing the faces of `shapes` in one colour."""
     points, index = [], []

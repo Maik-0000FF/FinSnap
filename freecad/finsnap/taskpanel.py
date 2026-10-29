@@ -169,6 +169,8 @@ STABILITY_TIP = QT_TRANSLATE_NOOP(
     "held by these fins, which hold it only from their lowest tine up, and shows the plumb line from its "
     "centre of mass to the bed. Takes a moment on a large part.")
 NOTE_STABILITY_OUTDATED = QT_TRANSLATE_NOOP("FinSnap", "Changed since the stability check: check again.")
+# Said on a double click on a check whose part is gone.
+NOTE_PART_GONE = QT_TRANSLATE_NOOP("FinSnap", "The part of this check is gone; delete the check.")
 DRAWINGS = (
     (SIDE_VIEW, QT_TRANSLATE_NOOP("FinSnap", "Side view")),
     (TOP_VIEW, QT_TRANSLATE_NOOP("FinSnap", "Top view")),
@@ -184,7 +186,8 @@ def check_stability(part_obj, p):
     try:
         level, note, shown = feature.stability_of(part_obj, p)
         note = _with_colours(note, shown)
-        _in_tree(check.record(part_obj, check.STABILITY, level, note, shown, _layer_cut(part_obj, p, shown)))
+        _in_tree(check.record(part_obj, fins_on(part_obj), check.STABILITY, level, note, shown,
+                              _layer_cut(part_obj, p, shown)))
     finally:
         QtWidgets.QApplication.restoreOverrideCursor()
     return level, note
@@ -209,18 +212,24 @@ def check_part(part_obj, p):
                  _with_colours(note, shown)]
         worst = feature.TIPS if names or found else level
         overhangs = Part.makeCompound([part.getElement(name) for name in names]) if names else None
-        _in_tree(check.record(part_obj, check.PART, worst, "\n".join(lines), shown, _layer_cut(part_obj, p, shown),
-                              overhangs, found))
+        # The level of its stability, whose colour its plumb line shows.
+        _in_tree(check.record(part_obj, fins_on(part_obj), check.PART, level, "\n".join(lines), shown,
+                              _layer_cut(part_obj, p, shown), overhangs, found))
     finally:
         QtWidgets.QApplication.restoreOverrideCursor()
     return worst, "\n".join(lines)
 
 
+def fins_on(part_obj):
+    """The FinSnap objects whose fins stand under `part_obj`."""
+    return [other for other in feature.fins_of(outermost(part_obj), part_obj.Document)
+            if other.Base and other.Base[0] is part_obj]
+
+
 def check_params(part_obj):
     """The parameters to check `part_obj` with: those of its first fins, or
     the standard for new fins where it has none."""
-    fins = [other for other in feature.fins_of(outermost(part_obj), part_obj.Document)
-            if other.Base and other.Base[0] is part_obj]
+    fins = fins_on(part_obj)
     return feature.params_of(fins[0]) if fins else presets.standard()
 
 
@@ -285,7 +294,10 @@ class ViewProviderCheck:
         return ICON_CHECK_PART if obj is not None and obj.Kind == check.PART else ICON_STABILITY
 
     def doubleClicked(self, vobj):  # noqa: N802 - FreeCAD API
-        note = check_again(vobj.Object)
+        if vobj.Object.Part is None:
+            note = translate("FinSnap", NOTE_PART_GONE)
+        else:
+            note = check_again(vobj.Object)
         QtWidgets.QMessageBox.information(Gui.getMainWindow(), NAME, note)
         return True
 
@@ -323,7 +335,7 @@ def check_nodes(check_obj):
         def color_at(z):
             return margin_color(_margin_at(profile, z))
 
-        color = margin_color(check_obj.Margin)
+        color = LEVEL_COLORS.get(check_obj.Level, handles.INVALID_COLOR)
         nodes.append(handles.gradient(global_shape(check_obj.Part), color_at, [z for z, _ in profile],
                                       GRADIENT_TRANSPARENCY))
         if not check_obj.Cut.isNull():

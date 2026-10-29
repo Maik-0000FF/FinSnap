@@ -8,7 +8,7 @@ object. It keeps what was found, the note said and what the 3D view shows,
 so it shows again once the document is opened. It links the part and its
 fins, so FreeCAD touches it when they change: its recompute then only marks
 it out of date, as checking again takes seconds on a large part. A double
-click checks again (commands.ViewProviderCheck).
+click checks again (taskpanel.ViewProviderCheck).
 
 INPUTS this has to withstand (record()):
   a part checked for the first time     ->  a new object, its result kept, up to date
@@ -23,7 +23,6 @@ INPUTS this has to withstand (record()):
 import FreeCAD as App
 import Part
 
-from . import feature
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .shapes import outermost
 
@@ -38,10 +37,14 @@ EDITOR_READ_ONLY = 1
 EDITOR_HIDDEN = 2
 # The properties of a check, as (name, type, group, tooltip, editor mode).
 PROPERTIES = (
-    ("Part", "App::PropertyLink", GROUP, QT_TRANSLATE_NOOP("App::Property", "The part checked"),
+    # Global links, as the part may lie in a body or a part container.
+    ("Part", "App::PropertyLinkGlobal", GROUP, QT_TRANSLATE_NOOP("App::Property", "The part checked"),
      EDITOR_READ_ONLY),
-    ("Fins", "App::PropertyLinkList", GROUP, QT_TRANSLATE_NOOP("App::Property", "The fins of the part checked"),
-     EDITOR_READ_ONLY),
+    ("Fins", "App::PropertyLinkListGlobal", GROUP,
+     QT_TRANSLATE_NOOP("App::Property", "The fins of the part checked"), EDITOR_READ_ONLY),
+    # The outermost container of the part, so moving it marks the check out
+    # of date, as it rebuilds the fins.
+    ("Container", "App::PropertyLinkGlobal", GROUP, "", EDITOR_HIDDEN),
     ("Kind", "App::PropertyString", GROUP, QT_TRANSLATE_NOOP("App::Property", "What was checked"),
      EDITOR_HIDDEN),
     ("Result", "App::PropertyString", GROUP, QT_TRANSLATE_NOOP("App::Property", "What the check found"),
@@ -49,6 +52,8 @@ PROPERTIES = (
     ("OutOfDate", "App::PropertyBool", GROUP,
      QT_TRANSLATE_NOOP("App::Property", "The part, its place or its fins changed since: double-click to check "
                                         "again"), EDITOR_READ_ONLY),
+    # The level of the stability found, STANDS, CLOSE or TIPS, whose colour
+    # the plumb line and the layer cut out show.
     ("Level", "App::PropertyString", GROUP_SHOWN, "", EDITOR_HIDDEN),
     ("Tips", "App::PropertyBool", GROUP_SHOWN, "", EDITOR_HIDDEN),
     ("Layer", "App::PropertyInteger", GROUP_SHOWN, "", EDITOR_HIDDEN),
@@ -89,6 +94,17 @@ class CheckFeature:
         return None
 
 
+def outdate(part_obj):
+    """Mark the checks of `part_obj` out of date: its fins were built anew,
+    perhaps new ones, which the checks do not link."""
+    for kind in (STABILITY, PART):
+        found = find(part_obj, kind)
+        if found is not None and not found.OutOfDate:
+            found.OutOfDate = True
+            # Set by hand, not by a recompute of the check, which then needs none.
+            found.purgeTouched()
+
+
 def is_check(obj):
     return getattr(obj, "TypeId", None) == "App::FeaturePython" and isinstance(getattr(obj, "Proxy", None),
                                                                                CheckFeature)
@@ -100,22 +116,26 @@ def find(part_obj, kind):
                  if is_check(obj) and obj.Part is part_obj and obj.Kind == kind), None)
 
 
-def record(part_obj, kind, level, note, shown, cut=None, overhangs=None, islands=()):
-    """Keep what a check of `kind` of `part_obj` found in its object, made if
-    there is none yet: the `level` and the `note` said; `shown`, the
+def record(part_obj, fins, kind, level, note, shown, cut=None, overhangs=None, islands=()):
+    """Keep what a check of `kind` of `part_obj`, with its fins `fins`, found
+    in its object, made if there is none yet: `level`, that of its stability, and the `note` said; `shown`, the
     stability.Stability whose plumb line shows, or None; `cut`, the layer cut
     out of the part at it; and for a check of the part, `overhangs`, the
     faces that overhang without fins, as one shape, and `islands`. Returns
     the object, up to date."""
     obj = find(part_obj, kind)
+    if obj is not None:
+        # Shows nothing while it is filled, so it is drawn once, at the end.
+        obj.OutOfDate = True
     if obj is None:
         obj = part_obj.Document.addObject("App::FeaturePython", TYPE_NAME)
         CheckFeature(obj)
         obj.Part = part_obj
         obj.Kind = kind
+        if outermost(part_obj) is not part_obj:
+            obj.Container = outermost(part_obj)
     obj.Label = translate("FinSnap", LABELS[kind]) % part_obj.Label
-    obj.Fins = [fins for fins in feature.fins_of(outermost(part_obj), part_obj.Document)
-                if fins.Base and fins.Base[0] is part_obj]
+    obj.Fins = list(fins)
     obj.Result = note
     obj.Level = level
     obj.Tips = bool(shown and shown.tips)

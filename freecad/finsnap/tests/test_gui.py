@@ -695,12 +695,18 @@ def stability_checked(doc, messages):
            "once the part moves its checks are out of date, their marks gone, their icon a warning")
     information = QtWidgets.QMessageBox.information
     QtWidgets.QMessageBox.information = staticmethod(lambda *args: messages.append(args[2]))
+    proxy = stable.ViewObject.Proxy
+    draws, real_draw = [], proxy.draw
+    # Noted only where it draws marks, not where it finds the check out of date.
+    proxy.draw = lambda: draws.append(not stable.OutOfDate) or real_draw()
     try:
         stable.ViewObject.Proxy.doubleClicked(stable.ViewObject)
     finally:
         QtWidgets.QMessageBox.information = information
+        proxy.draw = real_draw
     expect(not stable.OutOfDate and stable.ViewObject.Proxy.root.getNumChildren() > 0
-           and messages[-1] == stable.Result, "a double click checks again and says what it found")
+           and messages[-1] == stable.Result and sum(draws) == 1,
+           "a double click checks again, draws its marks once, and says what it found: %d" % sum(draws))
 
     # A copy: the document itself stays as it is, and opens as a second one.
     path = os.path.join(tempfile.mkdtemp(), "checked.FCStd")
@@ -720,9 +726,16 @@ def stability_checked(doc, messages):
     off = feature.islands_while_editing()
     Gui.runCommand("FinSnap_IslandsWhileEditing", 1)
     expect(not off and feature.islands_while_editing(), "Islands while editing switches the island check off and on")
-    doc.removeObject(stable.Name)
     doc.removeObject(fins.Name)
     doc.removeObject(part.Name)
+    QtWidgets.QMessageBox.information = staticmethod(lambda *args: messages.append(args[2]))
+    try:
+        stable.ViewObject.Proxy.doubleClicked(stable.ViewObject)
+    finally:
+        QtWidgets.QMessageBox.information = information
+    expect(messages[-1] == App.Qt.translate("FinSnap", taskpanel.NOTE_PART_GONE),
+           "a double click on a check whose part is gone says so")
+    doc.removeObject(stable.Name)
 
 
 def _coloured_by_height(node):

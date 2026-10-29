@@ -15,6 +15,7 @@ from collections import namedtuple
 import FreeCAD as App
 import Part
 
+from . import check
 from . import defaults as d
 from . import geometry
 from . import orient
@@ -817,6 +818,8 @@ class FinSnapFeature:
         self.results = {}
         if not obj.Base:
             return
+        # Fins built anew, or new ones: the checks of their part no longer hold.
+        check.outdate(obj.Base[0])
         if still_laid_flat(obj):
             # The fins keep the shape they were moved to; the face they belong
             # to no longer leans over the bed until the part stands again.
@@ -1488,6 +1491,7 @@ def prepare_delete(obj):
     on an edge lay it flat again; other fins of it are built anew."""
     if not obj.Base:
         return
+    check.outdate(obj.Base[0])
     owner = outermost(obj.Base[0])
     others = [o for o in fins_of(owner, obj.Document) if o is not obj]
     if not others:

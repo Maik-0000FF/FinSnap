@@ -19,7 +19,7 @@ import FreeCAD as App
 import Part
 from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left_face, run, split_cylinder, tilted_cube
 from freecad.finsnap import defaults as d
-from freecad.finsnap import export_3mf, export_step, feature, geometry, orient, overhang, stability
+from freecad.finsnap import check, export_3mf, export_step, feature, geometry, orient, overhang, stability
 from freecad.finsnap import presets
 from freecad.finsnap.params import FinParams, ParamError
 from freecad.finsnap.paths import PACKAGE_XML
@@ -889,6 +889,37 @@ def stability_raised_and_counter(doc):
            "tipping away from its fins it is told to add a counter fin; towards its counter fin, not: %s" % notes)
 
 
+def check_objects(doc):
+    """A check in the tree goes out of date once fins of its part are built
+    anew, also fins made after it, and once the body its part lies in moves;
+    checking again fills the same object, up to date."""
+    cube = doc.addObject("Part::Feature", "Checked")
+    cube.Shape = tilted_cube()
+    doc.recompute()
+    found = check.record(cube, [], check.STABILITY, feature.STANDS, "note", None)
+    again = check.record(cube, [], check.STABILITY, feature.STANDS, "note again", None)
+    expect(found is again and not found.OutOfDate and found.Result == "note again" and "Touched" not in found.State,
+           "checking a part again fills the same check, up to date and not touched")
+    fins = feature.create(cube, face_name(cube.Shape, lower_left_face(cube.Shape)))
+    doc.recompute()
+    expect(found.OutOfDate, "fins made after a check put it out of date")
+    doc.removeObject(fins.Name)
+    doc.removeObject(found.Name)
+    doc.removeObject(cube.Name)
+
+    body = doc.addObject("PartDesign::Body", "CheckedBody")
+    box = body.newObject("PartDesign::AdditiveBox", "CheckedBox")
+    doc.recompute()
+    inside = check.record(box, [], check.PART, feature.STANDS, "note", None)
+    expect(inside.Container is body and inside.Part is box, "a check of a part in a body links the body as well")
+    body.Placement = App.Placement(V(5, 0, 0), App.Rotation())
+    doc.recompute()
+    expect(inside.OutOfDate, "moving the body of the part puts its check out of date")
+    doc.removeObject(inside.Name)
+    doc.removeObject(box.Name)
+    doc.removeObject(body.Name)
+
+
 def main():
     doc = App.newDocument("FinSnapTest")
     cube = doc.addObject("Part::Feature", "Cube")
@@ -935,6 +966,7 @@ def main():
     warnings_and_old_files(doc)
     kept_islands(doc)
     stability_raised_and_counter(doc)
+    check_objects(doc)
     step_with_offset_curves()
     print("all checks passed", file=sys.__stdout__)
 
