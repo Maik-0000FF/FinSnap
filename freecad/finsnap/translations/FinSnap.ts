@@ -676,18 +676,18 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="710"/>
+        <location filename="../feature.py" line="715"/>
         <source>Main fin: %s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="680"/>
-        <location filename="../feature.py" line="713"/>
+        <location filename="../feature.py" line="685"/>
+        <location filename="../feature.py" line="718"/>
         <source>Counter fin: %s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="716"/>
+        <location filename="../feature.py" line="721"/>
         <source>%d faces of %s overhang flatter than %.0f degrees without fins: %s</source>
         <translation type="unfinished"></translation>
     </message>

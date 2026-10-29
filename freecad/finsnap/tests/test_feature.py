@@ -55,6 +55,9 @@ POCKET_DEPTH = 4.0
 STEP_VOLUME_TOLERANCE = 1e-3  # mm3, what reading the file back may differ by
 TUBE_RADIUS = 10.0
 TUBE_BORE = 6.0
+HOLE_RADIUS = 2.0     # a hole through the tilted cube, moved sideways to keep its measures
+HOLE_LENGTH = 200.0
+HOLE_SHIFT = 3.0
 TUBE_HEIGHT = 40.0
 TUBE_TURN = 5.0  # how far the fin under the side of a tube is moved by hand, in mm round it
 FINE_TURN = 1.23456789  # a turn finer than the shift is kept, in mm round the side
@@ -785,6 +788,19 @@ def kept_islands(doc):
         doc.recompute()
         expect(len(calls) == 1 and not fins.Islands, "moved, the part is cut for its islands anew: %d, %s"
                % (len(calls), list(fins.Islands)))
+        # A hole moved leaves volume, area and every count as they were; its
+        # corners tell the shapes apart.
+        middle = tilted_cube().BoundBox.Center
+        holed = [tilted_cube().cut(Part.makeCylinder(HOLE_RADIUS, HOLE_LENGTH,
+                                                     V(middle.x + shift, -HOLE_LENGTH / 2, middle.z), V(0, 1, 0)))
+                 for shift in (-HOLE_SHIFT, HOLE_SHIFT)]
+        keys = []
+        for shape in holed:
+            cube.Shape = shape
+            keys.append(feature._islands_key(cube, feature.params_of(fins)))
+        expect(abs(holed[0].Volume - holed[1].Volume) < d.TOLERANCE
+               and abs(holed[0].Area - holed[1].Area) < d.TOLERANCE and keys[0] != keys[1],
+               "a hole moved, the measures of the part the same, its islands are asked anew")
     finally:
         overhang.islands = real
         feature._islands_kept.clear()

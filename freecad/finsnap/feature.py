@@ -557,7 +557,7 @@ WHOLE_KEPT = 16
 _whole_kept = {}
 # Islands of parts, by part, its shape, where it stands and the layers it is
 # cut in, worked out once: the fins are built far more often. The volume and
-# area of the shape are compared to this many decimal places.
+# area of the shape and its corners are compared to this many decimal places.
 ISLANDS_KEPT = 8
 ISLANDS_KEY_DIGITS = 6
 _islands_kept = {}
@@ -594,6 +594,9 @@ def keep_islands(part_obj, p, found):
       islands of the part as it stands      ->  taken by islands_of(), not worked out again
       the part recomputed, shape the same   ->  the same key: taken
       the part moved or changed after       ->  another key: worked out anew
+      a hole or pocket moved, the measures
+        of the shape the same               ->  its corners moved: another key, worked
+                                                out anew
       other layers asked                    ->  another key: worked out anew
       many parts in turn                    ->  the oldest goes past ISLANDS_KEPT
     """
@@ -604,12 +607,14 @@ def keep_islands(part_obj, p, found):
 
 def _islands_key(part_obj, p):
     """What the islands of `part_obj` depend on: the part, its shape, where it
-    stands and the layers of `p`. The shape by its measures, not its hash:
-    FreeCAD gives a part a new hash each time it is recomputed, the same shape
-    or not."""
+    stands and the layers of `p`. The shape by its measures and where its
+    corners lie, not its hash: FreeCAD gives a part a new hash each time it is
+    recomputed, the same shape or not. The corners tell a shape whose measures
+    stay apart, as with a hole moved."""
     shape = part_obj.Shape
+    corners = tuple(sorted(tuple(round(c, ISLANDS_KEY_DIGITS) for c in vertex.Point) for vertex in shape.Vertexes))
     measures = (round(shape.Volume, ISLANDS_KEY_DIGITS), round(shape.Area, ISLANDS_KEY_DIGITS),
-                len(shape.Faces), len(shape.Edges), len(shape.Vertexes))
+                len(shape.Faces), len(shape.Edges), corners)
     return (part_obj.Document.Name, part_obj.Name, measures, tuple(part_obj.getGlobalPlacement().toMatrix().A),
             p.first_layer_height, p.layer_height)
 
