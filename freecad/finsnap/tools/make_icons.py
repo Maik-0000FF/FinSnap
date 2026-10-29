@@ -166,6 +166,13 @@ def check_badge():
             'stroke-linejoin="round"/>' % WHITE]
 
 
+def outdated_badge():
+    """An exclamation mark on yellow: a check out of date."""
+    return ['<circle cx="52" cy="12" r="10" fill="%s" stroke="%s" stroke-width="2"/>' % (QUICK_FILL, QUICK_LINE),
+            '<line x1="52" y1="6" x2="52" y2="13" stroke="%s" stroke-width="3" stroke-linecap="round"/>' % QUICK_LINE,
+            '<circle cx="52" cy="17.5" r="1.8" fill="%s"/>' % QUICK_LINE]
+
+
 def island_badge():
     """A layer printed in the air, on red: the islands checked while editing."""
     return ['<circle cx="52" cy="12" r="10" fill="%s" stroke="%s" stroke-width="2"/>' % (REMOVE_FILL, REMOVE_LINE),
@@ -217,6 +224,7 @@ def icons():
         "check_stability.svg": workbench() + plumb(),
         "check_part.svg": workbench() + plumb() + check_badge(),
         "islands_live.svg": workbench() + island_badge(),
+        "check_outdated.svg": workbench() + plumb() + outdated_badge(),
         "counter_fin.svg": bed() + part_shape() + fin_shapes() + fin_shapes(mirrored=True) + plus_badge(),
         "remove_fin.svg": workbench() + minus_badge(),
         "reset_fins.svg": workbench() + back_badge(),

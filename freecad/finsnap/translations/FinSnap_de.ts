@@ -218,16 +218,51 @@
         <source>Placement before Stand on edge, restored by Lay flat again</source>
         <translation>Platzierung vor Auf Kante stellen, wiederhergestellt von Wieder flach legen</translation>
     </message>
+    <message>
+        <location filename="../check.py" line="34"/>
+        <source>Check</source>
+        <translation>Prüfung</translation>
+    </message>
+    <message>
+        <location filename="../check.py" line="35"/>
+        <source>Shown</source>
+        <translation>Anzeige</translation>
+    </message>
+    <message>
+        <location filename="../check.py" line="41"/>
+        <source>The part checked</source>
+        <translation>Das geprüfte Teil</translation>
+    </message>
+    <message>
+        <location filename="../check.py" line="43"/>
+        <source>The fins of the part checked</source>
+        <translation>Die Finnen des geprüften Teils</translation>
+    </message>
+    <message>
+        <location filename="../check.py" line="45"/>
+        <source>What was checked</source>
+        <translation>Was geprüft wurde</translation>
+    </message>
+    <message>
+        <location filename="../check.py" line="47"/>
+        <source>What the check found</source>
+        <translation>Was die Prüfung ergab</translation>
+    </message>
+    <message>
+        <location filename="../check.py" line="50"/>
+        <source>The part, its place or its fins changed since: double-click to check again</source>
+        <translation>Das Teil, seine Lage oder seine Finnen haben sich seitdem geändert: zum erneuten Prüfen doppelklicken</translation>
+    </message>
 </context>
 <context>
     <name>FinSnap</name>
     <message>
-        <location filename="../commands.py" line="44"/>
+        <location filename="../commands.py" line="46"/>
         <source>3MF files (*.3mf)</source>
         <translation>3MF-Dateien (*.3mf)</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="48"/>
+        <location filename="../commands.py" line="50"/>
         <source>Select a part, or its fins, to check whether it stays standing while it is printed.</source>
         <translation>Wähle ein Teil oder seine Finnen aus, um zu prüfen, ob es während des Drucks stehen bleibt.</translation>
     </message>
@@ -293,7 +328,7 @@
         <translation>Die Auswahl wurde nicht mit Auf Kante stellen aufgestellt.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="46"/>
+        <location filename="../commands.py" line="48"/>
         <source>STEP files (*.step *.stp)</source>
         <translation>STEP-Dateien (*.step *.stp)</translation>
     </message>
@@ -329,7 +364,7 @@
     </message>
     <message>
         <location filename="../commands.py" line="786"/>
-        <location filename="../taskpanel.py" line="602"/>
+        <location filename="../taskpanel.py" line="685"/>
         <source>Add counter fin</source>
         <translation>Gegenfinne hinzufügen</translation>
     </message>
@@ -750,291 +785,291 @@
         <translation>die Gegenfinne gehört unter eine ebene Fläche, nicht unter die Seite eines Zylinders oder Rohrs</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="540"/>
+        <location filename="../taskpanel.py" line="623"/>
         <source>FinSnap parameters</source>
         <translation>FinSnap-Parameter</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="170"/>
+        <location filename="../taskpanel.py" line="173"/>
         <source>Side view</source>
         <translation>Seitenansicht</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="93"/>
+        <location filename="../taskpanel.py" line="94"/>
         <source>Main fin</source>
         <translation>Hauptfinne</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="94"/>
+        <location filename="../taskpanel.py" line="95"/>
         <source>Counter fin</source>
         <translation>Gegenfinne</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="171"/>
+        <location filename="../taskpanel.py" line="174"/>
         <source>Top view</source>
         <translation>Draufsicht</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="544"/>
+        <location filename="../taskpanel.py" line="627"/>
         <source>Hover over a field for an explanation. Letters in brackets point to the drawings below. Every change is shown in the 3D view right away. Greyed-out fields have no effect with the current choices; their tooltip says why.</source>
         <translation>Für eine Erklärung mit der Maus über ein Feld fahren. Buchstaben in Klammern verweisen auf die Zeichnungen unten. Jede Änderung erscheint sofort in der 3D-Ansicht. Ausgegraute Felder wirken bei der aktuellen Wahl nicht; ihr Tooltip sagt, warum.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="117"/>
+        <location filename="../taskpanel.py" line="118"/>
         <source>Edit fins</source>
         <translation>Finnen bearbeiten</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="591"/>
+        <location filename="../taskpanel.py" line="674"/>
         <source>To remove one fin, click it in the 3D view and press Remove selected fin, or the Delete key. The counter fin goes on the face leaning the other way, or on a face of the part you select. Drag the two arrows on a fin to move it along the face or to change its height, or type the values below; click another fin, or pick it in the list of fins, to put the arrows there. Reset fins undoes every change by hand.</source>
         <translation>Um eine einzelne Finne zu entfernen, klicke sie in der 3D-Ansicht an und drücke „Gewählte Finne entfernen“ oder die Entf-Taste. Die Gegenfinne kommt auf die Fläche, die sich zur anderen Seite neigt, oder auf eine Fläche des Teils, die du wählst. Ziehe an den beiden Pfeilen einer Finne, um sie entlang der Fläche zu verschieben oder ihre Höhe zu ändern, oder tippe die Werte unten ein; klicke eine andere Finne an oder wähle sie in der Liste der Finnen, um die Pfeile dorthin zu setzen. „Finnen zurücksetzen“ nimmt jede Änderung von Hand zurück.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="600"/>
+        <location filename="../taskpanel.py" line="683"/>
         <source>Remove selected fin</source>
         <translation>Gewählte Finne entfernen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="603"/>
+        <location filename="../taskpanel.py" line="686"/>
         <source>Remove counter fin</source>
         <translation>Gegenfinne entfernen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="611"/>
+        <location filename="../taskpanel.py" line="694"/>
         <source>The fins, the main fins from the left, then the counter fins. Pick one to put the arrows on it and select it.</source>
         <translation>Die Finnen, erst die Hauptfinnen von links, dann die Gegenfinnen. Wähle eine aus, um die Pfeile auf sie zu setzen und sie auszuwählen.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="77"/>
+        <location filename="../taskpanel.py" line="78"/>
         <source>Place on the face</source>
         <translation>Lage auf der Fläche</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="45"/>
+        <location filename="../taskpanel.py" line="46"/>
         <source>on</source>
         <translation>an</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="46"/>
+        <location filename="../taskpanel.py" line="47"/>
         <source>off</source>
         <translation>aus</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="82"/>
+        <location filename="../taskpanel.py" line="83"/>
         <source>Angle on the part</source>
         <translation>Winkel am Teil</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="87"/>
+        <location filename="../taskpanel.py" line="88"/>
         <source>Height</source>
         <translation>Höhe</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="139"/>
+        <location filename="../taskpanel.py" line="140"/>
         <source>Stand the part another way? The fins are planned anew: fins removed, moved or set to a height of their own, a turn of the part and the counter fin are undone.</source>
         <translation>Das Teil anders aufstellen? Die Finnen werden neu geplant: entfernte, verschobene Finnen und eigene Höhen, eine Drehung des Teils und die Gegenfinne werden aufgehoben.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="157"/>
+        <location filename="../taskpanel.py" line="160"/>
         <source>%d faces overhang flatter than %.0f degrees without fins.</source>
         <translation>%d Flächen hängen flacher als %.0f Grad über, ohne Finnen.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="158"/>
+        <location filename="../taskpanel.py" line="161"/>
         <source>No face overhangs without fins.</source>
         <translation>Keine Fläche hängt ohne Finnen über.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="159"/>
+        <location filename="../taskpanel.py" line="162"/>
         <source>%d island(s): it would start printing in the air there.</source>
         <translation>%d Insel(n): dort würde es in der Luft zu drucken beginnen.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="160"/>
+        <location filename="../taskpanel.py" line="163"/>
         <source>No islands.</source>
         <translation>Keine Inseln.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="164"/>
+        <location filename="../taskpanel.py" line="167"/>
         <source>Checks whether the part stays standing while it is printed, layer by layer, on its own and held by these fins, which hold it only from their lowest tine up, and shows the plumb line from its centre of mass to the bed. Takes a moment on a large part.</source>
         <translation>Prüft Schicht für Schicht, ob das Teil während des Drucks stehen bleibt, allein und von diesen Finnen gehalten, die es erst ab ihrer untersten Zinke halten, und zeigt das Lot von seinem Schwerpunkt zum Bett. Dauert bei einem großen Teil einen Moment.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="168"/>
+        <location filename="../taskpanel.py" line="171"/>
         <source>Changed since the stability check: check again.</source>
         <translation>Seit der Prüfung der Standfestigkeit geändert: erneut prüfen.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="639"/>
+        <location filename="../taskpanel.py" line="722"/>
         <source>Save as standard</source>
         <translation>Als Standard speichern</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="640"/>
+        <location filename="../taskpanel.py" line="723"/>
         <source>New fins start with these values. Fields that differ from the standard are marked, and their button puts the standard back.</source>
         <translation>Neue Finnen starten mit diesen Werten. Felder, die vom Standard abweichen, sind markiert, und ihr Knopf stellt den Standard wieder her.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="644"/>
-        <location filename="../taskpanel.py" line="807"/>
+        <location filename="../taskpanel.py" line="727"/>
+        <location filename="../taskpanel.py" line="890"/>
         <source>Factory settings</source>
         <translation>Werkseinstellungen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="645"/>
+        <location filename="../taskpanel.py" line="728"/>
         <source>Forget the saved standard and set every field to the built-in value.</source>
         <translation>Den gespeicherten Standard verwerfen und jedes Feld auf den eingebauten Wert setzen.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="662"/>
+        <location filename="../taskpanel.py" line="745"/>
         <source>Check stability</source>
         <translation>Standfestigkeit prüfen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="719"/>
+        <location filename="../taskpanel.py" line="802"/>
         <source>Stand another way</source>
         <translation>Anders aufstellen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="787"/>
+        <location filename="../taskpanel.py" line="870"/>
         <source>Back to the standard: %s</source>
         <translation>Zurück auf den Standard: %s</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="808"/>
+        <location filename="../taskpanel.py" line="891"/>
         <source>Forget the saved standard and set every field to the built-in value?</source>
         <translation>Den gespeicherten Standard verwerfen und jedes Feld auf den eingebauten Wert setzen?</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="836"/>
-        <location filename="../taskpanel.py" line="840"/>
+        <location filename="../taskpanel.py" line="919"/>
+        <location filename="../taskpanel.py" line="923"/>
         <source>Nothing removed</source>
         <translation>Nichts entfernt</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="847"/>
+        <location filename="../taskpanel.py" line="930"/>
         <source>Delete the fins?</source>
         <translation>Finnen löschen?</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="848"/>
+        <location filename="../taskpanel.py" line="931"/>
         <source>These are the last fins. Delete the fins object? A part stood on an edge for these fins alone is laid flat again.</source>
         <translation>Das sind die letzten Finnen. Das Finnen-Objekt löschen? Ein Teil, das nur für diese Finnen auf eine Kante gestellt wurde, wird wieder flach gelegt.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="864"/>
+        <location filename="../taskpanel.py" line="947"/>
         <source>Delete fins</source>
         <translation>Finnen löschen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="951"/>
+        <location filename="../taskpanel.py" line="1034"/>
         <source>%s %d</source>
         <translation>%s %d</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="299"/>
+        <location filename="../taskpanel.py" line="382"/>
         <source>Cancel fins</source>
         <translation>Finnen abbrechen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="73"/>
+        <location filename="../taskpanel.py" line="74"/>
         <source>Click a fin of these fins in the 3D view first.</source>
         <translation>Klicke zuerst eine dieser Finnen in der 3D-Ansicht an.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="78"/>
+        <location filename="../taskpanel.py" line="79"/>
         <source>Distance of the middle of the fin from the left end of the face, seen from outside. Type a value to move the fin there.</source>
         <translation>Abstand der Mitte der Finne vom linken Ende der Fläche, von außen gesehen. Wert eingeben, um die Finne dorthin zu verschieben.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="83"/>
+        <location filename="../taskpanel.py" line="84"/>
         <source>Position of the fin around the cylinder or tube, measured at the middle of its tines, in degrees from 0°, where it is first placed. Type a value to turn the part to it; the fin keeps its place.</source>
         <translation>Position der Finne am Umfang des Zylinders oder Rohrs, gemessen an der Mitte der Zinken, in Grad ab 0°, wo sie zuerst gesetzt wird. Wert eingeben, um das Teil dorthin zu drehen; die Finne bleibt an ihrem Platz.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="88"/>
+        <location filename="../taskpanel.py" line="89"/>
         <source>Height of this fin alone. Type a value to set it; Reset fins gives it the height of the others again.</source>
         <translation>Höhe nur dieser Finne. Wert eingeben, um sie zu setzen; Finnen zurücksetzen gibt ihr wieder die Höhe der anderen.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="127"/>
+        <location filename="../taskpanel.py" line="128"/>
         <source>Stand</source>
         <translation>Aufstellung</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="130"/>
+        <location filename="../taskpanel.py" line="131"/>
         <source>Stands on</source>
         <translation>Steht auf</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="130"/>
+        <location filename="../taskpanel.py" line="131"/>
         <source>Length</source>
         <translation>Länge</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="131"/>
-        <location filename="../taskpanel.py" line="133"/>
+        <location filename="../taskpanel.py" line="132"/>
+        <location filename="../taskpanel.py" line="134"/>
         <source>Islands</source>
         <translation>Inseln</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="132"/>
+        <location filename="../taskpanel.py" line="133"/>
         <source>Fins under</source>
         <translation>Finnen unter</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="132"/>
+        <location filename="../taskpanel.py" line="133"/>
         <source>Area</source>
         <translation>Flächeninhalt</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="135"/>
+        <location filename="../taskpanel.py" line="136"/>
         <source>Quick fins found more than one way to stand the part. Click a row to stand it so; the part and its fins follow in the 3D view. Ways where the part would start printing in the air, an island, are left out while one without is found.</source>
         <translation>Schnelle Finnen hat mehr als eine Möglichkeit gefunden, das Teil aufzustellen. Klicke eine Zeile an, um es so aufzustellen; Teil und Finnen folgen in der 3D-Ansicht. Möglichkeiten, bei denen das Teil in der Luft zu drucken beginnen würde, eine Insel, werden weggelassen, solange es eine ohne gibt.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="149"/>
+        <location filename="../taskpanel.py" line="150"/>
         <source>Tips at layer %d, %.1f mm high</source>
         <translation>Kippt bei Schicht %d, %.1f mm hoch</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="150"/>
+        <location filename="../taskpanel.py" line="151"/>
         <source>Closest to tipping at layer %d, %.1f mm high</source>
         <translation>Am knappsten bei Schicht %d, %.1f mm hoch</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="152"/>
+        <location filename="../taskpanel.py" line="153"/>
         <source>Colours by height: green stands, yellow comes within %.0f mm of tipping, red tips from there.</source>
         <translation>Farben nach Höhe: grün steht, gelb kommt dem Kippen auf weniger als %.0f mm nahe, rot kippt ab dort.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="601"/>
+        <location filename="../taskpanel.py" line="684"/>
         <source>Reset fins</source>
         <translation>Finnen zurücksetzen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="883"/>
-        <location filename="../taskpanel.py" line="887"/>
+        <location filename="../taskpanel.py" line="966"/>
+        <location filename="../taskpanel.py" line="970"/>
         <source>No counter fin</source>
         <translation>Keine Gegenfinne</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1151"/>
+        <location filename="../taskpanel.py" line="1234"/>
         <source>no tine of the fin finds the face there</source>
         <translation>dort trifft keine Zinke der Finne die Fläche</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1495"/>
+        <location filename="../taskpanel.py" line="1578"/>
         <source>Not possible</source>
         <translation>Nicht möglich</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1537"/>
+        <location filename="../taskpanel.py" line="1620"/>
         <source>Notes</source>
         <translation>Hinweise</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1534"/>
+        <location filename="../taskpanel.py" line="1617"/>
         <source>%d fin(s), %.2f mm high, %.2f mm thick</source>
         <translation>%d Finne(n), %.2f mm hoch, %.2f mm dick</translation>
     </message>
@@ -1371,9 +1406,19 @@
         <translation>%s hat keine Form</translation>
     </message>
     <message>
-        <location filename="../handles.py" line="542"/>
+        <location filename="../handles.py" line="512"/>
         <source>No 3D view of %s is open to edit the fins in.</source>
         <translation>Von %s ist keine 3D-Ansicht offen, in der die Finnen bearbeitet werden können.</translation>
+    </message>
+    <message>
+        <location filename="../check.py" line="32"/>
+        <source>Stability check of %s</source>
+        <translation>Standfestigkeit von %s</translation>
+    </message>
+    <message>
+        <location filename="../check.py" line="33"/>
+        <source>Part check of %s</source>
+        <translation>Prüfung von %s</translation>
     </message>
 </context>
 <context>
@@ -1405,27 +1450,27 @@
 <context>
     <name>FinSnap_CheckPart</name>
     <message>
-        <location filename="../commands.py" line="1062"/>
+        <location filename="../commands.py" line="1052"/>
         <source>Check part</source>
         <translation>Teil prüfen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1063"/>
-        <source>Checks the selected part, with or without fins, as it stands, for everything that keeps it from printing, all at once: faces overhanging without fins, islands, where it would start printing in the air, and whether it stays standing while it is printed. Shows them in the 3D view until the part, its place or its fins change, and says what it found. With nothing selected, what is shown goes.</source>
-        <translation>Prüft das ausgewählte Teil, mit oder ohne Finnen, so wie es steht, auf einmal auf alles, was den Druck verhindert: Flächen, die ohne Finnen überhängen, Inseln, wo es in der Luft zu drucken beginnen würde, und ob es während des Drucks stehen bleibt. Zeigt sie in der 3D-Ansicht, bis sich das Teil, seine Lage oder seine Finnen ändern, und sagt, was gefunden wurde. Ohne Auswahl verschwindet das Angezeigte.</translation>
+        <location filename="../commands.py" line="1053"/>
+        <source>Checks the selected part, with or without fins, as it stands, for everything that keeps it from printing, all at once: faces overhanging without fins, islands, where it would start printing in the air, and whether it stays standing while it is printed. Says what it found and keeps it as a part check in the tree, which shows it all: the eye shows or hides it, deleting the check removes it. Once the part, its place or its fins change, the check is marked out of date; double-click it to check again.</source>
+        <translation>Prüft das ausgewählte Teil, mit oder ohne Finnen, so wie es steht, auf einmal auf alles, was den Druck verhindert: Flächen, die ohne Finnen überhängen, Inseln, wo es in der Luft zu drucken beginnen würde, und ob es während des Drucks stehen bleibt. Sagt, was gefunden wurde, und legt es als Prüfung im Baum ab, die alles anzeigt: das Auge blendet es ein und aus, Löschen der Prüfung entfernt es. Ändern sich das Teil, seine Lage oder seine Finnen, wird die Prüfung als veraltet markiert; zum erneuten Prüfen doppelklicken.</translation>
     </message>
 </context>
 <context>
     <name>FinSnap_CheckStability</name>
     <message>
-        <location filename="../commands.py" line="1000"/>
+        <location filename="../commands.py" line="999"/>
         <source>Check stability</source>
         <translation>Standfestigkeit prüfen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1001"/>
-        <source>Checks whether the selected part stays standing while it is printed, layer by layer, as it grows and its centre of mass moves: first on its own, then, where it would tip over, held by its fins, which hold it only from their lowest tine up. Says at which layer it would tip and which way, and shows the plumb line from the centre of mass to the bed and what it stands on, until the part, its place or its fins change. With nothing selected, the plumb line shown goes.</source>
-        <translation>Prüft Schicht für Schicht, ob das ausgewählte Teil während des Drucks stehen bleibt, während es wächst und sein Schwerpunkt wandert: zuerst allein, dann, wo es umkippen würde, von seinen Finnen gehalten, die es erst ab ihrer untersten Zinke halten. Sagt, bei welcher Schicht es kippen würde und wohin, und zeigt das Lot vom Schwerpunkt zum Bett und die Standfläche, bis sich das Teil, seine Lage oder seine Finnen ändern. Ohne Auswahl verschwindet das angezeigte Lot.</translation>
+        <location filename="../commands.py" line="1000"/>
+        <source>Checks whether the selected part stays standing while it is printed, layer by layer, as it grows and its centre of mass moves: first on its own, then, where it would tip over, held by its fins, which hold it only from their lowest tine up. Says at which layer it would tip and which way. Keeps it as a stability check in the tree, which shows the part coloured by height, the layer it tips at and the plumb line from its centre of mass to the bed: the eye shows or hides them, deleting the check removes them. Once the part, its place or its fins change, the check is marked out of date; double-click it to check again.</source>
+        <translation>Prüft Schicht für Schicht, ob das ausgewählte Teil während des Drucks stehen bleibt, während es wächst und sein Schwerpunkt wandert: zuerst allein, dann, wo es umkippen würde, von seinen Finnen gehalten, die es erst ab ihrer untersten Zinke halten. Sagt, bei welcher Schicht es kippen würde und wohin. Legt es als Standfestigkeitsprüfung im Baum ab, die das Teil nach Höhe eingefärbt, die Schicht, an der es kippt, und das Lot von seinem Schwerpunkt zum Bett zeigt: das Auge blendet sie ein und aus, Löschen der Prüfung entfernt sie. Ändern sich das Teil, seine Lage oder seine Finnen, wird die Prüfung als veraltet markiert; zum erneuten Prüfen doppelklicken.</translation>
     </message>
 </context>
 <context>
@@ -1457,12 +1502,12 @@
 <context>
     <name>FinSnap_IslandsWhileEditing</name>
     <message>
-        <location filename="../commands.py" line="1084"/>
+        <location filename="../commands.py" line="1075"/>
         <source>Islands while editing</source>
         <translation>Inseln beim Bearbeiten</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1085"/>
+        <location filename="../commands.py" line="1076"/>
         <source>While on, fins check their part for islands as they are made and edited, and Quick fins prefers ways to stand it without. Off, they are not checked then, which keeps a large part quick on a slow computer; Check part checks them at the end.</source>
         <translation>Ist es an, prüfen Finnen ihr Teil beim Erstellen und Bearbeiten auf Inseln, und Schnelle Finnen bevorzugt Aufstellungen ohne. Ist es aus, wird dann nicht geprüft, was ein großes Teil auf einem langsamen Rechner flüssig hält; Teil prüfen prüft sie am Ende.</translation>
     </message>

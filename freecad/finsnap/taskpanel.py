@@ -18,6 +18,7 @@ import Part
 from pivy import coin
 from PySide import QtCore, QtGui, QtWidgets
 
+from . import check
 from . import defaults as d
 from . import feature
 from . import geometry
@@ -27,10 +28,10 @@ from . import presets
 from . import stability
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
-from .paths import (ICON_COUNTER, ICON_REMOVE_COUNTER, ICON_REMOVE_FIN, ICON_RESET_FINS, ICON_STABILITY, SIDE_VIEW,
-                    TOP_VIEW)
+from .paths import (ICON_CHECK_OUTDATED, ICON_CHECK_PART, ICON_COUNTER, ICON_REMOVE_COUNTER, ICON_REMOVE_FIN,
+                    ICON_RESET_FINS, ICON_STABILITY, SIDE_VIEW, TOP_VIEW)
 from .shapes import FACE_PREFIX, global_shape, outermost
-from .version import application
+from .version import NAME, application
 
 # Upper limits of the input fields; generous, the geometry rejects nonsense.
 MAX_LENGTH = 10000.0
@@ -151,6 +152,8 @@ LAYER_CLOSEST = QT_TRANSLATE_NOOP("FinSnap", "Closest to tipping at layer %d, %.
 # What the colours of a stability check mean, said with its result.
 NOTE_COLOURS = QT_TRANSLATE_NOOP(
     "FinSnap", "Colours by height: green stands, yellow comes within %.0f mm of tipping, red tips from there.")
+# The one way a check in the tree is shown in the 3D view.
+CHECK_DISPLAY_MODE = "Check"
 # The part coloured by height in a stability check, this see-through.
 GRADIENT_TRANSPARENCY = 0.5
 # The lines of Check part, one for each check.
@@ -174,91 +177,171 @@ DRAWINGS = (
 
 def check_stability(part_obj, p):
     """Check whether `part_obj` stays standing while it is printed in the
-    layers of `p` (feature.stability_of()), and show it in the 3D view of
-    its document until the part, its place or its fins change (_stability_marks()).
-    Returns the level and the note found."""
+    layers of `p` (feature.stability_of()), and keep what was found in its
+    stability check in the tree (check.record()), which shows it. Returns the
+    level and the note found."""
     QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
     try:
         level, note, shown = feature.stability_of(part_obj, p)
-        marks = _stability_marks(part_obj, p, level, shown)
+        note = _with_colours(note, shown)
+        _in_tree(check.record(part_obj, check.STABILITY, level, note, shown, _layer_cut(part_obj, p, shown)))
     finally:
         QtWidgets.QApplication.restoreOverrideCursor()
-    _show_marks(part_obj, marks)
-    return level, _with_colours(note, shown)
+    return level, note
 
 
 def check_part(part_obj, p):
     """Check `part_obj` as it stands for everything that keeps it from
     printing: faces overhanging without fins, islands and whether it stays
-    standing, in the layers of `p`, and show it all in the 3D view of its
-    document until the part, its place or its fins change. Returns the level
-    of the worst found, and a note with a line for each check."""
+    standing, in the layers of `p`, and keep it in its part check in the tree,
+    which shows it. Returns the level of the worst found, and a note with a
+    line for each check."""
     QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
     try:
         part = global_shape(part_obj)
         names = feature.overhangs_of(part_obj, part_obj.Document)
         found = overhang.islands(part, p.first_layer_height, p.layer_height)
         level, note, shown = feature.stability_of(part_obj, p)
-        marks = _stability_marks(part_obj, p, level, shown)
-        if names:
-            marks.append(handles.overhang_faces([part.getElement(name) for name in names]))
-        layers = [island.first for island in found if island.first is not None]
-        if layers:
-            marks.append(handles.island_layers(Part.makeCompound(layers)))
-        uncut = [island.point for island in found if island.first is None]
-        if uncut:
-            marks.append(handles.island_spots(uncut))
+        lines = [translate("FinSnap", NOTE_OVERHANGS) % (len(names), d.OVERHANG_ANGLE) if names
+                 else translate("FinSnap", NOTE_NO_OVERHANGS),
+                 translate("FinSnap", NOTE_ISLANDS_FOUND) % len(found) if found
+                 else translate("FinSnap", NOTE_NO_ISLANDS),
+                 _with_colours(note, shown)]
+        worst = feature.TIPS if names or found else level
+        overhangs = Part.makeCompound([part.getElement(name) for name in names]) if names else None
+        _in_tree(check.record(part_obj, check.PART, worst, "\n".join(lines), shown, _layer_cut(part_obj, p, shown),
+                              overhangs, found))
     finally:
         QtWidgets.QApplication.restoreOverrideCursor()
-    _show_marks(part_obj, marks)
-    lines = [translate("FinSnap", NOTE_OVERHANGS) % (len(names), d.OVERHANG_ANGLE) if names
-             else translate("FinSnap", NOTE_NO_OVERHANGS),
-             translate("FinSnap", NOTE_ISLANDS_FOUND) % len(found) if found
-             else translate("FinSnap", NOTE_NO_ISLANDS),
-             _with_colours(note, shown)]
-    worst = feature.TIPS if names or found else level
     return worst, "\n".join(lines)
 
 
-def _stability_marks(part_obj, p, level, shown):
-    """The nodes showing `shown`, a stability.Stability of `part_obj` found at
-    `level`: the part coloured by height from green, where it stands, over
-    yellow, where it comes close to tipping, to red, where it tips; the layer
-    it tips at, or comes closest to tipping at, cut out of it; and the plumb
-    line of that layer over what it stands on. None for nothing shown."""
+def check_params(part_obj):
+    """The parameters to check `part_obj` with: those of its first fins, or
+    the standard for new fins where it has none."""
+    fins = [other for other in feature.fins_of(outermost(part_obj), part_obj.Document)
+            if other.Base and other.Base[0] is part_obj]
+    return feature.params_of(fins[0]) if fins else presets.standard()
+
+
+def check_again(check_obj):
+    """Check the part of `check_obj`, a check in the tree, again, as it was
+    checked: its stability or the whole part. Returns the note found."""
+    part_obj = check_obj.Part
+    run = check_part if check_obj.Kind == check.PART else check_stability
+    return run(part_obj, check_params(part_obj))[1]
+
+
+def _in_tree(check_obj):
+    """Give `check_obj` its look in the tree and the 3D view, where it has no
+    look of its own yet: it was just made."""
+    view = getattr(check_obj, "ViewObject", None)
+    if view is not None and not isinstance(getattr(view, "Proxy", None), ViewProviderCheck):
+        ViewProviderCheck(view)
+
+
+class ViewProviderCheck:
+    """The look of a check in the tree (check.py): its marks in the 3D view,
+    shown and hidden with the eye, while it is up to date; its icon, with a
+    warning once it is out of date; a double click checks again and says what
+    it found."""
+
+    def __init__(self, vobj):
+        vobj.Proxy = self
+
+    def attach(self, vobj):
+        self.Object = vobj.Object
+        self.root = coin.SoSeparator()
+        vobj.addDisplayMode(self.root, CHECK_DISPLAY_MODE)
+        self.draw()
+
+    def getDisplayModes(self, vobj):  # noqa: N802 - FreeCAD API
+        return [CHECK_DISPLAY_MODE]
+
+    def getDefaultDisplayMode(self):  # noqa: N802 - FreeCAD API
+        return CHECK_DISPLAY_MODE
+
+    def setDisplayMode(self, mode):  # noqa: N802 - FreeCAD API
+        return mode
+
+    def updateData(self, obj, prop):  # noqa: N802 - FreeCAD API
+        if prop in check.SHOWN:
+            self.draw()
+        if prop == check.OUT_OF_DATE and obj.ViewObject is not None:
+            obj.ViewObject.signalChangeIcon()
+
+    def draw(self):
+        """Show the marks of the check as it stands now."""
+        if not hasattr(self, "root"):
+            return
+        self.root.removeAllChildren()
+        for node in check_nodes(self.Object):
+            self.root.addChild(node)
+
+    def getIcon(self):  # noqa: N802 - FreeCAD API
+        obj = getattr(self, "Object", None)
+        if obj is not None and obj.OutOfDate:
+            return ICON_CHECK_OUTDATED
+        return ICON_CHECK_PART if obj is not None and obj.Kind == check.PART else ICON_STABILITY
+
+    def doubleClicked(self, vobj):  # noqa: N802 - FreeCAD API
+        note = check_again(vobj.Object)
+        QtWidgets.QMessageBox.information(Gui.getMainWindow(), NAME, note)
+        return True
+
+    def dumps(self):
+        return None
+
+    def loads(self, state):
+        return None
+
+
+def _layer_cut(part_obj, p, shown):
+    """The layer of `shown`, a stability.Stability of `part_obj` in the layers
+    of `p`, cut out of the part at the middle of that layer; None for none."""
     if shown is None:
+        return None
+    return stability.section(global_shape(part_obj), shown.foot.z + shown.height - p.layer_height / 2)
+
+
+def check_nodes(check_obj):
+    """The Coin nodes showing `check_obj`, a check in the tree (check.py): the
+    part coloured by height from green, where it stands, over yellow, where
+    it comes close to tipping, to red, where it tips; the layer it tips at,
+    or comes closest to tipping at, cut out of it; the plumb line of that
+    layer over what it stands on; and for a check of the part, the faces
+    overhanging without fins and the islands. None for a check out of date,
+    whose marks no longer tell the truth."""
+    if check_obj.OutOfDate or check_obj.Part is None:
         return []
-    bed = shown.foot.z
-    profile = [(bed + height, margin) for height, margin in shown.profile]
+    nodes = []
+    if check_obj.Footprint:
+        bed = check_obj.Foot.z
+        profile = [(bed + height, margin) for height, margin in zip(check_obj.ProfileHeights,
+                                                                    check_obj.ProfileMargins)]
 
-    def color_at(z):
-        return margin_color(_margin_at(profile, z))
+        def color_at(z):
+            return margin_color(_margin_at(profile, z))
 
-    part = global_shape(part_obj)
-    marks = [handles.gradient(part, color_at, [z for z, _ in profile], GRADIENT_TRANSPARENCY)]
-    cut = stability.section(part, bed + shown.height - p.layer_height / 2)
-    if cut is not None:
-        marks.append(handles.layer_cut(cut, LEVEL_COLORS[level]))
-    label = translate("FinSnap", LAYER_TIPS if shown.tips else LAYER_CLOSEST) % (shown.layer + 1, shown.height)
-    # Beside the layer cut out, where the plumb line passes it.
-    at = App.Vector(shown.foot.x, shown.foot.y, bed + shown.height)
-    marks.append(handles.plumb(shown, LEVEL_COLORS[level], label, at))
-    return marks
-
-
-def _show_marks(part_obj, marks):
-    """Show `marks` in the 3D view of the document of `part_obj`, instead of
-    those shown before, until the part, its place or its fins change."""
-    view = Gui.getDocument(part_obj.Document).ActiveView
-    if not marks or not hasattr(view, "getSceneGraph"):
-        handles.STABILITY_MARK.clear()
-        return
-    group = coin.SoSeparator()
-    for node in marks:
-        group.addChild(node)
-    owner = outermost(part_obj)
-    watched = [part_obj, owner] + feature.fins_of(owner, part_obj.Document)
-    handles.STABILITY_MARK.show(view, group, watched)
+        color = margin_color(check_obj.Margin)
+        nodes.append(handles.gradient(global_shape(check_obj.Part), color_at, [z for z, _ in profile],
+                                      GRADIENT_TRANSPARENCY))
+        if not check_obj.Cut.isNull():
+            nodes.append(handles.layer_cut(check_obj.Cut, color))
+        shown = stability.Stability(check_obj.Tips, check_obj.Layer, check_obj.Height, check_obj.Centre,
+                                    check_obj.Foot, check_obj.Margin, None, list(check_obj.Footprint), profile)
+        label = translate("FinSnap", LAYER_TIPS if check_obj.Tips else LAYER_CLOSEST) % (check_obj.Layer + 1,
+                                                                                        check_obj.Height)
+        # Beside the layer cut out, where the plumb line passes it.
+        at = App.Vector(check_obj.Foot.x, check_obj.Foot.y, bed + check_obj.Height)
+        nodes.append(handles.plumb(shown, color, label, at))
+    if not check_obj.Overhangs.isNull():
+        nodes.append(handles.overhang_faces(check_obj.Overhangs.Faces))
+    if not check_obj.IslandLayers.isNull():
+        nodes.append(handles.island_layers(check_obj.IslandLayers))
+    if check_obj.IslandsUncut:
+        nodes.append(handles.island_spots(list(check_obj.IslandsUncut)))
+    return nodes
 
 
 def _with_colours(note, shown):

@@ -13,6 +13,7 @@ import Part
 from pivy import coin
 from PySide import QtCore, QtWidgets
 
+from . import check
 from . import defaults as d
 from . import export_3mf
 from . import export_step
@@ -27,7 +28,8 @@ from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_
                     ICON_CHECK_PART, ICON_ISLANDS, ICON_QUICK, ICON_STABILITY, ICON_TILT)
 from .presets import PREFERENCES
 from .shapes import FACE_PREFIX, global_shape, outermost
-from .taskpanel import DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, check_part, check_stability, discard_created
+from .taskpanel import (DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, check_params, check_part, check_stability,
+                        discard_created)
 from .version import NAME
 
 EDGE_PREFIX = "Edge"
@@ -47,8 +49,6 @@ FILTER_STEP = QT_TRANSLATE_NOOP("FinSnap", "STEP files (*.step *.stp)")
 # Said when Check stability has no part to check.
 NOTE_SELECT_PART = QT_TRANSLATE_NOOP("FinSnap", "Select a part, or its fins, to check whether it stays standing "
                                                 "while it is printed.")
-# Properties whose change takes the plumb line of a stability check away.
-STABILITY_WATCHED = ("Placement", "Shape")
 # Said when new fins cannot be edited because another task panel is open.
 NOTE_BUSY = QT_TRANSLATE_NOOP("FinSnap", "Another task panel is open. Close it first, then make the fins again.")
 EXTENSIONS_STEP = (".step", ".stp")
@@ -987,12 +987,11 @@ class CheckStability:
 
     SELECTIONS this has to withstand:
       a part, standing or lying, with or
-        without fins                        ->  checked, its plumb line shown, the result said
-      fins                                  ->  their part checked
+        without fins                        ->  checked, kept as its check in the tree,
+                                                the result said
+      fins, or a check in the tree          ->  their part checked
       several objects                       ->  the first checked
-      nothing, a plumb line shown           ->  that plumb line taken away
-      nothing, none shown                   ->  message to select a part
-      an object without a shape             ->  message to select a part
+      nothing, or an object without a shape ->  message to select a part
     """
 
     def GetResources(self):  # noqa: N802 - FreeCAD API
@@ -1003,9 +1002,10 @@ class CheckStability:
                     "Checks whether the selected part stays standing while it is printed, layer by layer, as it "
                     "grows and its centre of mass moves: first on its own, then, where it would tip over, held "
                     "by its fins, which hold it only from their lowest tine up. Says at which layer it would "
-                    "tip and which way, and shows the plumb line from the centre of mass to the bed and what "
-                    "it stands on, until the part, its place or its fins change. With nothing selected, the "
-                    "plumb line shown goes.")}
+                    "tip and which way. Keeps it as a stability check in the tree, which shows the part coloured "
+                    "by height, the layer it tips at and the plumb line from its centre of mass to the bed: "
+                    "the eye shows or hides them, deleting the check removes them. Once the part, its place "
+                    "or its fins change, the check is marked out of date; double-click it to check again.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
         return App.ActiveDocument is not None
@@ -1014,42 +1014,32 @@ class CheckStability:
         _run_check(check_stability)
 
 
-def _run_check(check):
-    """Run `check`, check_stability() or check_part(), on the part selected
-    and say what it found; with nothing selected, take away what a check
-    shows, or ask for a part where nothing is shown; for an object without
-    a shape, ask for a part."""
+def _run_check(run):
+    """Run `run`, check_stability() or check_part(), on the part selected and
+    say what it found; it keeps that as a check in the tree. With nothing
+    selected, or an object without a shape, ask for a part."""
     selected = Gui.Selection.getSelection()
-    if not selected:
-        _clear_or_ask()
-        return
-    checked = _checked_part(selected[0])
+    checked = _checked_part(selected[0]) if selected else None
     if checked is None:
         _message(translate("FinSnap", NOTE_SELECT_PART))
         return
-    _message(check(*checked)[1])
+    _message(run(*checked)[1])
 
 
 def _checked_part(obj):
     """The part to check and the parameters to check it with, for `obj`, the
-    first object selected: it or the part its fins stand on, and the
-    parameters of its first fins, or the standard for new fins without; None
-    for an object without a shape."""
-    part = obj.Base[0] if feature.is_fins(obj) and obj.Base else obj
+    first object selected: it, the part its fins stand on, or the part a
+    check in the tree is of, and its parameters (taskpanel.check_params());
+    None for an object without a shape."""
+    if feature.is_fins(obj) and obj.Base:
+        part = obj.Base[0]
+    elif check.is_check(obj):
+        part = obj.Part
+    else:
+        part = obj
     if getattr(part, "Shape", None) is None or part.Shape.isNull():
         return None
-    fins = [other for other in feature.fins_of(outermost(part), part.Document)
-            if other.Base and other.Base[0] is part]
-    return part, (feature.params_of(fins[0]) if fins else presets.standard())
-
-
-def _clear_or_ask():
-    """With nothing to check: take away what a check shows, or, with
-    nothing shown, ask for a part."""
-    shown = handles.STABILITY_MARK.node is not None
-    handles.STABILITY_MARK.clear()
-    if not shown:
-        _message(translate("FinSnap", NOTE_SELECT_PART))
+    return part, check_params(part)
 
 
 class CheckPart:
@@ -1064,9 +1054,10 @@ class CheckPart:
                     "FinSnap_CheckPart",
                     "Checks the selected part, with or without fins, as it stands, for everything that keeps it "
                     "from printing, all at once: faces overhanging without fins, islands, where it would start "
-                    "printing in the air, and whether it stays standing while it is printed. Shows them in the "
-                    "3D view until the part, its place or its fins change, and says what it found. With "
-                    "nothing selected, what is shown goes.")}
+                    "printing in the air, and whether it stays standing while it is printed. Says what it found "
+                    "and keeps it as a part check in the tree, which shows it all: the eye shows or hides it, "
+                    "deleting the check removes it. Once the part, its place or its fins change, the check is "
+                    "marked out of date; double-click it to check again.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
         return App.ActiveDocument is not None
@@ -1107,15 +1098,6 @@ class SavingWatch:
         handles.saving_document(document, False)
 
 
-class StabilityWatch:
-    """Document observer: the plumb line of a stability check goes once the
-    part, its place or its fins change, as it no longer tells the truth."""
-
-    def slotChangedObject(self, obj, prop):  # noqa: N802 - FreeCAD API
-        if prop in STABILITY_WATCHED and handles.STABILITY_MARK.watches(obj):
-            handles.STABILITY_MARK.clear()
-
-
 COMMANDS = (("FinSnap_QuickFins", QuickFins()),
             ("FinSnap_Tilt", TiltOntoEdge()),
             ("FinSnap_LayFlat", LayFlat()),
@@ -1132,7 +1114,6 @@ COMMANDS = (("FinSnap_QuickFins", QuickFins()),
 # Registered once, when this module is first imported: with the workbench, or
 # with a document holding fins.
 App.addDocumentObserver(PartVisibility())
-App.addDocumentObserver(StabilityWatch())
 App.addDocumentObserver(SavingWatch())
 
 

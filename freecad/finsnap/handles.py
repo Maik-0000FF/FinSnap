@@ -292,36 +292,6 @@ def _clipped(polygon, z, keep):
     return kept
 
 
-class Mark:
-    """One node shown in a 3D view until cleared, as the plumb line of the last
-    stability check, with the objects whose change makes it out of date."""
-
-    def __init__(self):
-        self.view, self.node, self.watched = None, None, ()
-
-    def show(self, view, node, watched):
-        """Show `node` in `view` instead of what was shown before."""
-        self.clear()
-        view.getSceneGraph().addChild(node)
-        self.view, self.node, self.watched = view, node, tuple(watched)
-
-    def clear(self):
-        """Take the node out of its view, if it is still open."""
-        if self.node is not None:
-            try:
-                self.view.getSceneGraph().removeChild(self.node)
-            except (RuntimeError, ReferenceError):
-                # The view was closed with its document; the node went with it.
-                pass
-        self.view, self.node, self.watched = None, None, ()
-
-    def watches(self, obj):
-        """Whether a change of `obj` makes the node out of date."""
-        return any(obj is watched for watched in self.watched)
-
-
-# The plumb line of the last stability check, from the command or the task panel.
-STABILITY_MARK = Mark()
 
 
 def shaded(shapes, color, transparency):
