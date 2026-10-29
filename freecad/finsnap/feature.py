@@ -720,7 +720,10 @@ class FinSnapFeature:
         if overhanging:
             warnings.append(translate("FinSnap", "%d faces of %s overhang flatter than %.0f degrees without fins: %s")
                             % (len(overhanging), obj.Base[0].Label, d.OVERHANG_ANGLE, ", ".join(overhanging)))
-        found = islands_of(obj, p)
+        # The part stays as it is while one fin is dragged, and the islands do
+        # not depend on the fins: asked once, as working out the key takes a
+        # moment on a large part. A drag that turns the part asks each step.
+        found = self.during_drag(ISLANDS, lambda: islands_of(obj, p))
         set_islands(obj, found)
         if found:
             warnings.append(translate("FinSnap", NOTE_ISLANDS) % (len(found), obj.Base[0].Label))

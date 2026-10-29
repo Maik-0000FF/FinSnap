@@ -58,6 +58,7 @@ TUBE_BORE = 6.0
 HOLE_RADIUS = 2.0     # a hole through the tilted cube, moved sideways to keep its measures
 HOLE_LENGTH = 200.0
 HOLE_SHIFT = 3.0
+DRAG_STEPS = 3        # builds of the fins while one is dragged
 TUBE_HEIGHT = 40.0
 TUBE_TURN = 5.0  # how far the fin under the side of a tube is moved by hand, in mm round it
 FINE_TURN = 1.23456789  # a turn finer than the shift is kept, in mm round the side
@@ -788,6 +789,21 @@ def kept_islands(doc):
         doc.recompute()
         expect(len(calls) == 1 and not fins.Islands, "moved, the part is cut for its islands anew: %d, %s"
                % (len(calls), list(fins.Islands)))
+        # While a fin is dragged the islands are asked once: the part stays.
+        asked = []
+        real_of = feature.islands_of
+        feature.islands_of = lambda *args: asked.append(args) or real_of(*args)
+        try:
+            fins.Proxy.reuse = {}
+            for _ in range(DRAG_STEPS):
+                fins.touch()
+                doc.recompute()
+            fins.Proxy.reuse = None
+            fins.touch()
+            doc.recompute()
+        finally:
+            feature.islands_of = real_of
+        expect(len(asked) == 2, "while a fin is dragged its islands are asked once, after it again: %d" % len(asked))
         # A hole moved leaves volume, area and every count as they were; its
         # corners tell the shapes apart.
         middle = tilted_cube().BoundBox.Center
