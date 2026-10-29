@@ -118,11 +118,11 @@ def find(part_obj, kind):
 
 def record(part_obj, fins, kind, level, note, shown, cut=None, overhangs=None, islands=()):
     """Keep what a check of `kind` of `part_obj`, with its fins `fins`, found
-    in its object, made if there is none yet: `level`, that of its stability, and the `note` said; `shown`, the
-    stability.Stability whose plumb line shows, or None; `cut`, the layer cut
-    out of the part at it; and for a check of the part, `overhangs`, the
-    faces that overhang without fins, as one shape, and `islands`. Returns
-    the object, up to date."""
+    in its object, made if there is none yet: `level`, that of its
+    stability, and the `note` said; `shown`, the stability.Stability whose
+    plumb line shows, or None; `cut`, the layer cut out of the part at it;
+    and for a check of the part, `overhangs`, the faces that overhang without
+    fins, as one shape, and `islands`. Returns the object, up to date."""
     obj = find(part_obj, kind)
     if obj is not None:
         # Shows nothing while it is filled, so it is drawn once, at the end.
@@ -132,8 +132,9 @@ def record(part_obj, fins, kind, level, note, shown, cut=None, overhangs=None, i
         CheckFeature(obj)
         obj.Part = part_obj
         obj.Kind = kind
-        if outermost(part_obj) is not part_obj:
-            obj.Container = outermost(part_obj)
+    # Set each time: the part may have moved into a container, or out of one.
+    owner = outermost(part_obj)
+    obj.Container = owner if owner is not part_obj else None
     obj.Label = translate("FinSnap", LABELS[kind]) % part_obj.Label
     obj.Fins = list(fins)
     obj.Result = note
