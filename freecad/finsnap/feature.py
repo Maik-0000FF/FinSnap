@@ -9,19 +9,23 @@ reading them back into FinParams and building the task panel all walk this
 table, so a new parameter is added in exactly one place (plus its default).
 """
 
+import math
 from collections import namedtuple
 
 import FreeCAD as App
 import Part
 
+from . import check
 from . import defaults as d
 from . import geometry
 from . import orient
 from . import overhang
 from . import presets
+from . import stability
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
-from .shapes import face_name, global_shape, moved, outermost
+from .shapes import (bounds, face_in_plane, face_like, face_name, global_shape, in_plane, moved, outermost, part_of,
+                     plane_of)
 
 TYPE_NAME = "FinSnap"
 # Result property listing the faces that overhang without fins; the view
@@ -72,6 +76,19 @@ NOTE_HEIGHTS_DROPPED = QT_TRANSLATE_NOOP(
     "FinSnap", "The tines lie at other heights now, so fin heights of their own are undone: each fin ends at "
     "its highest tine again.")
 MAIN, COUNTER = "main", "counter"
+# The plane of the face each side stands under, as [a point, its outward
+# normal] in the coordinates of the part, wherever it stands: a chamfer, a
+# fillet or a pocket changes the names of its faces, and the face is found
+# again by its plane. Empty for a face that is not planar.
+PLANE_OF = {MAIN: "BasePlane", COUNTER: "CounterPlane"}
+# The link of each side to the face it stands under.
+SIDE_LINK = {MAIN: "Base", COUNTER: "CounterFace"}
+# What a warning is about, for the task panel to show it: MAIN or COUNTER,
+# or None for the part; the numbers of the fins it names; faces of the part
+# to select, as (object, sub-element name); shapes to mark that cannot be
+# selected, as tines left out or the first layer of an island; and points to
+# mark, the lowest points of islands whose first layer could not be cut out.
+NoteTarget = namedtuple("NoteTarget", "which fins faces marks points")
 # Said when a single fin is to be removed from fins merged into the part.
 NOTE_MERGED_SINGLE = QT_TRANSLATE_NOOP(
     "FinSnap", "Single fins can be removed with the separate connection only; merged into the part they "
@@ -85,6 +102,10 @@ NOTE_NO_OPPOSITE = QT_TRANSLATE_NOOP("FinSnap", "The part has no face leaning th
 # by a STEP file are joined, as for the seam between them; %s names it.
 NOTE_LOST_IN_JOINING = QT_TRANSLATE_NOOP("FinSnap", "%s is the seam between two halves of a side; select the "
                                          "side or its rim instead")
+# Said when the face the fins stand under is gone from the part: no face
+# lies in its plane any more.
+NOTE_FACE_GONE = QT_TRANSLATE_NOOP("FinSnap", "the face the fins stand under is gone from %s: select a face "
+                                              "for them again")
 # Said when a face of the joined shape has no piece on the part to name it by.
 NOTE_NO_PIECE = QT_TRANSLATE_NOOP("FinSnap", "%s of the joined part matches no face of the part itself")
 # A counter fin under the side of a cylinder or tube would stay under its
@@ -202,6 +223,11 @@ PROPERTIES = (
          QT_TRANSLATE_NOOP("FinSnap", "First layer height"),
          QT_TRANSLATE_NOOP("App::Property", "Height of the first layer"),
          "first_layer_height", None, STEP_PROFILE),
+    Prop("BrimWidth", LENGTH, GROUP_SLICER,
+         QT_TRANSLATE_NOOP("FinSnap", "Brim width"),
+         QT_TRANSLATE_NOOP("App::Property", "Width of the brim the slicer prints round the part and the fins on "
+                           "the bed, 0 without. Check stability counts it as standing on the bed with them."),
+         "brim_width", None),
     Prop("Connection", CHOICE, GROUP_CONNECTION,
          QT_TRANSLATE_NOOP("FinSnap", "Connection"),
          QT_TRANSLATE_NOOP("App::Property",
@@ -396,15 +422,92 @@ def params_of(obj):
     return FinParams(**{prop.field: value_of(obj, prop.name) for prop in PROPERTIES})
 
 
-def _face(link):
+def _face(link, plane=()):
     """The shape of the part of `link` and its face named there; half of a
     side that a STEP file split in two stands for the whole side, on the
-    shape with its halves joined (whole_elements())."""
+    shape with its halves joined (whole_elements()). `plane`, as kept in
+    PLANE_OF, finds the face again where its name no longer fits.
+
+    INPUTS this has to withstand:
+      the named face, in its plane          ->  that face
+      no plane kept, a curved face          ->  the face by its name
+      the name now on another face, or
+        missing ("?Face1"), after a feature
+        changed the part                    ->  the largest face in the plane
+      no face left in the plane             ->  FinError NOTE_FACE_GONE
+      no face named                         ->  FinError
+    """
     part, subs = link
     if not subs:
         raise geometry.FinError(translate("FinSnap", "no face selected on %s") % part.Label)
-    shape, (face,), _ = whole_elements(part, subs[:1])
+    name = subs[0]
+    if plane:
+        name = _named_in_plane(part, name, plane)
+    shape, (face,), _ = whole_elements(part, [name])
     return shape, face
+
+
+def _named_in_plane(part, name, plane):
+    """`name` if it names the face of `part` in `plane`, kept in the
+    coordinates of the part; else the name of the largest face in it."""
+    placement = part.getGlobalPlacement()
+    point, normal = placement.multVec(plane[0]), placement.Rotation.multVec(plane[1])
+    shape = global_shape(part)
+    try:
+        if in_plane(shape.getElement(name), point, normal):
+            return name
+    except (ValueError, IndexError, Part.OCCError):
+        # The name is gone with the face it named: found by the plane.
+        pass
+    found = face_in_plane(shape, point, normal)
+    if found is None:
+        raise geometry.FinError(translate("FinSnap", NOTE_FACE_GONE) % part.Label)
+    return found
+
+
+def side_link(obj, which):
+    """The link of side `which` of `obj`, see SIDE_LINK."""
+    return getattr(obj, SIDE_LINK[which])
+
+
+def plane_kept(obj, which):
+    """The plane kept for side `which` of `obj`, see PLANE_OF; empty if none."""
+    return list(getattr(obj, PLANE_OF[which], []))
+
+
+def keep_plane(obj, which):
+    """Keep the plane of the face side `which` of `obj` is linked to, in the
+    coordinates of its part; nothing for a side not linked or a face not planar."""
+    hidden_property(obj, PLANE_OF[which], "App::PropertyVectorList")
+    link = side_link(obj, which)
+    if not link or not link[1]:
+        setattr(obj, PLANE_OF[which], [])
+        return
+    try:
+        plane = plane_of(global_shape(link[0]).getElement(link[1][0]))
+    except (ValueError, IndexError, Part.OCCError):
+        # A name FreeCAD marked lost after a feature changed the part: the
+        # plane kept is what finds the face again.
+        return
+    if plane is None:
+        setattr(obj, PLANE_OF[which], [])
+        return
+    inverse = link[0].getGlobalPlacement().inverse()
+    setattr(obj, PLANE_OF[which], [inverse.multVec(plane[0]), inverse.Rotation.multVec(plane[1])])
+
+
+def on_part(obj, name):
+    """(the part `obj` belongs to, see part_of(), and the name there of its
+    face `name`): a face of a Pad becomes the face of its Body, which follows
+    every feature added after it."""
+    part = part_of(obj)
+    if part is obj:
+        return obj, name
+    found = face_like(global_shape(part), global_shape(obj).getElement(name))
+    if found is None:
+        # Its name on the Body would be another face, with features after it.
+        raise geometry.FinError(translate("FinSnap", NOTE_FACE_GONE) % part.Label)
+    return part, found
 
 
 def whole_elements(obj, names):
@@ -555,12 +658,48 @@ REUSE_KEPT = 8
 # by part, shape, placement and names asked.
 WHOLE_KEPT = 16
 _whole_kept = {}
+# What a stability check finds (stability_of()): the part stands, comes
+# close to tipping, within STABILITY_CLOSE mm, or tips; and the sentence that
+# says so. The layers are counted from 1, the first on the bed. A side of the
+# part counts as that of its fins within 45 degrees.
+STANDS, CLOSE, TIPS = "stands", "close", "tips"
+SIDE_SHARE = math.sqrt(0.5)
+NOTE_NOTHING_ON_BED = QT_TRANSLATE_NOOP("FinSnap", "Nothing of the part stands on the bed.")
+NOTE_STANDS = QT_TRANSLATE_NOOP(
+    "FinSnap", "Stands on its own while it is printed: at least %.1f mm from tipping, at layer %d (%.1f mm).")
+NOTE_STANDS_CLOSE = QT_TRANSLATE_NOOP(
+    "FinSnap", "Stands on its own, but only just: %.1f mm from tipping at layer %d (%.1f mm).")
+NOTE_NEEDS_FINS = QT_TRANSLATE_NOOP(
+    "FinSnap", "Tips over at layer %d (%.1f mm) while it is printed: fins under its leaning face hold it.")
+NOTE_HELD = QT_TRANSLATE_NOOP(
+    "FinSnap", "On its own it would tip over at layer %d (%.1f mm); its fins hold it: at least %.1f mm from "
+    "tipping, at layer %d (%.1f mm).")
+NOTE_HELD_CLOSE = QT_TRANSLATE_NOOP(
+    "FinSnap", "On its own it would tip over at layer %d (%.1f mm); its fins hold it, but only just: %.1f mm "
+    "from tipping at layer %d (%.1f mm).")
+NOTE_BEFORE_TINES = QT_TRANSLATE_NOOP(
+    "FinSnap", "Tips over at layer %d (%.1f mm), before its fins hold it from their lowest tine at %.1f mm: "
+    "set the first tine lower.")
+NOTE_AWAY_FROM_FINS = QT_TRANSLATE_NOOP(
+    "FinSnap", "Tips over at layer %d (%.1f mm), away from its fins: a counter fin on that side holds it.")
+NOTE_TOWARDS_FINS = QT_TRANSLATE_NOOP(
+    "FinSnap", "Tips over at layer %d (%.1f mm) towards its fins, past their feet: a longer foot or more "
+    "fins hold it.")
+NOTE_PAST_EDGE_END = QT_TRANSLATE_NOOP(
+    "FinSnap", "Tips over at layer %d (%.1f mm), past an end of the edge it stands on.")
+
 # Islands of parts, by part, its shape, where it stands and the layers it is
 # cut in, worked out once: the fins are built far more often. The volume and
 # area of the shape and its corners are compared to this many decimal places.
 ISLANDS_KEPT = 8
 ISLANDS_KEY_DIGITS = 6
 _islands_kept = {}
+# Whether islands are checked while fins are made and edited, in FinSnap's
+# preferences: on a slow computer they can be left to Check part.
+ISLANDS_WHILE_EDITING = "IslandsWhileEditing"
+# The centres of mass of parts while they are printed, by the same key as the
+# islands: stability_of() fills them as stability.check() works them out.
+_centres_kept = {}
 
 
 def set_islands(obj, found):
@@ -577,13 +716,26 @@ def islands_of(obj, p):
     """The islands (overhang.islands()) of the part of `obj` as it stands, on
     the layers of `p`; the fins do not count. Worked out once for each part,
     shape, place and layers, as every build of the fins asks again, unless
-    keep_islands() was told them before."""
+    keep_islands() was told them before. While islands_while_editing() is off,
+    none are worked out: [], and the fins say nothing of islands."""
+    if not islands_while_editing():
+        return []
     part_obj = obj.Base[0]
     kept = _islands_kept.get(_islands_key(part_obj, p))
     if kept is None:
         kept = overhang.islands(global_shape(part_obj), p.first_layer_height, p.layer_height)
         keep_islands(part_obj, p, kept)
     return list(kept)
+
+
+def islands_while_editing():
+    """Whether islands are checked while fins are made and edited, as the
+    user set it with Islands while editing; on, if never set."""
+    return App.ParamGet(presets.PREFERENCES).GetBool(ISLANDS_WHILE_EDITING, True)
+
+
+def set_islands_while_editing(on):
+    App.ParamGet(presets.PREFERENCES).SetBool(ISLANDS_WHILE_EDITING, bool(on))
 
 
 def keep_islands(part_obj, p, found):
@@ -617,6 +769,101 @@ def _islands_key(part_obj, p):
                 len(shape.Faces), len(shape.Edges), corners)
     return (part_obj.Document.Name, part_obj.Name, measures, tuple(part_obj.getGlobalPlacement().toMatrix().A),
             p.first_layer_height, p.layer_height)
+
+
+def supports_of(part_obj, document):
+    """What holds `part_obj` up beside it on the bed, for stability.check():
+    the fins of its FinSnap objects, each side as it is built with its changes
+    by hand, and the height of its lowest tine, from which it holds the part;
+    and the directions out of the part to its fins, main and counter, on the
+    bed. Fins laid flat, or that cannot be built, hold nothing."""
+    supports, sides = [], []
+    for fins in fins_of(outermost(part_obj), document):
+        if not fins.Base or fins.Base[0] is not part_obj or is_laid_flat(fins):
+            continue
+        for which in (MAIN, COUNTER):
+            found = builder(fins, which)
+            if found is None:
+                continue
+            part, build = found
+            try:
+                result = build(*edits(fins, which))
+            except (geometry.FinError, Part.OCCError):
+                continue
+            if not result.tine_z:
+                continue
+            # The tines are measured from the bed, the bottom of the part.
+            supports.append((result.fins, bounds(part).ZMin + min(result.tine_z)))
+            out = geometry.frame_of(part, _face(side_link(fins, which), plane_kept(fins, which))[1]).out
+            sides.append(App.Vector(out.x, out.y, 0))
+    return supports, sides
+
+
+def stability_of(part_obj, p):
+    """Whether `part_obj`, as it stands, stays standing while it is printed in
+    the layers of `p`, as (level, note, shown): first the part alone; where it
+    tips, whether the fins of its FinSnap objects hold it, and if not, why.
+    `level` is STANDS, CLOSE or TIPS, `note` says it in a sentence, and
+    `shown` is the stability.Stability to show the plumb line of: of the part
+    alone where it stands so, else held by its fins; None where nothing of
+    the part stands on the bed. The centres of mass are kept for the part as
+    it stands, so a check after the fins changed only measures their feet.
+
+    CASES this has to withstand:
+      stands alone, far from tipping       ->  STANDS, the closest layer
+      stands alone, within STABILITY_CLOSE ->  CLOSE
+      tips alone, no fins                  ->  TIPS, add fins
+      tips alone, the fins hold it         ->  STANDS or CLOSE, the layer it would tip at
+      tips before the lowest tine          ->  TIPS, the height of that tine
+      tips away from its fins, none on that
+        side                               ->  TIPS, add a counter fin
+      tips towards a fin, main or counter  ->  TIPS, past their feet
+      a part off the bed at z 0            ->  the tines measured from its bottom
+      tips past an end of its edge         ->  TIPS, past an end of the edge
+      nothing on the bed                   ->  TIPS, None to show
+    """
+    key = _islands_key(part_obj, p)
+    if key not in _centres_kept:
+        while len(_centres_kept) >= ISLANDS_KEPT:
+            _centres_kept.pop(next(iter(_centres_kept)))
+        _centres_kept[key] = {}
+    centres = _centres_kept[key]
+    part = global_shape(part_obj)
+    alone = stability.check(part, [], p.first_layer_height, p.layer_height, centres, p.brim_width)
+    if alone is None:
+        return TIPS, translate("FinSnap", NOTE_NOTHING_ON_BED), None
+    if not alone.tips:
+        close = alone.margin < d.STABILITY_CLOSE
+        note = NOTE_STANDS_CLOSE if close else NOTE_STANDS
+        return ((CLOSE if close else STANDS), translate("FinSnap", note)
+                % (alone.margin, alone.layer + 1, alone.height), alone)
+    tipping = (alone.layer + 1, alone.height)
+    supports, sides = supports_of(part_obj, part_obj.Document)
+    if not supports:
+        return TIPS, translate("FinSnap", NOTE_NEEDS_FINS) % tipping, alone
+    held = stability.check(part, supports, p.first_layer_height, p.layer_height, centres, p.brim_width)
+    if held is None:
+        return TIPS, translate("FinSnap", NOTE_NOTHING_ON_BED), None
+    if not held.tips:
+        close = held.margin < d.STABILITY_CLOSE
+        note = NOTE_HELD_CLOSE if close else NOTE_HELD
+        return ((CLOSE if close else STANDS), translate("FinSnap", note)
+                % (tipping + (held.margin, held.layer + 1, held.height)), held)
+    at = (held.layer + 1, held.height)
+    # Over the bed, as the heights of the layers are.
+    lowest = min(height for _, height in supports) - held.foot.z
+    if held.height < lowest:
+        return TIPS, translate("FinSnap", NOTE_BEFORE_TINES) % (at + (lowest,)), held
+    towards = max((held.outward.dot(side.normalize()) for side in sides if side.Length > d.TOLERANCE),
+                  default=0.0)
+    away = min((held.outward.dot(side.normalize()) for side in sides if side.Length > d.TOLERANCE),
+               default=0.0)
+    # Towards a fin first: with a counter fin, the side it tips to has one.
+    if towards > SIDE_SHARE:
+        return TIPS, translate("FinSnap", NOTE_TOWARDS_FINS) % at, held
+    if away < -SIDE_SHARE:
+        return TIPS, translate("FinSnap", NOTE_AWAY_FROM_FINS) % at, held
+    return TIPS, translate("FinSnap", NOTE_PAST_EDGE_END) % at, held
 
 
 class FinSnapFeature:
@@ -663,8 +910,13 @@ class FinSnapFeature:
         # The last build, for the arrows of an open task panel only: a failed
         # build leaves none, and without a panel none is kept.
         self.results = {}
+        # What each warning is about, a NoteTarget or None, in the same order;
+        # kept as the results are, for the task panel to show it.
+        self.note_targets = []
         if not obj.Base:
             return
+        # Fins built anew, or new ones: the checks of their part no longer hold.
+        check.outdate(obj.Base[0])
         if still_laid_flat(obj):
             # The fins keep the shape they were moved to; the face they belong
             # to no longer leans over the bed until the part stands again.
@@ -713,13 +965,17 @@ class FinSnapFeature:
         shapes = [result.fins]
         # Each warning says which fin it is about, the main or the counter fin.
         warnings = [translate("FinSnap", "Main fin: %s") % w for w in result.warnings]
+        targets = [note_target(obj, MAIN, target) for target in result.warning_targets]
         if counter is not None:
             shapes.append(counter.fins)
             warnings += [translate("FinSnap", "Counter fin: %s") % w for w in counter.warnings]
+            targets += [note_target(obj, COUNTER, target) for target in counter.warning_targets]
         warnings += notes
+        targets += [None] * len(notes)
         if overhanging:
             warnings.append(translate("FinSnap", "%d faces of %s overhang flatter than %.0f degrees without fins: %s")
                             % (len(overhanging), obj.Base[0].Label, d.OVERHANG_ANGLE, ", ".join(overhanging)))
+            targets.append(NoteTarget(None, [], [(obj.Base[0], name) for name in overhanging], [], []))
         # The part stays as it is while one fin is dragged, and the islands do
         # not depend on the fins: asked once, as working out the key takes a
         # moment on a large part. A drag that turns the part asks each step.
@@ -727,6 +983,8 @@ class FinSnapFeature:
         set_islands(obj, found)
         if found:
             warnings.append(translate("FinSnap", NOTE_ISLANDS) % (len(found), obj.Base[0].Label))
+            targets.append(NoteTarget(None, [], [], [island.first for island in found if island.first is not None],
+                                      [island.point for island in found if island.first is None]))
 
         tags = [fin_tag(MAIN, n) for n in result.numbers]
         if counter is not None:
@@ -749,6 +1007,16 @@ class FinSnapFeature:
             for warning in warnings:
                 App.Console.PrintWarning("FinSnap: %s\n" % warning)
         obj.Warnings = warnings
+        if getattr(self, "editing", False):
+            self.note_targets = targets
+
+    def onChanged(self, obj, prop):  # noqa: N802 - FreeCAD API
+        # A side linked to another face, by Quick fins, Cancel or by hand:
+        # its plane follows, or the old one would find the old face again.
+        # Not while the file is read: the plane saved with it holds.
+        sides = {link: which for which, link in SIDE_LINK.items()}
+        if prop in sides and "Restore" not in obj.State and PLANE_OF[sides[prop]] in obj.PropertiesList:
+            keep_plane(obj, sides[prop])
 
     def onDocumentRestored(self, obj):  # noqa: N802 - FreeCAD API
         obj.Proxy = self
@@ -784,6 +1052,19 @@ class FinSnapFeature:
         for which in (MAIN, COUNTER):
             if edits(obj, which)[2] and HEIGHTS_GRID[which] not in obj.PropertiesList:
                 _note_grid(obj, which)
+        for which in (MAIN, COUNTER):
+            link = side_link(obj, which)
+            # Saved linking a feature inside a Body, a Pad: linked to the Body,
+            # which follows a chamfer or a fillet added after it.
+            if link and link[1] and part_of(link[0]) is not link[0]:
+                try:
+                    part, name = on_part(link[0], link[1][0])
+                    setattr(obj, SIDE_LINK[which], (part, [name]))
+                except (ValueError, IndexError, Part.OCCError, geometry.FinError):
+                    # The face is gone already; the build says so.
+                    pass
+            if PLANE_OF[which] not in obj.PropertiesList:
+                keep_plane(obj, which)
 
     def dumps(self):
         return None
@@ -837,7 +1118,7 @@ def _opposite_taking_fins(obj, base, p):
     largest first; None if none does. Each is tried by its name, as its fin
     is then built: a half of a split end ring stands with the faces in its
     plane, which the ring joined whole would not."""
-    shape, face = _face(obj.Base)
+    shape, face = _face(obj.Base, plane_kept(obj, MAIN))
     original = global_shape(base)
     for found in geometry.opposite_faces(shape, face):
         # Named on the part: on a split side the face was found on its joined shape.
@@ -871,6 +1152,8 @@ def add_counter(obj, base=None, face_ref=None):
       the face the counter fin has, again   ->  kept as it is, not tried anew
     """
     p = params_of(obj)
+    if face_ref is not None:
+        base, face_ref = on_part(base, face_ref)
     if face_ref is None:
         base = obj.Base[0]
         face_ref = _opposite_taking_fins(obj, base, p)
@@ -884,6 +1167,7 @@ def add_counter(obj, base=None, face_ref=None):
     if obj.CounterFace != (base, [face_ref]):
         reset_fins(obj, COUNTER)
     obj.CounterFace = (base, [face_ref])
+    keep_plane(obj, COUNTER)
     return face_ref
 
 
@@ -891,7 +1175,9 @@ def create(base, face_ref, counter=None):
     """A new FinSnap object under the face named `face_ref` of `base`. counter: (object, face name) or None.
     A counter face that cannot take a counter fin with the standard
     parameters, see check_counter_face(): FinError, nothing made."""
+    base, face_ref = on_part(base, face_ref)
     if counter:
+        counter = on_part(*counter)
         check_counter_face(*_face((counter[0], [counter[1]])), presets.standard())
     doc = base.Document
     obj = doc.addObject("Part::FeaturePython", TYPE_NAME)
@@ -901,6 +1187,8 @@ def create(base, face_ref, counter=None):
         obj.Container = outermost(base)
     if counter:
         obj.CounterFace = (counter[0], [counter[1]])
+    for which in (MAIN, COUNTER):
+        keep_plane(obj, which)
     # Fins already on this part now see one more carried face.
     for other in doc.Objects:
         if other is not obj and is_fins(other) and other.Base and other.Base[0] is base:
@@ -993,12 +1281,12 @@ def builder(obj, which):
     the task panel tries changes with it before they are made."""
     p = params_of(obj)
     if which == MAIN:
-        part, face = _face(obj.Base)
+        part, face = _face(obj.Base, plane_kept(obj, MAIN))
         return part, lambda left, shifts, heights: geometry.build(part, face, p, left_out=left, shifts=shifts,
                                                                   heights=heights)
     if not obj.CounterFace:
         return None
-    part, face = _face(obj.CounterFace)
+    part, face = _face(obj.CounterFace, plane_kept(obj, COUNTER))
     if orient.is_round_side(face):
         # Its fin would stay under the lowest line and could move only by
         # turning the part, which turns the main fin away as well: left out,
@@ -1077,6 +1365,14 @@ def build_keeping_edits(obj, which, build_fn, notes):
     reset_fins(obj, which)
     notes.append(translate("FinSnap", NOTE_EDITS_DROPPED))
     return build_fn((), {}, {})
+
+
+def note_target(obj, which, target):
+    """The NoteTarget of a geometry.WarningTarget `target` of side `which` of
+    the fins object `obj`: its face named on the part it belongs to."""
+    side = obj.Base if which == MAIN else obj.CounterFace
+    faces = [(side[0], side[1][0])] if target.on_face and side and side[1] else []
+    return NoteTarget(which, list(target.fins), faces, list(target.tines), [])
 
 
 def fin_at(obj, sub):
@@ -1228,7 +1524,7 @@ def on_round_side(obj):
 def round_side(obj):
     """The round side of a cylinder or tube the main fin of `obj` stands
     under, as its part stands now."""
-    return _face(obj.Base)[1]
+    return _face(obj.Base, plane_kept(obj, MAIN))[1]
 
 
 def round_shift(obj):
@@ -1336,6 +1632,7 @@ def prepare_delete(obj):
     on an edge lay it flat again; other fins of it are built anew."""
     if not obj.Base:
         return
+    check.outdate(obj.Base[0])
     owner = outermost(obj.Base[0])
     others = [o for o in fins_of(owner, obj.Document) if o is not obj]
     if not others:

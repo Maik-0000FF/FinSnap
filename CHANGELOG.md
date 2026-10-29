@@ -11,6 +11,26 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-10-29
+
+### Added
+
+- Check stability, in the toolbar and the task panel: whether a part, with or without fins, stays standing while it is printed, layer by layer as its centre of mass moves, first on its own, then held by its fins from their lowest tine up; it says at which layer it would tip and which way, recommends a counter fin where it tips away from the fins, and shows in the 3D view the part coloured by height from green over yellow to red where it tips, the critical layer cut out of it, and the plumb line over what it stands on (#80)
+- Check part, in the toolbar: overhangs, islands and stability of a part at once, with a line for each
+- Islands while editing, a switch in the toolbar: off, fins and Quick fins leave islands to Check part, which keeps a large part quick on a slow computer
+- Brim width, in the Slicer section: the brim the slicer prints round the part and the fins, which Check stability counts as standing on the bed with them
+- Checks are kept in the tree, one for each part and kind, saved with the document: the eye shows or hides what a check shows, deleting it removes it, and once the part, its place or its fins change it is marked out of date, to be checked again with a double click (#94)
+- Clicking a note in the task panel selects the fins or faces it names and fits the view to them; tines left out and islands are marked in the selection colour (#78)
+
+### Changed
+
+- On a face that starts above the bed, as above a fillet the part rests on, the lowest tine goes on the first layer from the lower edge of the face up, where its end rests on the face, no longer half a millimetre higher
+
+### Fixed
+
+- Fins under a face of a Pad in a Body follow a chamfer, a fillet or any other feature added to the Body after them: they stand under the face of the Body, rebuilt once it changes, the face found again by its plane where its name changed (#96)
+- Fins saved with their task panel open no longer stay see-through green: the file keeps the look they had before editing
+
 ## [0.8.0] - 2026-10-29
 
 ### Added
@@ -199,7 +219,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.9.0
 [0.8.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.7.0
 [0.6.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.6.0

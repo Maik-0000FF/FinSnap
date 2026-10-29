@@ -188,6 +188,12 @@ class Frame:
         return face.extrude(self.along * width)
 
 
+# What a warning of build() is about, for the task panel to show it: the
+# numbers of the fins it names, tines left out, as shapes, and whether it is
+# about the face. None of them, for a warning about the part as a whole.
+WarningTarget = namedtuple("WarningTarget", "fins tines on_face")
+
+
 @dataclass
 class FinResult:
     fins: Part.Shape
@@ -199,6 +205,8 @@ class FinResult:
     positions: list
     foot_half_width: float
     warnings: list = field(default_factory=list)
+    # What each warning is about, a WarningTarget, in the same order.
+    warning_targets: list = field(default_factory=list)
     # The faces the fins stand under: the selected one, and the pieces beyond a
     # groove across it when the fins reach over it.
     carried: list = field(default_factory=list)
@@ -734,12 +742,12 @@ def _spread(p, bands, limit, count):
     no further apart than the tine spacing, at least one free layer between
     two of them. None above `limit`, `count` at most if given."""
     zs = []
-    for index, (bottom, top) in enumerate(bands):
-        # The margins of the face at its own lower edge and below its top, as
-        # the one grid keeps them; at the edges of a gap the tine only has to
-        # rest on the face, which contact_share() checks after.
-        margin = d.FACE_BOTTOM_MARGIN if index == 0 and bottom > d.TOLERANCE else 0.0
-        first = _snap_up(p, max(bottom + margin, p.first_tine))
+    for bottom, top in bands:
+        # A stretch is where the whole end of a tine lies on the face, so the
+        # lowest tine goes on the first layer from its lower edge up, right
+        # above a fillet or a gap below; the margin below the top of the face
+        # is kept, as the one grid keeps it.
+        first = _snap_up(p, max(bottom, p.first_tine))
         if zs:
             first = max(first, _snap_up(p, zs[-1] + p.least_tine_spacing))
         last = _snap_down(p, min(top, limit) - p.tine_height)
@@ -800,7 +808,8 @@ def restarted_tines(p, frame, face, t0, thickness, limit, count):
     INPUTS this has to withstand:
       a face from the bed up, no gap        ->  None: the one grid, as without the
                                                 restart
-      a face starting above the bed         ->  the first tine just above its lower edge
+      a face starting above the bed         ->  the first tine on the first layer from its
+                                                lower edge up, right above a fillet below it
       a hole under the fin                  ->  one just below it, one just above it
       a stretch lower than a tine           ->  no tine in it
       a stretch with room for one tine      ->  that tine at its lower edge
@@ -986,6 +995,7 @@ def build(part, face, p, tine_count=None, left_out=(), shifts=None, heights=None
     alone = _build(part, face, face, p, tine_count, left_out, shifts, heights)
     alone.warnings.append(translate("FinSnap", "fins under the selected face alone, not reaching over the "
                                                "groove: %s") % reason)
+    alone.warning_targets.append(WarningTarget([], [], True))
     return alone
 
 
@@ -1154,6 +1164,8 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     bodies = []
     all_tines = []
     dropped = []
+    # The fins with tines left out over a recess, by number.
+    gapped = []
     pieces = []
     # Tines over the gap between two faces in one plane are named as over a recess.
     gap_heights = set(plan.gap_z)
@@ -1163,6 +1175,8 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         body, tines, edge = one_fin(p, frame, fin.t0, fin.height, thickness, plan.half_foot, fin.candidate_z)
         kept = [tine for tine, whole in zip(tines, fin.on_face) if whole]
         dropped += [tine for tine, whole in zip(tines, fin.on_face) if not whole]
+        if not all(fin.on_face):
+            gapped.append(fin.number)
         edges.append(edge)
         bodies.append(body)
         all_tines.extend(kept)
@@ -1174,37 +1188,46 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     fins = Part.makeCompound(pieces)
     check(p, part, fins, bodies)
 
-    warnings = []
+    # Each warning with what it is about, as a WarningTarget, in the same order.
+    warnings, targets = [], []
     if gap_heights:
         warnings.append(translate("FinSnap", "tines at %s mm above the bed left out: a recess or hole in the "
                                   "face lies under them") % _mm_list(gap_heights))
+        targets.append(WarningTarget(gapped, dropped, False))
     if plan.moved:
         warnings.append(translate("FinSnap", "fins moved along the face to where their tines rest, beside a "
                                   "hole or recess under their planned place: %s") % ", ".join(
             translate("FinSnap", "fin %d by %.2f mm") % (number, mm) for number, mm in plan.moved))
+        targets.append(WarningTarget([number for number, _ in plan.moved], [], False))
     if plan.fins_left_out:
         warnings.append(translate("FinSnap", "fins at %s mm from the end of the face left out: none of their "
                                   "tines lies wholly on the face") % _mm_list(plan.fins_left_out))
+        targets.append(WarningTarget([], [], True))
     if plan.narrow_heights:
         warnings.append(translate("FinSnap", "tines at %s mm above the bed left out: the face is narrower "
                                   "there than the fin") % _mm_list(plan.narrow_heights))
+        targets.append(WarningTarget([], [], True))
     angle = math.degrees(math.acos(min(1.0, -frame.n_z)))
     if not d.FACE_ANGLE_MIN <= angle <= d.FACE_ANGLE_MAX:
         warnings.append(translate("FinSnap", "the face is inclined %.0f degrees against the bed, outside "
                                   "%.0f to %.0f") % (angle, d.FACE_ANGLE_MIN, d.FACE_ANGLE_MAX))
+        targets.append(WarningTarget([], [], True))
     tine_length = p.gap / frame.n_out
     if tine_length < d.TINE_MIN_LENGTH_BEADS * p.bead_width:
         warnings.append(translate("FinSnap", "tines are %.2f mm long, shorter than %.2f beads; the slicer "
                                   "may not print them to the face") % (tine_length, d.TINE_MIN_LENGTH_BEADS))
+        targets.append(WarningTarget([fin.number for fin in plan.fins], [], False))
     if frame.round_side:
         warnings.append(translate("FinSnap", "the part stands on one point of its rim: a chamfer on the rim and "
                                   "a brim in the slicer give it more hold on the bed"))
+        targets.append(WarningTarget([], [], False))
 
     numbers = [fin.number for fin in plan.fins]
     fin_heights = [fin.height for fin in plan.fins]
     return FinResult(fins=fins, bodies=bodies, tines=all_tines, height=max(fin_heights),
                      thickness=thickness, tine_z=plan.tine_z, positions=[fin.t0 for fin in plan.fins],
-                     foot_half_width=plan.half_foot, warnings=warnings, carried=support.Faces,
+                     foot_half_width=plan.half_foot, warnings=warnings, warning_targets=targets,
+                     carried=support.Faces,
                      numbers=numbers, planned=len(plan.positions),
                      dropped=dropped, starts={n: plan.starts[n] for n in numbers}, along=frame.along,
                      out=frame.out, heights=dict(zip(numbers, fin_heights)), edges=dict(zip(numbers, edges)),

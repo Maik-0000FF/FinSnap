@@ -19,11 +19,11 @@ import FreeCAD as App
 import Part
 from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left_face, run, split_cylinder, tilted_cube
 from freecad.finsnap import defaults as d
-from freecad.finsnap import export_3mf, export_step, feature, geometry, orient, overhang
+from freecad.finsnap import check, export_3mf, export_step, feature, geometry, orient, overhang, stability
 from freecad.finsnap import presets
 from freecad.finsnap.params import FinParams, ParamError
 from freecad.finsnap.paths import PACKAGE_XML
-from freecad.finsnap.shapes import global_shape, moved, outermost
+from freecad.finsnap.shapes import bounds, global_shape, moved, outermost
 
 V = App.Vector
 # The version as package.xml states it, read independently of the workbench.
@@ -59,6 +59,7 @@ HOLE_RADIUS = 2.0     # a hole through the tilted cube, moved sideways to keep i
 HOLE_LENGTH = 200.0
 HOLE_SHIFT = 3.0
 DRAG_STEPS = 3        # builds of the fins while one is dragged
+RAISED_BY = 10.0      # how far a part stands above z 0, its bed with it
 TUBE_HEIGHT = 40.0
 TUBE_TURN = 5.0  # how far the fin under the side of a tube is moved by hand, in mm round it
 FINE_TURN = 1.23456789  # a turn finer than the shift is kept, in mm round the side
@@ -213,6 +214,8 @@ def lost_face(doc):
     kept = feature.create(part, name)
     lost = feature.create(part, name)
     lost.Base = (part, ["Face%d" % (len(part.Shape.Faces) + 1)])
+    # And no plane to find it by: the face is gone.
+    lost.BasePlane = []
     doc.recompute()
     expect(kept.isValid() and kept.Shape.Solids and not lost.isValid(),
            "fins on a face the part no longer has fail alone, the others are still built")
@@ -238,6 +241,8 @@ def marks_without_face(doc):
     expect(fins.Overhangs, "tilted flat, the other face overhangs: %s" % fins.Overhangs)
     part.Shape = standing(d.TILT_ANGLE)
     fins.Base = (part, ["Face%d" % (len(part.Shape.Faces) + 1)])
+    # And no plane to find it by: the face is gone.
+    fins.BasePlane = []
     doc.recompute()
     expect(not fins.isValid() and fins.Overhangs == [],
            "with its face lost the fins fail, and the marks follow the part: %s" % fins.Overhangs)
@@ -843,6 +848,166 @@ def kept_islands(doc):
     doc.removeObject(tube.Name)
 
 
+def stability_raised_and_counter(doc):
+    """The tines that hold a part are measured from its bottom, wherever it
+    stands; and a part that tips towards its counter fin is told so, not to
+    add one."""
+    slab = Part.makeBox(30, 20, 10)
+    bottom = [e for e in slab.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
+    turn = orient.tilt(slab, bottom, d.TILT_ANGLE)
+    results = []
+    for lift in (0.0, RAISED_BY):
+        part = doc.addObject("Part::Feature", "Raised")
+        part.Shape = slab
+        part.Placement = App.Placement(V(0, 0, lift), App.Rotation()).multiply(turn)
+        doc.recompute()
+        leaning = min(part.Shape.Faces, key=lambda face: face.normalAt(*face.ParameterRange[::2]).z)
+        fins = feature.create(part, face_name(part.Shape, leaning))
+        doc.recompute()
+        supports, _ = feature.supports_of(part, doc)
+        results.append((part.Shape.BoundBox.ZMin, supports[0][1], feature.stability_of(part, feature.params_of(fins))))
+        doc.removeObject(fins.Name)
+        doc.removeObject(part.Name)
+    (low, low_tine, low_found), (high, high_tine, high_found) = results
+    expect(abs((high_tine - high) - (low_tine - low)) < d.TOLERANCE and high_found[:2] == low_found[:2],
+           "a part standing higher is held by its fins from the same height over its bottom, the result the same")
+
+    real_supports, real_check = feature.supports_of, stability.check
+    main, counter = V(0, -1, 0), V(0, 1, 0)
+    tipping = stability.Stability(True, 50, 10.0, V(), V(), -1.0, counter, [V()], [(10.0, -1.0)])
+    # Alone it tips lower; held, at the layer whose direction is asked.
+    stability.check = lambda part, supports, *rest: tipping if supports else tipping._replace(height=5.0)
+    try:
+        notes = []
+        for sides in ([main], [main, counter]):
+            feature.supports_of = lambda part_obj, document, sides=sides: ([(Part.makeBox(1, 1, 1), 0.0)], sides)
+            box = doc.addObject("Part::Feature", "Fake")
+            box.Shape = Part.makeBox(10, 10, 10)
+            notes.append(feature.stability_of(box, FinParams())[1])
+            doc.removeObject(box.Name)
+    finally:
+        feature.supports_of, stability.check = real_supports, real_check
+    at = (tipping.layer + 1, tipping.height)
+    expect(notes == [App.Qt.translate("FinSnap", feature.NOTE_AWAY_FROM_FINS) % at,
+                     App.Qt.translate("FinSnap", feature.NOTE_TOWARDS_FINS) % at],
+           "tipping away from its fins it is told to add a counter fin; towards its counter fin, not: %s" % notes)
+
+
+def check_objects(doc):
+    """A check in the tree goes out of date once fins of its part are built
+    anew, also fins made after it, and once the body its part lies in moves;
+    checking again fills the same object, up to date."""
+    cube = doc.addObject("Part::Feature", "Checked")
+    cube.Shape = tilted_cube()
+    doc.recompute()
+    found = check.record(cube, [], check.STABILITY, feature.STANDS, "note", None)
+    again = check.record(cube, [], check.STABILITY, feature.STANDS, "note again", None)
+    expect(found is again and not found.OutOfDate and found.Result == "note again" and "Touched" not in found.State,
+           "checking a part again fills the same check, up to date and not touched")
+    fins = feature.create(cube, face_name(cube.Shape, lower_left_face(cube.Shape)))
+    doc.recompute()
+    expect(found.OutOfDate, "fins made after a check put it out of date")
+    doc.removeObject(fins.Name)
+    doc.removeObject(found.Name)
+    doc.removeObject(cube.Name)
+
+    body = doc.addObject("PartDesign::Body", "CheckedBody")
+    box = body.newObject("PartDesign::AdditiveBox", "CheckedBox")
+    doc.recompute()
+    inside = check.record(box, [], check.PART, feature.STANDS, "note", None)
+    expect(inside.Container is body and inside.Part is box, "a check of a part in a body links the body as well")
+    body.Placement = App.Placement(V(5, 0, 0), App.Rotation())
+    doc.recompute()
+    expect(inside.OutOfDate, "moving the body of the part puts its check out of date")
+    loose = doc.addObject("Part::Feature", "Loose")
+    loose.Shape = tilted_cube()
+    first = check.record(loose, [], check.STABILITY, feature.STANDS, "note", None)
+    holder = doc.addObject("App::Part", "Holder")
+    holder.addObject(loose)
+    doc.recompute()
+    check.record(loose, [], check.STABILITY, feature.STANDS, "note", None)
+    linked = first.Container is holder
+    holder.Placement = App.Placement(V(0, 5, 0), App.Rotation())
+    doc.recompute()
+    expect(linked and first.OutOfDate, "a part moved into a container after its first check links it once checked "
+           "again, and moving the container puts the check out of date")
+    doc.removeObject(first.Name)
+    holder.removeObject(loose)
+    doc.removeObject(loose.Name)
+    doc.removeObject(holder.Name)
+    doc.removeObject(inside.Name)
+    doc.removeObject(box.Name)
+    doc.removeObject(body.Name)
+
+
+def fins_follow_the_body(doc):
+    """Fins under a face of a Pad stand under the face of its Body, and
+    follow a chamfer or a fillet added after them: rebuilt on the new shape,
+    the face found again by its plane; a pocket cutting the face away whole
+    is said."""
+    body = doc.addObject("PartDesign::Body", "Followed")
+    sketch = body.newObject("Sketcher::SketchObject", "FollowedSketch")
+    sketch.AttachmentSupport = [(body.Origin.OriginFeatures[XY_PLANE], "")]
+    sketch.MapMode = "FlatFace"
+    length, width, height = BOX
+    corners = [V(0, 0, 0), V(length, 0, 0), V(length, width, 0), V(0, width, 0)]
+    for i, corner in enumerate(corners):
+        sketch.addGeometry(Part.LineSegment(corner, corners[(i + 1) % len(corners)]))
+    pad = body.newObject("PartDesign::Pad", "FollowedPad")
+    pad.Profile = sketch
+    pad.Length = height
+    doc.recompute()
+    shape = global_shape(pad)
+    edge = [i for i, e in enumerate(shape.Edges, 1) if e.BoundBox.ZMax < d.TOLERANCE and e.Length == length][0]
+    body.Placement = orient.tilt(shape, shape.Edges[edge - 1], d.TILT_ANGLE).multiply(body.Placement)
+    doc.recompute()
+    tilted = global_shape(pad)
+    leaning = [i for i, f in enumerate(tilted.Faces, 1) if f.normalAt(0, 0).z < -d.TOLERANCE
+               and abs(f.normalAt(0, 0).y) > d.TOLERANCE]
+    fins = feature.create(pad, "Face%d" % leaning[0])
+    doc.recompute()
+    expect(fins.Base[0] is body and fins.BasePlane, "fins under a face of a Pad stand under the face of its Body")
+    # Saved by an older version, linking the Pad and keeping no plane: linked
+    # to the Body once opened.
+    fins.Base = (pad, ["Face%d" % leaning[0]])
+    fins.removeProperty("BasePlane")
+    fins.Proxy.onDocumentRestored(fins)
+    expect(fins.Base[0] is body and fins.BasePlane, "fins saved linking the Pad link its Body once opened")
+    # Linked to another face, as Quick fins, Cancel or a change by hand do:
+    # the plane follows, so the fins stand under that face.
+    first = fins.Base[1][0]
+    other = next("Face%d" % i for i, f in enumerate(global_shape(body).Faces, 1)
+                 if f.normalAt(0, 0).z < -d.TOLERANCE and "Face%d" % i != first)
+    fins.Base = (body, [other])
+    doc.recompute()
+    expect(other in fins.CarriedFaces, "fins linked to another face stand under it: %s" % list(fins.CarriedFaces))
+    fins.Base = (body, [first])
+    doc.recompute()
+
+    for kind, prop in (("PartDesign::Chamfer", "Size"), ("PartDesign::Fillet", "Radius")):
+        changed = body.newObject(kind, kind.split(":")[-1])
+        changed.Base = (pad, ["Edge%d" % edge])
+        setattr(changed, prop, 2)
+        doc.recompute()
+        part = global_shape(body)
+        expect(fins.Shape.Solids and abs(fins.Shape.BoundBox.ZMin - bounds(part).ZMin) < d.TOLERANCE
+               and fins.Shape.common(part).Volume < d.TOLERANCE,
+               "after a %s on the edge it stands on, the fins are rebuilt on the bottom of the part, clear of it: "
+               "%.3f, %.3f" % (kind, fins.Shape.BoundBox.ZMin, bounds(part).ZMin))
+        body.removeObject(changed)
+        doc.removeObject(changed.Name)
+        doc.recompute()
+
+    # A face cut away whole: no face is left in its plane, here as a plane kept
+    # beside the part.
+    point, normal = fins.BasePlane
+    fins.BasePlane = [point - normal * height, normal]
+    doc.recompute()
+    gone = App.Qt.translate("FinSnap", feature.NOTE_FACE_GONE) % body.Label
+    expect(gone in fins.getStatusString(), "a face cut away whole is said: %s" % fins.getStatusString())
+    doc.removeObject(fins.Name)
+
+
 def main():
     doc = App.newDocument("FinSnapTest")
     cube = doc.addObject("Part::Feature", "Cube")
@@ -888,6 +1053,9 @@ def main():
     tapered_pad(doc)
     warnings_and_old_files(doc)
     kept_islands(doc)
+    stability_raised_and_counter(doc)
+    check_objects(doc)
+    fins_follow_the_body(doc)
     step_with_offset_curves()
     print("all checks passed", file=sys.__stdout__)
 

@@ -13,6 +13,7 @@ import Part
 from pivy import coin
 from PySide import QtCore, QtWidgets
 
+from . import check
 from . import defaults as d
 from . import export_3mf
 from . import export_step
@@ -24,10 +25,11 @@ from . import orient
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_LAY_FLAT, ICON_MESH,
-                    ICON_QUICK, ICON_TILT)
+                    ICON_CHECK_PART, ICON_ISLANDS, ICON_QUICK, ICON_STABILITY, ICON_TILT)
 from .presets import PREFERENCES
-from .shapes import FACE_PREFIX, global_shape, outermost
-from .taskpanel import DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, discard_created
+from .shapes import FACE_PREFIX, global_shape, outermost, part_of
+from .taskpanel import (DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, check_params, check_part, check_stability,
+                        discard_created)
 from .version import NAME
 
 EDGE_PREFIX = "Edge"
@@ -44,6 +46,9 @@ ISOMETRIC = App.Vector(-1, 1, -1).normalize()
 FILTER_3MF = QT_TRANSLATE_NOOP("FinSnap", "3MF files (*.3mf)")
 EXTENSIONS_3MF = (".3mf",)
 FILTER_STEP = QT_TRANSLATE_NOOP("FinSnap", "STEP files (*.step *.stp)")
+# Said when Check stability has no part to check.
+NOTE_SELECT_PART = QT_TRANSLATE_NOOP("FinSnap", "Select a part, or its fins, to check whether it stays standing "
+                                                "while it is printed.")
 # Said when new fins cannot be edited because another task panel is open.
 NOTE_BUSY = QT_TRANSLATE_NOOP("FinSnap", "Another task panel is open. Close it first, then make the fins again.")
 EXTENSIONS_STEP = (".step", ".stp")
@@ -55,18 +60,6 @@ MESH_LINEAR_DECIMALS = 3
 MESH_ANGULAR_DECIMALS = 1
 SOLID_SUFFIX = "_solid"
 FINS_SUFFIX = "_fins"
-# Marks on faces that overhang without fins: red, half see-through, drawn
-# slightly in front of the part's own faces, which lie in the same place.
-OVERHANG_COLOR = (0.9, 0.1, 0.1)
-OVERHANG_TRANSPARENCY = 0.4
-# The first layers of islands in the air: see-through, yet red over a part of
-# any colour. As see-through as a fin while editing, the colour of the part
-# would show through and the red be lost.
-ISLAND_TRANSPARENCY = 0.4
-# An island whose first layer the kernel could not cut out is marked at its
-# lowest point instead, by a ball of this radius, in the units of the node
-# that keeps it the same size on the screen at any zoom.
-ISLAND_SPOT_SIZE = 0.3
 STATUS_TIMEOUT_MS = 10000
 # What an export writes, and the fins it leaves out because their part lies flat.
 Export = namedtuple("Export", "shapes left_out")
@@ -165,10 +158,10 @@ class ViewProviderFinSnap:
         # air, in the red a fin shows where it cannot stand.
         layers = getattr(obj, feature.ISLAND_LAYERS, None)
         if layers is not None and not layers.isNull():
-            self.marks.addChild(handles.shaded([layers], handles.INVALID_COLOR, ISLAND_TRANSPARENCY))
+            self.marks.addChild(handles.island_layers(layers))
         uncut = getattr(obj, feature.ISLANDS_UNCUT, [])
         if uncut:
-            self.marks.addChild(handles.spots(uncut, handles.INVALID_COLOR, ISLAND_TRANSPARENCY, ISLAND_SPOT_SIZE))
+            self.marks.addChild(handles.island_spots(uncut))
         names = getattr(obj, feature.OVERHANGS, [])
         if names and obj.Base:
             try:
@@ -177,7 +170,7 @@ class ViewProviderFinSnap:
                 shape = None
             if shape is not None:
                 faces = [shape.getElement(name) for name in names]
-                self.marks.addChild(handles.shaded(faces, OVERHANG_COLOR, OVERHANG_TRANSPARENCY))
+                self.marks.addChild(handles.overhang_faces(faces))
         self.show_marks()
 
     def setEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API
@@ -610,8 +603,12 @@ def quick_plans(obj, edge_names, face_names):
         pass
     # The area from the shape the plans number their faces in, a side split
     # in halves joined: on `obj` the number is another face.
+    # Without islands checked while editing, the ways stand in the order found,
+    # their islands not known.
+    rated = (geometry.printable_plans(shape, plans, quick_params()) if feature.islands_while_editing()
+             else [(plan, None) for plan in plans])
     return [QuickWay(plan, name_of(plan.number), points, shape.Faces[plan.number].Area, _edge_name(obj, plan.edge))
-            for plan, points in geometry.printable_plans(shape, plans, quick_params())]
+            for plan, points in rated]
 
 
 def _edge_name(obj, edge):
@@ -661,8 +658,9 @@ class QuickStands:
                         and all(way.plan.edge is not None for way in plans))
         # What tells the ways apart: the edge or the face by its name on the
         # part, its length (mm) or area (mm2), and the islands standing so.
-        self.rows = [(way.edge or "", way.plan.edge.Length, len(way.islands or ())) if self.by_edge
-                     else (way.face, way.area, len(way.islands or ())) for way in plans]
+        self.rows = [(way.edge or "", way.plan.edge.Length, None if way.islands is None else len(way.islands))
+                     if self.by_edge else (way.face, way.area, None if way.islands is None else len(way.islands))
+                     for way in plans]
 
     def __len__(self):
         return len(self.plans)
@@ -676,7 +674,9 @@ class QuickStands:
         orient.put_back(self.owner, self.before)
         _stand(self.obj, plan.change)
         _keep_checked(self.obj, self.plans[index])
-        fins.Base = (self.obj, [face])
+        # Under the face of the Body for a Pad, as feature.create() links it.
+        part, name = feature.on_part(self.obj, face)
+        fins.Base = (part, [name])
         self.current = index
         _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside))
 
@@ -983,11 +983,132 @@ def _write(writer, path, export, *settings):
                                       "export these fins.") % ", ".join(export.left_out))
 
 
+class CheckStability:
+    """Check whether a part stays standing while it is printed, layer by layer,
+    on its own and held by its fins, if it has any; see feature.stability_of().
+
+    SELECTIONS this has to withstand:
+      a part, standing or lying, with or
+        without fins                        ->  checked, kept as its check in the tree,
+                                                the result said
+      fins, or a check in the tree          ->  their part checked
+      several objects                       ->  the first checked
+      nothing, or an object without a shape ->  message to select a part
+    """
+
+    def GetResources(self):  # noqa: N802 - FreeCAD API
+        return {"Pixmap": ICON_STABILITY,
+                "MenuText": QT_TRANSLATE_NOOP("FinSnap_CheckStability", "Check stability"),
+                "ToolTip": QT_TRANSLATE_NOOP(
+                    "FinSnap_CheckStability",
+                    "Checks whether the selected part stays standing while it is printed, layer by layer, as it "
+                    "grows and its centre of mass moves: first on its own, then, where it would tip over, held "
+                    "by its fins, which hold it only from their lowest tine up. Says at which layer it would "
+                    "tip and which way. Keeps it as a stability check in the tree, which shows the part coloured "
+                    "by height, the layer it tips at and the plumb line from its centre of mass to the bed: "
+                    "the eye shows or hides them, deleting the check removes them. Once the part, its place "
+                    "or its fins change, the check is marked out of date; double-click it to check again.")}
+
+    def IsActive(self):  # noqa: N802 - FreeCAD API
+        return App.ActiveDocument is not None
+
+    def Activated(self):  # noqa: N802 - FreeCAD API
+        _run_check(check_stability)
+
+
+def _run_check(run):
+    """Run `run`, check_stability() or check_part(), on the part selected and
+    say what it found; it keeps that as a check in the tree. With nothing
+    selected, or an object without a shape, ask for a part."""
+    selected = Gui.Selection.getSelection()
+    checked = _checked_part(selected[0]) if selected else None
+    if checked is None:
+        _message(translate("FinSnap", NOTE_SELECT_PART))
+        return
+    _message(run(*checked)[1])
+
+
+def _checked_part(obj):
+    """The part to check and the parameters to check it with, for `obj`, the
+    first object selected: it, the part its fins stand on, or the part a
+    check in the tree is of, and its parameters (taskpanel.check_params());
+    None for an object without a shape."""
+    if feature.is_fins(obj) and obj.Base:
+        part = obj.Base[0]
+    elif check.is_check(obj):
+        part = obj.Part
+    else:
+        # A Pad is checked as its Body, with every feature after it.
+        part = part_of(obj)
+    if getattr(part, "Shape", None) is None or part.Shape.isNull():
+        return None
+    return part, check_params(part)
+
+
+class CheckPart:
+    """Check a part, as it stands, for everything that keeps it from printing:
+    faces overhanging without fins, islands and whether it stays standing;
+    see taskpanel.check_part(). Selections as for CheckStability."""
+
+    def GetResources(self):  # noqa: N802 - FreeCAD API
+        return {"Pixmap": ICON_CHECK_PART,
+                "MenuText": QT_TRANSLATE_NOOP("FinSnap_CheckPart", "Check part"),
+                "ToolTip": QT_TRANSLATE_NOOP(
+                    "FinSnap_CheckPart",
+                    "Checks the selected part, with or without fins, as it stands, for everything that keeps it "
+                    "from printing, all at once: faces overhanging without fins, islands, where it would start "
+                    "printing in the air, and whether it stays standing while it is printed. Says what it found "
+                    "and keeps it as a part check in the tree, which shows it all: the eye shows or hides it, "
+                    "deleting the check removes it. Once the part, its place or its fins change, the check is "
+                    "marked out of date; double-click it to check again.")}
+
+    def IsActive(self):  # noqa: N802 - FreeCAD API
+        return App.ActiveDocument is not None
+
+    def Activated(self):  # noqa: N802 - FreeCAD API
+        _run_check(check_part)
+
+
+class IslandsWhileEditing:
+    """Switch the island check while fins are made and edited on or off: on a
+    slow computer it can be left to Check part. Kept in FinSnap's preferences."""
+
+    def GetResources(self):  # noqa: N802 - FreeCAD API
+        return {"Pixmap": ICON_ISLANDS,
+                "MenuText": QT_TRANSLATE_NOOP("FinSnap_IslandsWhileEditing", "Islands while editing"),
+                "ToolTip": QT_TRANSLATE_NOOP(
+                    "FinSnap_IslandsWhileEditing",
+                    "While on, fins check their part for islands as they are made and edited, and Quick fins "
+                    "prefers ways to stand it without. Off, they are not checked then, which keeps a large part "
+                    "quick on a slow computer; Check part checks them at the end."),
+                "Checkable": feature.islands_while_editing()}
+
+    def IsActive(self):  # noqa: N802 - FreeCAD API
+        return True
+
+    def Activated(self, checked):  # noqa: N802 - FreeCAD API
+        feature.set_islands_while_editing(checked)
+
+
+class SavingWatch:
+    """Document observer: fins being edited look, while their document is
+    saved, as they did before editing, so the file keeps that look."""
+
+    def slotStartSaveDocument(self, document, _name):  # noqa: N802 - FreeCAD API
+        handles.saving_document(document, True)
+
+    def slotFinishSaveDocument(self, document, _name):  # noqa: N802 - FreeCAD API
+        handles.saving_document(document, False)
+
+
 COMMANDS = (("FinSnap_QuickFins", QuickFins()),
             ("FinSnap_Tilt", TiltOntoEdge()),
             ("FinSnap_LayFlat", LayFlat()),
             ("FinSnap_AddFins", AddFins()),
             ("FinSnap_AddCounterFin", AddCounterFin()),
+            ("FinSnap_CheckStability", CheckStability()),
+            ("FinSnap_CheckPart", CheckPart()),
+            ("FinSnap_IslandsWhileEditing", IslandsWhileEditing()),
             ("FinSnap_MeshToSolid", MeshToSolid()),
             ("FinSnap_Export3MF", Export3MF()),
             ("FinSnap_ExportSTEP", ExportSTEP()))
@@ -996,6 +1117,7 @@ COMMANDS = (("FinSnap_QuickFins", QuickFins()),
 # Registered once, when this module is first imported: with the workbench, or
 # with a document holding fins.
 App.addDocumentObserver(PartVisibility())
+App.addDocumentObserver(SavingWatch())
 
 
 def register():

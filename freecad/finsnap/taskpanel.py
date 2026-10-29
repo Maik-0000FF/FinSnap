@@ -15,18 +15,23 @@ import math
 import FreeCAD as App
 import FreeCADGui as Gui
 import Part
+from pivy import coin
 from PySide import QtCore, QtGui, QtWidgets
 
+from . import check
 from . import defaults as d
 from . import feature
 from . import geometry
 from . import handles
+from . import overhang
 from . import presets
+from . import stability
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
-from .paths import ICON_COUNTER, ICON_REMOVE_COUNTER, ICON_REMOVE_FIN, ICON_RESET_FINS, SIDE_VIEW, TOP_VIEW
-from .shapes import FACE_PREFIX
-from .version import application
+from .paths import (ICON_CHECK_OUTDATED, ICON_CHECK_PART, ICON_COUNTER, ICON_REMOVE_COUNTER, ICON_REMOVE_FIN,
+                    ICON_RESET_FINS, ICON_STABILITY, SIDE_VIEW, TOP_VIEW)
+from .shapes import FACE_PREFIX, global_shape, outermost
+from .version import NAME, application
 
 # Upper limits of the input fields; generous, the geometry rejects nonsense.
 MAX_LENGTH = 10000.0
@@ -94,6 +99,9 @@ LAYER_FIELD = "layer_height"
 # box with a sign, so they stand out from the result line above.
 WARNING_COLOR = "#e0a000"
 ERROR_COLOR = "#d03030"
+# A stability check that finds the part standing, and one out of date.
+STANDS_COLOR = "#30a050"
+OUTDATED_COLOR = "#808080"
 NOTE_STYLE = "QLabel { border: 2px solid %s; border-radius: 4px; padding: 6px; }"
 WARNING_SIGN = "⚠"
 # A field whose value differs from the standard for new fins: its label in
@@ -134,10 +142,247 @@ STAND_ASK = QT_TRANSLATE_NOOP("FinSnap", "Stand the part another way? The fins a
                                          "counter fin are undone.")
 # Rows the table of ways shows at most; more scroll.
 STAND_ROWS = 6
+# What a stability check found, in the colours of the fins while editing: green
+# where the part stands, yellow where only just, red where it tips; and the
+# label of the layer its plumb line is shown for, counted from 1, beside it.
+LEVEL_COLORS = {feature.STANDS: handles.VALID_COLOR, feature.CLOSE: handles.BETWEEN_COLOR,
+                feature.TIPS: handles.INVALID_COLOR}
+LAYER_TIPS = QT_TRANSLATE_NOOP("FinSnap", "Tips at layer %d, %.1f mm high")
+LAYER_CLOSEST = QT_TRANSLATE_NOOP("FinSnap", "Closest to tipping at layer %d, %.1f mm high")
+# What the colours of a stability check mean, said with its result.
+NOTE_COLOURS = QT_TRANSLATE_NOOP(
+    "FinSnap", "Colours by height: green stands, yellow comes within %.0f mm of tipping, red tips from there.")
+# The one way a check in the tree is shown in the 3D view.
+CHECK_DISPLAY_MODE = "Check"
+# The part coloured by height in a stability check, this see-through.
+GRADIENT_TRANSPARENCY = 0.5
+# The lines of Check part, one for each check.
+NOTE_OVERHANGS = QT_TRANSLATE_NOOP("FinSnap", "%d faces overhang flatter than %.0f degrees without fins.")
+NOTE_NO_OVERHANGS = QT_TRANSLATE_NOOP("FinSnap", "No face overhangs without fins.")
+NOTE_ISLANDS_FOUND = QT_TRANSLATE_NOOP("FinSnap", "%d island(s): it would start printing in the air there.")
+NOTE_NO_ISLANDS = QT_TRANSLATE_NOOP("FinSnap", "No islands.")
+# The frame of the note of a stability check in the task panel, by what was
+# found; OUTDATED_COLOR once a change has made it out of date.
+STABILITY_FRAMES = {feature.STANDS: STANDS_COLOR, feature.CLOSE: WARNING_COLOR, feature.TIPS: ERROR_COLOR}
+STABILITY_TIP = QT_TRANSLATE_NOOP(
+    "FinSnap", "Checks whether the part stays standing while it is printed, layer by layer, on its own and "
+    "held by these fins, which hold it only from their lowest tine up, and shows the plumb line from its "
+    "centre of mass to the bed. Takes a moment on a large part.")
+NOTE_STABILITY_OUTDATED = QT_TRANSLATE_NOOP("FinSnap", "Changed since the stability check: check again.")
+# Said on a double click on a check whose part is gone.
+NOTE_PART_GONE = QT_TRANSLATE_NOOP("FinSnap", "The part of this check is gone; delete the check.")
 DRAWINGS = (
     (SIDE_VIEW, QT_TRANSLATE_NOOP("FinSnap", "Side view")),
     (TOP_VIEW, QT_TRANSLATE_NOOP("FinSnap", "Top view")),
 )
+
+
+def check_stability(part_obj, p):
+    """Check whether `part_obj` stays standing while it is printed in the
+    layers of `p` (feature.stability_of()), and keep what was found in its
+    stability check in the tree (check.record()), which shows it. Returns the
+    level and the note found."""
+    QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+    try:
+        level, note, shown = feature.stability_of(part_obj, p)
+        note = _with_colours(note, shown)
+        _in_tree(check.record(part_obj, fins_on(part_obj), check.STABILITY, level, note, shown,
+                              _layer_cut(part_obj, p, shown)))
+    finally:
+        QtWidgets.QApplication.restoreOverrideCursor()
+    return level, note
+
+
+def check_part(part_obj, p):
+    """Check `part_obj` as it stands for everything that keeps it from
+    printing: faces overhanging without fins, islands and whether it stays
+    standing, in the layers of `p`, and keep it in its part check in the tree,
+    which shows it. Returns the level of the worst found, and a note with a
+    line for each check."""
+    QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+    try:
+        part = global_shape(part_obj)
+        names = feature.overhangs_of(part_obj, part_obj.Document)
+        found = overhang.islands(part, p.first_layer_height, p.layer_height)
+        level, note, shown = feature.stability_of(part_obj, p)
+        lines = [translate("FinSnap", NOTE_OVERHANGS) % (len(names), d.OVERHANG_ANGLE) if names
+                 else translate("FinSnap", NOTE_NO_OVERHANGS),
+                 translate("FinSnap", NOTE_ISLANDS_FOUND) % len(found) if found
+                 else translate("FinSnap", NOTE_NO_ISLANDS),
+                 _with_colours(note, shown)]
+        worst = feature.TIPS if names or found else level
+        overhangs = Part.makeCompound([part.getElement(name) for name in names]) if names else None
+        # The level of its stability, whose colour its plumb line shows.
+        _in_tree(check.record(part_obj, fins_on(part_obj), check.PART, level, "\n".join(lines), shown,
+                              _layer_cut(part_obj, p, shown), overhangs, found))
+    finally:
+        QtWidgets.QApplication.restoreOverrideCursor()
+    return worst, "\n".join(lines)
+
+
+def fins_on(part_obj):
+    """The FinSnap objects whose fins stand under `part_obj`."""
+    return [other for other in feature.fins_of(outermost(part_obj), part_obj.Document)
+            if other.Base and other.Base[0] is part_obj]
+
+
+def check_params(part_obj):
+    """The parameters to check `part_obj` with: those of its first fins, or
+    the standard for new fins where it has none."""
+    fins = fins_on(part_obj)
+    return feature.params_of(fins[0]) if fins else presets.standard()
+
+
+def check_again(check_obj):
+    """Check the part of `check_obj`, a check in the tree, again, as it was
+    checked: its stability or the whole part. Returns the note found."""
+    part_obj = check_obj.Part
+    run = check_part if check_obj.Kind == check.PART else check_stability
+    return run(part_obj, check_params(part_obj))[1]
+
+
+def _in_tree(check_obj):
+    """Give `check_obj` its look in the tree and the 3D view, where it has no
+    look of its own yet: it was just made."""
+    view = getattr(check_obj, "ViewObject", None)
+    if view is not None and not isinstance(getattr(view, "Proxy", None), ViewProviderCheck):
+        ViewProviderCheck(view)
+
+
+class ViewProviderCheck:
+    """The look of a check in the tree (check.py): its marks in the 3D view,
+    shown and hidden with the eye, while it is up to date; its icon, with a
+    warning once it is out of date; a double click checks again and says what
+    it found."""
+
+    def __init__(self, vobj):
+        vobj.Proxy = self
+
+    def attach(self, vobj):
+        self.Object = vobj.Object
+        self.root = coin.SoSeparator()
+        vobj.addDisplayMode(self.root, CHECK_DISPLAY_MODE)
+        self.draw()
+
+    def getDisplayModes(self, vobj):  # noqa: N802 - FreeCAD API
+        return [CHECK_DISPLAY_MODE]
+
+    def getDefaultDisplayMode(self):  # noqa: N802 - FreeCAD API
+        return CHECK_DISPLAY_MODE
+
+    def setDisplayMode(self, mode):  # noqa: N802 - FreeCAD API
+        return mode
+
+    def updateData(self, obj, prop):  # noqa: N802 - FreeCAD API
+        if prop in check.SHOWN:
+            self.draw()
+        if prop == check.OUT_OF_DATE and obj.ViewObject is not None:
+            obj.ViewObject.signalChangeIcon()
+
+    def draw(self):
+        """Show the marks of the check as it stands now."""
+        if not hasattr(self, "root"):
+            return
+        self.root.removeAllChildren()
+        for node in check_nodes(self.Object):
+            self.root.addChild(node)
+
+    def getIcon(self):  # noqa: N802 - FreeCAD API
+        obj = getattr(self, "Object", None)
+        if obj is not None and obj.OutOfDate:
+            return ICON_CHECK_OUTDATED
+        return ICON_CHECK_PART if obj is not None and obj.Kind == check.PART else ICON_STABILITY
+
+    def doubleClicked(self, vobj):  # noqa: N802 - FreeCAD API
+        if vobj.Object.Part is None:
+            note = translate("FinSnap", NOTE_PART_GONE)
+        else:
+            note = check_again(vobj.Object)
+        QtWidgets.QMessageBox.information(Gui.getMainWindow(), NAME, note)
+        return True
+
+    def dumps(self):
+        return None
+
+    def loads(self, state):
+        return None
+
+
+def _layer_cut(part_obj, p, shown):
+    """The layer of `shown`, a stability.Stability of `part_obj` in the layers
+    of `p`, cut out of the part at the middle of that layer; None for none."""
+    if shown is None:
+        return None
+    return stability.section(global_shape(part_obj), shown.foot.z + shown.height - p.layer_height / 2)
+
+
+def check_nodes(check_obj):
+    """The Coin nodes showing `check_obj`, a check in the tree (check.py): the
+    part coloured by height from green, where it stands, over yellow, where
+    it comes close to tipping, to red, where it tips; the layer it tips at,
+    or comes closest to tipping at, cut out of it; the plumb line of that
+    layer over what it stands on; and for a check of the part, the faces
+    overhanging without fins and the islands. None for a check out of date,
+    whose marks no longer tell the truth."""
+    if check_obj.OutOfDate or check_obj.Part is None:
+        return []
+    nodes = []
+    if check_obj.Footprint:
+        bed = check_obj.Foot.z
+        profile = [(bed + height, margin) for height, margin in zip(check_obj.ProfileHeights,
+                                                                    check_obj.ProfileMargins)]
+
+        def color_at(z):
+            return margin_color(_margin_at(profile, z))
+
+        color = LEVEL_COLORS.get(check_obj.Level, handles.INVALID_COLOR)
+        nodes.append(handles.gradient(global_shape(check_obj.Part), color_at, [z for z, _ in profile],
+                                      GRADIENT_TRANSPARENCY))
+        if not check_obj.Cut.isNull():
+            nodes.append(handles.layer_cut(check_obj.Cut, color))
+        shown = stability.Stability(check_obj.Tips, check_obj.Layer, check_obj.Height, check_obj.Centre,
+                                    check_obj.Foot, check_obj.Margin, None, list(check_obj.Footprint), profile)
+        label = translate("FinSnap", LAYER_TIPS if check_obj.Tips else LAYER_CLOSEST) % (check_obj.Layer + 1,
+                                                                                        check_obj.Height)
+        # Beside the layer cut out, where the plumb line passes it.
+        at = App.Vector(check_obj.Foot.x, check_obj.Foot.y, bed + check_obj.Height)
+        nodes.append(handles.plumb(shown, color, label, at))
+    if not check_obj.Overhangs.isNull():
+        nodes.append(handles.overhang_faces(check_obj.Overhangs.Faces))
+    if not check_obj.IslandLayers.isNull():
+        nodes.append(handles.island_layers(check_obj.IslandLayers))
+    if check_obj.IslandsUncut:
+        nodes.append(handles.island_spots(list(check_obj.IslandsUncut)))
+    return nodes
+
+
+def _with_colours(note, shown):
+    """`note`, followed by what the colours of the part mean, where they show."""
+    if shown is None:
+        return note
+    return note + "\n" + translate("FinSnap", NOTE_COLOURS) % d.STABILITY_CLOSE
+
+
+def _margin_at(profile, z):
+    """The margin at height `z`, between those of `profile`, (height, margin)
+    pairs from the bed up; that of the nearest end beyond them."""
+    if z <= profile[0][0]:
+        return profile[0][1]
+    for (low, below), (high, above) in zip(profile, profile[1:]):
+        if z <= high:
+            share = (z - low) / (high - low) if high > low else 1.0
+            return below + (above - below) * share
+    return profile[-1][1]
+
+
+def margin_color(margin):
+    """The colour of a layer whose plumb line lies `margin` mm inside its
+    footprint: green from STABILITY_CLOSE on, blended over to yellow at 0,
+    red below, where it tips."""
+    if margin < 0:
+        return handles.INVALID_COLOR
+    share = min(1.0, margin / d.STABILITY_CLOSE)
+    return tuple(close + (far - close) * share for close, far in zip(handles.BETWEEN_COLOR, handles.VALID_COLOR))
 
 
 def discard_created(obj, on_cancel=None):
@@ -505,8 +750,24 @@ class FinSnapTaskPanel:
         self.notes = QtWidgets.QLabel()
         self.notes.setWordWrap(True)
         self.notes.setTextFormat(QtCore.Qt.RichText)
+        # A note that names a place is a link: a click marks what it is about.
+        self.notes.setTextInteractionFlags(QtCore.Qt.LinksAccessibleByMouse)
+        self.notes.linkActivated.connect(self.show_note)
         self.notes.hide()
         layout.addWidget(self.notes)
+        # Whether the part stays standing while it is printed: checked on
+        # demand, as it takes a moment on a large part.
+        stability_button = _icon_button(ICON_STABILITY, translate("FinSnap", "Check stability"))
+        stability_button.setToolTip(_wrapped(translate("FinSnap", STABILITY_TIP)))
+        stability_button.clicked.connect(self.check_stability)
+        layout.addWidget(stability_button)
+        self.stability = QtWidgets.QLabel()
+        self.stability.setWordWrap(True)
+        self.stability.hide()
+        layout.addWidget(self.stability)
+        # Whether the note below the button tells the result of a check that
+        # still holds.
+        self.stability_checked = False
         self.update_steps()
         self.update_enabled()
         self.update_marks()
@@ -527,7 +788,9 @@ class FinSnapTaskPanel:
         self.stand_list.setToolTip(_wrapped(translate("FinSnap", STAND_TIP)))
         suffix = LENGTH_SUFFIX if self.stands.by_edge else AREA_SUFFIX
         for row, (name, size, islands) in enumerate(self.stands.rows):
-            for column, text in enumerate((name or STAND_ROW % (row + 1), "%.1f%s" % (size, suffix), str(islands))):
+            # Islands not checked, with Islands while editing off, are left blank.
+            counted = "" if islands is None else str(islands)
+            for column, text in enumerate((name or STAND_ROW % (row + 1), "%.1f%s" % (size, suffix), counted)):
                 self.stand_list.setItem(row, column, QtWidgets.QTableWidgetItem(text))
         shown = min(len(self.stands), STAND_ROWS)
         self.stand_list.setFixedHeight(self.stand_list.horizontalHeader().height()
@@ -742,15 +1005,77 @@ class FinSnapTaskPanel:
         if not self.obj.recompute():
             raise ValueError(self.obj.getStatusString())
 
-    def show_notes(self, title, lines, color):
-        """A framed box with a sign and a title, one line per note; hidden without notes."""
+    def show_notes(self, title, lines, color, linked=()):
+        """A framed box with a sign and a title, one line per note; hidden without
+        notes. The notes whose index is in `linked` are links to show_note()."""
         if not lines:
             self.notes.hide()
             return
-        items = "".join("<li>%s</li>" % html.escape(line) for line in lines)
+
+        def item(index, line):
+            text = html.escape(line)
+            return "<li><a href='%d'>%s</a></li>" % (index, text) if index in linked else "<li>%s</li>" % text
+        items = "".join(item(index, line) for index, line in enumerate(lines))
         self.notes.setText("<b>%s %s</b><ul style='margin: 0'>%s</ul>" % (WARNING_SIGN, html.escape(title), items))
         self.notes.setStyleSheet(NOTE_STYLE % color)
         self.notes.show()
+
+    def note_targets(self):
+        """What each note of the last build is about, a feature.NoteTarget or
+        None, in the order of Warnings; empty once they no longer match."""
+        targets = list(getattr(self.obj.Proxy, "note_targets", []))
+        return targets if len(targets) == len(self.obj.Warnings) else []
+
+    def show_note(self, link):
+        """A click on note `link`, its index: select what it is about, as Check
+        Geometry does, mark what cannot be selected in the selection colour,
+        and fit the view to it; the first fin it names gets the arrows.
+
+        INPUTS this has to withstand:
+          a note naming fins                    ->  their faces selected, the first fin
+                                                    with the arrows
+          a note naming the face or faces of
+            the part                            ->  those faces selected, the fin kept
+          a note naming tines left out or
+            islands                             ->  marked, as they are no faces of any object;
+                                                    an island without its first layer as a
+                                                    ball at its lowest point
+          a note naming a fin merged into the
+            part                                ->  its body marked, as it has no faces of its own
+          a fin named no longer built           ->  passed over
+          an index the last build has no target
+            for, or not a number                ->  selection and marks cleared, the view kept
+        """
+        targets = self.note_targets()
+        target = targets[int(link)] if link.isdigit() and int(link) < len(targets) else None
+        Gui.Selection.clearSelection()
+        if target is None:
+            self.handles.show_noted([])
+            return
+        results = getattr(self.obj.Proxy, "results", {})
+        fins = [(target.which, number) for number in target.fins
+                if results.get(target.which) and number in results[target.which].numbers]
+        marks = list(target.marks)
+        # What is selected, as shapes, to fit the view to it.
+        selected = []
+        for which, number in fins:
+            faces = feature.fin_faces(self.obj, which, number)
+            if faces:
+                Gui.Selection.addSelection(self.obj, [FACE_PREFIX + str(index + 1) for index in faces])
+                selected += [self.obj.Shape.Faces[index] for index in faces]
+            else:
+                built = results[which]
+                marks.append(built.bodies[built.numbers.index(number)])
+        for owner, name in target.faces:
+            Gui.Selection.addSelection(owner, name)
+            selected.append(global_shape(owner).getElement(name))
+        self.handles.show_noted(marks, target.points)
+        self.handles.fit(selected + marks, target.points)
+        # After the selection, which gives the arrows to the fin picked last.
+        if fins:
+            self.take_typed()
+            self.handled = fins[0]
+            self.place_handles()
 
     def addSelection(self, doc, name, sub, point):  # noqa: N802 - FreeCAD API
         """A fin picked in the 3D view gets the handles."""
@@ -1329,8 +1654,27 @@ class FinSnapTaskPanel:
         self.status.setText("")
         self.show_notes(translate("FinSnap", "Not possible"), [str(error)], ERROR_COLOR)
 
+    def check_stability(self):
+        """Check whether the part stays standing while it is printed with these
+        fins as they are built now, and say so below the button."""
+        if self.timer.isActive():
+            self.preview()
+        level, note = check_stability(self.obj.Base[0], feature.params_of(self.obj))
+        self.stability.setText(note)
+        self.stability.setStyleSheet(NOTE_STYLE % STABILITY_FRAMES[level])
+        self.stability.show()
+        self.stability_checked = True
+
+    def stability_outdated(self):
+        """After a change: a stability check shown no longer holds."""
+        if self.stability_checked:
+            self.stability_checked = False
+            self.stability.setText(translate("FinSnap", NOTE_STABILITY_OUTDATED))
+            self.stability.setStyleSheet(NOTE_STYLE % OUTDATED_COLOR)
+
     def preview(self):
         self.timer.stop()
+        self.stability_outdated()
         try:
             self.apply()
         except ValueError as error:
@@ -1350,7 +1694,11 @@ class FinSnapTaskPanel:
         self.status.setText(translate("FinSnap", "%d fin(s), %.2f mm high, %.2f mm thick")
                             % (self.obj.ResultFinCount, self.obj.ResultHeight.Value,
                                self.obj.ResultThickness.Value))
-        self.show_notes(translate("FinSnap", "Notes"), list(self.obj.Warnings), WARNING_COLOR)
+        # A new build: what a note was about may have moved.
+        self.handles.show_noted([])
+        placed = [index for index, target in enumerate(self.note_targets())
+                  if target and (target.fins or target.faces or target.marks or target.points)]
+        self.show_notes(translate("FinSnap", "Notes"), list(self.obj.Warnings), WARNING_COLOR, placed)
 
     def accept(self):
         self.timer.stop()

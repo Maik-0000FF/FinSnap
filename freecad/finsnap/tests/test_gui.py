@@ -25,7 +25,8 @@ from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left
 
 WORKBENCH = "FinSnapWorkbench"
 COMMANDS = ("FinSnap_QuickFins", "FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCounterFin",
-            "FinSnap_MeshToSolid", "FinSnap_Export3MF", "FinSnap_ExportSTEP")
+            "FinSnap_CheckStability", "FinSnap_CheckPart", "FinSnap_IslandsWhileEditing", "FinSnap_MeshToSolid",
+            "FinSnap_Export3MF", "FinSnap_ExportSTEP")
 DIALOG_ACCEPTED = 1
 # Answers to the questions commands ask, taken in order by answer_dialogs().
 ANSWERS = []
@@ -331,6 +332,31 @@ def turned_tube(doc):
     doc.recompute()
 
 
+def quick_on_pad(doc):
+    """Quick fins on a face of a Pad, then another row chosen: the fins stand
+    under the face of its Body, which follows the features added after them."""
+    from freecad.finsnap import feature
+    body = doc.addObject("PartDesign::Body", "QuickBody")
+    box = body.newObject("PartDesign::AdditiveBox", "QuickBox")
+    doc.recompute()
+    side = next(i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).y < -0.9)
+    select(box, "Face%d" % side)
+    Gui.runCommand("FinSnap_QuickFins")
+    fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is body]
+    panel = fins[0].ViewObject.Proxy.panel if fins else None
+    # A face of a box stands on any of its edges: a table of at least two ways.
+    rows = panel.stand_list.rowCount() if panel is not None and panel.stands is not None else 0
+    if rows > 1:
+        panel.stand_list.setCurrentCell(1, 0)
+    expect(rows > 1 and fins[0].Base[0] is body and fins[0].isValid() and panel.stands.current == 1,
+           "Quick fins on a face of a Pad stand the fins under the face of its Body, also after another row: %d"
+           % rows)
+    if fins:
+        fins[0].ViewObject.Proxy.panel.reject()
+    for name in (box.Name, body.Name):
+        doc.removeObject(name)
+
+
 def chosen_stands(doc, quick, facing, messages):
     """Quick fins on a face of the box `quick` lying flat: the panel lists the
     edges the part can stand on, a click on a row stands it so, it asks before
@@ -406,6 +432,36 @@ def chosen_stands(doc, quick, facing, messages):
     fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick][0]
     expect(fins.ViewObject.Proxy.panel.stands is None, "a face with its edge stands one way: no table to choose from")
     fins.ViewObject.Proxy.panel.reject()
+
+
+def saved_while_editing():
+    """Fins saved with their task panel open are saved as they looked before
+    editing, not see-through green; after, they look as while editing again."""
+    from freecad.finsnap import commands, feature
+    from freecad.finsnap.taskpanel import FinSnapTaskPanel
+    doc = App.newDocument("SavedWhileEditing")
+    cube = doc.addObject("Part::Feature", "Cube")
+    cube.Shape = tilted_cube()
+    fins = feature.create(cube, face_name(cube, lower_left_face(cube.Shape)))
+    commands.ViewProviderFinSnap(fins.ViewObject)
+    doc.recompute()
+    before = fins.ViewObject.Transparency
+    panel = FinSnapTaskPanel(fins)
+    editing = fins.ViewObject.Transparency
+    path = os.path.join(tempfile.mkdtemp(), "saved_while_editing.FCStd")
+    doc.saveAs(path)
+    after = fins.ViewObject.Transparency
+    with zipfile.ZipFile(path) as saved:
+        gui = saved.read("GuiDocument.xml").decode()
+    provider = gui[gui.index('<ViewProvider name="%s"' % fins.Name):]
+    provider = provider[:provider.index("</ViewProvider>")]
+    stored = provider[provider.index('name="Transparency"'):]
+    stored = int(stored[stored.index('value="') + len('value="'):].split('"')[0])
+    panel.release_handles()
+    App.closeDocument(doc.Name)
+    expect(editing != before and stored == before and after == editing,
+           "fins saved with the task panel open keep their look from before editing in the file, "
+           "and look as while editing after: %s, %s, %s, %s" % (before, editing, stored, after))
 
 
 def released_without_button(arrows, name):
@@ -540,7 +596,7 @@ def _layer_marked(marks):
     """Whether the Coin node `marks` holds a mark in the red a fin shows where
     it cannot stand, as see-through as islands are drawn: the first layer of an
     island."""
-    from freecad.finsnap import commands, handles
+    from freecad.finsnap import handles
     found = coin.SoSearchAction()
     found.setType(coin.SoMaterial.getClassTypeId())
     found.setInterest(coin.SoSearchAction.ALL)
@@ -548,7 +604,7 @@ def _layer_marked(marks):
     paths = found.getPaths()
     materials = [paths[i].getTail() for i in range(paths.getLength())]
     return any(rgb_close(material.diffuseColor[0].getValue(), handles.INVALID_COLOR)
-               and abs(material.transparency[0] - commands.ISLAND_TRANSPARENCY) < COLOR_TOLERANCE
+               and abs(material.transparency[0] - handles.ISLAND_TRANSPARENCY) < COLOR_TOLERANCE
                for material in materials)
 
 
@@ -595,6 +651,144 @@ def island_marks(doc):
            "an island whose first layer cannot be cut out is marked by a ball at its lowest point, over the part")
     doc.removeObject(fins.Name)
     doc.removeObject(hooked.Name)
+
+
+def stability_checked(doc, messages):
+    """Check stability and Check part from the toolbar, for a part without
+    fins and with, and from the task panel: the result is said and kept as a
+    check in the tree, one for each part and kind, which shows it while it is
+    up to date; once the part moves it is out of date, its marks gone, and a
+    double click checks again. Deleting it removes it; saved, it shows again."""
+    from freecad.finsnap import check, commands, feature, orient, paths, taskpanel
+    from freecad.finsnap import defaults as d
+    slab = Part.makeBox(30, 20, 10)
+    bottom = [e for e in slab.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
+    part = doc.addObject("Part::Feature", "Leaning")
+    part.Shape = slab
+    part.Placement = orient.tilt(slab, bottom, d.TILT_ANGLE)
+    doc.recompute()
+    del messages[:]
+    select(part)
+    Gui.runCommand("FinSnap_CheckStability")
+    stable = check.find(part, check.STABILITY)
+    # What sets the note apart from the others: its words after the height.
+    needs_fins = App.Qt.translate("FinSnap", feature.NOTE_NEEDS_FINS).rsplit("mm)", 1)[1]
+    expect(len(messages) == 1 and needs_fins in messages[0] and stable is not None and stable.Result == messages[0]
+           and not stable.OutOfDate and isinstance(stable.ViewObject.Proxy, taskpanel.ViewProviderCheck)
+           and stable.ViewObject.Proxy.root.getNumChildren() > 0,
+           "Check stability says a leaning part without fins tips and keeps it as a check in the tree, shown: %s"
+           % messages)
+    for selected in (None, doc.addObject("App::DocumentObjectGroup", "NoShape")):
+        Gui.Selection.clearSelection()
+        if selected is not None:
+            select(selected)
+        Gui.runCommand("FinSnap_CheckStability")
+        expect(messages[-1] == App.Qt.translate("FinSnap", commands.NOTE_SELECT_PART),
+               "with nothing selected, or an object without a shape, a part is asked for")
+        if selected is not None:
+            doc.removeObject(selected.Name)
+    del messages[1:]
+
+    fins = feature.create(part, face_name(part, lower_left_face_of(part.Shape)))
+    doc.recompute()
+    select(fins)
+    Gui.runCommand("FinSnap_CheckStability")
+    said = messages[-1]
+    checks = [obj for obj in doc.Objects if check.is_check(obj)]
+    expect(len(messages) == 2 and needs_fins not in said and checks == [stable] and stable.Result == said
+           and fins in stable.Fins, "checked again with fins, the same check holds what they do: %s" % said)
+    panel = taskpanel.FinSnapTaskPanel(fins)
+    panel.check_stability()
+    shown = panel.stability.text()
+    panel.preview()
+    expect(shown == said and panel.stability.text() == App.Qt.translate("FinSnap", taskpanel.NOTE_STABILITY_OUTDATED),
+           "the task panel says the same, and once the fins change, that it is out of date")
+    panel.release_handles()
+    select(part)
+    Gui.runCommand("FinSnap_CheckPart")
+    whole = check.find(part, check.PART)
+    lines = messages[-1].split("\n")
+    marks = whole.ViewObject.Proxy.root
+    expect(whole is not None and whole is not stable and len(lines) == 4 and messages[-1].endswith(said)
+           and _coloured_by_height(marks) and _layer_cut_shown(marks),
+           "Check part keeps a check of its own: overhangs, islands and stability, coloured by height: %s" % lines)
+
+    part.Placement = App.Placement(App.Vector(1, 0, 0), App.Rotation()).multiply(part.Placement)
+    doc.recompute()
+    expect(stable.OutOfDate and whole.OutOfDate and stable.ViewObject.Proxy.root.getNumChildren() == 0
+           and stable.ViewObject.Proxy.getIcon() == paths.ICON_CHECK_OUTDATED,
+           "once the part moves its checks are out of date, their marks gone, their icon a warning")
+    information = QtWidgets.QMessageBox.information
+    QtWidgets.QMessageBox.information = staticmethod(lambda *args: messages.append(args[2]))
+    proxy = stable.ViewObject.Proxy
+    draws, real_draw = [], proxy.draw
+    # Noted only where it draws marks, not where it finds the check out of date.
+    proxy.draw = lambda: draws.append(not stable.OutOfDate) or real_draw()
+    try:
+        stable.ViewObject.Proxy.doubleClicked(stable.ViewObject)
+    finally:
+        QtWidgets.QMessageBox.information = information
+        proxy.draw = real_draw
+    expect(not stable.OutOfDate and stable.ViewObject.Proxy.root.getNumChildren() > 0
+           and messages[-1] == stable.Result and sum(draws) == 1,
+           "a double click checks again, draws its marks once, and says what it found: %d" % sum(draws))
+
+    # A copy: the document itself stays as it is, and opens as a second one.
+    path = os.path.join(tempfile.mkdtemp(), "checked.FCStd")
+    doc.saveCopy(path)
+    reopened = App.openDocument(path)
+    again = [obj for obj in reopened.Objects if check.is_check(obj)]
+    kept = next((obj for obj in again if obj.Kind == check.STABILITY), None)
+    expect(len(again) == 2 and kept is not None and kept.Result == stable.Result and not kept.OutOfDate
+           and kept.ViewObject.Proxy.root.getNumChildren() > 0,
+           "saved and opened again, the checks show as they were")
+    App.closeDocument(reopened.Name)
+    App.setActiveDocument(doc.Name)
+    doc.removeObject(whole.Name)
+    expect(check.find(part, check.PART) is None and check.find(part, check.STABILITY) is stable,
+           "deleting a check removes it alone")
+    Gui.runCommand("FinSnap_IslandsWhileEditing", 0)
+    off = feature.islands_while_editing()
+    Gui.runCommand("FinSnap_IslandsWhileEditing", 1)
+    expect(not off and feature.islands_while_editing(), "Islands while editing switches the island check off and on")
+    doc.removeObject(fins.Name)
+    doc.removeObject(part.Name)
+    QtWidgets.QMessageBox.information = staticmethod(lambda *args: messages.append(args[2]))
+    try:
+        stable.ViewObject.Proxy.doubleClicked(stable.ViewObject)
+    finally:
+        QtWidgets.QMessageBox.information = information
+    expect(messages[-1] == App.Qt.translate("FinSnap", taskpanel.NOTE_PART_GONE),
+           "a double click on a check whose part is gone says so")
+    doc.removeObject(stable.Name)
+
+
+def _coloured_by_height(node):
+    """Whether `node` colours faces corner by corner, as the part by height."""
+    found = coin.SoSearchAction()
+    found.setType(coin.SoMaterialBinding.getClassTypeId())
+    found.setInterest(coin.SoSearchAction.ALL)
+    found.apply(node)
+    paths = found.getPaths()
+    return any(paths[i].getTail().value.getValue() == coin.SoMaterialBinding.PER_VERTEX
+               for i in range(paths.getLength()))
+
+
+def _layer_cut_shown(node):
+    """Whether `node` shows faces drawn over everything else, as the layer cut out."""
+    found = coin.SoSearchAction()
+    found.setType(coin.SoAnnotation.getClassTypeId())
+    found.setInterest(coin.SoSearchAction.ALL)
+    found.apply(node)
+    paths = found.getPaths()
+    faces = coin.SoIndexedFaceSet.getClassTypeId()
+    return any(paths[i].getTail().getNumChildren() and paths[i].getTail().getChild(0).getNumChildren() > 3
+               and paths[i].getTail().getChild(0).getChild(3).isOfType(faces) for i in range(paths.getLength()))
+
+
+def lower_left_face_of(shape):
+    """The face of `shape` leaning most over the bed, its normal furthest down."""
+    return min(shape.Faces, key=lambda face: face.normalAt(*face.ParameterRange[::2]).z)
 
 
 def check_typed_fields(panel, fins, place):
@@ -794,6 +988,35 @@ def main():
     expect(not noted.notes.isHidden()
            and taskpanel.WARNING_COLOR in noted.notes.styleSheet() and marked.Warnings[0] in noted.notes.text(),
            "the panel shows the warnings in a framed box of their own")
+    # A note that names a place is a link: a click selects what it is about,
+    # as Check Geometry does, and fits the view to it.
+    overhang_note = next(i for i, w in enumerate(marked.Warnings) if hanging[0] in w)
+    linked = "href='%d'" % overhang_note in noted.notes.text()
+    camera = Gui.ActiveDocument.ActiveView.getCamera()
+    noted.show_note(str(overhang_note))
+    picked = [(s.Object, n) for s in Gui.Selection.getSelectionEx() for n in s.SubElementNames]
+    expect(linked and picked == [(box, hanging[0])] and Gui.ActiveDocument.ActiveView.getCamera() != camera,
+           "a click on the overhang note selects the face and fits the view to it: %s" % picked)
+    # A note naming a fin, as one moved beside a hole names it: its faces are
+    # selected, the arrows on it.
+    fin = noted.built_fins()[-1]
+    marked.Proxy.note_targets[overhang_note] = feature.NoteTarget(fin[0], [fin[1]], [], [], [])
+    noted.show_note(str(overhang_note))
+    picked = {feature.fin_at(marked, n) for s in Gui.Selection.getSelectionEx() for n in s.SubElementNames}
+    expect(noted.handled == fin and picked == {fin}, "a click on a note naming a fin selects it, the arrows on it")
+    # Tines left out are no faces of any object: marked in the selection colour.
+    # Islands whose first layer could not be cut out: balls at their lowest points.
+    for marks, points in (([Part.makeBox(1, 1, 1)], []), ([], [App.Vector(1, 2, 3)])):
+        marked.Proxy.note_targets[overhang_note] = feature.NoteTarget(None, [], [], marks, points)
+        camera = Gui.ActiveDocument.ActiveView.getCamera()
+        noted.show_note(str(overhang_note))
+        expect(noted.handles.noted.whichChild.getValue() == coin.SO_SWITCH_ALL and not Gui.Selection.hasSelection()
+               and Gui.ActiveDocument.ActiveView.getCamera() != camera,
+               "a click on a note naming what cannot be selected marks it and fits the view to it: %s, %s"
+               % (len(marks), len(points)))
+    noted.show_note("99")
+    expect(noted.handles.noted.whichChild.getValue() == coin.SO_SWITCH_NONE and not Gui.Selection.hasSelection(),
+           "a click without a place to show clears the selection and the marks")
     noted.reject()
     marks = marked.ViewObject.Proxy.marks
     expect(marks.getNumChildren() == 1 and marks.whichChild.getValue() == coin.SO_SWITCH_ALL,
@@ -957,8 +1180,11 @@ def main():
         quick.Placement = App.Placement()
         doc.recompute()
     chosen_stands(doc, quick, facing, messages)
+    quick_on_pad(doc)
     island_marks(doc)
     value_colors()
+    stability_checked(doc, messages)
+    saved_while_editing()
     # Fins of the part laid flat keep their mark and shape over a Quick fins
     # cancelled: standing the part rebuilt them, Cancel gives them back.
     select(quick, "Edge%d" % on_bed)

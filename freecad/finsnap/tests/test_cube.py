@@ -18,6 +18,7 @@ from freecad.finsnap import defaults as d
 from freecad.finsnap import geometry
 from freecad.finsnap import orient
 from freecad.finsnap import overhang
+from freecad.finsnap import stability
 from freecad.finsnap.params import FinParams, ParamError
 
 import FreeCAD as App
@@ -45,6 +46,12 @@ ISLAND_BEAM = 5.0      # thickness of its beam, and of the cap of a mushroom
 ISLAND_LOW = 10.0      # height of the bottom of what hangs from it, well above the bed
 ISLAND_STEM = 3.0      # radius of the stem of a mushroom, and of a hole through a box
 ISLAND_CAP = 10.0      # radius of the cap of a mushroom
+STABLE_TOLERANCE = 0.05  # how far a plumb line or a margin may be off what is reckoned, in mm
+STABLE_BASE = 10.0     # side of a column on the bed, and of the arm out of its top
+STABLE_HEIGHT = 20.0   # height of that column
+STABLE_REACH = 30.0    # how far its arm reaches out, carrying the centre of mass past the column
+STABLE_BRIM = 20.0     # a brim wide enough to hold a slab standing on its edge
+FILLET_RADIUS = 3.0    # a fillet along the edge a part rests on, its leaning face starting above it
 WIDE_FIN = 3.0         # a fin thick enough for a hole under its flank, clear of its tine, in mm
 FLANK_HOLE_RADIUS = 0.5  # that hole, across the side of the fin, in mm
 GROOVE_WIDTH = 2.0
@@ -542,6 +549,27 @@ def sunk_around(cube, face, low, high):
     return sunk, stretch
 
 
+def check_restart_above_fillet():
+    """A face that starts above a fillet the part rests on: its first tine on
+    the first layer from the lower edge of the face up, right above the
+    fillet, and resting on the face."""
+    p = FinParams()
+    box = Part.makeBox(30, 20, 20)
+    bottom = [e for e in box.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE]
+    filleted = box.makeFillet(FILLET_RADIUS, bottom)
+    fillet = [i for i, f in enumerate(filleted.Faces) if f.findPlane() is None][0]
+    plan = geometry.quick_plan(filleted, [], [(filleted.Faces[fillet], fillet)], p, d.TILT_ANGLE)
+    stood = moved(filleted, plan.change)
+    face = stood.Faces[plan.number]
+    frame = geometry.frame_of(stood, face)
+    floor = frame.face_bottom_z - frame.bed_z
+    built = geometry.build(stood, face, p)
+    expect(floor > d.TOLERANCE and abs(built.tine_z[0] - geometry._snap_up(p, floor)) < d.TOLERANCE
+           and built.tine_z[0] < floor + p.layer_height and not built.dropped,
+           "above a fillet the first tine starts on the first layer from the face up: %.2f over %.2f"
+           % (built.tine_z[0], floor))
+
+
 def check_restart_planned(cube, face):
     """With the restart each fin is planned on its own grid from the start:
     a short face high above the bed that the one grid misses gets tines, and
@@ -933,6 +961,55 @@ def check_printable_plans():
                "one way is taken unchecked, its islands None: there is no choice")
     finally:
         overhang.islands = real
+
+
+def check_stability():
+    """Whether a part stays standing while it is printed, layer by layer."""
+    first, layer = d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT
+    box = Part.makeBox(30, 20, 20)
+    flat = stability.check(box, [], first, layer, {})
+    expect(flat is not None and not flat.tips and abs(flat.margin - 10) < STABLE_TOLERANCE
+           and abs(flat.foot.x - 15) < STABLE_TOLERANCE and abs(flat.foot.y - 10) < STABLE_TOLERANCE,
+           "a box lying on the bed stands, its plumb line in the middle: %s" % (flat,))
+
+    # Flatter than deep, so standing on an edge at 45 degrees it leans to one side.
+    slab = Part.makeBox(30, 20, 10)
+    bottom = [e for e in slab.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
+    standing = moved(slab, orient.tilt(slab, bottom, d.TILT_ANGLE))
+    alone = stability.check(standing, [], first, layer, {})
+    expect(alone is not None and alone.tips and alone.height < standing.BoundBox.ZLength,
+           "a slab standing on an edge without fins tips while it is printed: layer %s" % (alone and alone.layer))
+
+    braced = stability.check(standing, [], first, layer, {}, STABLE_BRIM)
+    expect(braced is not None and not braced.tips and abs(braced.margin - alone.profile[-1][1] - STABLE_BRIM) < 1
+           and len(braced.footprint) > len(alone.footprint),
+           "a wide brim holds the slab: its footprint grown by the brim, the margin by its width")
+    reach = standing.BoundBox
+    beside = Part.makeBox(reach.XLength, reach.YLength, first, V(reach.XMin, reach.YMin, 0))
+    held = stability.check(standing, [(beside.translated(V(0, 0, 0)), 0.0)], first, layer, {})
+    late = stability.check(standing, [(beside, reach.ZMax)], first, layer, {})
+    expect(held is not None and not held.tips and late is not None and late.tips and late.layer == alone.layer,
+           "a support under the whole part from the bed up holds it; one holding only from the top, too late")
+
+    column = Part.makeBox(STABLE_BASE, STABLE_BASE, STABLE_HEIGHT)
+    arm = Part.makeBox(STABLE_REACH, STABLE_BASE, STABLE_BASE, V(0, 0, STABLE_HEIGHT))
+    leaning = column.fuse(arm).removeSplitter()
+    tipped = stability.check(leaning, [], first, layer, {})
+    expect(tipped is not None and tipped.tips and tipped.height > STABLE_HEIGHT and tipped.outward.x > 0.9,
+           "a part growing out over its edge high up tips at a layer of the arm, outward along it: %s"
+           % ((tipped and (tipped.layer, round(tipped.height, 2), tipped.outward)),))
+    centres = {}
+    stability.check(leaning, [], first, layer, centres)
+    again = stability.check(leaning, [], first, layer, centres)
+    expect(again == tipped, "the centres kept for a part are taken again, the result the same")
+    heights = [height for height, _ in tipped.profile]
+    expect(heights == sorted(heights) and tipped.profile[-1][1] < 0 < tipped.profile[0][1],
+           "the profile runs from the bed up, from standing to tipping")
+    cut = stability.section(leaning, tipped.height)
+    expect(cut is not None and abs(cut.BoundBox.ZMin - tipped.height) < d.TOLERANCE
+           and cut.Area > STABLE_BASE * STABLE_BASE,
+           "the critical layer is cut out of the part at its height, the arm in it")
+    expect(stability.check(Part.Shape(), [], first, layer, {}) is None, "an empty part has no result")
 
 
 def round_side_of(shape, radius=ROD_RADIUS):
@@ -1438,6 +1515,7 @@ def main():
     check_tine_clearance(cube, face)
     check_shortened(cube, face)
     check_restart(cube, face)
+    check_restart_above_fillet()
     check_restart_planned(cube, face)
     check_restart_narrow(cube, face)
     check_restart_flank_hole(cube, face)
@@ -1448,6 +1526,7 @@ def main():
     check_quick_plans()
     check_islands()
     check_printable_plans()
+    check_stability()
     check_round_side()
     check_split_side()
     check_left_out(cube, face)
