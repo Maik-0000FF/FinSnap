@@ -875,7 +875,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../handles.py" line="348"/>
+        <location filename="../handles.py" line="350"/>
         <source>No 3D view of %s is open to edit the fins in.</source>
         <translation type="unfinished"></translation>
     </message>

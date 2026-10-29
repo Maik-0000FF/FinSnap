@@ -17,6 +17,10 @@ All notable changes to FinSnap are listed here. The format follows
 - Fins check the part for islands, where it would start printing in the air with no layer of it below, as a slicer finds them; fins carry no island. A warning names them, and the first layer that would print in the air is shown see-through red. Quick fins takes a way to stand the part without islands where there is one (#75)
 - While an arrow on a fin is dragged, its value, the place on the face, the angle on a round side or the height, stands past its tip in the 3D view, as the task panel shows it (#76)
 
+### Fixed
+
+- An arrow, as the arc under the side of a cylinder or tube, that went on following the mouse after its button was let go, is let go with it, back in its colour at rest (#87)
+
 ## [0.7.0] - 2026-10-28
 
 ### Added

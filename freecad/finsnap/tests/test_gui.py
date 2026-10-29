@@ -276,6 +276,7 @@ def turned_tube(doc):
     panel.finish_drag(handles.ALONG, arc._mm(handles.ALONG))
     expect(abs(turned() - 2 * TUBE_ANGLE) < d.TOLERANCE and abs(angle() - 2 * TUBE_ANGLE) < d.TOLERANCE,
            "dragging the arc turns the tube further, as near as Coin reads its turn")
+    released_without_button(arc, "a tube")
     panel.fin_fields[handles.ALONG].setValue(geometry.FULL_CIRCLE - TUBE_ANGLE)
     panel.field_entered(handles.ALONG)
     expect(abs(turned() - TUBE_ANGLE) < d.TOLERANCE
@@ -405,6 +406,42 @@ def chosen_stands(doc, quick, facing, messages):
     fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick][0]
     expect(fins.ViewObject.Proxy.panel.stands is None, "a face with its edge stands one way: no table to choose from")
     fins.ViewObject.Proxy.panel.reject()
+
+
+def released_without_button(arrows, name):
+    """Every arrow of `arrows`, a Handles, that Coin left active after its
+    release, moved with no mouse button down, is let go at once, as the
+    release would: made inactive, so it follows the mouse no more, its held
+    look in its colour at rest, until it is grabbed again. `name` says which
+    arrows these are."""
+    from freecad.finsnap import handles
+    # Grabbing and letting go are noted only: the panel is not drawn into it.
+    done, real_start, real_done = [], arrows.on_start, arrows.on_done
+    arrows.on_start = lambda kind: None
+    arrows.on_done = lambda kind, mm: done.append(kind)
+    try:
+        for kind in handles.KINDS:
+            turning = kind == handles.ALONG and arrows.turning()
+            arrow = arrows.turner if turning else arrows.draggers[kind]
+            look = arrows.looks[(handles.TURNING, handles.TURN_PARTS[1]) if turning
+                                else (kind, handles.TRANSLATE_PARTS[1])]
+            del done[:]
+            arrows._held(kind, None)
+            # As Coin left it after a lost release.
+            arrow.isActive.setValue(True)
+            # No button is down while the tests run: the move is one without it.
+            arrows._dragged(kind, arrow)
+            at_rest = coin.SbColor(look.getChild(0).rgb[0])
+            arrows._held(kind, None)
+            again = coin.SbColor(look.getChild(0).rgb[0])
+            arrows.held = False
+            expect(not arrow.isActive.getValue() and done == [kind]
+                   and rgb_close(at_rest.getValue(), arrows._rest_color(kind))
+                   and rgb_close(again.getValue(), handles.HELD_COLOR),
+                   "%s, %s: moved with no button down, let go at once, inactive, in its colour at rest until "
+                   "grabbed again" % (name, "arc" if turning else kind))
+    finally:
+        arrows.on_start, arrows.on_done = real_start, real_done
 
 
 def value_colors():
@@ -1225,6 +1262,7 @@ def main():
     expect(_value_shown(moving.handles) is None, "let go, the value at the arrow goes")
     expect(all(moving.handles.draggers[kind] is held[kind] for kind in held),
            "the arrows stay the same after a move; Coin may still hold the one let go")
+    released_without_button(moving.handles, "a box")
     expect(all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(handles.axis_color("z"), AXIS_Z_RGB)),
            "the arrow up has the colour of the z axis: %s" % (handles.axis_color("z"),))
     result = lined.Proxy.results[feature.MAIN]
