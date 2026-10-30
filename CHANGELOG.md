@@ -11,6 +11,23 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-30
+
+### Added
+
+- Check bridges, in the toolbar: faces spanning a gap between supports on the layer below, at two or more sides, measured as a slicer bridges them, across the gap in the direction where most lines rest on both ends; rated by the check limits, critical over 2 mm, not printable over 10 mm (Strict: 2 mm), kept as a bridge check in the tree and shown on the underside of the part; fins warn of them and Check part has a line for them (#102)
+- The table of ways to stand a part in Quick fins shows the overhangs and the longest bridge of each way, shaded by level, and leaves out ways with a face or a bridge that does not print while one without is found (#111)
+- Check limits, a FinSnap page in Edit > Preferences: a strictness, normal (built in, allows for what common printers manage and for the grip of the first layer) or strict (the geometry alone: what would need support is not printable, a tipping angle of 15 degrees), fills the overhang angles from the bed below which a face is critical or too flat to print, the least overhang area and the tipping angle, which can also be set by hand; saved, they rebuild the fins of every open document and mark every check out of date; also opened by Check limits... in the FinSnap menu (#101)
+
+### Changed
+
+- The badges of the icons are larger, so what is on them reads better; the picture on the export icons sits higher, clear of the name of the format
+- Check stability rates by the tipping angle, how far the part would have to lean before it tips, atan(margin / height of its centre of mass), instead of a fixed margin in mm: 5 degrees by default, 15 when strict; the note says the angle, the margin and the acceleration from the side the part withstands, and the colours by height follow the angle (#104)
+- Texts and tooltips name stability, overhangs and bridges by the terms of physics and slicers: stands, at risk of tipping, tips over, tipping margin, bridge span; fixed the Cura angle (90 degrees minus the value from the bed); Foot reach and Foot height in the panel; in German Raupe, Neigungswinkel and Abstand Zinke zum Teil (#103)
+- A face a bridge covers whole is no longer reported as an overhang; one reaching past the bridge still is (#102)
+- Islands while editing is Islands and bridges while editing: off, the bridges are left to Check part as well (#102); switched on, the fins of every open document are checked at once and an open table of Quick fins is rated in place (#113)
+- Overhangs are rated in two levels: critical below 45 degrees from the bed, marked yellow, and too flat to print below 30 degrees, marked red; fins, Check part and its check in the tree say and show them apart (#101)
+
 ## [0.9.0] - 2026-10-29
 
 ### Added
@@ -219,7 +236,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.10.0
 [0.9.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.9.0
 [0.8.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.7.0

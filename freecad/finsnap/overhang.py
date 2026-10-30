@@ -5,24 +5,31 @@
 and islands, where it would start printing in the air, see islands().
 
 A face overhangs where its outward normal points down. The flatter it lies,
-the less the layer below carries the next one; below OVERHANG_ANGLE against
-the bed it needs support. Faces carried by fins, faces resting on the bed and
-tiny faces do not count. A planar face has one normal; a curved one is sampled on a grid,
-and it overhangs if any sample above the bed does.
+the less the layer below carries the next one; flatter than the limit angle
+from the bed it needs support. rated() rates by the two limits of the
+preferences (limits.py): critical, or not printable. Faces carried by fins,
+faces resting on the bed and faces smaller than the least area do not count.
+A planar face has one normal; a curved one is sampled on a grid, and it lies
+as flat as its flattest sample above the bed.
 
-INPUTS this has to withstand (overhangs()):
+INPUTS this has to withstand (rated()):
   box lying on the bed                  ->  []
-  face at exactly the limit angle       ->  [] (not flatter than the limit)
-  face flatter than the limit, above
-    the bed                             ->  its number
+  face at exactly the critical limit    ->  [] (not flatter than the limit)
   same face listed as supported         ->  []
   face resting on the bed (normal down) ->  [] (the bed carries it)
-  face smaller than OVERHANG_MIN_AREA   ->  [] (corner facet of a chamfer)
+  face smaller than the least area      ->  [] (corner facet of a chamfer)
   cylinder upright                      ->  []
   cylinder lying on its side            ->  the curved face
   pyramid on its base                   ->  []
   pyramid on its apex, flat sides       ->  the side faces
   roof under a T-shaped arm             ->  the roof faces
+  face steeper than the critical limit  ->  not listed
+  face between the two limits           ->  limits.CRITICAL
+  face flatter than the unprintable
+    limit                               ->  limits.UNPRINTABLE
+  face at exactly a limit               ->  the level above it (not flatter)
+  both limits equal                     ->  UNPRINTABLE or nothing, no CRITICAL
+  unprintable limit 0                   ->  CRITICAL at most
 """
 
 import math
@@ -32,6 +39,7 @@ import FreeCAD as App
 import Part
 
 from . import defaults as d
+from . import limits
 from .shapes import bounds, middle_normal
 
 # Turns the wires of a section into faces, holes inside their outlines.
@@ -59,20 +67,42 @@ def _normals_above(face, bed_z):
     return normals
 
 
-def overhangs(shape, supported=(), limit_deg=d.OVERHANG_ANGLE):
-    """Numbers (1-based) of the faces of `shape` lying flatter than limit_deg over the bed."""
+def steepest_down(shape, supported, min_area):
+    """(number, how steeply its normal points down) of each face of `shape`
+    whose normal points down somewhere above the bed, as the cosine of the
+    angle of the face from the bed at its flattest sample: 1 for a face
+    lying flat over the bed, 0 for a vertical one. Faces resting on the bed,
+    carried by fins (`supported`) or smaller than `min_area` (mm2) are left out."""
     bed_z = bounds(shape).ZMin
-    # A face lies flatter than the limit when its normal points down more
-    # steeply than the normal of a face at the limit.
-    steepest = math.cos(math.radians(limit_deg))
     found = []
     for number, face in enumerate(shape.Faces, 1):
-        if bounds(face).ZMax <= bed_z + d.TOLERANCE or face.Area < d.OVERHANG_MIN_AREA:
+        if bounds(face).ZMax <= bed_z + d.TOLERANCE or face.Area < min_area:
             continue
         if any(face.isSame(carried) for carried in supported):
             continue
-        if any(-n.z > steepest + d.TOLERANCE for n in _normals_above(face, bed_z)):
-            found.append(number)
+        down = max((-n.z for n in _normals_above(face, bed_z)), default=0.0)
+        if down > 0:
+            found.append((number, down))
+    return found
+
+
+def flatter(down, limit_deg):
+    """Whether a face whose normal points down `down` steeply (see
+    steepest_down()) lies flatter than `limit_deg` over the bed."""
+    return down > math.cos(math.radians(limit_deg)) + d.TOLERANCE
+
+
+def rated(shape, supported, rating):
+    """(number, level), numbers from 1, of the faces of `shape` lying flatter over the bed
+    than `rating`, a limits.Limits, allows: limits.UNPRINTABLE flatter than
+    its overhang_unprintable, limits.CRITICAL flatter than its
+    overhang_critical only."""
+    found = []
+    for number, down in steepest_down(shape, supported, rating.overhang_min_area):
+        if flatter(down, rating.overhang_unprintable):
+            found.append((number, limits.UNPRINTABLE))
+        elif flatter(down, rating.overhang_critical):
+            found.append((number, limits.CRITICAL))
     return found
 
 
@@ -90,7 +120,7 @@ def islands(part, first_layer, layer):
     nothing there starts in the air, at its lowest point. A section beside
     another of its layer, on a foundation of its own, is no island, joined to
     it in that layer or not. Fins are no foundation: they only keep the part
-    from falling over, and a layer printed in the air does not stick to them.
+    from tipping over, and a layer printed in the air does not stick to them.
 
     Only the layers holding a lowest point of the part are cut, a point of
     its mesh with no neighbour lower: an island can only start at one. A
@@ -121,15 +151,15 @@ def islands(part, first_layer, layer):
     resting = {}
     found = []
     for point in _lowest_points(part):
-        number = _layer_holding(point.z - bed, first_layer, layer)
+        number = layer_holding(point.z - bed, first_layer, layer)
         if number == 0:
             continue
         for key in (number, number - 1):
             if key not in cut:
-                cut[key] = _sections(part, bed + _layer_middle(key, first_layer, layer), layer)
+                cut[key] = sections(part, bed + layer_middle(key, first_layer, layer), layer)
         if cut[number] is None or cut[number - 1] is None:
             continue
-        # The sections lie in the plane of the bed, see _sections().
+        # The sections lie in the plane of the bed, see sections().
         middle = Part.Vertex(App.Vector(point.x, point.y, 0))
         for index, (section, reach, outline) in enumerate(cut[number]):
             key = (number, index)
@@ -144,7 +174,7 @@ def islands(part, first_layer, layer):
             except Part.OCCError:
                 resting[key] = True
             if not resting[key]:
-                top = bed + _layer_middle(number, first_layer, layer) + layer / 2
+                top = bed + layer_middle(number, first_layer, layer) + layer / 2
                 found.append(Island(App.Vector(point), _first_layer(part, outline, point.z, top)))
     return found
 
@@ -161,12 +191,12 @@ def _first_layer(part, outline, bottom, top):
     return piece if piece.Volume > 0 else None
 
 
-def _layer_middle(number, first_layer, layer):
+def layer_middle(number, first_layer, layer):
     """Height of the middle of layer `number` (from 0, the first) over the bed."""
     return first_layer / 2 if number == 0 else first_layer + (number - 0.5) * layer
 
 
-def _layer_holding(height, first_layer, layer):
+def layer_holding(height, first_layer, layer):
     """The layer (from 0) a point `height` over the bed is printed in first:
     the lowest one whose middle lies no lower than the point."""
     if height <= first_layer / 2 + d.TOLERANCE:
@@ -189,7 +219,7 @@ def _lowest_points(shape):
             if all(points[other].z >= point.z for other in neighbours[corner])]
 
 
-def _sections(shape, z, reach):
+def sections(shape, z, reach):
     """Where the plane at height `z` cuts `shape`, one slab SECTION_SLAB thick
     for each face of the cut, around the plane of the bed, z 0, so sections of
     different layers can be overlapped, each with its bounding box grown by
@@ -213,7 +243,7 @@ def _sections(shape, z, reach):
 
 
 def _overlap(first, second):
-    """Whether two sections, slabs from _sections(), overlap, more than touch."""
+    """Whether two sections, slabs from sections(), overlap, more than touch."""
     if not first.BoundBox.intersect(second.BoundBox):
         return False
     return first.common(second).Volume > d.ISLAND_MIN_OVERLAP * SECTION_SLAB

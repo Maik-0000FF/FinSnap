@@ -8,14 +8,18 @@ Run in FreeCAD, with this checkout installed as an addon (see CONTRIBUTING.md):
 """
 
 import math
+import os
 import sys
 
 import Part
 
 from freecad.finsnap.tests.support import (HALF_TURN, RECESS_RADIUS, expect, grooved, lower_left_face, run,
                                            split_cylinder, tilted_cube)
+from freecad.finsnap import analysis
 from freecad.finsnap import defaults as d
+from freecad.finsnap.bridge import bridges as find_bridges
 from freecad.finsnap import geometry
+from freecad.finsnap import limits
 from freecad.finsnap import orient
 from freecad.finsnap import overhang
 from freecad.finsnap import stability
@@ -28,6 +32,23 @@ PYRAMID_BASE = 20.0
 PYRAMID_STEEP = 20.0   # sides at 63 degrees against the base
 PYRAMID_FLAT = 5.0     # sides at 27 degrees, flatter than the overhang limit
 PYRAMID_TILT = 30.0    # flatter than the overhang limit
+# Sides of pyramids standing on their apex for the levels of overhangs, in
+# degrees from the bed: steeper than the critical limit, between the two
+# limits, and flatter than the unprintable one.
+SIDE_STEEP, SIDE_CRITICAL, SIDE_UNPRINTABLE = 60.0, 40.0, 20.0
+# A slab on two piers for bridges: the piers this wide, deep and high, the
+# slab this thick; gaps between the piers spanned short, critically and too far
+# by the built-in limits, and a slab this much deeper than wide across the gap.
+PIER = (5.0, 10.0, 10.0)
+SLAB = 2.0
+GAP_SHORT, GAP_CRITICAL, GAP_FAR = 1.5, 8.0, 15.0
+DEEP_SLAB = 40.0
+# A box as wide as the one lying flat, four times as high, and how closely its
+# tipping angle is to atan(margin / height of its centre of mass) (degrees).
+TALL_BOX_HEIGHT = 80.0
+ANGLE_TOLERANCE = 0.5
+# How closely a span is measured: a bead is laid across in lines one bead apart.
+SPAN_TOLERANCE = 0.1
 ODD_TILT = 30.0        # any angle but 45, at which a right-angled edge needs its face
 # First tines half a layer (0.1 mm) off the grid of 0.2 mm layers.
 HALF_LAYER_STARTS = (1.1, 1.3, 1.5, 1.7)
@@ -288,6 +309,162 @@ def pyramid(height, apex_down=False):
     return shape
 
 
+def overhanging(shape, supported=()):
+    """Numbers of the faces of `shape` overhanging by the built-in limits, critical or not printable."""
+    return [number for number, _ in overhang.rated(shape, supported, limits.Limits())]
+
+
+def apex_down(side_deg):
+    """A pyramid standing on its apex, its sides `side_deg` from the bed."""
+    return pyramid(PYRAMID_BASE / 2 * math.tan(math.radians(side_deg)), apex_down=True)
+
+
+def check_limits():
+    """The limits of the checks: validated, saved and read back; the levels
+    of overhanging faces they rate."""
+    limits.Limits().validate()
+    limits.Limits(overhang_critical=40.0, overhang_unprintable=40.0).validate()
+    limits.Limits(overhang_unprintable=0.0, overhang_min_area=0.0, tipping_angle=0.0).validate()
+    limits.Limits(bridge_critical=0.0, bridge_unprintable=0.0).validate()
+    rating = limits.Limits()
+    expect([rating.bridge_level(span) for span in (rating.bridge_critical, rating.bridge_critical + 1,
+                                                    rating.bridge_unprintable, rating.bridge_unprintable + 1)]
+           == [limits.GOOD, limits.CRITICAL, limits.CRITICAL, limits.UNPRINTABLE],
+           "a span at a limit is the level below it, past it the level above")
+    bad = (dict(overhang_critical=-1.0), dict(overhang_critical=91.0), dict(overhang_unprintable=50.0),
+           dict(tipping_angle=-0.1), dict(tipping_angle=91.0), dict(overhang_min_area=-1.0),
+           dict(tipping_angle=float("nan")),
+           dict(overhang_critical=float("inf")), dict(bridge_critical=-1.0),
+           dict(bridge_critical=12.0, bridge_unprintable=10.0))
+    for values in bad:
+        try:
+            limits.Limits(**values).validate()
+            expect(False, "limits %s are refused" % values)
+        except limits.LimitError:
+            expect(True, "limits %s are refused" % values)
+
+    limits.reset()
+    expect(limits.current() == limits.Limits(), "nothing saved: the built-in limits")
+    group = App.ParamGet("%s/%s" % (limits.PREFERENCES, limits.LIMITS_GROUP))
+    group.SetString(limits.STRICTNESS_KEY, limits.CUSTOM)
+    group.SetFloat("tipping_angle", 3.0)
+    expect(limits.current() == limits.Limits(tipping_angle=3.0), "one custom limit saved: that, the rest built-in")
+    group.SetFloat("overhang_unprintable", 80.0)
+    expect(limits.current() == limits.Limits(), "custom limits that do not fit together: the built-in ones")
+    group.SetString(limits.STRICTNESS_KEY, limits.STRICT)
+    expect(limits.current() == limits.STRICTNESS[limits.STRICT], "strict saved: its limits, the values beside ignored")
+    group.SetString(limits.STRICTNESS_KEY, "lenient")
+    expect(limits.current() == limits.Limits(), "a strictness no longer known: the built-in limits")
+    limits.save(limits.STRICTNESS[limits.STRICT])
+    expect(group.GetString(limits.STRICTNESS_KEY) == limits.STRICT and not group.GetFloats(),
+           "the limits of a strictness are saved by its name alone, so they follow the version")
+    own = limits.Limits(overhang_critical=50.0, overhang_unprintable=35.0, overhang_min_area=2.0, tipping_angle=1.0)
+    limits.save(own)
+    expect(limits.current() == own and group.GetString(limits.STRICTNESS_KEY) == limits.CUSTOM,
+           "custom limits are saved as values and read back")
+    try:
+        limits.save(limits.Limits(overhang_unprintable=60.0))
+        expect(False, "invalid limits are not saved")
+    except limits.LimitError:
+        expect(limits.current() == own, "invalid limits are not saved, the saved ones stay")
+    limits.reset()
+    expect(limits.current() == limits.Limits(), "reset: the built-in limits")
+    for name, preset in limits.STRICTNESS.items():
+        preset.validate()
+        expect(limits.strictness_of(preset) == name, "the limits of %s are that strictness" % name)
+    expect(limits.strictness_of(limits.Limits()) == limits.NORMAL, "the built-in limits are normal")
+    expect(limits.strictness_of(own) == limits.CUSTOM, "limits set otherwise are custom")
+    strict = limits.STRICTNESS[limits.STRICT]
+    expect(strict.overhang_unprintable == strict.overhang_critical
+           and strict.tipping_angle > limits.Limits().tipping_angle,
+           "strict leaves no critical overhangs and asks a larger tipping angle")
+
+    rating = limits.Limits()
+    expect(overhang.rated(apex_down(SIDE_STEEP), (), rating) == [],
+           "sides steeper than the critical limit are not rated")
+    for side, level in ((SIDE_CRITICAL, limits.CRITICAL), (SIDE_UNPRINTABLE, limits.UNPRINTABLE),
+                        (rating.overhang_unprintable, limits.CRITICAL)):
+        found = overhang.rated(apex_down(side), (), rating)
+        expect(len(found) == 4 and all(rated == level for _, rated in found),
+               "sides %.0f degrees from the bed are %s: %s" % (side, level, found))
+    expect(overhang.rated(apex_down(rating.overhang_critical), (), rating) == [],
+           "sides at exactly the critical limit are not rated")
+    equal = limits.Limits(overhang_critical=SIDE_STEEP, overhang_unprintable=SIDE_STEEP)
+    found = overhang.rated(apex_down(SIDE_CRITICAL), (), equal)
+    expect(found and all(level == limits.UNPRINTABLE for _, level in found),
+           "both limits equal: not printable, never critical")
+    nothing_red = limits.Limits(overhang_unprintable=0.0)
+    found = overhang.rated(apex_down(SIDE_UNPRINTABLE), (), nothing_red)
+    expect(found and all(level == limits.CRITICAL for _, level in found),
+           "an unprintable limit of 0 degrees: critical at most")
+
+
+def piers(gap, depth=PIER[1], slab_depth=None):
+    """A slab on two piers `gap` apart, `depth` deep, the slab across the gap,
+    as deep as the piers or `slab_depth`, reaching past them at the back."""
+    width, _, height = PIER
+    first = Part.makeBox(width, depth, height)
+    second = Part.makeBox(width, depth, height, V(width + gap, 0, 0))
+    slab = Part.makeBox(2 * width + gap, slab_depth or depth, SLAB, V(0, 0, height))
+    return first.fuse([second, slab]).removeSplitter()
+
+
+def check_bridges():
+    """Bridges: where a layer spans a gap between supports, how far, rated."""
+    first, layer, bead = d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, d.BEAD_WIDTH
+    rating = limits.Limits()
+
+    def found(shape, rate=rating, supported=()):
+        return find_bridges(shape, first, layer, bead, rate, supported)
+
+    expect(found(Part.makeBox(30, 10, 10)) == [], "a box lying on the bed has no bridge")
+    for gap, level in ((GAP_SHORT, limits.GOOD), (GAP_CRITICAL, limits.CRITICAL), (GAP_FAR, limits.UNPRINTABLE)):
+        spans = found(piers(gap))
+        expect(len(spans) == 1 and abs(spans[0].span - gap) < SPAN_TOLERANCE and spans[0].level == level,
+               "a slab across a %.1f mm gap between piers spans it, %s: %s"
+               % (gap, level, [(s.span, s.level) for s in spans]))
+    deep = found(piers(GAP_CRITICAL, DEEP_SLAB))
+    expect(len(deep) == 1 and abs(deep[0].span - GAP_CRITICAL) < SPAN_TOLERANCE,
+           "a slab deeper than the gap spans across the gap, not along it: %s" % [s.span for s in deep])
+    slab = piers(GAP_CRITICAL)
+    expect(found(slab)[0].covered == found(slab)[0].faces, "the bridge covers the underside of the slab whole")
+    reaching = found(piers(GAP_CRITICAL, slab_depth=DEEP_SLAB))
+    expect(len(reaching) == 1 and reaching[0].faces and not reaching[0].covered,
+           "a slab reaching past the piers at the back: the bridge does not cover its underside whole")
+    under = slab.Faces[found(slab)[0].faces[0] - 1]
+    expect(abs(under.BoundBox.ZMin - PIER[2]) < d.TOLERANCE and under.BoundBox.ZMax - under.BoundBox.ZMin < d.TOLERANCE,
+           "the bridge lies under the underside of the slab")
+    expect(found(slab, supported=(under,)) == [], "a face carried by fins spans nothing")
+    strict = limits.STRICTNESS[limits.STRICT]
+    expect(found(slab, strict)[0].level == limits.UNPRINTABLE, "strict: a critical span is not printable")
+    width, depth, height = PIER
+    arm = Part.makeBox(width, depth, height + SLAB).fuse(
+        Part.makeBox(width + GAP_CRITICAL, depth, SLAB, V(0, 0, height))).removeSplitter()
+    expect(found(arm) == [], "an arm reaching out at one side is no bridge, it overhangs")
+    floating = Part.makeBox(width, width, width, V(0, 0, height))
+    expect(found(floating) == [], "a block floating above the bed is no bridge, it is an island")
+    expect(found(Part.Shape()) == [], "an empty shape has no bridge said, nothing raised")
+
+
+# Calls into the kernel that crash FreeCAD on some shapes, in a way no
+# exception catches: the 2D offset dies in its medial axis on some outlines.
+FRAGILE_CALLS = ("makeOffset2D",)
+
+
+def check_no_fragile_calls():
+    """No module of FinSnap calls into the kernel where it can crash FreeCAD."""
+    from freecad.finsnap.paths import PACKAGE
+    found = []
+    for folder, folders, files in os.walk(PACKAGE):
+        folders[:] = [name for name in folders if name != "tests"]
+        for name in files:
+            if name.endswith(".py"):
+                with open(os.path.join(folder, name), encoding="utf-8") as handle:
+                    text = handle.read()
+                found += ["%s: %s" % (name, call) for call in FRAGILE_CALLS if call in text]
+    expect(not found, "no module calls into the kernel where it can crash FreeCAD: %s" % found)
+
+
 def check_frustum():
     """A truncated pyramid stood on a base edge: fins under every face that leans
     over the bed, a clear refusal for the side faces that lean upward."""
@@ -312,7 +489,7 @@ def check_frustum():
         try:
             geometry.build(shape, f, FinParams())
         except geometry.FinError as error:
-            expect("does not lean" in str(error) or "flat" in str(error),
+            expect(geometry.NOT_OVERHANGING in str(error) or geometry.HORIZONTAL_FACE in str(error),
                    "a face leaning upward is refused: %s" % error)
         else:
             raise AssertionError("fins were built under a face leaning upward")
@@ -705,7 +882,7 @@ def check_split_face():
     expect(max(result.tine_z) > upper.BoundBox.ZMin and any("recess" in w for w in result.warnings),
            "the fin reaches over the groove to the upper face, the tines over it are named: %s" % result.warnings)
     carried = geometry.support_of(standing, lower).Faces
-    hanging = overhang.overhangs(standing, supported=carried)
+    hanging = overhanging(standing, supported=carried)
     expect(not any(standing.Faces[n - 1].isSame(upper) for n in hanging),
            "the face above the groove counts as supported")
 
@@ -948,17 +1125,27 @@ def check_printable_plans():
                  "every way with islands: the fewest first, the order given among as many")):
             left = list(counts)
             overhang.islands = lambda *args, **kwargs: [V()] * left.pop(0)
-            rated = geometry.printable_plans(box, plans, p)
-            expect([plans.index(plan) for plan, _ in rated] == wanted
-                   and all(len(points) == counts[plans.index(plan)] for plan, points in rated), what)
+            rated = analysis.printable_plans(box, plans, p)
+            expect([plans.index(entry.plan) for entry in rated] == wanted
+                   and all(len(entry.islands) == counts[plans.index(entry.plan)] for entry in rated), what)
         calls = []
         overhang.islands = lambda *args, **kwargs: calls.append(args) or [V()]
-        rated = geometry.printable_plans(box, alike, p)
-        expect(len(alike) > 1 and len(calls) == 1 and all(len(points) == 1 for _, points in rated),
-               "ways standing the part alike, the fins under other faces, are checked once")
+        rated = analysis.printable_plans(box, alike, p)
+        expect(len(alike) > 1 and len(calls) == 1 and all(len(entry.islands) == 1 for entry in rated),
+               "ways standing the part alike, the fins under other faces, are checked once for islands")
         del calls[:]
-        expect(geometry.printable_plans(box, plans[:1], p) == [(plans[0], None)] and not calls,
-               "one way is taken unchecked, its islands None: there is no choice")
+        expect(analysis.printable_plans(box, plans[:1], p) == [(plans[0], None, None, None)] and not calls,
+               "one way is taken unchecked, its islands, overhangs and bridges None: there is no choice")
+        overhang.islands = lambda *args, **kwargs: []
+        real_rated = overhang.rated
+        try:
+            flat = [limits.UNPRINTABLE]
+            overhang.rated = lambda *args, **kwargs: [(1, flat.pop(0))] if flat else []
+            rated = analysis.printable_plans(box, plans, p)
+            expect(plans.index(rated[0].plan) == 1 and len(rated) == len(plans) - 1,
+                   "a way with a face too flat to print is left out while ways without are found")
+        finally:
+            overhang.rated = real_rated
     finally:
         overhang.islands = real
 
@@ -971,6 +1158,14 @@ def check_stability():
     expect(flat is not None and not flat.tips and abs(flat.margin - 10) < STABLE_TOLERANCE
            and abs(flat.foot.x - 15) < STABLE_TOLERANCE and abs(flat.foot.y - 10) < STABLE_TOLERANCE,
            "a box lying on the bed stands, its plumb line in the middle: %s" % (flat,))
+    # The same footprint, the centre of mass four times as high: the same
+    # margin, a far smaller tipping angle, atan(margin / height).
+    tall = stability.check(Part.makeBox(30, 20, TALL_BOX_HEIGHT), [], first, layer, {})
+    expect(tall is not None and abs(tall.margin - flat.margin) < STABLE_TOLERANCE
+           and abs(tall.angle - math.degrees(math.atan2(tall.margin, TALL_BOX_HEIGHT / 2))) < ANGLE_TOLERANCE
+           and tall.angle < flat.angle,
+           "a taller part on the same footprint has a smaller tipping angle: %.1f, %.1f degrees"
+           % (tall.angle, flat.angle))
 
     # Flatter than deep, so standing on an edge at 45 degrees it leans to one side.
     slab = Part.makeBox(30, 20, 10)
@@ -1002,7 +1197,7 @@ def check_stability():
     stability.check(leaning, [], first, layer, centres)
     again = stability.check(leaning, [], first, layer, centres)
     expect(again == tipped, "the centres kept for a part are taken again, the result the same")
-    heights = [height for height, _ in tipped.profile]
+    heights = [height for height, _, _ in tipped.profile]
     expect(heights == sorted(heights) and tipped.profile[-1][1] < 0 < tipped.profile[0][1],
            "the profile runs from the bed up, from standing to tipping")
     cut = stability.section(leaning, tipped.height)
@@ -1167,8 +1362,9 @@ def check_round_side():
 
     outside = round_side_of(tube)
     leaning_tube = moved(tube, geometry.quick_plan(tube, [], [(tube.Faces[outside], outside)], p, d.TILT_ANGLE).change)
-    for shape, number, why, label in ((rod, side, "does not lean", "an upright cylinder"),
-                                      (lying, round_side_of(lying), "flat", "a cylinder on its side"),
+    for shape, number, why, label in ((rod, side, geometry.NOT_OVERHANGING, "an upright cylinder"),
+                                      (lying, round_side_of(lying), geometry.HORIZONTAL_ROUND_SIDE,
+                                       "a cylinder on its side"),
                                       (leaning_tube, round_side_of(tube, BORE_RADIUS), "inward",
                                        "the inside of a tube")):
         try:
@@ -1370,29 +1566,30 @@ def check_recesses(cube, face):
 
 def check_overhangs(cube, face):
     """Overhang detection on simple and less simple bodies."""
-    expect(overhang.overhangs(Part.makeBox(30, 10, 10)) == [], "a box lying on the bed has no overhang")
-    found = overhang.overhangs(cube, [face])
+    expect(overhanging(Part.makeBox(30, 10, 10)) == [], "a box lying on the bed has no overhang")
+    found = overhanging(cube, [face])
     expect(found == [], "the reference cube with a fin has no overhang: %s" % found)
 
     upright = Part.makeCylinder(5, 20)
-    expect(overhang.overhangs(upright) == [], "an upright cylinder has no overhang")
+    expect(overhanging(upright) == [], "an upright cylinder has no overhang")
     lying = Part.makeCylinder(5, 20, V(0, 0, 5), V(1, 0, 0))
     curved = [i for i, f in enumerate(lying.Faces, 1) if f.findPlane() is None]
-    expect(overhang.overhangs(lying) == curved, "a cylinder on its side overhangs with its curved face")
+    expect(overhanging(lying) == curved, "a cylinder on its side overhangs with its curved face")
 
-    expect(overhang.overhangs(pyramid(PYRAMID_STEEP)) == [], "a pyramid on its base has no overhang")
+    expect(overhanging(pyramid(PYRAMID_STEEP)) == [], "a pyramid on its base has no overhang")
     flat = pyramid(PYRAMID_FLAT, apex_down=True)
-    sides = overhang.overhangs(flat)
+    sides = overhanging(flat)
     expect(len(sides) == 4, "a flat pyramid on its apex overhangs with all four sides: %s" % sides)
     edge = pyramid(PYRAMID_BASE / 2, apex_down=True)
-    expect(overhang.overhangs(edge) == [], "sides at exactly %.0f degrees do not count" % d.OVERHANG_ANGLE)
+    expect(overhanging(edge) == [], "sides at exactly %.0f degrees do not count" % d.OVERHANG_ANGLE)
     supported = [flat.Faces[i - 1] for i in sides[:2]]
-    expect(len(overhang.overhangs(flat, supported)) == 2, "faces carried by fins do not count")
+    expect(len(overhanging(flat, supported)) == 2, "faces carried by fins do not count")
 
     try:
         geometry.build(lying, lying.Faces[curved[0] - 1], FinParams())
     except geometry.FinError as error:
-        expect("flat" in str(error), "fins under a cylinder resting on its side are refused: %s" % error)
+        expect(geometry.HORIZONTAL_ROUND_SIDE in str(error),
+               "fins under a cylinder resting on its side are refused: %s" % error)
     else:
         raise AssertionError("fins were built under a cylinder resting on its side")
     ball = Part.makeSphere(ROD_RADIUS)
@@ -1415,8 +1612,8 @@ def check_overhangs(cube, face):
     standing.Placement = orient.tilt(standing, base_edge, PYRAMID_TILT).multiply(standing.Placement)
     expect(abs(standing.BoundBox.ZMin) < d.TOLERANCE, "a pyramid stands on a base edge")
     base = [i for i, f in enumerate(standing.Faces, 1) if len(f.Edges) == 4]
-    expect(overhang.overhangs(standing) == base, "tilted by %.0f degrees its base overhangs" % PYRAMID_TILT)
-    expect(overhang.overhangs(standing, [standing.Faces[base[0] - 1]]) == [],
+    expect(overhanging(standing) == base, "tilted by %.0f degrees its base overhangs" % PYRAMID_TILT)
+    expect(overhanging(standing, [standing.Faces[base[0] - 1]]) == [],
            "with a fin under the base the tilted pyramid has no overhang")
 
 
@@ -1505,6 +1702,7 @@ def main():
     expect(len(low.fins.Solids) == 1, "a tine set below the top of the foot still reaches into the fin")
     check_corners(cube, face)
     check_overhangs(cube, face)
+    check_limits()
     check_recesses(cube, face)
     check_frustum()
     check_loft()
@@ -1525,6 +1723,8 @@ def main():
     check_quick_plan()
     check_quick_plans()
     check_islands()
+    check_bridges()
+    check_no_fragile_calls()
     check_printable_plans()
     check_stability()
     check_round_side()

@@ -26,7 +26,7 @@ from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left
 WORKBENCH = "FinSnapWorkbench"
 COMMANDS = ("FinSnap_QuickFins", "FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCounterFin",
             "FinSnap_CheckStability", "FinSnap_CheckPart", "FinSnap_IslandsWhileEditing", "FinSnap_MeshToSolid",
-            "FinSnap_Export3MF", "FinSnap_ExportSTEP")
+            "FinSnap_Export3MF", "FinSnap_ExportSTEP", "FinSnap_CheckLimits", "FinSnap_CheckBridges")
 DIALOG_ACCEPTED = 1
 # Answers to the questions commands ask, taken in order by answer_dialogs().
 ANSWERS = []
@@ -57,6 +57,11 @@ TUBE_ANGLE = 30.0  # how far the fin under the side of a tube is turned in the p
 PLACE_STEP = 1.0  # how far a fin is moved along the face in the panel, in mm
 ZOOM_OUT = 2.0  # how far the view is zoomed out to see the arc keep its size on the screen
 ARROW_SIZE_TOLERANCE = 0.01  # share by which the size of an arrow may differ from the one reckoned
+# A box stood this far from the bed, degrees: one face leans between the
+# critical and the unprintable limit, the other is steeper than both.
+CRITICAL_TILT = 40.0
+# Limits raised for the test, so that face lies too flat to print (degrees).
+RAISED_CRITICAL, RAISED_UNPRINTABLE = 50.0, 45.0
 HOOK_REACH = 15.0  # how far the arm of a hook reaches past the side of the tilted cube, in mm
 HOOK_WIDTH = 5.0  # width and thickness of its arm and leg
 HOOK_DEPTH = 12.0  # how far below the top of the cube the arm comes out
@@ -357,6 +362,34 @@ def quick_on_pad(doc):
         doc.removeObject(name)
 
 
+def checked_on_switch(doc):
+    """Quick fins with the checks while editing off lists its ways unchecked;
+    switched on, they are rated in place, the row standing still marked, and
+    the fins are rebuilt with the checks."""
+    from freecad.finsnap import feature
+    box = doc.addObject("Part::Feature", "Unchecked")
+    box.Shape = Part.makeBox(30, 20, 20)
+    doc.recompute()
+    side = next(i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).y < -0.9)
+    Gui.runCommand("FinSnap_IslandsWhileEditing", 0)
+    try:
+        select(box, "Face%d" % side)
+        Gui.runCommand("FinSnap_QuickFins")
+        fins = next(o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is box)
+        panel = fins.ViewObject.Proxy.panel
+        table = panel.stand_list
+        panel.stand_list.setCurrentCell(1, 0)
+        blank = all(table.item(row, 2).text() == "" for row in range(table.rowCount()))
+        Gui.runCommand("FinSnap_IslandsWhileEditing", 1)
+        expect(blank and all(table.item(row, 2).text() == "0" for row in range(table.rowCount()))
+               and not panel.stands.unrated() and panel.stands.current == 1 and table.currentRow() == 1,
+               "the ways found unchecked are rated once the checks are switched on, the row standing kept")
+        panel.reject()
+    finally:
+        Gui.runCommand("FinSnap_IslandsWhileEditing", 1)
+    doc.removeObject(box.Name)
+
+
 def chosen_stands(doc, quick, facing, messages):
     """Quick fins on a face of the box `quick` lying flat: the panel lists the
     edges the part can stand on, a click on a row stands it so, it asks before
@@ -401,9 +434,11 @@ def chosen_stands(doc, quick, facing, messages):
            and sorted(table.item(row, 0).text() for row in range(len(edges))) == sorted(names)
            and [table.item(row, 1).text() for row in range(len(edges))]
            == ["%.1f%s" % (length, taskpanel.LENGTH_SUFFIX) for length in lengths]
-           and all(table.item(row, 2).text() == "0" for row in range(len(edges))),
+           and all(table.item(row, 2).text() == "0" for row in range(len(edges)))
+           and table.columnCount() == len(taskpanel.STAND_HEADERS[True])
+           and all(table.item(row, 4).text() == "0" for row in range(len(edges))),
            "after Quick fins on a face the panel lists each edge it can stand on by its name, its length, "
-           "no islands: %s"
+           "no islands, its overhangs and no bridge: %s"
            % messages)
     first = App.Placement(quick.Placement)
     table.setCurrentCell(2, 0)
@@ -608,11 +643,103 @@ def _layer_marked(marks):
                for material in materials)
 
 
+def bridges_checked(doc, messages):
+    """Check bridges from the toolbar: the bridge of a slab across a gap is
+    said and kept as a check of its own, which shows it on the underside."""
+    from freecad.finsnap import check, limits, taskpanel
+    width, depth, height, gap, slab = 5.0, 10.0, 10.0, 8.0, 2.0
+    part = doc.addObject("Part::Feature", "Bridged")
+    part.Shape = Part.makeBox(width, depth, height).fuse(
+        [Part.makeBox(width, depth, height, App.Vector(width + gap, 0, 0)),
+         Part.makeBox(2 * width + gap, depth, slab, App.Vector(0, 0, height))]).removeSplitter()
+    doc.recompute()
+    select(part)
+    Gui.runCommand("FinSnap_CheckBridges")
+    spanned = check.find(part, check.BRIDGES)
+    expect(spanned is not None and not spanned.CriticalBridges.isNull() and taskpanel.check_nodes(spanned)
+           and "%.1f" % limits.current().bridge_critical in messages[-1],
+           "Check bridges says the bridge of the part and keeps it as a check, shown on the underside: %s"
+           % messages[-1])
+    doc.removeObject(spanned.Name)
+    doc.removeObject(part.Name)
+
+
+def limits_page(doc):
+    """The page of the limits in the preferences fills them by strictness and
+    keeps them in order, and saved, rebuilds the fins so their marks follow: a
+    face rated critical, marked yellow, turns too flat to print, marked red."""
+    from freecad.finsnap import commands, feature, handles, limits, orient
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap.preferences import LimitsPage
+
+    expect(not Gui.getIcon("preferences-finsnap").isNull(),
+           "the group of FinSnap in Edit > Preferences has an icon, not a question mark")
+    # Check limits in the menu opens the preferences on the page.
+    opened = []
+    show = Gui.showPreferences
+    Gui.showPreferences = lambda *args: opened.append(args)
+    try:
+        Gui.runCommand("FinSnap_CheckLimits")
+    finally:
+        Gui.showPreferences = show
+    expect(opened == [("FinSnap", 0)], "Check limits opens the preferences on the page of FinSnap: %s" % opened)
+    page = LimitsPage()
+    page.loadSettings()
+    expect(page.shown() == limits.current(), "the page shows the limits saved")
+    def strictness():
+        return page.strictness.currentData()
+
+    expect(strictness() == limits.NORMAL, "the built-in limits are those of the normal strictness")
+    page.fields["overhang_critical"].setValue(limits.Limits().overhang_unprintable - 1)
+    expect(page.fields["overhang_unprintable"].value() <= page.fields["overhang_critical"].value()
+           and strictness() == limits.CUSTOM,
+           "lowering the critical limit takes the unprintable one along, and the limits are custom")
+    page.strictness.activated.emit(page.strictness.findData(limits.STRICT))
+    expect(page.shown() == limits.STRICTNESS[limits.STRICT] and strictness() == limits.STRICT,
+           "choosing strict fills its limits")
+    page.strictness.activated.emit(page.strictness.findData(limits.CUSTOM))
+    expect(page.shown() == limits.STRICTNESS[limits.STRICT], "choosing custom leaves the limits as they are")
+    page.strictness.activated.emit(page.strictness.findData(limits.NORMAL))
+    expect(page.shown() == limits.Limits() and strictness() == limits.NORMAL,
+           "choosing normal fills the built-in limits")
+
+    box = doc.addObject("Part::Feature", "Rated")
+    box.Shape = Part.makeBox(20, 20, 20)
+    edge = next(e for e in box.Shape.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE)
+    box.Placement = orient.tilt(box.Shape, edge, CRITICAL_TILT)
+    doc.recompute()
+    leaning = sorted((i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).z < -d.TOLERANCE
+                      and f.BoundBox.ZMax > box.Shape.BoundBox.ZMin + d.TOLERANCE),
+                     key=lambda i: -box.Shape.Faces[i - 1].normalAt(0, 0).z)
+    fins = feature.create(box, "Face%d" % leaning[0])
+    commands.ViewProviderFinSnap(fins.ViewObject)
+    doc.recompute()
+    marks = fins.ViewObject.Proxy.marks
+    expect(fins.Overhangs == ["Face%d" % leaning[1]] and fins.UnprintableOverhangs == []
+           and marks.getNumChildren() == 1,
+           "the face leaning %.0f degrees from the bed is critical, marked once: %s" % (CRITICAL_TILT, fins.Overhangs))
+    try:
+        page.fields["overhang_critical"].setValue(RAISED_CRITICAL)
+        page.fields["overhang_unprintable"].setValue(RAISED_UNPRINTABLE)
+        page.saveSettings()
+        expect(limits.current().overhang_unprintable == RAISED_UNPRINTABLE
+               and fins.UnprintableOverhangs == fins.Overhangs,
+               "saved, the limits rebuild the fins: the face is too flat to print now")
+        color = marks.getChild(0).getChild(0).diffuseColor[0].getValue()
+        expect(all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(color, handles.OVERHANG_COLORS[limits.UNPRINTABLE])),
+               "the face too flat to print is marked red: %s" % (color,))
+        expect(strictness() == limits.CUSTOM, "limits set by hand are custom")
+    finally:
+        limits.reset()
+    doc.removeObject(fins.Name)
+    doc.removeObject(box.Name)
+
+
 def island_marks(doc):
     """Fins added by hand to the tilted cube with a hook hanging from its side,
     whose foot would start printing in the air: a warning says so, and the
     island is marked in the 3D view, over the part."""
-    from freecad.finsnap import commands, feature
+    from freecad.finsnap import analysis, commands, feature
     from freecad.finsnap import defaults as d
     cube = tilted_cube()
     box = cube.BoundBox
@@ -640,12 +767,12 @@ def island_marks(doc):
     real = overhang._first_layer
     overhang._first_layer = lambda *args: None
     try:
-        feature._islands_kept.clear()
+        analysis._kept.clear()
         fins.touch()
         doc.recompute()
     finally:
         overhang._first_layer = real
-        feature._islands_kept.clear()
+        analysis._kept.clear()
     expect(len(fins.Islands) == 1 and fins.IslandLayers.isNull() and list(fins.IslandsUncut) == list(fins.Islands)
            and _balls(marks, over=True) == 1,
            "an island whose first layer cannot be cut out is marked by a ball at its lowest point, over the part")
@@ -659,7 +786,7 @@ def stability_checked(doc, messages):
     check in the tree, one for each part and kind, which shows it while it is
     up to date; once the part moves it is out of date, its marks gone, and a
     double click checks again. Deleting it removes it; saved, it shows again."""
-    from freecad.finsnap import check, commands, feature, orient, paths, taskpanel
+    from freecad.finsnap import analysis, check, commands, feature, orient, paths, taskpanel
     from freecad.finsnap import defaults as d
     slab = Part.makeBox(30, 20, 10)
     bottom = [e for e in slab.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
@@ -672,7 +799,7 @@ def stability_checked(doc, messages):
     Gui.runCommand("FinSnap_CheckStability")
     stable = check.find(part, check.STABILITY)
     # What sets the note apart from the others: its words after the height.
-    needs_fins = App.Qt.translate("FinSnap", feature.NOTE_NEEDS_FINS).rsplit("mm)", 1)[1]
+    needs_fins = App.Qt.translate("FinSnap", analysis.NOTE_NEEDS_FINS).rsplit("mm)", 1)[1]
     expect(len(messages) == 1 and needs_fins in messages[0] and stable is not None and stable.Result == messages[0]
            and not stable.OutOfDate and isinstance(stable.ViewObject.Proxy, taskpanel.ViewProviderCheck)
            and stable.ViewObject.Proxy.root.getNumChildren() > 0,
@@ -709,9 +836,10 @@ def stability_checked(doc, messages):
     whole = check.find(part, check.PART)
     lines = messages[-1].split("\n")
     marks = whole.ViewObject.Proxy.root
-    expect(whole is not None and whole is not stable and len(lines) == 4 and messages[-1].endswith(said)
+    expect(whole is not None and whole is not stable and len(lines) == 5 and messages[-1].endswith(said)
            and _coloured_by_height(marks) and _layer_cut_shown(marks),
-           "Check part keeps a check of its own: overhangs, islands and stability, coloured by height: %s" % lines)
+           "Check part keeps a check of its own: overhangs, bridges, islands and stability, coloured by height: %s"
+           % lines)
 
     part.Placement = App.Placement(App.Vector(1, 0, 0), App.Rotation()).multiply(part.Placement)
     doc.recompute()
@@ -748,9 +876,10 @@ def stability_checked(doc, messages):
     expect(check.find(part, check.PART) is None and check.find(part, check.STABILITY) is stable,
            "deleting a check removes it alone")
     Gui.runCommand("FinSnap_IslandsWhileEditing", 0)
-    off = feature.islands_while_editing()
+    off = analysis.checks_while_editing()
     Gui.runCommand("FinSnap_IslandsWhileEditing", 1)
-    expect(not off and feature.islands_while_editing(), "Islands while editing switches the island check off and on")
+    expect(not off and analysis.checks_while_editing(),
+           "Islands and bridges while editing switches the checks off and on")
     doc.removeObject(fins.Name)
     doc.removeObject(part.Name)
     QtWidgets.QMessageBox.information = staticmethod(lambda *args: messages.append(args[2]))
@@ -1181,9 +1310,12 @@ def main():
         doc.recompute()
     chosen_stands(doc, quick, facing, messages)
     quick_on_pad(doc)
+    checked_on_switch(doc)
     island_marks(doc)
+    limits_page(doc)
     value_colors()
     stability_checked(doc, messages)
+    bridges_checked(doc, messages)
     saved_while_editing()
     # Fins of the part laid flat keep their mark and shape over a Quick fins
     # cancelled: standing the part rebuilt them, Cancel gives them back.
@@ -1777,7 +1909,7 @@ def main():
     upward = [i for i, f in enumerate(cube.Shape.Faces, 1) if f.normalAt(0, 0).z > 1 - d.TOLERANCE][0]
     wrong = feature.create(cube, "Face%d" % upward)
     wrong_panel = FinSnapTaskPanel(wrong, created=True)
-    reason = App.Qt.translate("FinSnap", "the selected face does not lean over the bed")
+    reason = App.Qt.translate("FinSnap", geometry.NOT_OVERHANGING)
     expect(reason in wrong_panel.notes.text() and not wrong_panel.notes.isHidden()
            and taskpanel.ERROR_COLOR in wrong_panel.notes.styleSheet(),
            "the panel shows in a red box why no fins can be built: %s" % wrong_panel.notes.text())

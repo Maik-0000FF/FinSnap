@@ -117,7 +117,6 @@ import Part
 
 from . import defaults as d
 from . import orient
-from . import overhang
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .shapes import bounds, middle_normal, moved
 
@@ -134,6 +133,13 @@ RIM_CHAMFERED, RIM_OWN, RIM_OTHER = range(3)
 # Why Quick fins finds no way to stand a part: no face takes the fins, or
 # the face selected takes them on no edge it can stand on.
 NO_LEANING_FACE = QT_TRANSLATE_NOOP("FinSnap", "no face of the part leans over the bed and takes fins")
+# Said where the face selected for fins faces up or sideways, or lies level.
+NOT_OVERHANGING = QT_TRANSLATE_NOOP("FinSnap", "the selected face does not overhang; it faces up or sideways")
+HORIZONTAL_FACE = QT_TRANSLATE_NOOP("FinSnap", "the selected face is horizontal; it rests on the bed or needs regular "
+                                               "support")
+# Said where a round side lies level at its lowest line, as a cylinder lying on it.
+HORIZONTAL_ROUND_SIDE = QT_TRANSLATE_NOOP("FinSnap", "the round side lies horizontal at its lowest line; it rests on "
+                                                     "the bed or needs regular support")
 NO_STAND_FOR_FACE = QT_TRANSLATE_NOOP("FinSnap", "the part cannot stand so that this face takes fins")
 
 
@@ -365,10 +371,10 @@ def _lowest(face):
     axis = V(face.Surface.Axis).normalize()
     n = DOWN - axis * DOWN.dot(axis)
     if n.Length < d.MIN_NORMAL_COMPONENT:
-        raise FinError(translate("FinSnap", "the selected face does not lean over the bed"))
+        raise FinError(translate("FinSnap", NOT_OVERHANGING))
     n.normalize()
     if V(n.x, n.y, 0).Length < d.MIN_NORMAL_COMPONENT:
-        raise FinError(translate("FinSnap", "the selected face is flat; it rests on the bed or needs regular support"))
+        raise FinError(translate("FinSnap", HORIZONTAL_ROUND_SIDE))
     return n
 
 
@@ -458,9 +464,9 @@ def frame_of(part, face, support=None):
     n = middle_normal(face)
     horizontal = V(n.x, n.y, 0)
     if n.z > -d.MIN_NORMAL_COMPONENT:
-        raise FinError(translate("FinSnap", "the selected face does not lean over the bed"))
+        raise FinError(translate("FinSnap", NOT_OVERHANGING))
     if horizontal.Length < d.MIN_NORMAL_COMPONENT:
-        raise FinError(translate("FinSnap", "the selected face is flat; it rests on the bed or needs regular support"))
+        raise FinError(translate("FinSnap", HORIZONTAL_FACE))
 
     out = horizontal.normalize()
     along = UP.cross(out)
@@ -958,7 +964,7 @@ def check(p, part, fins, bodies):
     if p.connection == d.CONNECTION_SEPARATE:
         overlap = fins.common(part).Volume
         if overlap > d.TOLERANCE:
-            raise FinError(translate("FinSnap", "the fins overlap the part by %.4f mm3") % overlap)
+            raise FinError(translate("FinSnap", "the fins overlap the part by %.4f mm³") % overlap)
 
     for body in bodies:
         distance = body.distToShape(part)[0]
@@ -1209,12 +1215,12 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         targets.append(WarningTarget([], [], True))
     angle = math.degrees(math.acos(min(1.0, -frame.n_z)))
     if not d.FACE_ANGLE_MIN <= angle <= d.FACE_ANGLE_MAX:
-        warnings.append(translate("FinSnap", "the face is inclined %.0f degrees against the bed, outside "
+        warnings.append(translate("FinSnap", "the face is inclined %.0f degrees to the bed, outside "
                                   "%.0f to %.0f") % (angle, d.FACE_ANGLE_MIN, d.FACE_ANGLE_MAX))
         targets.append(WarningTarget([], [], True))
     tine_length = p.gap / frame.n_out
     if tine_length < d.TINE_MIN_LENGTH_BEADS * p.bead_width:
-        warnings.append(translate("FinSnap", "tines are %.2f mm long, shorter than %.2f beads; the slicer "
+        warnings.append(translate("FinSnap", "tines are %.2f mm long, shorter than %.2f bead widths; the slicer "
                                   "may not print them to the face") % (tine_length, d.TINE_MIN_LENGTH_BEADS))
         targets.append(WarningTarget([fin.number for fin in plan.fins], [], False))
     if frame.round_side:
@@ -1474,36 +1480,6 @@ def quick_plans(shape, edges, faces, p, angle_deg):
         return
     raise FinError(translate("FinSnap", "Select an edge or a face, a face and the edge or the chamfer or fillet "
                                         "it is to stand on, or the two faces beside a fillet."))
-
-
-def printable_plans(shape, plans, p):
-    """The QuickPlans `plans` for `shape` that print without islands, each with
-    its Islands, as (plan, Islands), in the order given; where every
-    plan has islands, all of them, the fewest islands first. The islands are
-    those of the part stood by the plan, see overhang.islands(); the fins do
-    not count, they carry no layer. Plans standing the part alike, differing
-    only by the face for the fins, are checked once.
-
-    INPUTS this has to withstand:
-      plans without islands and with        ->  those without, in the order given
-      every plan with islands               ->  all of them, the fewest first, the
-                                                order given among as many
-      plans standing the part alike         ->  checked once, the same islands
-      one plan                              ->  it, with None for its islands: unchecked,
-                                                as there is no choice, and the fins
-                                                warn of them
-    """
-    if len(plans) == 1:
-        return [(plans[0], None)]
-    checked = {}
-    rated = []
-    for plan in plans:
-        key = tuple(plan.change.toMatrix().A)
-        if key not in checked:
-            checked[key] = overhang.islands(moved(shape, plan.change), p.first_layer_height, p.layer_height)
-        rated.append((plan, checked[key]))
-    clean = [entry for entry in rated if not entry[1]]
-    return clean or sorted(rated, key=lambda entry: len(entry[1]))
 
 
 def _under_each_face(shape, change, edge, beside, p):

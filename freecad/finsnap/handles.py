@@ -33,6 +33,7 @@ from PySide import QtCore, QtWidgets
 import FreeCAD as App
 import FreeCADGui as Gui
 
+from . import limits
 from .i18n import translate
 
 # The colours and the opacity FreeCAD shows its own feature previews in:
@@ -108,9 +109,10 @@ PLUMB_WIDTH = 2
 PLUMB_PATTERN = 0xF0F0
 PLUMB_BALL = 0.15
 FOOTPRINT_TRANSPARENCY = 0.6
-# Marks on faces that overhang without fins: red, half see-through, drawn
-# slightly in front of the part's own faces, which lie in the same place.
-OVERHANG_COLOR = (0.9, 0.1, 0.1)
+# Marks on faces that overhang without fins, by level: yellow where critical,
+# red where too flat to print; half see-through, drawn slightly in front of
+# the part's own faces, which lie in the same place.
+OVERHANG_COLORS = {limits.CRITICAL: BETWEEN_COLOR, limits.UNPRINTABLE: (0.9, 0.1, 0.1)}
 OVERHANG_TRANSPARENCY = 0.4
 # The first layers of islands in the air: see-through, yet red over a part of
 # any colour. As see-through as a fin while editing, the colour of the part
@@ -231,9 +233,16 @@ def plumb(found, color, text, text_at):
     return group
 
 
-def overhang_faces(faces):
-    """A Coin node marking `faces`, which overhang without fins."""
-    return shaded(faces, OVERHANG_COLOR, OVERHANG_TRANSPARENCY)
+def overhang_faces(faces, level):
+    """A Coin node marking `faces`, which overhang without fins, in the
+    colour of their `level`, limits.CRITICAL or limits.UNPRINTABLE."""
+    return shaded(faces, OVERHANG_COLORS[level], OVERHANG_TRANSPARENCY)
+
+
+def bridge_regions(regions, level):
+    """A Coin node showing `regions`, the free regions of bridges on the
+    underside of the part, in the colour of their `level`, as overhangs are."""
+    return shaded([regions], OVERHANG_COLORS[level], OVERHANG_TRANSPARENCY)
 
 
 def island_layers(layers):

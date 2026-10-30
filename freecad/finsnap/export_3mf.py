@@ -71,7 +71,7 @@ def write(path, named_shapes, linear=d.MESH_LINEAR_DEFLECTION,
     """linear: largest distance of the mesh from the surface in mm; angular_deg: largest
     angle between neighbouring triangles. Planar faces are exact either way."""
     if not (linear > 0 and angular_deg > 0):
-        raise ValueError(translate("FinSnap", "mesh deviation and angle must be greater than 0"))
+        raise ValueError(translate("FinSnap", "surface deviation and angular deviation must be greater than 0"))
     if not named_shapes:
         raise ValueError(translate("FinSnap", "nothing to export"))
     for name, shape in named_shapes:
