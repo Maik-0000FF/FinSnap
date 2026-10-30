@@ -31,10 +31,10 @@ V = App.Vector
 PACKAGE_ROOT = ET.parse(PACKAGE_XML).getroot()  # nosec B314
 PACKAGE_VERSION = PACKAGE_ROOT.findtext("{https://wiki.freecad.org/Package_Metadata}version")
 BOX = (40.0, 20.0, 20.0)
-WIDER_MARGIN = 1.0
+WIDER_MARGIN = 1.0  # mm past the margin a part stands at, so it is at risk of tipping
 # Beads tried past the bridges kept for a part, this much wider each (mm).
 BEADS_PAST_KEPT = 3
-BEAD_STEP = 0.01  # mm past the margin a part stands at, so it is at risk of tipping
+BEAD_STEP = 0.01
 XY_PLANE = 3  # index in the origin features of a Body
 FIN_SHIFT = 1.5  # how far a fin is moved along the face by hand, in mm
 MANY_FIN_WIDTHS = 3  # far enough to run a fin into its neighbour
