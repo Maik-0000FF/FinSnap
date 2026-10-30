@@ -7,10 +7,15 @@ import FreeCADGui as Gui
 
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .paths import ICON_WORKBENCH, TRANSLATIONS
-from .version import application
+from .preferences import LimitsPage
+from .version import NAME, application
 
 Gui.addLanguagePath(TRANSLATIONS)
 Gui.updateLocale()
+# The group of the page in Edit > Preferences shows the icon named
+# "preferences-" and its name in lower case; the workbench icon stands for it.
+Gui.addIcon("preferences-%s" % NAME.lower(), ICON_WORKBENCH)
+Gui.addPreferencePage(LimitsPage, NAME)
 
 TOOLBAR = QT_TRANSLATE_NOOP("Workbench", "FinSnap")
 TOOLTIP = QT_TRANSLATE_NOOP("Workbench", "Breakaway fins for parts printed standing on an edge")
@@ -26,9 +31,9 @@ class FinSnapWorkbench(Gui.Workbench):
     def Initialize(self):  # noqa: N802 - FreeCAD API
         from . import commands
 
-        names = commands.register()
-        self.appendToolbar(TOOLBAR, names)
-        self.appendMenu(TOOLBAR, names)
+        toolbar, menu = commands.register()
+        self.appendToolbar(TOOLBAR, toolbar)
+        self.appendMenu(TOOLBAR, menu)
 
     def GetClassName(self):  # noqa: N802 - FreeCAD API
         return "Gui::PythonWorkbench"

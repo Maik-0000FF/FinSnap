@@ -6,6 +6,8 @@
   <polygon points="12.0,55.0 31.0,55.0 31.0,58.0 12.0,58.0" fill="#f0a030" stroke="#8a5512" stroke-width="1.5" stroke-linejoin="round"/>
   <polygon points="26.0,50.0 30.0,50.0 32.0,52.0 28.0,52.0" fill="#8a5512"/>
   <polygon points="20.0,44.0 24.0,44.0 26.0,46.0 22.0,46.0" fill="#8a5512"/>
-  <circle cx="52" cy="12" r="10" fill="#d03b3b" stroke="#7a1d1d" stroke-width="2"/>
-  <line x1="47" y1="12" x2="57" y2="12" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round"/>
+  <circle cx="51" cy="13" r="12" fill="#d03b3b" stroke="#7a1d1d" stroke-width="2"/>
+  <g transform="translate(51,13) scale(1.2)">
+  <line x1="-5" y1="0" x2="5" y2="0" stroke="#ffffff" stroke-width="3.5" stroke-linecap="round"/>
+  </g>
 </svg>

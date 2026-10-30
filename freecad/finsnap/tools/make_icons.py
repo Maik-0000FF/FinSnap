@@ -11,6 +11,7 @@ on an edge, the fin parallel to its face at a gap, with a flat top, horizontal
 tines and a foot. Changing that picture here changes every icon.
 """
 
+import math
 import os
 
 from freecad.finsnap import paths
@@ -67,6 +68,31 @@ PLATEAU = 5.0
 FOOT_TOP = 55.0
 FOOT_REACH = 2.0     # how far the foot reaches past the outer end of the fin
 TINES = (52.0, 46.0)  # lower edge of each tine
+# The export icons: the picture of part and fins, this much smaller and moved
+# by this much on the sheet, ends above the name of the format; the name stands
+# on this line, this large. Picture bottom 3 + 58 * 0.72 = 44.8, top of the name
+# about 57 - 8 = 49, so the two keep apart in every font; its top corner,
+# 3 + 22 * 0.72 = 18.8, stays below the folded corner of the sheet.
+EXPORT_PICTURE_SCALE = 0.72
+EXPORT_PICTURE_SHIFT = (6, 3)
+EXPORT_LABEL_X = 31
+EXPORT_LABEL_BASELINE = 57
+EXPORT_LABEL_SIZE = 11
+# Where the badges sit on an icon, top right, and how large they are; what is
+# on them is drawn for a disc of the design radius and scaled to it. The disc,
+# its ring reaching 1 past it, 51 + 12 + 1 = 64 and 13 - 12 - 1 = 0, just
+# fills the corner of the icon.
+BADGE_CENTRE = (51, 13)
+BADGE_RADIUS = 12
+BADGE_DESIGN_RADIUS = 10
+# The badge of settings, Check limits: a white gear on grey, this many teeth
+# reaching from the inner to the outer radius, a hole in the middle.
+SETTINGS_FILL = "#5c6670"
+SETTINGS_LINE = "#2b2b2b"
+GEAR_TEETH = 8
+GEAR_OUTER = 7.5
+GEAR_INNER = 5.5
+GEAR_HOLE = 2.2
 TINE_HEIGHT = 2.0
 
 
@@ -121,33 +147,6 @@ def bed():
             % (BED_LEFT, BED_Y, BED_WIDTH, BED_HEIGHT, BED)]
 
 
-def plus_badge():
-    return ['<circle cx="52" cy="12" r="10" fill="%s" stroke="%s" stroke-width="2"/>' % (ADD_FILL, ADD_LINE),
-            '<g stroke="%s" stroke-width="3.5" stroke-linecap="round">' % WHITE,
-            '<line x1="52" y1="7" x2="52" y2="17"/><line x1="47" y1="12" x2="57" y2="12"/></g>']
-
-
-def minus_badge():
-    return ['<circle cx="52" cy="12" r="10" fill="%s" stroke="%s" stroke-width="2"/>' % (REMOVE_FILL, REMOVE_LINE),
-            '<line x1="47" y1="12" x2="57" y2="12" stroke="%s" stroke-width="3.5" stroke-linecap="round"/>'
-            % WHITE]
-
-
-def back_badge():
-    """A curved arrow pointing back, on green: what was removed comes back."""
-    return ['<circle cx="52" cy="12" r="10" fill="%s" stroke="%s" stroke-width="2"/>' % (ADD_FILL, ADD_LINE),
-            '<path d="M57 13 A5 5 0 1 0 52 18" fill="none" stroke="%s" stroke-width="2.5" stroke-linecap="round"/>'
-            % WHITE,
-            '<polygon points="54,14 58,9 60,15" fill="%s"/>' % WHITE]
-
-
-def bolt_badge():
-    bolt = "53,4 45,13 50,13 48,20 57,10 52,10 54,4"
-    return ['<circle cx="52" cy="12" r="10" fill="%s" stroke="%s" stroke-width="2"/>' % (QUICK_FILL, QUICK_LINE),
-            '<polygon points="%s" fill="%s" stroke="%s" stroke-width="1" stroke-linejoin="round"/>'
-            % (bolt, WHITE, QUICK_LINE)]
-
-
 def plumb():
     """The plumb line from the centre of mass of the part to the bed."""
     cx, cy = PART_CENTRE
@@ -159,25 +158,77 @@ def plumb():
             % (cx, cy, PLUMB_CENTRE_RADIUS, WHITE, PLUMB_LINE, LINE_WIDTH)]
 
 
+def badge(fill, line, *content):
+    """A badge, top right on an icon: a disc in `fill` ringed by `line`, and
+    on it `content`, drawn round the origin for a disc of BADGE_DESIGN_RADIUS
+    and scaled to the disc."""
+    cx, cy = BADGE_CENTRE
+    return (['<circle cx="%g" cy="%g" r="%g" fill="%s" stroke="%s" stroke-width="2"/>'
+             % (cx, cy, BADGE_RADIUS, fill, line),
+             '<g transform="translate(%g,%g) scale(%g)">' % (cx, cy, BADGE_RADIUS / BADGE_DESIGN_RADIUS)]
+            + list(content) + ['</g>'])
+
+
+def plus_badge():
+    return badge(ADD_FILL, ADD_LINE,
+                 '<g stroke="%s" stroke-width="3.5" stroke-linecap="round">' % WHITE,
+                 '<line x1="0" y1="-5" x2="0" y2="5"/><line x1="-5" y1="0" x2="5" y2="0"/></g>')
+
+
+def minus_badge():
+    return badge(REMOVE_FILL, REMOVE_LINE,
+                 '<line x1="-5" y1="0" x2="5" y2="0" stroke="%s" stroke-width="3.5" stroke-linecap="round"/>' % WHITE)
+
+
+def back_badge():
+    """A curved arrow pointing back, on green: what was removed comes back."""
+    return badge(ADD_FILL, ADD_LINE,
+                 '<path d="M5 1 A5 5 0 1 0 0 6" fill="none" stroke="%s" stroke-width="2.5" stroke-linecap="round"/>'
+                 % WHITE,
+                 '<polygon points="2,2 6,-3 8,3" fill="%s"/>' % WHITE)
+
+
+def bolt_badge():
+    bolt = "1,-8 -7,1 -2,1 -4,8 5,-2 0,-2 2,-8"
+    return badge(QUICK_FILL, QUICK_LINE,
+                 '<polygon points="%s" fill="%s" stroke="%s" stroke-width="1" stroke-linejoin="round"/>'
+                 % (bolt, WHITE, QUICK_LINE))
+
+
+def gear_badge():
+    """A gear on grey: the settings the checks rate by."""
+    corners = []
+    # Each tooth: two corners on the outer radius, then two on the inner one,
+    # each a quarter of the pitch wide.
+    for tooth in range(GEAR_TEETH):
+        for quarter, radius in enumerate((GEAR_OUTER, GEAR_OUTER, GEAR_INNER, GEAR_INNER)):
+            turn = 2 * math.pi * (tooth + quarter / 4) / GEAR_TEETH
+            corners.append((radius * math.cos(turn), radius * math.sin(turn)))
+    return badge(SETTINGS_FILL, SETTINGS_LINE,
+                 '<polygon points="%s" fill="%s" stroke-linejoin="round"/>' % (points(corners), WHITE),
+                 '<circle cx="0" cy="0" r="%.1f" fill="%s"/>' % (GEAR_HOLE, SETTINGS_FILL))
+
+
 def check_badge():
     """A tick on green: everything checked."""
-    return ['<circle cx="52" cy="12" r="10" fill="%s" stroke="%s" stroke-width="2"/>' % (ADD_FILL, ADD_LINE),
-            '<polyline points="47,12 51,16 58,7" fill="none" stroke="%s" stroke-width="3" stroke-linecap="round" '
-            'stroke-linejoin="round"/>' % WHITE]
+    return badge(ADD_FILL, ADD_LINE,
+                 '<polyline points="-5,0 -1,4 6,-5" fill="none" stroke="%s" stroke-width="3" stroke-linecap="round" '
+                 'stroke-linejoin="round"/>' % WHITE)
 
 
 def outdated_badge():
     """An exclamation mark on yellow: a check out of date."""
-    return ['<circle cx="52" cy="12" r="10" fill="%s" stroke="%s" stroke-width="2"/>' % (QUICK_FILL, QUICK_LINE),
-            '<line x1="52" y1="6" x2="52" y2="13" stroke="%s" stroke-width="3" stroke-linecap="round"/>' % QUICK_LINE,
-            '<circle cx="52" cy="17.5" r="1.8" fill="%s"/>' % QUICK_LINE]
+    return badge(QUICK_FILL, QUICK_LINE,
+                 '<line x1="0" y1="-6" x2="0" y2="1" stroke="%s" stroke-width="3" stroke-linecap="round"/>'
+                 % QUICK_LINE,
+                 '<circle cx="0" cy="5.5" r="1.8" fill="%s"/>' % QUICK_LINE)
 
 
 def island_badge():
     """A layer printed in the air, on red: the islands checked while editing."""
-    return ['<circle cx="52" cy="12" r="10" fill="%s" stroke="%s" stroke-width="2"/>' % (REMOVE_FILL, REMOVE_LINE),
-            '<rect x="46" y="13" width="12" height="3" rx="1" fill="%s"/>' % WHITE,
-            '<line x1="52" y1="5" x2="52" y2="10" stroke="%s" stroke-width="2" stroke-dasharray="2 1"/>' % WHITE]
+    return badge(REMOVE_FILL, REMOVE_LINE,
+                 '<rect x="-6" y="1" width="12" height="3" rx="1" fill="%s"/>' % WHITE,
+                 '<line x1="0" y1="-7" x2="0" y2="-2" stroke="%s" stroke-width="2" stroke-dasharray="2 1"/>' % WHITE)
 
 
 def svg(body, width=SIZE, height=SIZE):
@@ -211,11 +262,13 @@ def icons():
              'stroke-linejoin="round"/>' % (PAPER, BED),
              '<polyline points="40,2 40,16 54,16" fill="none" stroke="%s" stroke-width="2" '
              'stroke-linejoin="round"/>' % BED]
-    small = '<g transform="translate(6,8) scale(0.72)">%s</g>' % "".join(part_shape() + fin_shapes())
+    small = '<g transform="translate(%d,%d) scale(%.2f)">%s</g>' % (
+        EXPORT_PICTURE_SHIFT + (EXPORT_PICTURE_SCALE, "".join(part_shape() + fin_shapes())))
 
     def label(text):
-        return ('<text x="31" y="57" font-family="sans-serif" font-size="11" font-weight="bold" '
-                'text-anchor="middle" fill="%s">%s</text>' % (PART_LINE, text))
+        return ('<text x="%d" y="%d" font-family="sans-serif" font-size="%d" font-weight="bold" '
+                'text-anchor="middle" fill="%s">%s</text>'
+                % (EXPORT_LABEL_X, EXPORT_LABEL_BASELINE, EXPORT_LABEL_SIZE, PART_LINE, text))
 
     return {
         "finsnap.svg": workbench(),
@@ -233,6 +286,7 @@ def icons():
         "lay_flat.svg": bed() + tilted_outline + [laid_flat] + lay_arrow,
         "export_3mf.svg": paper + [small, label("3MF")],
         "export_step.svg": paper + [small, label("STEP")],
+        "check_limits.svg": workbench() + gear_badge(),
     }
 
 

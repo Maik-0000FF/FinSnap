@@ -5,24 +5,31 @@
 and islands, where it would start printing in the air, see islands().
 
 A face overhangs where its outward normal points down. The flatter it lies,
-the less the layer below carries the next one; below OVERHANG_ANGLE against
-the bed it needs support. Faces carried by fins, faces resting on the bed and
-tiny faces do not count. A planar face has one normal; a curved one is sampled on a grid,
-and it overhangs if any sample above the bed does.
+the less the layer below carries the next one; flatter than the limit angle
+from the bed it needs support. rated() rates by the two limits of the
+preferences (limits.py): critical, or not printable. Faces carried by fins,
+faces resting on the bed and faces smaller than the least area do not count.
+A planar face has one normal; a curved one is sampled on a grid, and it lies
+as flat as its flattest sample above the bed.
 
-INPUTS this has to withstand (overhangs()):
+INPUTS this has to withstand (rated()):
   box lying on the bed                  ->  []
-  face at exactly the limit angle       ->  [] (not flatter than the limit)
-  face flatter than the limit, above
-    the bed                             ->  its number
+  face at exactly the critical limit    ->  [] (not flatter than the limit)
   same face listed as supported         ->  []
   face resting on the bed (normal down) ->  [] (the bed carries it)
-  face smaller than OVERHANG_MIN_AREA   ->  [] (corner facet of a chamfer)
+  face smaller than the least area      ->  [] (corner facet of a chamfer)
   cylinder upright                      ->  []
   cylinder lying on its side            ->  the curved face
   pyramid on its base                   ->  []
   pyramid on its apex, flat sides       ->  the side faces
   roof under a T-shaped arm             ->  the roof faces
+  face steeper than the critical limit  ->  not listed
+  face between the two limits           ->  limits.CRITICAL
+  face flatter than the unprintable
+    limit                               ->  limits.UNPRINTABLE
+  face at exactly a limit               ->  the level above it (not flatter)
+  both limits equal                     ->  UNPRINTABLE or nothing, no CRITICAL
+  unprintable limit 0                   ->  CRITICAL at most
 """
 
 import math
@@ -32,6 +39,7 @@ import FreeCAD as App
 import Part
 
 from . import defaults as d
+from . import limits
 from .shapes import bounds, middle_normal
 
 # Turns the wires of a section into faces, holes inside their outlines.
@@ -59,20 +67,42 @@ def _normals_above(face, bed_z):
     return normals
 
 
-def overhangs(shape, supported=(), limit_deg=d.OVERHANG_ANGLE):
-    """Numbers (1-based) of the faces of `shape` lying flatter than limit_deg over the bed."""
+def _steepest_down(shape, supported, min_area):
+    """(number, how steeply its normal points down) of each face of `shape`
+    whose normal points down somewhere above the bed, as the cosine of the
+    angle of the face from the bed at its flattest sample: 1 for a face
+    lying flat over the bed, 0 for a vertical one. Faces resting on the bed,
+    carried by fins (`supported`) or smaller than `min_area` (mm2) are left out."""
     bed_z = bounds(shape).ZMin
-    # A face lies flatter than the limit when its normal points down more
-    # steeply than the normal of a face at the limit.
-    steepest = math.cos(math.radians(limit_deg))
     found = []
     for number, face in enumerate(shape.Faces, 1):
-        if bounds(face).ZMax <= bed_z + d.TOLERANCE or face.Area < d.OVERHANG_MIN_AREA:
+        if bounds(face).ZMax <= bed_z + d.TOLERANCE or face.Area < min_area:
             continue
         if any(face.isSame(carried) for carried in supported):
             continue
-        if any(-n.z > steepest + d.TOLERANCE for n in _normals_above(face, bed_z)):
-            found.append(number)
+        down = max((-n.z for n in _normals_above(face, bed_z)), default=0.0)
+        if down > 0:
+            found.append((number, down))
+    return found
+
+
+def _flatter(down, limit_deg):
+    """Whether a face whose normal points down `down` steeply (see
+    _steepest_down()) lies flatter than `limit_deg` over the bed."""
+    return down > math.cos(math.radians(limit_deg)) + d.TOLERANCE
+
+
+def rated(shape, supported, rating):
+    """(number, level), numbers from 1, of the faces of `shape` lying flatter over the bed
+    than `rating`, a limits.Limits, allows: limits.UNPRINTABLE flatter than
+    its overhang_unprintable, limits.CRITICAL flatter than its
+    overhang_critical only."""
+    found = []
+    for number, down in _steepest_down(shape, supported, rating.overhang_min_area):
+        if _flatter(down, rating.overhang_unprintable):
+            found.append((number, limits.UNPRINTABLE))
+        elif _flatter(down, rating.overhang_critical):
+            found.append((number, limits.CRITICAL))
     return found
 
 

@@ -20,7 +20,7 @@ import Part
 from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left_face, run, split_cylinder, tilted_cube
 from freecad.finsnap import defaults as d
 from freecad.finsnap import check, export_3mf, export_step, feature, geometry, orient, overhang, stability
-from freecad.finsnap import presets
+from freecad.finsnap import limits, presets
 from freecad.finsnap.params import FinParams, ParamError
 from freecad.finsnap.paths import PACKAGE_XML
 from freecad.finsnap.shapes import bounds, global_shape, moved, outermost
@@ -31,6 +31,7 @@ V = App.Vector
 PACKAGE_ROOT = ET.parse(PACKAGE_XML).getroot()  # nosec B314
 PACKAGE_VERSION = PACKAGE_ROOT.findtext("{https://wiki.freecad.org/Package_Metadata}version")
 BOX = (40.0, 20.0, 20.0)
+WIDER_MARGIN = 1.0  # mm past the margin a part stands at, so it is at risk of tipping
 XY_PLANE = 3  # index in the origin features of a Body
 FIN_SHIFT = 1.5  # how far a fin is moved along the face by hand, in mm
 MANY_FIN_WIDTHS = 3  # far enough to run a fin into its neighbour
@@ -140,7 +141,9 @@ def t_profile_in_part(doc):
     arms = [i for i, f in enumerate(shape.Faces, 1) if f.normalAt(0, 0).z < -1 + d.TOLERANCE
             and f.BoundBox.ZMin > shape.BoundBox.ZMin + d.TOLERANCE]
     expect(len(arms) == 2, "the T has two arms facing down")
-    expect(feature.overhangs_of(pad, doc) == ["Face%d" % i for i in arms], "both arms are reported as overhangs")
+    rated = feature.overhangs_of(pad, doc)
+    expect(rated == [("Face%d" % i, limits.UNPRINTABLE) for i in arms],
+           "both arms, lying flat over the bed, are reported as too flat to print: %s" % rated)
 
     edge = [e for e in shape.Edges if e.BoundBox.ZMax < d.TOLERANCE and abs(e.Length - T_DEPTH) < d.TOLERANCE][0]
     owner = outermost(pad)
@@ -150,7 +153,7 @@ def t_profile_in_part(doc):
     tilted = global_shape(pad)
     expect(abs(tilted.BoundBox.ZMin) < d.TOLERANCE, "the nested part rests on the bed after the tilt")
 
-    hanging = feature.overhangs_of(pad, doc)
+    hanging = [name for name, _ in feature.overhangs_of(pad, doc)]
     expect(len(hanging) == 3, "tilted by %.0f degrees the stem and both arms overhang: %s" % (FLAT_TILT, hanging))
     stem = min(hanging, key=lambda name: tilted.getElement(name).BoundBox.ZMin)
     fins = feature.create(pad, stem)
@@ -893,6 +896,30 @@ def stability_raised_and_counter(doc):
            "tipping away from its fins it is told to add a counter fin; towards its counter fin, not: %s" % notes)
 
 
+def stability_by_limits(doc):
+    """A part standing far from tipping by the built-in tipping margin is at
+    risk of tipping by a wider one set in the preferences."""
+    box = doc.addObject("Part::Feature", "Margined")
+    box.Shape = Part.makeBox(*BOX)
+    doc.recompute()
+    level, _, shown = feature.stability_of(box, FinParams())
+    expect(level == feature.STANDS, "a box lying on the bed stands, %.1f mm from tipping" % shown.margin)
+    limits.save(limits.Limits(tipping_margin=shown.margin + WIDER_MARGIN))
+    try:
+        level = feature.stability_of(box, FinParams())[0]
+        expect(level == feature.CLOSE, "with a wider tipping margin set, the same box is at risk of tipping")
+    finally:
+        limits.reset()
+    # Its check, of a part without fins, which no rebuild of fins reaches,
+    # goes out of date once the limits change.
+    checked = check.record(box, [], check.STABILITY, level, "note", None)
+    feature.follow_limits()
+    expect(checked.OutOfDate and "Touched" not in checked.State,
+           "new limits put the check of a part without fins out of date")
+    doc.removeObject(checked.Name)
+    doc.removeObject(box.Name)
+
+
 def check_objects(doc):
     """A check in the tree goes out of date once fins of its part are built
     anew, also fins made after it, and once the body its part lies in moves;
@@ -933,6 +960,21 @@ def check_objects(doc):
            "again, and moving the container puts the check out of date")
     doc.removeObject(first.Name)
     holder.removeObject(loose)
+
+    # The levels of overhangs and the tipping margin a check rated by are
+    # kept; a check saved before them gets them once filled again.
+    flat, steep = Part.makeBox(1, 1, 1).Faces[:2]
+    rated = check.record(loose, [], check.PART, feature.STANDS, "note", None,
+                         overhangs=[(flat, limits.UNPRINTABLE), (steep, limits.CRITICAL)])
+    expect(len(rated.Overhangs.Faces) == 1 and len(rated.UnprintableOverhangs.Faces) == 1
+           and rated.TippingMargin == limits.current().tipping_margin,
+           "a check keeps its critical and its unprintable faces apart, and the tipping margin it rated by")
+    for name in ("UnprintableOverhangs", "TippingMargin"):
+        rated.removeProperty(name)
+    check.record(loose, [], check.PART, feature.STANDS, "note", None)
+    expect("UnprintableOverhangs" in rated.PropertiesList and rated.UnprintableOverhangs.isNull(),
+           "a check saved by an older version gets the properties added since")
+    doc.removeObject(rated.Name)
     doc.removeObject(loose.Name)
     doc.removeObject(holder.Name)
     doc.removeObject(inside.Name)
@@ -1055,6 +1097,7 @@ def main():
     kept_islands(doc)
     stability_raised_and_counter(doc)
     check_objects(doc)
+    stability_by_limits(doc)
     fins_follow_the_body(doc)
     step_with_offset_curves()
     print("all checks passed", file=sys.__stdout__)
