@@ -35,6 +35,9 @@ KINDS = (STABILITY, PART, BRIDGES)
 LABELS = {STABILITY: QT_TRANSLATE_NOOP("FinSnap", "Stability check of %s"),
           PART: QT_TRANSLATE_NOOP("FinSnap", "Part check of %s"),
           BRIDGES: QT_TRANSLATE_NOOP("FinSnap", "Bridge check of %s")}
+# The properties keeping the free regions of bridges spanning too far, by
+# level, on a check and on fins alike.
+BRIDGE_PROPERTIES = {limits.CRITICAL: "CriticalBridges", limits.UNPRINTABLE: "UnprintableBridges"}
 GROUP = QT_TRANSLATE_NOOP("App::Property", "Check")
 GROUP_SHOWN = QT_TRANSLATE_NOOP("App::Property", "Shown")
 # Shown read-only in the property view, or not at all.
@@ -76,8 +79,8 @@ PROPERTIES = (
     ("UnprintableOverhangs", "Part::PropertyPartShape", GROUP_SHOWN, "", EDITOR_HIDDEN),
     # The free regions of the bridges spanning too far, by level, see
     # bridge.py, on the underside of the part.
-    ("CriticalBridges", "Part::PropertyPartShape", GROUP_SHOWN, "", EDITOR_HIDDEN),
-    ("UnprintableBridges", "Part::PropertyPartShape", GROUP_SHOWN, "", EDITOR_HIDDEN),
+    (BRIDGE_PROPERTIES[limits.CRITICAL], "Part::PropertyPartShape", GROUP_SHOWN, "", EDITOR_HIDDEN),
+    (BRIDGE_PROPERTIES[limits.UNPRINTABLE], "Part::PropertyPartShape", GROUP_SHOWN, "", EDITOR_HIDDEN),
     # The tipping margin the check rated by, which the colours by height show.
     ("TippingMargin", "App::PropertyFloat", GROUP_SHOWN, "", EDITOR_HIDDEN),
     ("IslandLayers", "Part::PropertyPartShape", GROUP_SHOWN, "", EDITOR_HIDDEN),
@@ -189,7 +192,7 @@ def record(part_obj, fins, kind, level, note, shown, cut=None, overhangs=(), isl
     for name, chosen in (("Overhangs", limits.CRITICAL), ("UnprintableOverhangs", limits.UNPRINTABLE)):
         faces = [face for face, level in overhangs if level == chosen]
         setattr(obj, name, Part.makeCompound(faces) if faces else Part.Shape())
-    for name, chosen in (("CriticalBridges", limits.CRITICAL), ("UnprintableBridges", limits.UNPRINTABLE)):
+    for chosen, name in BRIDGE_PROPERTIES.items():
         regions = [spanned.region for spanned in bridges if spanned.level == chosen]
         setattr(obj, name, Part.makeCompound(regions) if regions else Part.Shape())
     obj.TippingMargin = limits.current().tipping_margin

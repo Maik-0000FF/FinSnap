@@ -46,7 +46,7 @@ NOTE_OVERHANGS_UNPRINTABLE = QT_TRANSLATE_NOOP(
 # under its first layer, critical ones and those too long to print, as one
 # shape each; the view provider shows them. Said for them, by level: how many,
 # of which part, the limit and the longest span (mm), the faces they lie under.
-BRIDGES = {limits.CRITICAL: "CriticalBridges", limits.UNPRINTABLE: "UnprintableBridges"}
+BRIDGES = check.BRIDGE_PROPERTIES
 NOTE_BRIDGES = {
     limits.CRITICAL: QT_TRANSLATE_NOOP(
         "FinSnap", "%d bridges of %s span further than %.1f mm, the longest %.1f mm: %s"),
@@ -668,13 +668,16 @@ def _supported(part_obj, document):
     return shape, faces
 
 
-def overhangs_of(part_obj, document, p):
+def overhangs_of(part_obj, document, p, with_bridges=True):
     """(name, level) of the faces of `part_obj` that overhang without fins,
     rated by the limits of the preferences: limits.CRITICAL or
-    limits.UNPRINTABLE. Faces a bridge lies under (bridges_of(), on the
-    layers and beads of `p`) are no overhangs: their risk is their span."""
+    limits.UNPRINTABLE. Faces a bridge covers whole (bridges_of(), on the
+    layers and beads of `p`) are no overhangs: their risk is their span. A
+    face the bridge covers in part still overhangs where it does not. Without
+    `with_bridges` no bridge is looked for, and every face is rated."""
     shape, supported = _supported(part_obj, document)
-    spanned = {number for found in _bridges(part_obj, shape, supported, p) for number in found.faces}
+    spanned = ({number for found in _bridges(part_obj, shape, supported, p) for number in found.covered}
+               if with_bridges else set())
     return [(face_name(number), level) for number, level in overhang.rated(shape, supported, limits.current())
             if number not in spanned]
 
@@ -802,8 +805,9 @@ NOTE_PAST_EDGE_END = QT_TRANSLATE_NOOP(
 ISLANDS_KEPT = 8
 ISLANDS_KEY_DIGITS = 6
 _islands_kept = {}
-# Whether islands are checked while fins are made and edited, in FinSnap's
-# preferences: on a slow computer they can be left to Check part.
+# Whether islands and bridges are checked while fins are made and edited, in
+# FinSnap's preferences: on a slow computer they can be left to Check part.
+# Named for islands alone, as it was before bridges: the setting saved holds.
 ISLANDS_WHILE_EDITING = "IslandsWhileEditing"
 # The centres of mass of parts while they are printed, by the same key as the
 # islands: stability_of() fills them as stability.check() works them out.
@@ -824,9 +828,9 @@ def islands_of(obj, p):
     """The islands (overhang.islands()) of the part of `obj` as it stands, on
     the layers of `p`; the fins do not count. Worked out once for each part,
     shape, place and layers, as every build of the fins asks again, unless
-    keep_islands() was told them before. While islands_while_editing() is off,
+    keep_islands() was told them before. While checks_while_editing() is off,
     none are worked out: [], and the fins say nothing of islands."""
-    if not islands_while_editing():
+    if not checks_while_editing():
         return []
     part_obj = obj.Base[0]
     kept = _islands_kept.get(_islands_key(part_obj, p))
@@ -836,13 +840,14 @@ def islands_of(obj, p):
     return list(kept)
 
 
-def islands_while_editing():
-    """Whether islands are checked while fins are made and edited, as the
-    user set it with Islands while editing; on, if never set."""
+def checks_while_editing():
+    """Whether islands and bridges are checked while fins are made and
+    edited, as the user set it with Islands and bridges while editing; on,
+    if never set."""
     return App.ParamGet(presets.PREFERENCES).GetBool(ISLANDS_WHILE_EDITING, True)
 
 
-def set_islands_while_editing(on):
+def set_checks_while_editing(on):
     App.ParamGet(presets.PREFERENCES).SetBool(ISLANDS_WHILE_EDITING, bool(on))
 
 
@@ -1054,8 +1059,9 @@ class FinSnapFeature:
             # follow the part.
             hidden_property(obj, CARRIED, "App::PropertyStringList")
             setattr(obj, CARRIED, [])
-            set_overhangs(obj, overhangs_of(obj.Base[0], obj.Document, p))
-            set_bridges(obj, [])
+            spans = bridges_of(obj.Base[0], obj.Document, p) if checks_while_editing() else []
+            set_overhangs(obj, overhangs_of(obj.Base[0], obj.Document, p, checks_while_editing()))
+            set_bridges(obj, spans)
             set_islands(obj, [])
             raise
         # Named on the part itself, the counter face as well: a split side was
@@ -1072,8 +1078,12 @@ class FinSnapFeature:
                 hidden_property(obj, PLANNED[which], "App::PropertyInteger")
                 setattr(obj, PLANNED[which], built.planned)
         # The faces the fins carry stay the same while one fin is dragged.
-        rated = self.during_drag(OVERHANGS, lambda: overhangs_of(obj.Base[0], obj.Document, p))
-        spans = self.during_drag(BRIDGES[limits.CRITICAL], lambda: bridges_of(obj.Base[0], obj.Document, p))
+        # Bridges, as islands, only with the checks while editing on; off, the
+        # faces they lie under stay overhangs until Check part.
+        editing = checks_while_editing()
+        rated = self.during_drag(OVERHANGS, lambda: overhangs_of(obj.Base[0], obj.Document, p, editing))
+        spans = self.during_drag(BRIDGES[limits.CRITICAL],
+                                 lambda: bridges_of(obj.Base[0], obj.Document, p) if editing else [])
         set_bridges(obj, spans)
         set_overhangs(obj, rated)
         overhanging = [name for name, _ in rated]

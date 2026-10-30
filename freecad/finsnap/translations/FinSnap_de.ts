@@ -219,37 +219,37 @@
         <translation>Platzierung vor Auf Kante stellen, wiederhergestellt von Wieder flach legen</translation>
     </message>
     <message>
-        <location filename="../check.py" line="38"/>
+        <location filename="../check.py" line="41"/>
         <source>Check</source>
         <translation>Prüfung</translation>
     </message>
     <message>
-        <location filename="../check.py" line="39"/>
+        <location filename="../check.py" line="42"/>
         <source>Shown</source>
         <translation>Anzeige</translation>
     </message>
     <message>
-        <location filename="../check.py" line="46"/>
+        <location filename="../check.py" line="49"/>
         <source>The part checked</source>
         <translation>Das geprüfte Teil</translation>
     </message>
     <message>
-        <location filename="../check.py" line="49"/>
+        <location filename="../check.py" line="52"/>
         <source>The fins of the part checked</source>
         <translation>Die Finnen des geprüften Teils</translation>
     </message>
     <message>
-        <location filename="../check.py" line="53"/>
+        <location filename="../check.py" line="56"/>
         <source>What was checked</source>
         <translation>Was geprüft wurde</translation>
     </message>
     <message>
-        <location filename="../check.py" line="55"/>
+        <location filename="../check.py" line="58"/>
         <source>What the check found</source>
         <translation>Was die Prüfung ergab</translation>
     </message>
     <message>
-        <location filename="../check.py" line="58"/>
+        <location filename="../check.py" line="61"/>
         <source>The part, its place or its fins changed since: double-click to check again</source>
         <translation>Das Teil, seine Lage oder seine Finnen haben sich seitdem geändert: zum erneuten Prüfen doppelklicken</translation>
     </message>
@@ -734,63 +734,63 @@
         <translation>keine Fläche an %s gewählt</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="775"/>
+        <location filename="../feature.py" line="778"/>
         <source>Nothing of the part stands on the bed.</source>
         <translation>Nichts von dem Teil steht auf dem Bett.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="776"/>
+        <location filename="../feature.py" line="779"/>
         <source>Stands on its own while it is printed: at least %.1f mm from tipping, at layer %d (%.1f mm).</source>
         <translation>Steht während des Drucks von allein: mindestens %.1f mm vom Kippen entfernt, bei Schicht %d (%.1f mm).</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="778"/>
+        <location filename="../feature.py" line="781"/>
         <source>Stands on its own, but only just: %.1f mm from tipping at layer %d (%.1f mm).</source>
         <translation>Steht von allein, aber nur knapp: %.1f mm vom Kippen entfernt bei Schicht %d (%.1f mm).</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="780"/>
+        <location filename="../feature.py" line="783"/>
         <source>Tips over at layer %d (%.1f mm) while it is printed: fins under its leaning face hold it.</source>
         <translation>Kippt während des Drucks bei Schicht %d (%.1f mm) um: Finnen unter seiner geneigten Fläche halten es.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="782"/>
+        <location filename="../feature.py" line="785"/>
         <source>On its own it would tip over at layer %d (%.1f mm); its fins hold it: at least %.1f mm from tipping, at layer %d (%.1f mm).</source>
         <translation>Allein würde es bei Schicht %d (%.1f mm) umkippen; seine Finnen halten es: mindestens %.1f mm vom Kippen entfernt, bei Schicht %d (%.1f mm).</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="785"/>
+        <location filename="../feature.py" line="788"/>
         <source>On its own it would tip over at layer %d (%.1f mm); its fins hold it, but only just: %.1f mm from tipping at layer %d (%.1f mm).</source>
         <translation>Allein würde es bei Schicht %d (%.1f mm) umkippen; seine Finnen halten es, aber nur knapp: %.1f mm vom Kippen entfernt bei Schicht %d (%.1f mm).</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="788"/>
+        <location filename="../feature.py" line="791"/>
         <source>Tips over at layer %d (%.1f mm), before its fins hold it from their lowest tine at %.1f mm: set the first tine lower.</source>
         <translation>Kippt bei Schicht %d (%.1f mm) um, bevor seine Finnen es ab ihrer untersten Zinke bei %.1f mm halten: setze die erste Zinke tiefer.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="791"/>
+        <location filename="../feature.py" line="794"/>
         <source>Tips over at layer %d (%.1f mm), away from its fins: a counter fin on that side holds it.</source>
         <translation>Kippt bei Schicht %d (%.1f mm) von seinen Finnen weg um: eine Gegenfinne auf dieser Seite hält es.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="793"/>
+        <location filename="../feature.py" line="796"/>
         <source>Tips over at layer %d (%.1f mm) towards its fins, past their feet: a longer foot or more fins hold it.</source>
         <translation>Kippt bei Schicht %d (%.1f mm) zu seinen Finnen hin um, über ihre Füße hinaus: ein längerer Fuß oder mehr Finnen halten es.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="796"/>
+        <location filename="../feature.py" line="799"/>
         <source>Tips over at layer %d (%.1f mm), past an end of the edge it stands on.</source>
         <translation>Kippt bei Schicht %d (%.1f mm) über ein Ende der Kante um, auf der es steht.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="1083"/>
+        <location filename="../feature.py" line="1093"/>
         <source>Main fin: %s</source>
         <translation>Hauptfinne: %s</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="1048"/>
-        <location filename="../feature.py" line="1087"/>
+        <location filename="../feature.py" line="1053"/>
+        <location filename="../feature.py" line="1097"/>
         <source>Counter fin: %s</source>
         <translation>Gegenfinne: %s</translation>
     </message>
@@ -1273,7 +1273,7 @@
         <translation>Wähle eine Kante oder eine Fläche, eine Fläche und die Kante oder die Fase oder Rundung, auf der sie stehen soll, oder die beiden Flächen neben einer Rundung.</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1590"/>
+        <location filename="../geometry.py" line="1591"/>
         <source>the fins do not fit under the selected face standing this way: %s</source>
         <translation>die Finnen passen in dieser Lage nicht unter die gewählte Fläche: %s</translation>
     </message>
@@ -1640,12 +1640,12 @@
 <context>
     <name>FinSnap_CheckLimits</name>
     <message>
-        <location filename="../commands.py" line="1139"/>
+        <location filename="../commands.py" line="1142"/>
         <source>Check limits...</source>
         <translation>Prüfgrenzen...</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1140"/>
+        <location filename="../commands.py" line="1143"/>
         <source>Opens the limits the checks rate by, in Edit &gt; Preferences: the strictness, strict or normal, or limits of your own for overhangs and the tipping margin.</source>
         <translation>Öffnet die Grenzen, nach denen die Prüfungen bewerten, unter Bearbeiten &gt; Einstellungen: die Strenge, streng oder normal, oder eigene Grenzen für Überhänge und den Kippabstand.</translation>
     </message>
@@ -1705,14 +1705,14 @@
 <context>
     <name>FinSnap_IslandsWhileEditing</name>
     <message>
-        <location filename="../commands.py" line="1118"/>
-        <source>Islands while editing</source>
-        <translation>Inseln beim Bearbeiten</translation>
+        <location filename="../commands.py" line="1120"/>
+        <source>Islands and bridges while editing</source>
+        <translation>Inseln und Brücken beim Bearbeiten</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1119"/>
-        <source>While on, fins check their part for islands as they are made and edited, and Quick fins prefers ways to stand it without. Off, they are not checked then, which keeps a large part quick on a slow computer; Check part checks them at the end.</source>
-        <translation>Ist es an, prüfen Finnen ihr Teil beim Erstellen und Bearbeiten auf Inseln, und Schnelle Finnen bevorzugt Aufstellungen ohne. Ist es aus, wird dann nicht geprüft, was ein großes Teil auf einem langsamen Rechner flüssig hält; Teil prüfen prüft sie am Ende.</translation>
+        <location filename="../commands.py" line="1121"/>
+        <source>While on, fins check their part for islands and bridges as they are made and edited, and Quick fins rates the ways to stand it by them. Off, they are not checked then, which keeps a large part quick on a slow computer: faces under bridges count as overhangs meanwhile, and Check part checks them at the end.</source>
+        <translation>Eingeschaltet prüfen Finnen ihr Teil beim Erzeugen und Bearbeiten auf Inseln und Brücken, und Schnelle Finnen bewertet danach die Arten, es aufzustellen. Ausgeschaltet wird dabei nicht geprüft, das hält ein großes Teil auf einem langsamen Rechner schnell: Flächen unter Brücken zählen solange als Überhänge, und die Teilprüfung prüft sie am Ende.</translation>
     </message>
 </context>
 <context>

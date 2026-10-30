@@ -1492,7 +1492,7 @@ def printable_plans(shape, plans, p):
     not print. The islands are those of the part stood by the plan, see
     overhang.islands(); the fins do not count, they carry no layer. The
     overhangs and bridges leave out the face the fins go under, and a face a
-    bridge lies under is no overhang. Plans standing the part alike, differing
+    bridge covers whole is no overhang. Plans standing the part alike, differing
     only by the face for the fins, are checked for islands and bridges once.
 
     INPUTS this has to withstand:
@@ -1525,9 +1525,10 @@ def printable_plans(shape, plans, p):
         # The face under the fins spans nothing: it leaves the bridges it
         # alone lies under, the others lie under it no longer.
         carried = plan.number + 1
-        spans = [found._replace(faces=[n for n in found.faces if n != carried]) for found in every
-                 if any(n != carried for n in found.faces)]
-        spanned = {number for found in spans for number in found.faces}
+        spans = [found._replace(faces=[n for n in found.faces if n != carried],
+                                covered=[n for n in found.covered if n != carried])
+                 for found in every if any(n != carried for n in found.faces)]
+        spanned = {number for found in spans for number in found.covered}
         levels = [level for number, level in overhang.rated(stood, (stood.Faces[plan.number],), rating)
                   if number not in spanned]
         rated.append(RatedPlan(plan, islands, levels, spans))

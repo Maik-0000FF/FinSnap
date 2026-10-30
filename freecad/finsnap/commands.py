@@ -618,7 +618,7 @@ def quick_plans(obj, edge_names, face_names):
     # in halves joined: on `obj` the number is another face.
     # Without islands checked while editing, the ways stand in the order found,
     # their islands not known.
-    rated = (geometry.printable_plans(shape, plans, quick_params()) if feature.islands_while_editing()
+    rated = (geometry.printable_plans(shape, plans, quick_params()) if feature.checks_while_editing()
              else [geometry.RatedPlan(plan, None, None, None) for plan in plans])
     return [QuickWay(way.plan, name_of(way.plan.number), way.islands, shape.Faces[way.plan.number].Area,
                      _edge_name(obj, way.plan.edge), way.overhangs, way.bridges)
@@ -1110,24 +1110,27 @@ class CheckPart:
 
 
 class IslandsWhileEditing:
-    """Switch the island check while fins are made and edited on or off: on a
-    slow computer it can be left to Check part. Kept in FinSnap's preferences."""
+    """Switch the island and bridge checks while fins are made and edited on
+    or off: on a slow computer they can be left to Check part. Kept in
+    FinSnap's preferences. Named for islands alone, as it was before bridges:
+    toolbars set up with it keep it."""
 
     def GetResources(self):  # noqa: N802 - FreeCAD API
         return {"Pixmap": ICON_ISLANDS,
-                "MenuText": QT_TRANSLATE_NOOP("FinSnap_IslandsWhileEditing", "Islands while editing"),
+                "MenuText": QT_TRANSLATE_NOOP("FinSnap_IslandsWhileEditing", "Islands and bridges while editing"),
                 "ToolTip": QT_TRANSLATE_NOOP(
                     "FinSnap_IslandsWhileEditing",
-                    "While on, fins check their part for islands as they are made and edited, and Quick fins "
-                    "prefers ways to stand it without. Off, they are not checked then, which keeps a large part "
-                    "quick on a slow computer; Check part checks them at the end."),
-                "Checkable": feature.islands_while_editing()}
+                    "While on, fins check their part for islands and bridges as they are made and edited, and "
+                    "Quick fins rates the ways to stand it by them. Off, they are not checked then, which keeps "
+                    "a large part quick on a slow computer: faces under bridges count as overhangs meanwhile, "
+                    "and Check part checks them at the end."),
+                "Checkable": feature.checks_while_editing()}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
         return True
 
     def Activated(self, checked):  # noqa: N802 - FreeCAD API
-        feature.set_islands_while_editing(checked)
+        feature.set_checks_while_editing(checked)
 
 
 class CheckLimits:

@@ -219,37 +219,37 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../check.py" line="38"/>
+        <location filename="../check.py" line="41"/>
         <source>Check</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../check.py" line="39"/>
+        <location filename="../check.py" line="42"/>
         <source>Shown</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../check.py" line="46"/>
+        <location filename="../check.py" line="49"/>
         <source>The part checked</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../check.py" line="49"/>
+        <location filename="../check.py" line="52"/>
         <source>The fins of the part checked</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../check.py" line="53"/>
+        <location filename="../check.py" line="56"/>
         <source>What was checked</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../check.py" line="55"/>
+        <location filename="../check.py" line="58"/>
         <source>What the check found</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../check.py" line="58"/>
+        <location filename="../check.py" line="61"/>
         <source>The part, its place or its fins changed since: double-click to check again</source>
         <translation type="unfinished"></translation>
     </message>
@@ -751,63 +751,63 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="775"/>
+        <location filename="../feature.py" line="778"/>
         <source>Nothing of the part stands on the bed.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="776"/>
+        <location filename="../feature.py" line="779"/>
         <source>Stands on its own while it is printed: at least %.1f mm from tipping, at layer %d (%.1f mm).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="778"/>
+        <location filename="../feature.py" line="781"/>
         <source>Stands on its own, but only just: %.1f mm from tipping at layer %d (%.1f mm).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="780"/>
+        <location filename="../feature.py" line="783"/>
         <source>Tips over at layer %d (%.1f mm) while it is printed: fins under its leaning face hold it.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="782"/>
+        <location filename="../feature.py" line="785"/>
         <source>On its own it would tip over at layer %d (%.1f mm); its fins hold it: at least %.1f mm from tipping, at layer %d (%.1f mm).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="785"/>
+        <location filename="../feature.py" line="788"/>
         <source>On its own it would tip over at layer %d (%.1f mm); its fins hold it, but only just: %.1f mm from tipping at layer %d (%.1f mm).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="788"/>
+        <location filename="../feature.py" line="791"/>
         <source>Tips over at layer %d (%.1f mm), before its fins hold it from their lowest tine at %.1f mm: set the first tine lower.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="791"/>
+        <location filename="../feature.py" line="794"/>
         <source>Tips over at layer %d (%.1f mm), away from its fins: a counter fin on that side holds it.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="793"/>
+        <location filename="../feature.py" line="796"/>
         <source>Tips over at layer %d (%.1f mm) towards its fins, past their feet: a longer foot or more fins hold it.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="796"/>
+        <location filename="../feature.py" line="799"/>
         <source>Tips over at layer %d (%.1f mm), past an end of the edge it stands on.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="1083"/>
+        <location filename="../feature.py" line="1093"/>
         <source>Main fin: %s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="1048"/>
-        <location filename="../feature.py" line="1087"/>
+        <location filename="../feature.py" line="1053"/>
+        <location filename="../feature.py" line="1097"/>
         <source>Counter fin: %s</source>
         <translation type="unfinished"></translation>
     </message>
@@ -990,7 +990,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1590"/>
+        <location filename="../geometry.py" line="1591"/>
         <source>the fins do not fit under the selected face standing this way: %s</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1640,12 +1640,12 @@
 <context>
     <name>FinSnap_CheckLimits</name>
     <message>
-        <location filename="../commands.py" line="1139"/>
+        <location filename="../commands.py" line="1142"/>
         <source>Check limits...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1140"/>
+        <location filename="../commands.py" line="1143"/>
         <source>Opens the limits the checks rate by, in Edit &gt; Preferences: the strictness, strict or normal, or limits of your own for overhangs and the tipping margin.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1705,13 +1705,13 @@
 <context>
     <name>FinSnap_IslandsWhileEditing</name>
     <message>
-        <location filename="../commands.py" line="1118"/>
-        <source>Islands while editing</source>
+        <location filename="../commands.py" line="1120"/>
+        <source>Islands and bridges while editing</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1119"/>
-        <source>While on, fins check their part for islands as they are made and edited, and Quick fins prefers ways to stand it without. Off, they are not checked then, which keeps a large part quick on a slow computer; Check part checks them at the end.</source>
+        <location filename="../commands.py" line="1121"/>
+        <source>While on, fins check their part for islands and bridges as they are made and edited, and Quick fins rates the ways to stand it by them. Off, they are not checked then, which keeps a large part quick on a slow computer: faces under bridges count as overhangs meanwhile, and Check part checks them at the end.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

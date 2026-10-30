@@ -35,6 +35,9 @@ INPUTS this has to withstand (bridges()):
                                             its span, rated by the limits
   the same, the slab longer than the
     gap is wide                         ->  the span across the gap, not along it
+  the slab reaching past the piers at
+    the back                            ->  the bridge across the gap, its face
+                                            not covered: it overhangs past it
   an arm reaching out at one side       ->  [] (an overhang)
   a block floating above the bed        ->  [] (an island)
   a free rim narrower than a bead       ->  []
@@ -67,11 +70,12 @@ COVERAGE_ALIKE = 1.0
 
 # What the kernel raises where it cannot cut or clip a region.
 KERNEL_ERRORS = (Part.OCCError, App.Base.CADKernelError)
-# A bridge: the numbers (from 1) of the faces of the part it lies under, the
-# free region of its first layer at the height of the lowest of them, where it
-# shows on the underside of the part, its span (mm) and its level, limits.GOOD,
-# CRITICAL or UNPRINTABLE.
-Bridge = namedtuple("Bridge", "faces region span level")
+# A bridge: the numbers (from 1) of the faces of the part it lies under, those
+# of them it covers whole, the free region of its first layer at the height of
+# the lowest of them, where it shows on the underside of the part, its span
+# (mm) and its level, limits.GOOD, CRITICAL or UNPRINTABLE. A face covered in
+# part reaches past the bridge, overhanging there.
+Bridge = namedtuple("Bridge", "faces covered region span level")
 
 
 def bridges(shape, first_layer, layer, bead, rating, supported=()):
@@ -103,13 +107,15 @@ def bridges(shape, first_layer, layer, bead, rating, supported=()):
         if not here or not below:
             continue
         for region in _free(here, below):
-            span = _span(region, below, bead)
-            if span is None:
+            bridged = _span(region, below, bead)
+            if bridged is None:
                 continue
+            span, lines, spacing = bridged
             under = [n for n in numbers if _lies_over(shape.Faces[n - 1], region, bead)]
             if under:
                 ceiling = min(bounds(shape.Faces[n - 1]).ZMin for n in under)
-                found.append(Bridge(under, region.translated(App.Vector(0, 0, ceiling)), span,
+                covered = [n for n in under if _covered(shape.Faces[n - 1], lines, spacing)]
+                found.append(Bridge(under, covered, region.translated(App.Vector(0, 0, ceiling)), span,
                                     rating.bridge_level(span)))
     return found
 
@@ -139,12 +145,14 @@ def _rests_on(point, below):
 
 
 def _span(region, below, bead):
-    """The span of `region` bridged from `below`: the longest line across it
-    in the direction a slicer bridges in, anchored half a bead past each end
-    on the supports; None where no line crossing more than a bead of it is
-    anchored so at both ends, or where the region is a strip narrower than a
-    bead throughout, twice its area by its outline. The directions are tried
-    in coarse steps first, then in fine ones round the best of them."""
+    """(span, lines, spacing) of `region` bridged from `below`: the longest
+    line across it in the direction a slicer bridges in, anchored half a bead
+    past each end on the supports, all lines anchored so in that direction,
+    as one shape, what the slicer bridges, and how far apart they lie; None
+    where no line crossing more than a bead of it is anchored so at both
+    ends, or where the region is a strip narrower than a bead throughout,
+    twice its area by its outline. The directions are tried in coarse steps
+    first, then in fine ones round the best of them."""
     if 2 * region.Area <= bead * region.Length:
         return None
     box = region.BoundBox
@@ -165,7 +173,7 @@ def _span(region, below, bead):
         found = [entry for entry in measured.values() if entry is not None]
         if not found:
             return None
-        most = max(coverage for coverage, _, _ in found)
+        most = max(entry[0] for entry in found)
         return min((entry for entry in found if entry[0] >= most - COVERAGE_ALIKE * spacing), key=lambda e: e[1])
 
     for degrees in range(0, HALF_TURN, BRIDGE_COARSE_STEP):
@@ -176,14 +184,16 @@ def _span(region, below, bead):
     for offset in range(BRIDGE_FINE_STEP, BRIDGE_COARSE_STEP, BRIDGE_FINE_STEP):
         measure(coarse[2] + offset)
         measure(coarse[2] - offset)
-    return best()[1]
+    _, longest, _, lines = best()
+    return longest, lines, spacing
 
 
 def _anchored(region, below, bead, centre, reach, spacing, degrees):
-    """(coverage, longest, degrees) of the lines `spacing` apart across
-    `region` at `degrees` that rest on `below` half a bead past both ends and
-    cross more than a bead of it: their summed and their longest length (mm);
-    None where none does, or the kernel cannot clip them."""
+    """(coverage, longest, degrees, lines) of the lines `spacing` apart
+    across `region` at `degrees` that rest on `below` half a bead past both
+    ends and cross more than a bead of it: their summed and their longest
+    length (mm), and they, as one shape; None where none does, or the kernel
+    cannot clip them."""
     turn = math.radians(degrees)
     along = App.Vector(math.cos(turn), math.sin(turn), 0)
     across = App.Vector(-along.y, along.x, 0)
@@ -202,8 +212,32 @@ def _anchored(region, below, bead, centre, reach, spacing, degrees):
         start, end = edge.Vertexes[0].Point, edge.Vertexes[-1].Point
         outward = (end - start).normalize() * (bead / 2)
         if _rests_on(start - outward, below) and _rests_on(end + outward, below):
-            anchored.append(edge.Length)
-    return (sum(anchored), max(anchored), degrees) if anchored else None
+            anchored.append(edge)
+    if not anchored:
+        return None
+    lengths = [edge.Length for edge in anchored]
+    return sum(lengths), max(lengths), degrees, Part.makeCompound(anchored)
+
+
+def _covered(face, lines, spacing):
+    """Whether `lines`, the lines a bridge lays across, in the plane of the
+    bed, `spacing` apart, cover `face` of the part whole, seen from above:
+    its corners and every point of a grid on it within a spacing of a line.
+    The rest of a free region, reaching past where the lines rest at both
+    ends, hangs out unbridged: a face over it is covered in part only."""
+    u0, u1, v0, v1 = face.ParameterRange
+    steps = d.OVERHANG_SAMPLES
+    points = [vertex.Point for vertex in face.Vertexes]
+    for i in range(steps):
+        for j in range(steps):
+            u = u0 + (u1 - u0) * (i + 0.5) / steps
+            v = v0 + (v1 - v0) * (j + 0.5) / steps
+            if face.isPartOfDomain(u, v):
+                points.append(face.valueAt(u, v))
+    try:
+        return all(lines.distToShape(Part.Vertex(App.Vector(p.x, p.y, 0)))[0] <= spacing for p in points)
+    except KERNEL_ERRORS:
+        return False
 
 
 def _lies_over(face, region, bead):

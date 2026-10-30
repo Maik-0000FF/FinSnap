@@ -21,7 +21,8 @@ All notable changes to FinSnap are listed here. The format follows
 ### Changed
 
 - The badges of the icons are larger, so what is on them reads better; the picture on the export icons sits higher, clear of the name of the format
-- A face a bridge lies under is no longer reported as an overhang (#102)
+- A face a bridge covers whole is no longer reported as an overhang; one reaching past the bridge still is (#102)
+- Islands while editing is Islands and bridges while editing: off, the bridges are left to Check part as well (#102)
 - Overhangs are rated in two levels: critical below 45 degrees from the bed, marked yellow, and too flat to print below 30 degrees, marked red; fins, Check part and its check in the tree say and show them apart (#101)
 
 ## [0.9.0] - 2026-10-29

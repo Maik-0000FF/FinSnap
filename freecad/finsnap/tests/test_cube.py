@@ -393,12 +393,13 @@ def check_limits():
            "an unprintable limit of 0 degrees: critical at most")
 
 
-def piers(gap, depth=PIER[1]):
-    """A slab on two piers `gap` apart, `depth` deep, the slab across the gap."""
+def piers(gap, depth=PIER[1], slab_depth=None):
+    """A slab on two piers `gap` apart, `depth` deep, the slab across the gap,
+    as deep as the piers or `slab_depth`, reaching past them at the back."""
     width, _, height = PIER
     first = Part.makeBox(width, depth, height)
     second = Part.makeBox(width, depth, height, V(width + gap, 0, 0))
-    slab = Part.makeBox(2 * width + gap, depth, SLAB, V(0, 0, height))
+    slab = Part.makeBox(2 * width + gap, slab_depth or depth, SLAB, V(0, 0, height))
     return first.fuse([second, slab]).removeSplitter()
 
 
@@ -420,6 +421,10 @@ def check_bridges():
     expect(len(deep) == 1 and abs(deep[0].span - GAP_CRITICAL) < SPAN_TOLERANCE,
            "a slab deeper than the gap spans across the gap, not along it: %s" % [s.span for s in deep])
     slab = piers(GAP_CRITICAL)
+    expect(found(slab)[0].covered == found(slab)[0].faces, "the bridge covers the underside of the slab whole")
+    reaching = found(piers(GAP_CRITICAL, slab_depth=DEEP_SLAB))
+    expect(len(reaching) == 1 and reaching[0].faces and not reaching[0].covered,
+           "a slab reaching past the piers at the back: the bridge does not cover its underside whole")
     under = slab.Faces[found(slab)[0].faces[0] - 1]
     expect(abs(under.BoundBox.ZMin - PIER[2]) < d.TOLERANCE and under.BoundBox.ZMax - under.BoundBox.ZMin < d.TOLERANCE,
            "the bridge lies under the underside of the slab")

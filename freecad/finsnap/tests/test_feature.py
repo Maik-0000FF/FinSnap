@@ -916,6 +916,22 @@ def bridges_apart(doc):
     expect(not checked.CriticalBridges.isNull() and checked.UnprintableBridges.isNull()
            and checked.Label.endswith(spanned.Label), "a bridge check keeps the critical bridge of the part")
     doc.removeObject(checked.Name)
+    # The slab reaching past the piers at the back: the bridge spans the gap,
+    # the rest of its underside overhangs, flat over the bed, too flat to print.
+    reaching = doc.addObject("Part::Feature", "Reaching")
+    reaching.Shape = Part.makeBox(width, depth, height).fuse(
+        [Part.makeBox(width, depth, height, V(width + gap, 0, 0)),
+         Part.makeBox(2 * width + gap, depth + depth, slab, V(0, 0, height))]).removeSplitter()
+    doc.recompute()
+    spans = feature.bridges_of(reaching, doc, FinParams())
+    rated = feature.overhangs_of(reaching, doc, FinParams())
+    under = {"Face%d" % number for found in spans for number in found.faces}
+    expect(spans and under and all((name, limits.UNPRINTABLE) in rated for name in under),
+           "an underside reaching past the bridge still overhangs, too flat to print: %s, %s" % (under, rated))
+    covered = {"Face%d" % number for found in feature.bridges_of(spanned, doc, FinParams()) for number in found.covered}
+    plain = {name for name, _ in feature.overhangs_of(spanned, doc, FinParams(), False)}
+    expect(covered and covered <= plain, "without bridges looked for, a face a bridge covers is rated as an overhang")
+    doc.removeObject(reaching.Name)
     doc.removeObject(spanned.Name)
 
 

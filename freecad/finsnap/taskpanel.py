@@ -413,7 +413,7 @@ def check_nodes(check_obj):
                          (getattr(check_obj, "UnprintableOverhangs", Part.Shape()), limits.UNPRINTABLE)):
         if not shape.isNull():
             nodes.append(handles.overhang_faces(shape.Faces, level))
-    for name, level in (("CriticalBridges", limits.CRITICAL), ("UnprintableBridges", limits.UNPRINTABLE)):
+    for level, name in check.BRIDGE_PROPERTIES.items():
         regions = getattr(check_obj, name, Part.Shape())
         if not regions.isNull():
             nodes.append(handles.bridge_regions(regions, level))
