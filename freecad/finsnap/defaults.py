@@ -150,8 +150,8 @@ BRIDGE_CRITICAL = 2.0
 BRIDGE_UNPRINTABLE = 10.0
 # Strict counts any bridge needing more than a short span as not printable.
 STRICT_BRIDGE_UNPRINTABLE = BRIDGE_CRITICAL
-# Smaller overhanging faces, like the corner facets of a chamfer, bridge over
-# without support and are not reported (mm2).
+# Smaller overhanging faces, like the corner facets of a chamfer, are printed
+# over without support and are not reported (mm2).
 OVERHANG_MIN_AREA = 1.0
 # Grid of normals sampled per direction on a curved face.
 OVERHANG_SAMPLES = 8

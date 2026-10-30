@@ -140,6 +140,9 @@ NO_LEANING_FACE = QT_TRANSLATE_NOOP("FinSnap", "no face of the part leans over t
 NOT_OVERHANGING = QT_TRANSLATE_NOOP("FinSnap", "the selected face does not overhang; it faces up or sideways")
 HORIZONTAL_FACE = QT_TRANSLATE_NOOP("FinSnap", "the selected face is horizontal; it rests on the bed or needs regular "
                                                "support")
+# Said where a round side lies level at its lowest line, as a cylinder lying on it.
+HORIZONTAL_ROUND_SIDE = QT_TRANSLATE_NOOP("FinSnap", "the round side lies horizontal at its lowest line; it rests on "
+                                                     "the bed or needs regular support")
 NO_STAND_FOR_FACE = QT_TRANSLATE_NOOP("FinSnap", "the part cannot stand so that this face takes fins")
 
 
@@ -374,7 +377,7 @@ def _lowest(face):
         raise FinError(translate("FinSnap", NOT_OVERHANGING))
     n.normalize()
     if V(n.x, n.y, 0).Length < d.MIN_NORMAL_COMPONENT:
-        raise FinError(translate("FinSnap", HORIZONTAL_FACE))
+        raise FinError(translate("FinSnap", HORIZONTAL_ROUND_SIDE))
     return n
 
 

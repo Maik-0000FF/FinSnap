@@ -1349,7 +1349,8 @@ def check_round_side():
     outside = round_side_of(tube)
     leaning_tube = moved(tube, geometry.quick_plan(tube, [], [(tube.Faces[outside], outside)], p, d.TILT_ANGLE).change)
     for shape, number, why, label in ((rod, side, geometry.NOT_OVERHANGING, "an upright cylinder"),
-                                      (lying, round_side_of(lying), geometry.HORIZONTAL_FACE, "a cylinder on its side"),
+                                      (lying, round_side_of(lying), geometry.HORIZONTAL_ROUND_SIDE,
+                                       "a cylinder on its side"),
                                       (leaning_tube, round_side_of(tube, BORE_RADIUS), "inward",
                                        "the inside of a tube")):
         try:
@@ -1573,7 +1574,7 @@ def check_overhangs(cube, face):
     try:
         geometry.build(lying, lying.Faces[curved[0] - 1], FinParams())
     except geometry.FinError as error:
-        expect(geometry.HORIZONTAL_FACE in str(error),
+        expect(geometry.HORIZONTAL_ROUND_SIDE in str(error),
                "fins under a cylinder resting on its side are refused: %s" % error)
     else:
         raise AssertionError("fins were built under a cylinder resting on its side")
