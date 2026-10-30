@@ -405,7 +405,8 @@ def margin_color(margin, close):
     if margin < 0:
         return handles.INVALID_COLOR
     share = min(1.0, margin / close) if close > 0 else 1.0
-    return tuple(close + (far - close) * share for close, far in zip(handles.BETWEEN_COLOR, handles.VALID_COLOR))
+    return tuple(at_risk + (stands - at_risk) * share
+                 for at_risk, stands in zip(handles.BETWEEN_COLOR, handles.VALID_COLOR))
 
 
 def discard_created(obj, on_cancel=None):

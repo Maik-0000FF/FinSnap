@@ -113,10 +113,23 @@ def outdate(part_obj):
     perhaps new ones, which the checks do not link."""
     for kind in (STABILITY, PART):
         found = find(part_obj, kind)
-        if found is not None and not found.OutOfDate:
-            found.OutOfDate = True
-            # Set by hand, not by a recompute of the check, which then needs none.
-            found.purgeTouched()
+        if found is not None:
+            _outdate(found)
+
+
+def outdate_all(document):
+    """Mark every check of `document` out of date, of parts with fins or
+    without: the limits they rated by changed."""
+    for obj in document.Objects:
+        if is_check(obj):
+            _outdate(obj)
+
+
+def _outdate(obj):
+    if not obj.OutOfDate:
+        obj.OutOfDate = True
+        # Set by hand, not by a recompute of the check, which then needs none.
+        obj.purgeTouched()
 
 
 def is_check(obj):

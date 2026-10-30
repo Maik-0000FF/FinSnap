@@ -23,13 +23,11 @@ INPUTS this has to withstand (the page):
 INPUTS this has to withstand (saveSettings()):
   the limits shown unchanged            ->  nothing rebuilt
   a limit changed                       ->  saved, the fins of every open
-                                            document rebuilt
+                                            document rebuilt, every check
+                                            marked out of date
   no document open                      ->  saved, nothing rebuilt
 """
 
-from dataclasses import fields
-
-import FreeCAD as App
 from PySide import QtWidgets
 
 from . import limits
@@ -152,18 +150,8 @@ class LimitsPage:
     def saveSettings(self):  # noqa: N802 - FreeCAD API
         before, after = limits.current(), self.shown()
         limits.save(after)
-        if any(getattr(before, f.name) != getattr(after, f.name) for f in fields(limits.Limits)):
-            rebuild_fins()
+        if before != after:
+            # Here, not at the top, as the task panel above.
+            from . import feature
 
-
-def rebuild_fins():
-    """Rebuild the fins of every open document, so their marks and warnings
-    follow the limits; their checks are marked out of date as they are."""
-    from . import feature
-
-    for document in App.listDocuments().values():
-        fins = [obj for obj in document.Objects if feature.is_fins(obj)]
-        for obj in fins:
-            obj.touch()
-        if fins:
-            document.recompute(fins)
+            feature.follow_limits()

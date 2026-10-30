@@ -12,11 +12,9 @@ faces resting on the bed and faces smaller than the least area do not count.
 A planar face has one normal; a curved one is sampled on a grid, and it lies
 as flat as its flattest sample above the bed.
 
-INPUTS this has to withstand (overhangs()):
+INPUTS this has to withstand (rated()):
   box lying on the bed                  ->  []
-  face at exactly the limit angle       ->  [] (not flatter than the limit)
-  face flatter than the limit, above
-    the bed                             ->  its number
+  face at exactly the critical limit    ->  [] (not flatter than the limit)
   same face listed as supported         ->  []
   face resting on the bed (normal down) ->  [] (the bed carries it)
   face smaller than the least area      ->  [] (corner facet of a chamfer)
@@ -25,8 +23,6 @@ INPUTS this has to withstand (overhangs()):
   pyramid on its base                   ->  []
   pyramid on its apex, flat sides       ->  the side faces
   roof under a T-shaped arm             ->  the roof faces
-
-INPUTS this has to withstand (rated()):
   face steeper than the critical limit  ->  not listed
   face between the two limits           ->  limits.CRITICAL
   face flatter than the unprintable
@@ -96,13 +92,8 @@ def _flatter(down, limit_deg):
     return down > math.cos(math.radians(limit_deg)) + d.TOLERANCE
 
 
-def overhangs(shape, supported=(), limit_deg=d.OVERHANG_ANGLE, min_area=d.OVERHANG_MIN_AREA):
-    """Numbers (1-based) of the faces of `shape` lying flatter than limit_deg over the bed."""
-    return [number for number, down in _steepest_down(shape, supported, min_area) if _flatter(down, limit_deg)]
-
-
 def rated(shape, supported, rating):
-    """(number, level) of the faces of `shape` lying flatter over the bed
+    """(number, level), numbers from 1, of the faces of `shape` lying flatter over the bed
     than `rating`, a limits.Limits, allows: limits.UNPRINTABLE flatter than
     its overhang_unprintable, limits.CRITICAL flatter than its
     overhang_critical only."""

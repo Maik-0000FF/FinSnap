@@ -671,6 +671,27 @@ def set_overhangs(obj, rated):
     setattr(obj, UNPRINTABLE_OVERHANGS, [name for name, level in rated if level == limits.UNPRINTABLE])
 
 
+def follow_limits():
+    """After the limits of the checks changed (limits.py): rebuild the fins
+    of every open document, so their marks and warnings follow, and mark
+    every check out of date, also those of parts without fins, which no
+    rebuild reaches.
+
+    INPUTS this has to withstand:
+      no document open                     ->  nothing done
+      a document without fins or checks    ->  nothing done in it
+      fins                                 ->  rebuilt by the new limits
+      a check of a part without fins       ->  out of date
+    """
+    for document in App.listDocuments().values():
+        check.outdate_all(document)
+        fins = [obj for obj in document.Objects if is_fins(obj)]
+        for obj in fins:
+            obj.touch()
+        if fins:
+            document.recompute(fins)
+
+
 # Builds of one side kept during a drag; beyond these the oldest goes.
 REUSE_KEPT = 8
 # Answers of whole_elements() kept, with the shape each was worked out for,

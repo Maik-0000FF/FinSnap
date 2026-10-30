@@ -349,7 +349,7 @@
     </message>
     <message>
         <location filename="../commands.py" line="795"/>
-        <location filename="../taskpanel.py" line="720"/>
+        <location filename="../taskpanel.py" line="721"/>
         <source>Add counter fin</source>
         <translation type="unfinished"></translation>
     </message>
@@ -741,63 +741,63 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="687"/>
+        <location filename="../feature.py" line="708"/>
         <source>Nothing of the part stands on the bed.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="688"/>
+        <location filename="../feature.py" line="709"/>
         <source>Stands on its own while it is printed: at least %.1f mm from tipping, at layer %d (%.1f mm).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="690"/>
+        <location filename="../feature.py" line="711"/>
         <source>Stands on its own, but only just: %.1f mm from tipping at layer %d (%.1f mm).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="692"/>
+        <location filename="../feature.py" line="713"/>
         <source>Tips over at layer %d (%.1f mm) while it is printed: fins under its leaning face hold it.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="694"/>
+        <location filename="../feature.py" line="715"/>
         <source>On its own it would tip over at layer %d (%.1f mm); its fins hold it: at least %.1f mm from tipping, at layer %d (%.1f mm).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="697"/>
+        <location filename="../feature.py" line="718"/>
         <source>On its own it would tip over at layer %d (%.1f mm); its fins hold it, but only just: %.1f mm from tipping at layer %d (%.1f mm).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="700"/>
+        <location filename="../feature.py" line="721"/>
         <source>Tips over at layer %d (%.1f mm), before its fins hold it from their lowest tine at %.1f mm: set the first tine lower.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="703"/>
+        <location filename="../feature.py" line="724"/>
         <source>Tips over at layer %d (%.1f mm), away from its fins: a counter fin on that side holds it.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="705"/>
+        <location filename="../feature.py" line="726"/>
         <source>Tips over at layer %d (%.1f mm) towards its fins, past their feet: a longer foot or more fins hold it.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="708"/>
+        <location filename="../feature.py" line="729"/>
         <source>Tips over at layer %d (%.1f mm), past an end of the edge it stands on.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="991"/>
+        <location filename="../feature.py" line="1012"/>
         <source>Main fin: %s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="959"/>
-        <location filename="../feature.py" line="995"/>
+        <location filename="../feature.py" line="980"/>
+        <location filename="../feature.py" line="1016"/>
         <source>Counter fin: %s</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1062,23 +1062,23 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../limits.py" line="91"/>
+        <location filename="../limits.py" line="100"/>
         <location filename="../params.py" line="84"/>
         <source>%s is not a finite number</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../limits.py" line="94"/>
+        <location filename="../limits.py" line="103"/>
         <source>%s must lie between %.0f and %.0f degrees</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../limits.py" line="97"/>
+        <location filename="../limits.py" line="106"/>
         <source>overhang_unprintable must not be steeper than overhang_critical</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../limits.py" line="101"/>
+        <location filename="../limits.py" line="110"/>
         <source>%s must be 0 or greater</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1234,12 +1234,12 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="658"/>
+        <location filename="../taskpanel.py" line="659"/>
         <source>FinSnap parameters</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="662"/>
+        <location filename="../taskpanel.py" line="663"/>
         <source>Hover over a field for an explanation. Letters in brackets point to the drawings below. Every change is shown in the 3D view right away. Greyed-out fields have no effect with the current choices; their tooltip says why.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1264,27 +1264,27 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="718"/>
+        <location filename="../taskpanel.py" line="719"/>
         <source>Remove selected fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="719"/>
+        <location filename="../taskpanel.py" line="720"/>
         <source>Reset fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="721"/>
+        <location filename="../taskpanel.py" line="722"/>
         <source>Remove counter fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="709"/>
+        <location filename="../taskpanel.py" line="710"/>
         <source>To remove one fin, click it in the 3D view and press Remove selected fin, or the Delete key. The counter fin goes on the face leaning the other way, or on a face of the part you select. Drag the two arrows on a fin to move it along the face or to change its height, or type the values below; click another fin, or pick it in the list of fins, to put the arrows there. Reset fins undoes every change by hand.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="729"/>
+        <location filename="../taskpanel.py" line="730"/>
         <source>The fins, the main fins from the left, then the counter fins. Pick one to put the arrows on it and select it.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1349,100 +1349,100 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="757"/>
+        <location filename="../taskpanel.py" line="758"/>
         <source>Save as standard</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="758"/>
+        <location filename="../taskpanel.py" line="759"/>
         <source>New fins start with these values. Fields that differ from the standard are marked, and their button puts the standard back.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="762"/>
-        <location filename="../taskpanel.py" line="928"/>
+        <location filename="../taskpanel.py" line="763"/>
+        <location filename="../taskpanel.py" line="929"/>
         <source>Factory settings</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="763"/>
+        <location filename="../taskpanel.py" line="764"/>
         <source>Forget the saved standard and set every field to the built-in value.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="783"/>
+        <location filename="../taskpanel.py" line="784"/>
         <source>Check stability</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="840"/>
+        <location filename="../taskpanel.py" line="841"/>
         <source>Stand another way</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="908"/>
+        <location filename="../taskpanel.py" line="909"/>
         <source>Back to the standard: %s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="929"/>
+        <location filename="../taskpanel.py" line="930"/>
         <source>Forget the saved standard and set every field to the built-in value?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="957"/>
-        <location filename="../taskpanel.py" line="961"/>
+        <location filename="../taskpanel.py" line="958"/>
+        <location filename="../taskpanel.py" line="962"/>
         <source>Nothing removed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="968"/>
+        <location filename="../taskpanel.py" line="969"/>
         <source>Delete the fins?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="969"/>
+        <location filename="../taskpanel.py" line="970"/>
         <source>These are the last fins. Delete the fins object? A part stood on an edge for these fins alone is laid flat again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="985"/>
+        <location filename="../taskpanel.py" line="986"/>
         <source>Delete fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1004"/>
-        <location filename="../taskpanel.py" line="1008"/>
+        <location filename="../taskpanel.py" line="1005"/>
+        <location filename="../taskpanel.py" line="1009"/>
         <source>No counter fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1134"/>
+        <location filename="../taskpanel.py" line="1135"/>
         <source>%s %d</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1334"/>
+        <location filename="../taskpanel.py" line="1335"/>
         <source>no tine of the fin finds the face there</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1678"/>
+        <location filename="../taskpanel.py" line="1679"/>
         <source>Not possible</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1717"/>
+        <location filename="../taskpanel.py" line="1718"/>
         <source>%d fin(s), %.2f mm high, %.2f mm thick</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1724"/>
+        <location filename="../taskpanel.py" line="1725"/>
         <source>Notes</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="417"/>
+        <location filename="../taskpanel.py" line="418"/>
         <source>Cancel fins</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1457,82 +1457,82 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="39"/>
+        <location filename="../preferences.py" line="37"/>
         <source>Check limits</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="49"/>
+        <location filename="../preferences.py" line="47"/>
         <source>Overhangs</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="50"/>
+        <location filename="../preferences.py" line="48"/>
         <source>Critical below</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="51"/>
+        <location filename="../preferences.py" line="49"/>
         <source>Faces lying flatter than this from the bed, without fins, are critical and marked yellow. 0 degrees is a face lying flat over the bed, 90 a vertical wall, as PrusaSlicer measures its overhang threshold; Cura measures from the vertical, its value is 90 degrees less.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="56"/>
+        <location filename="../preferences.py" line="54"/>
         <source>Not printable below</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="57"/>
+        <location filename="../preferences.py" line="55"/>
         <source>Faces lying flatter than this from the bed, without fins, are too flat to print and marked red. At most the critical limit.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="60"/>
+        <location filename="../preferences.py" line="58"/>
         <source>Least area</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="61"/>
+        <location filename="../preferences.py" line="59"/>
         <source>Overhanging faces smaller than this, like the corner facets of a chamfer, are bridged over by the slicer and not reported.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="65"/>
+        <location filename="../preferences.py" line="63"/>
         <source>Stability</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="66"/>
+        <location filename="../preferences.py" line="64"/>
         <source>At risk of tipping below</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="67"/>
+        <location filename="../preferences.py" line="65"/>
         <source>The tipping margin: how far the plumb line from the centre of mass lies inside the edge of the footprint. Closer than this, the part is at risk of tipping and shown yellow; outside the footprint it tips, shown red.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="75"/>
+        <location filename="../preferences.py" line="73"/>
         <source>Strictness</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="76"/>
+        <location filename="../preferences.py" line="74"/>
         <source>Strict</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="77"/>
+        <location filename="../preferences.py" line="75"/>
         <source>Normal</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="78"/>
+        <location filename="../preferences.py" line="76"/>
         <source>Custom</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="79"/>
+        <location filename="../preferences.py" line="77"/>
         <source>How strictly the checks rate a part. Normal, built in, allows for what common printers manage and for the grip of the first layer on the bed. Strict counts the geometry alone: what would need support is not printable, and the part needs a wider tipping margin. Custom: the limits set below by hand.</source>
         <translation type="unfinished"></translation>
     </message>

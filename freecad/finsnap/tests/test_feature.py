@@ -910,6 +910,13 @@ def stability_by_limits(doc):
         expect(level == feature.CLOSE, "with a wider tipping margin set, the same box is at risk of tipping")
     finally:
         limits.reset()
+    # Its check, of a part without fins, which no rebuild of fins reaches,
+    # goes out of date once the limits change.
+    checked = check.record(box, [], check.STABILITY, level, "note", None)
+    feature.follow_limits()
+    expect(checked.OutOfDate and "Touched" not in checked.State,
+           "new limits put the check of a part without fins out of date")
+    doc.removeObject(checked.Name)
     doc.removeObject(box.Name)
 
 

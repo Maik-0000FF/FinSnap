@@ -18,14 +18,19 @@ to the edge of the footprint. Below it the part is at risk of tipping; below
 Two strictnesses set all limits at once (STRICTNESS): normal, the built-in
 one, allows for what common printers manage and for the grip of the first
 layer on the bed; strict counts the geometry alone, and what would need
-support is not printable. Limits set by hand match neither: custom.
+support is not printable. Limits set by hand match neither: custom. A
+strictness is saved by its name alone, so its limits follow the version
+running; only custom limits are saved as values.
 
 INPUTS this has to withstand (current()):
-  nothing saved                         ->  the built-in Limits()
-  some fields saved                     ->  those, the rest built-in
-  saved values that do not validate
-    together (unprintable steeper than
-    critical, an angle past 90, NaN)    ->  all built-in
+  nothing saved                         ->  the built-in Limits(), normal
+  STRICT or NORMAL saved                ->  the limits of STRICTNESS, values
+                                            saved beside it ignored
+  CUSTOM saved, some values with it     ->  those, the rest built-in
+  CUSTOM saved, values that do not
+    validate together (unprintable
+    steeper than critical, past 90, NaN)->  all built-in
+  a strictness no longer known          ->  all built-in
 
 INPUTS this has to withstand (Limits.validate()):
   built-in values                       ->  valid
@@ -43,7 +48,9 @@ INPUTS this has to withstand (strictness_of()):
   any limit set otherwise               ->  CUSTOM
 
 INPUTS this has to withstand (save()):
-  valid limits                          ->  every field stored, the old ones replaced
+  the limits of a strictness            ->  its name stored, no values
+  any other valid limits                ->  CUSTOM and every value stored
+  either                                ->  what was saved before replaced
   invalid limits                        ->  LimitError, nothing stored
 
 INPUTS this has to withstand (reset()):
@@ -62,6 +69,8 @@ from .presets import PREFERENCES
 # Subgroup of FinSnap's preferences holding the limits. Tests point it
 # elsewhere, so they never touch the user's own limits.
 LIMITS_GROUP = "Limits"
+# The entry there naming the strictness saved.
+STRICTNESS_KEY = "Strictness"
 # The three levels a check rates by.
 GOOD, CRITICAL, UNPRINTABLE = "good", "critical", "unprintable"
 # The strictnesses, see STRICTNESS; limits that match none are custom.
@@ -120,24 +129,33 @@ def _group():
 def current():
     """The limits the checks rate by now."""
     group = _group()
-    saved = group.GetFloats()
     built_in = Limits()
-    limits = Limits(**{f.name: group.GetFloat(f.name) if f.name in saved else getattr(built_in, f.name)
+    name = group.GetString(STRICTNESS_KEY, NORMAL)
+    if name in STRICTNESS:
+        return STRICTNESS[name]
+    if name != CUSTOM:
+        return built_in
+    saved = group.GetFloats()
+    custom = Limits(**{f.name: group.GetFloat(f.name) if f.name in saved else getattr(built_in, f.name)
                        for f in fields(Limits)})
     try:
-        limits.validate()
+        custom.validate()
     except LimitError:
         return built_in
-    return limits
+    return custom
 
 
-def save(limits):
-    """Make `limits` the ones the checks rate by."""
-    limits.validate()
+def save(chosen):
+    """Make `chosen`, Limits, the ones the checks rate by: by the name of
+    their strictness, or as values where they are custom."""
+    chosen.validate()
+    name = strictness_of(chosen)
     group = _group()
     group.Clear()
-    for f in fields(Limits):
-        group.SetFloat(f.name, getattr(limits, f.name))
+    group.SetString(STRICTNESS_KEY, name)
+    if name == CUSTOM:
+        for f in fields(Limits):
+            group.SetFloat(f.name, getattr(chosen, f.name))
 
 
 def reset():
