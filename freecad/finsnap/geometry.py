@@ -115,11 +115,8 @@ from functools import partial
 import FreeCAD as App
 import Part
 
-from . import bridge
 from . import defaults as d
-from . import limits
 from . import orient
-from . import overhang
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .shapes import bounds, middle_normal, moved
 
@@ -1483,76 +1480,6 @@ def quick_plans(shape, edges, faces, p, angle_deg):
         return
     raise FinError(translate("FinSnap", "Select an edge or a face, a face and the edge or the chamfer or fillet "
                                         "it is to stand on, or the two faces beside a fillet."))
-
-
-# A QuickPlan rated for Quick fins (printable_plans()): its Islands, the
-# levels of the faces overhanging without fins, limits.CRITICAL or
-# UNPRINTABLE, and its bridge.Bridges; None each where it was not checked.
-RatedPlan = namedtuple("RatedPlan", "plan islands overhangs bridges")
-
-
-def printable_plans(shape, plans, p):
-    """The QuickPlans `plans` for `shape` as RatedPlans, rated by the limits of
-    the preferences: those that print, with no island, no face too flat and
-    no bridge too long to print, in the order given; where none does, all of
-    them, the fewest islands first, then the fewest faces and bridges that do
-    not print. The islands are those of the part stood by the plan, see
-    overhang.islands(); the fins do not count, they carry no layer. The
-    overhangs and bridges leave out the face the fins go under, and a face a
-    bridge covers whole is no overhang. Plans standing the part alike, differing
-    only by the face for the fins, are checked for islands and bridges once.
-
-    INPUTS this has to withstand:
-      plans that print and plans that do not
-                                            ->  those that print, in the order given
-      every plan with islands               ->  all of them, the fewest first, the
-                                                order given among as many
-      as many islands, faces or bridges
-        that do not print                   ->  the fewest of those first
-      critical faces and bridges only       ->  the plan prints: kept, rated
-      plans standing the part alike         ->  checked for islands and bridges once,
-                                                the bridges of the face under the fins
-                                                left out
-      one plan                              ->  it, with None for each: unchecked,
-                                                as there is no choice, and the fins
-                                                warn of them
-    """
-    if len(plans) == 1:
-        return [RatedPlan(plans[0], None, None, None)]
-    rated = rate_plans(shape, plans, p)
-
-    def unprintable(entry):
-        return (entry.overhangs.count(limits.UNPRINTABLE)
-                + sum(1 for found in entry.bridges if found.level == limits.UNPRINTABLE))
-
-    clean = [entry for entry in rated if not entry.islands and not unprintable(entry)]
-    return clean or sorted(rated, key=lambda entry: (len(entry.islands), unprintable(entry)))
-
-
-def rate_plans(shape, plans, p):
-    """The QuickPlans `plans` for `shape` as RatedPlans, in the order given,
-    each rated as printable_plans() rates them, with none left out."""
-    rating = limits.current()
-    checked = {}
-    rated = []
-    for plan in plans:
-        stood = moved(shape, plan.change)
-        key = tuple(plan.change.toMatrix().A)
-        if key not in checked:
-            checked[key] = (overhang.islands(stood, p.first_layer_height, p.layer_height),
-                            bridge.bridges(stood, p.first_layer_height, p.layer_height, p.bead_width, rating))
-        islands, every = checked[key]
-        # The face under the fins spans nothing: it leaves the bridges it
-        # alone lies under, the others lie under it no longer.
-        carried = plan.number + 1
-        spans = [found._replace(faces=[n for n in found.faces if n != carried],
-                                covered=[n for n in found.covered if n != carried])
-                 for found in every if any(n != carried for n in found.faces)]
-        spanned = {number for found in spans for number in found.covered}
-        levels = [level for number, level in overhang.rated(stood, (stood.Faces[plan.number],), rating)
-                  if number not in spanned]
-        rated.append(RatedPlan(plan, islands, levels, spans))
-    return rated
 
 
 def _under_each_face(shape, change, edge, beside, p):

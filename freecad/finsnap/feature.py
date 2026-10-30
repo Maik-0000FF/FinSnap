@@ -9,24 +9,21 @@ reading them back into FinParams and building the task panel all walk this
 table, so a new parameter is added in exactly one place (plus its default).
 """
 
-import math
 from collections import namedtuple
 
 import FreeCAD as App
 import Part
 
-from . import bridge
+from . import analysis
 from . import check
 from . import defaults as d
 from . import geometry
 from . import limits
 from . import orient
-from . import overhang
 from . import presets
-from . import stability
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
-from .shapes import (FACE_PREFIX, bounds, face_in_plane, face_like, face_name, global_shape, in_plane, moved,
+from .shapes import (bounds, face_in_plane, face_like, face_name, global_shape, in_plane, moved,
                      outermost, part_of, plane_of)
 
 TYPE_NAME = "FinSnap"
@@ -44,15 +41,8 @@ NOTE_OVERHANGS_UNPRINTABLE = QT_TRANSLATE_NOOP(
     "%s")
 # Hidden result properties with the free regions of the bridges of the part
 # under its first layer, critical ones and those too long to print, as one
-# shape each; the view provider shows them. Said for them, by level: how many,
-# of which part, the limit and the longest span (mm), the faces they lie under.
+# shape each; the view provider shows them.
 BRIDGES = check.BRIDGE_PROPERTIES
-NOTE_BRIDGES = {
-    limits.CRITICAL: QT_TRANSLATE_NOOP(
-        "FinSnap", "%d bridges of %s span further than %.1f mm, the longest %.1f mm: %s"),
-    limits.UNPRINTABLE: QT_TRANSLATE_NOOP(
-        "FinSnap", "%d bridges of %s span further than %.1f mm, too far to print, the longest %.1f mm: %s"),
-}
 # Result property with the lowest points of the islands of the part, where it
 # would start printing in the air; the view provider marks them.
 ISLANDS = "Islands"
@@ -670,40 +660,17 @@ def _supported(part_obj, document):
 
 
 def overhangs_of(part_obj, document, p, with_bridges=True):
-    """(name, level) of the faces of `part_obj` that overhang without fins,
-    rated by the limits of the preferences: limits.CRITICAL or
-    limits.UNPRINTABLE. Faces a bridge covers whole (bridges_of(), on the
-    layers and beads of `p`) are no overhangs: their risk is their span. A
-    face the bridge covers in part still overhangs where it does not. Without
-    `with_bridges` no bridge is looked for, and every face is rated."""
+    """analysis.overhangs() of `part_obj`, the faces carrying fins of any
+    FinSnap object in `document` left out."""
     shape, supported = _supported(part_obj, document)
-    spanned = ({number for found in _bridges(part_obj, shape, supported, p) for number in found.covered}
-               if with_bridges else set())
-    return [(face_name(number), level) for number, level in overhang.rated(shape, supported, limits.current())
-            if number not in spanned]
+    return analysis.overhangs(part_obj, shape, supported, p, with_bridges)
 
 
 def bridges_of(part_obj, document, p):
-    """The bridges (bridge.bridges()) of `part_obj` as it stands, on the
-    layers and beads of `p`, rated by the limits of the preferences; faces
-    carrying fins of `document` span nothing. Worked out once for each part
-    as it stands, layers, bead, limits and faces carried, as every build of
-    the fins asks again."""
+    """analysis.bridges() of `part_obj`; faces carrying fins of `document`
+    span nothing."""
     shape, supported = _supported(part_obj, document)
-    return _bridges(part_obj, shape, supported, p)
-
-
-def _bridges(part_obj, shape, supported, p):
-    rating = limits.current()
-    carried = tuple(number for number, face in enumerate(shape.Faces, 1)
-                    if any(face.isSame(other) for other in supported))
-    key = (_islands_key(part_obj, p), p.bead_width, rating, carried)
-    if key not in _bridges_kept:
-        while len(_bridges_kept) >= ISLANDS_KEPT:
-            _bridges_kept.pop(next(iter(_bridges_kept)))
-        _bridges_kept[key] = bridge.bridges(shape, p.first_layer_height, p.layer_height, p.bead_width, rating,
-                                            supported)
-    return list(_bridges_kept[key])
+    return analysis.bridges(part_obj, shape, supported, p)
 
 
 def set_bridges(obj, found):
@@ -713,23 +680,6 @@ def set_bridges(obj, found):
         hidden_property(obj, name, "Part::PropertyPartShape")
         regions = [spanned.region for spanned in found if spanned.level == level]
         setattr(obj, name, Part.makeCompound(regions) if regions else Part.Shape())
-
-
-def bridge_notes(part_obj, found):
-    """The warnings for the Bridges `found` of `part_obj`, by level, each with
-    the faces they lie under, as (note, names)."""
-    rating = limits.current()
-    limit = {limits.CRITICAL: rating.bridge_critical, limits.UNPRINTABLE: rating.bridge_unprintable}
-    notes = []
-    for level in (limits.CRITICAL, limits.UNPRINTABLE):
-        spans = [spanned for spanned in found if spanned.level == level]
-        if spans:
-            names = sorted({face_name(number) for spanned in spans for number in spanned.faces},
-                           key=lambda name: int(name[len(FACE_PREFIX):]))
-            notes.append((translate("FinSnap", NOTE_BRIDGES[level])
-                          % (len(spans), part_obj.Label, limit[level], max(s.span for s in spans), ", ".join(names)),
-                          names))
-    return notes
 
 
 def set_overhangs(obj, rated):
@@ -773,56 +723,6 @@ REUSE_KEPT = 8
 # by part, shape, placement and names asked.
 WHOLE_KEPT = 16
 _whole_kept = {}
-# Bridges of parts, see bridges_of(), by the key of their islands, the bead,
-# the limits and the faces carried by fins.
-_bridges_kept = {}
-# What a stability check finds (stability_of()): the part stands, comes
-# close to tipping, within the tipping margin of the preferences (limits.py),
-# or tips; and the sentence that
-# says so. The layers are counted from 1, the first on the bed. A side of the
-# part counts as that of its fins within 45 degrees.
-STANDS, CLOSE, TIPS = "stands", "close", "tips"
-SIDE_SHARE = math.sqrt(0.5)
-NOTE_NOTHING_ON_BED = QT_TRANSLATE_NOOP("FinSnap", "Nothing of the part stands on the bed.")
-NOTE_STANDS = QT_TRANSLATE_NOOP(
-    "FinSnap", "Stands on its own while it is printed: tipping margin at least %.1f mm, smallest at layer %d "
-    "(%.1f mm).")
-NOTE_STANDS_CLOSE = QT_TRANSLATE_NOOP(
-    "FinSnap", "At risk of tipping on its own: tipping margin only %.1f mm at layer %d (%.1f mm).")
-NOTE_NEEDS_FINS = QT_TRANSLATE_NOOP(
-    "FinSnap", "Tips over at layer %d (%.1f mm) while it is printed: fins under its leaning face hold it.")
-NOTE_HELD = QT_TRANSLATE_NOOP(
-    "FinSnap", "On its own it would tip over at layer %d (%.1f mm); its fins hold it: tipping margin at least "
-    "%.1f mm, smallest at layer %d (%.1f mm).")
-NOTE_HELD_CLOSE = QT_TRANSLATE_NOOP(
-    "FinSnap", "On its own it would tip over at layer %d (%.1f mm); its fins hold it, but it is at risk of "
-    "tipping: tipping margin only %.1f mm at layer %d (%.1f mm).")
-NOTE_BEFORE_TINES = QT_TRANSLATE_NOOP(
-    "FinSnap", "Tips over at layer %d (%.1f mm), before its fins hold it from their lowest tine at %.1f mm: "
-    "set the first tine lower.")
-NOTE_AWAY_FROM_FINS = QT_TRANSLATE_NOOP(
-    "FinSnap", "Tips over at layer %d (%.1f mm), away from its fins: a counter fin on that side holds it.")
-NOTE_TOWARDS_FINS = QT_TRANSLATE_NOOP(
-    "FinSnap", "Tips over at layer %d (%.1f mm) towards its fins, past their feet: a longer foot or more "
-    "fins hold it.")
-NOTE_PAST_EDGE_END = QT_TRANSLATE_NOOP(
-    "FinSnap", "Tips over at layer %d (%.1f mm), past an end of the edge it stands on.")
-
-# Islands of parts, by part, its shape, where it stands and the layers it is
-# cut in, worked out once: the fins are built far more often. The volume and
-# area of the shape and its corners are compared to this many decimal places.
-ISLANDS_KEPT = 8
-ISLANDS_KEY_DIGITS = 6
-_islands_kept = {}
-# Whether islands and bridges are checked while fins are made and edited, in
-# FinSnap's preferences: on a slow computer they can be left to Check part.
-# Named for islands alone, as it was before bridges: the setting saved holds.
-ISLANDS_WHILE_EDITING = "IslandsWhileEditing"
-# The centres of mass of parts while they are printed, by the same key as the
-# islands: stability_of() fills them as stability.check() works them out.
-_centres_kept = {}
-
-
 def set_islands(obj, found):
     """Keep the Islands `found` on `obj`: their lowest points, the first layers
     of those whose layer could be cut out, as one shape, and the lowest points
@@ -834,63 +734,11 @@ def set_islands(obj, found):
 
 
 def islands_of(obj, p):
-    """The islands (overhang.islands()) of the part of `obj` as it stands, on
-    the layers of `p`; the fins do not count. Worked out once for each part,
-    shape, place and layers, as every build of the fins asks again, unless
-    keep_islands() was told them before. While checks_while_editing() is off,
-    none are worked out: [], and the fins say nothing of islands."""
-    if not checks_while_editing():
+    """analysis.islands() of the part of `obj`; while the checks while editing
+    are off, none are worked out: [], and the fins say nothing of islands."""
+    if not analysis.checks_while_editing():
         return []
-    part_obj = obj.Base[0]
-    kept = _islands_kept.get(_islands_key(part_obj, p))
-    if kept is None:
-        kept = overhang.islands(global_shape(part_obj), p.first_layer_height, p.layer_height)
-        keep_islands(part_obj, p, kept)
-    return list(kept)
-
-
-def checks_while_editing():
-    """Whether islands and bridges are checked while fins are made and
-    edited, as the user set it with Islands and bridges while editing; on,
-    if never set."""
-    return App.ParamGet(presets.PREFERENCES).GetBool(ISLANDS_WHILE_EDITING, True)
-
-
-def set_checks_while_editing(on):
-    App.ParamGet(presets.PREFERENCES).SetBool(ISLANDS_WHILE_EDITING, bool(on))
-
-
-def keep_islands(part_obj, p, found):
-    """Keep `found`, the islands of `part_obj` as it stands now on the layers
-    of `p`, for islands_of(), as Quick fins has worked them out already.
-
-    INPUTS this has to withstand:
-      islands of the part as it stands      ->  taken by islands_of(), not worked out again
-      the part recomputed, shape the same   ->  the same key: taken
-      the part moved or changed after       ->  another key: worked out anew
-      a hole or pocket moved, the measures
-        of the shape the same               ->  its corners moved: another key, worked
-                                                out anew
-      other layers asked                    ->  another key: worked out anew
-      many parts in turn                    ->  the oldest goes past ISLANDS_KEPT
-    """
-    while len(_islands_kept) >= ISLANDS_KEPT:
-        _islands_kept.pop(next(iter(_islands_kept)))
-    _islands_kept[_islands_key(part_obj, p)] = list(found)
-
-
-def _islands_key(part_obj, p):
-    """What the islands of `part_obj` depend on: the part, its shape, where it
-    stands and the layers of `p`. The shape by its measures and where its
-    corners lie, not its hash: FreeCAD gives a part a new hash each time it is
-    recomputed, the same shape or not. The corners tell a shape whose measures
-    stay apart, as with a hole moved."""
-    shape = part_obj.Shape
-    corners = tuple(sorted(tuple(round(c, ISLANDS_KEY_DIGITS) for c in vertex.Point) for vertex in shape.Vertexes))
-    measures = (round(shape.Volume, ISLANDS_KEY_DIGITS), round(shape.Area, ISLANDS_KEY_DIGITS),
-                len(shape.Faces), len(shape.Edges), corners)
-    return (part_obj.Document.Name, part_obj.Name, measures, tuple(part_obj.getGlobalPlacement().toMatrix().A),
-            p.first_layer_height, p.layer_height)
+    return analysis.islands(obj.Base[0], p)
 
 
 def supports_of(part_obj, document):
@@ -922,72 +770,9 @@ def supports_of(part_obj, document):
 
 
 def stability_of(part_obj, p):
-    """Whether `part_obj`, as it stands, stays standing while it is printed in
-    the layers of `p`, as (level, note, shown): first the part alone; where it
-    tips, whether the fins of its FinSnap objects hold it, and if not, why.
-    `level` is STANDS, CLOSE or TIPS, `note` says it in a sentence, and
-    `shown` is the stability.Stability to show the plumb line of: of the part
-    alone where it stands so, else held by its fins; None where nothing of
-    the part stands on the bed. The centres of mass are kept for the part as
-    it stands, so a check after the fins changed only measures their feet.
-
-    CASES this has to withstand:
-      stands alone, far from tipping       ->  STANDS, the closest layer
-      stands alone, within the tipping
-        margin of the preferences          ->  CLOSE
-      tips alone, no fins                  ->  TIPS, add fins
-      tips alone, the fins hold it         ->  STANDS or CLOSE, the layer it would tip at
-      tips before the lowest tine          ->  TIPS, the height of that tine
-      tips away from its fins, none on that
-        side                               ->  TIPS, add a counter fin
-      tips towards a fin, main or counter  ->  TIPS, past their feet
-      a part off the bed at z 0            ->  the tines measured from its bottom
-      tips past an end of its edge         ->  TIPS, past an end of the edge
-      nothing on the bed                   ->  TIPS, None to show
-    """
-    key = _islands_key(part_obj, p)
-    if key not in _centres_kept:
-        while len(_centres_kept) >= ISLANDS_KEPT:
-            _centres_kept.pop(next(iter(_centres_kept)))
-        _centres_kept[key] = {}
-    centres = _centres_kept[key]
-    margin = limits.current().tipping_margin
-    part = global_shape(part_obj)
-    alone = stability.check(part, [], p.first_layer_height, p.layer_height, centres, p.brim_width)
-    if alone is None:
-        return TIPS, translate("FinSnap", NOTE_NOTHING_ON_BED), None
-    if not alone.tips:
-        close = alone.margin < margin
-        note = NOTE_STANDS_CLOSE if close else NOTE_STANDS
-        return ((CLOSE if close else STANDS), translate("FinSnap", note)
-                % (alone.margin, alone.layer + 1, alone.height), alone)
-    tipping = (alone.layer + 1, alone.height)
-    supports, sides = supports_of(part_obj, part_obj.Document)
-    if not supports:
-        return TIPS, translate("FinSnap", NOTE_NEEDS_FINS) % tipping, alone
-    held = stability.check(part, supports, p.first_layer_height, p.layer_height, centres, p.brim_width)
-    if held is None:
-        return TIPS, translate("FinSnap", NOTE_NOTHING_ON_BED), None
-    if not held.tips:
-        close = held.margin < margin
-        note = NOTE_HELD_CLOSE if close else NOTE_HELD
-        return ((CLOSE if close else STANDS), translate("FinSnap", note)
-                % (tipping + (held.margin, held.layer + 1, held.height)), held)
-    at = (held.layer + 1, held.height)
-    # Over the bed, as the heights of the layers are.
-    lowest = min(height for _, height in supports) - held.foot.z
-    if held.height < lowest:
-        return TIPS, translate("FinSnap", NOTE_BEFORE_TINES) % (at + (lowest,)), held
-    towards = max((held.outward.dot(side.normalize()) for side in sides if side.Length > d.TOLERANCE),
-                  default=0.0)
-    away = min((held.outward.dot(side.normalize()) for side in sides if side.Length > d.TOLERANCE),
-               default=0.0)
-    # Towards a fin first: with a counter fin, the side it tips to has one.
-    if towards > SIDE_SHARE:
-        return TIPS, translate("FinSnap", NOTE_TOWARDS_FINS) % at, held
-    if away < -SIDE_SHARE:
-        return TIPS, translate("FinSnap", NOTE_AWAY_FROM_FINS) % at, held
-    return TIPS, translate("FinSnap", NOTE_PAST_EDGE_END) % at, held
+    """analysis.stability() of `part_obj`, held by the fins of its FinSnap
+    objects (supports_of())."""
+    return analysis.stability(part_obj, p, lambda: supports_of(part_obj, part_obj.Document))
 
 
 class FinSnapFeature:
@@ -1068,7 +853,7 @@ class FinSnapFeature:
             # follow the part.
             hidden_property(obj, CARRIED, "App::PropertyStringList")
             setattr(obj, CARRIED, [])
-            editing = checks_while_editing()
+            editing = analysis.checks_while_editing()
             spans = bridges_of(obj.Base[0], obj.Document, p) if editing else []
             set_overhangs(obj, overhangs_of(obj.Base[0], obj.Document, p, editing))
             set_bridges(obj, spans)
@@ -1090,7 +875,7 @@ class FinSnapFeature:
         # The faces the fins carry stay the same while one fin is dragged.
         # Bridges, as islands, only with the checks while editing on; off, the
         # faces they lie under stay overhangs until Check part.
-        editing = checks_while_editing()
+        editing = analysis.checks_while_editing()
         rated = self.during_drag(OVERHANGS, lambda: overhangs_of(obj.Base[0], obj.Document, p, editing))
         spans = self.during_drag(BRIDGES[limits.CRITICAL],
                                  lambda: bridges_of(obj.Base[0], obj.Document, p) if editing else [])
@@ -1115,7 +900,7 @@ class FinSnapFeature:
             if names:
                 warnings.append(translate("FinSnap", note) % (len(names), obj.Base[0].Label, limit, ", ".join(names)))
                 targets.append(NoteTarget(None, [], [(obj.Base[0], name) for name in names], [], []))
-        for note, names in bridge_notes(obj.Base[0], spans):
+        for note, names in analysis.bridge_notes(obj.Base[0], spans):
             warnings.append(note)
             targets.append(NoteTarget(None, [], [(obj.Base[0], name) for name in names], [], []))
         # The part stays as it is while one fin is dragged, and the islands do

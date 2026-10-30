@@ -18,6 +18,7 @@ import Part
 from pivy import coin
 from PySide import QtCore, QtGui, QtWidgets
 
+from . import analysis
 from . import check
 from . import defaults as d
 from . import feature
@@ -159,30 +160,17 @@ STAND_ROWS = 6
 # What a stability check found, in the colours of the fins while editing: green
 # where the part stands, yellow where it is at risk of tipping, red where it tips; and the
 # label of the layer its plumb line is shown for, counted from 1, beside it.
-LEVEL_COLORS = {feature.STANDS: handles.VALID_COLOR, feature.CLOSE: handles.BETWEEN_COLOR,
-                feature.TIPS: handles.INVALID_COLOR}
+LEVEL_COLORS = {analysis.STANDS: handles.VALID_COLOR, analysis.CLOSE: handles.BETWEEN_COLOR,
+                analysis.TIPS: handles.INVALID_COLOR}
 LAYER_TIPS = QT_TRANSLATE_NOOP("FinSnap", "Tips at layer %d, %.1f mm high")
 LAYER_CLOSEST = QT_TRANSLATE_NOOP("FinSnap", "Smallest tipping margin at layer %d, %.1f mm high")
-# What the colours of a stability check mean, said with its result.
-NOTE_COLOURS = QT_TRANSLATE_NOOP(
-    "FinSnap", "Colours by height: green stands, yellow is at risk of tipping (tipping margin under %.0f mm), red "
-    "tips over from there.")
 # The one way a check in the tree is shown in the 3D view.
 CHECK_DISPLAY_MODE = "Check"
 # The part coloured by height in a stability check, this see-through.
 GRADIENT_TRANSPARENCY = 0.5
-# The lines of Check part, one for each check.
-NOTE_OVERHANGS = QT_TRANSLATE_NOOP("FinSnap", "%d faces overhang flatter than %.0f degrees from the bed without "
-                                             "fins.")
-NOTE_UNPRINTABLE = QT_TRANSLATE_NOOP("FinSnap", "%d faces overhang flatter than %.0f degrees from the bed without "
-                                               "fins, too flat to print.")
-NOTE_NO_OVERHANGS = QT_TRANSLATE_NOOP("FinSnap", "No face overhangs without fins.")
-NOTE_ISLANDS_FOUND = QT_TRANSLATE_NOOP("FinSnap", "%d island(s): it would start printing in the air there.")
-NOTE_NO_ISLANDS = QT_TRANSLATE_NOOP("FinSnap", "No islands.")
-NOTE_NO_BRIDGES = QT_TRANSLATE_NOOP("FinSnap", "No bridge spans further than %.1f mm.")
 # The frame of the note of a stability check in the task panel, by what was
 # found; OUTDATED_COLOR once a change has made it out of date.
-STABILITY_FRAMES = {feature.STANDS: STANDS_COLOR, feature.CLOSE: WARNING_COLOR, feature.TIPS: ERROR_COLOR}
+STABILITY_FRAMES = {analysis.STANDS: STANDS_COLOR, analysis.CLOSE: WARNING_COLOR, analysis.TIPS: ERROR_COLOR}
 STABILITY_TIP = QT_TRANSLATE_NOOP(
     "FinSnap", "Checks whether the part stays standing while it is printed, layer by layer, on its own and "
     "held by these fins, which hold it only from their lowest tine up, and shows the plumb line from its "
@@ -204,7 +192,7 @@ def check_stability(part_obj, p):
     QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
     try:
         level, note, shown = feature.stability_of(part_obj, p)
-        note = _with_colours(note, shown)
+        note = analysis.with_colours(note, shown)
         _in_tree(check.record(part_obj, fins_on(part_obj), check.STABILITY, level, note, shown,
                               _layer_cut(part_obj, p, shown)))
     finally:
@@ -222,28 +210,10 @@ def check_part(part_obj, p):
     try:
         part = global_shape(part_obj)
         rated = feature.overhangs_of(part_obj, part_obj.Document, p)
-        unprintable = [name for name, level in rated if level == limits.UNPRINTABLE]
         spans = feature.bridges_of(part_obj, part_obj.Document, p)
         found = overhang.islands(part, p.first_layer_height, p.layer_height)
         level, note, shown = feature.stability_of(part_obj, p)
-        rating = limits.current()
-        critical = len(rated) - len(unprintable)
-        lines = []
-        if critical:
-            lines.append(translate("FinSnap", NOTE_OVERHANGS) % (critical, rating.overhang_critical))
-        if unprintable:
-            lines.append(translate("FinSnap", NOTE_UNPRINTABLE) % (len(unprintable), rating.overhang_unprintable))
-        if not rated:
-            lines.append(translate("FinSnap", NOTE_NO_OVERHANGS))
-        lines += _bridge_lines(part_obj, spans)
-        lines.append(translate("FinSnap", NOTE_ISLANDS_FOUND) % len(found) if found
-                     else translate("FinSnap", NOTE_NO_ISLANDS))
-        lines.append(_with_colours(note, shown))
-        # Faces too flat to print, bridges too long and islands keep the part
-        # from printing; critical ones are a risk, as coming close to tipping is.
-        levels = {rated_level for _, rated_level in rated} | {spanned.level for spanned in spans}
-        worst = (feature.TIPS if limits.UNPRINTABLE in levels or found
-                 else feature.CLOSE if limits.CRITICAL in levels and level == feature.STANDS else level)
+        worst, lines = analysis.part_report(part_obj, rated, spans, found, level, note, shown)
         overhangs = [(part.getElement(name), rated_level) for name, rated_level in rated]
         # The level of its stability, whose colour its plumb line shows.
         _in_tree(check.record(part_obj, fins_on(part_obj), check.PART, level, "\n".join(lines), shown,
@@ -261,21 +231,12 @@ def check_bridges(part_obj, p):
     QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
     try:
         spans = feature.bridges_of(part_obj, part_obj.Document, p)
-        levels = {spanned.level for spanned in spans}
-        level = (feature.TIPS if limits.UNPRINTABLE in levels
-                 else feature.CLOSE if limits.CRITICAL in levels else feature.STANDS)
-        note = "\n".join(_bridge_lines(part_obj, spans))
+        level = analysis.bridges_level(spans)
+        note = "\n".join(analysis.bridge_lines(part_obj, spans))
         _in_tree(check.record(part_obj, fins_on(part_obj), check.BRIDGES, level, note, None, bridges=spans))
     finally:
         QtWidgets.QApplication.restoreOverrideCursor()
     return level, note
-
-
-def _bridge_lines(part_obj, spans):
-    """The lines saying what the bridges `spans` of `part_obj` are, by level;
-    one saying none spans too far where none does."""
-    lines = [note for note, _ in feature.bridge_notes(part_obj, spans)]
-    return lines or [translate("FinSnap", NOTE_NO_BRIDGES) % limits.current().bridge_critical]
 
 
 def fins_on(part_obj):
@@ -449,13 +410,6 @@ def _rated_cell(levels, shown, tip):
                 break
         cell.setToolTip(translate("FinSnap", tip) % (levels.count(limits.CRITICAL), levels.count(limits.UNPRINTABLE)))
     return cell
-
-
-def _with_colours(note, shown):
-    """`note`, followed by what the colours of the part mean, where they show."""
-    if shown is None:
-        return note
-    return note + "\n" + translate("FinSnap", NOTE_COLOURS) % limits.current().tipping_margin
 
 
 def _margin_at(profile, z):

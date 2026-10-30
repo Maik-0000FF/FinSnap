@@ -19,7 +19,7 @@ import FreeCAD as App
 import Part
 from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left_face, run, split_cylinder, tilted_cube
 from freecad.finsnap import defaults as d
-from freecad.finsnap import check, export_3mf, export_step, feature, geometry, orient, overhang, stability
+from freecad.finsnap import analysis, check, export_3mf, export_step, feature, geometry, orient, overhang, stability
 from freecad.finsnap import limits, presets
 from freecad.finsnap.params import FinParams, ParamError
 from freecad.finsnap.paths import PACKAGE_XML
@@ -787,8 +787,8 @@ def kept_islands(doc):
     marker = overhang.Island(V(1, 2, 3), None)
     overhang.islands = counted
     try:
-        feature._islands_kept.clear()
-        feature.keep_islands(cube, feature.params_of(fins), [marker])
+        analysis._kept.clear()
+        analysis.keep_islands(cube, feature.params_of(fins), [marker])
         doc.recompute()
         expect(not calls and list(fins.Islands) == [marker.point],
                "islands handed over for the part as it stands are taken, the part not cut again: %d, %s"
@@ -825,13 +825,13 @@ def kept_islands(doc):
         keys = []
         for shape in holed:
             cube.Shape = shape
-            keys.append(feature._islands_key(cube, feature.params_of(fins)))
+            keys.append(analysis.stand_key(cube, feature.params_of(fins)))
         expect(abs(holed[0].Volume - holed[1].Volume) < d.TOLERANCE
                and abs(holed[0].Area - holed[1].Area) < d.TOLERANCE and keys[0] != keys[1],
                "a hole moved, the measures of the part the same, its islands are asked anew")
     finally:
         overhang.islands = real
-        feature._islands_kept.clear()
+        analysis._kept.clear()
     doc.removeObject(fins.Name)
     doc.removeObject(cube.Name)
 
@@ -891,8 +891,8 @@ def stability_raised_and_counter(doc):
     finally:
         feature.supports_of, stability.check = real_supports, real_check
     at = (tipping.layer + 1, tipping.height)
-    expect(notes == [App.Qt.translate("FinSnap", feature.NOTE_AWAY_FROM_FINS) % at,
-                     App.Qt.translate("FinSnap", feature.NOTE_TOWARDS_FINS) % at],
+    expect(notes == [App.Qt.translate("FinSnap", analysis.NOTE_AWAY_FROM_FINS) % at,
+                     App.Qt.translate("FinSnap", analysis.NOTE_TOWARDS_FINS) % at],
            "tipping away from its fins it is told to add a counter fin; towards its counter fin, not: %s" % notes)
 
 
@@ -910,9 +910,9 @@ def bridges_apart(doc):
     hanging = [name for name, _ in feature.overhangs_of(spanned, doc, FinParams())]
     expect(len(spans) == 1 and spans[0].level == limits.CRITICAL and under and not under & set(hanging),
            "the underside of a slab across a gap is a critical bridge, no overhang: %s, %s" % (under, hanging))
-    notes = feature.bridge_notes(spanned, spans)
+    notes = analysis.bridge_notes(spanned, spans)
     expect(len(notes) == 1 and notes[0][1] == sorted(under), "the bridge is said once, naming the face it lies under")
-    checked = check.record(spanned, [], check.BRIDGES, feature.CLOSE, notes[0][0], None, bridges=spans)
+    checked = check.record(spanned, [], check.BRIDGES, analysis.CLOSE, notes[0][0], None, bridges=spans)
     expect(not checked.CriticalBridges.isNull() and checked.UnprintableBridges.isNull()
            and checked.Label.endswith(spanned.Label), "a bridge check keeps the critical bridge of the part")
     doc.removeObject(checked.Name)
@@ -942,11 +942,11 @@ def stability_by_limits(doc):
     box.Shape = Part.makeBox(*BOX)
     doc.recompute()
     level, _, shown = feature.stability_of(box, FinParams())
-    expect(level == feature.STANDS, "a box lying on the bed stands, %.1f mm from tipping" % shown.margin)
+    expect(level == analysis.STANDS, "a box lying on the bed stands, %.1f mm from tipping" % shown.margin)
     limits.save(limits.Limits(tipping_margin=shown.margin + WIDER_MARGIN))
     try:
         level = feature.stability_of(box, FinParams())[0]
-        expect(level == feature.CLOSE, "with a wider tipping margin set, the same box is at risk of tipping")
+        expect(level == analysis.CLOSE, "with a wider tipping margin set, the same box is at risk of tipping")
     finally:
         limits.reset()
     # Its check, of a part without fins, which no rebuild of fins reaches,
@@ -966,8 +966,8 @@ def check_objects(doc):
     cube = doc.addObject("Part::Feature", "Checked")
     cube.Shape = tilted_cube()
     doc.recompute()
-    found = check.record(cube, [], check.STABILITY, feature.STANDS, "note", None)
-    again = check.record(cube, [], check.STABILITY, feature.STANDS, "note again", None)
+    found = check.record(cube, [], check.STABILITY, analysis.STANDS, "note", None)
+    again = check.record(cube, [], check.STABILITY, analysis.STANDS, "note again", None)
     expect(found is again and not found.OutOfDate and found.Result == "note again" and "Touched" not in found.State,
            "checking a part again fills the same check, up to date and not touched")
     fins = feature.create(cube, face_name(cube.Shape, lower_left_face(cube.Shape)))
@@ -980,18 +980,18 @@ def check_objects(doc):
     body = doc.addObject("PartDesign::Body", "CheckedBody")
     box = body.newObject("PartDesign::AdditiveBox", "CheckedBox")
     doc.recompute()
-    inside = check.record(box, [], check.PART, feature.STANDS, "note", None)
+    inside = check.record(box, [], check.PART, analysis.STANDS, "note", None)
     expect(inside.Container is body and inside.Part is box, "a check of a part in a body links the body as well")
     body.Placement = App.Placement(V(5, 0, 0), App.Rotation())
     doc.recompute()
     expect(inside.OutOfDate, "moving the body of the part puts its check out of date")
     loose = doc.addObject("Part::Feature", "Loose")
     loose.Shape = tilted_cube()
-    first = check.record(loose, [], check.STABILITY, feature.STANDS, "note", None)
+    first = check.record(loose, [], check.STABILITY, analysis.STANDS, "note", None)
     holder = doc.addObject("App::Part", "Holder")
     holder.addObject(loose)
     doc.recompute()
-    check.record(loose, [], check.STABILITY, feature.STANDS, "note", None)
+    check.record(loose, [], check.STABILITY, analysis.STANDS, "note", None)
     linked = first.Container is holder
     holder.Placement = App.Placement(V(0, 5, 0), App.Rotation())
     doc.recompute()
@@ -1003,14 +1003,14 @@ def check_objects(doc):
     # The levels of overhangs and the tipping margin a check rated by are
     # kept; a check saved before them gets them once filled again.
     flat, steep = Part.makeBox(1, 1, 1).Faces[:2]
-    rated = check.record(loose, [], check.PART, feature.STANDS, "note", None,
+    rated = check.record(loose, [], check.PART, analysis.STANDS, "note", None,
                          overhangs=[(flat, limits.UNPRINTABLE), (steep, limits.CRITICAL)])
     expect(len(rated.Overhangs.Faces) == 1 and len(rated.UnprintableOverhangs.Faces) == 1
            and rated.TippingMargin == limits.current().tipping_margin,
            "a check keeps its critical and its unprintable faces apart, and the tipping margin it rated by")
     for name in ("UnprintableOverhangs", "TippingMargin"):
         rated.removeProperty(name)
-    check.record(loose, [], check.PART, feature.STANDS, "note", None)
+    check.record(loose, [], check.PART, analysis.STANDS, "note", None)
     expect("UnprintableOverhangs" in rated.PropertiesList and rated.UnprintableOverhangs.isNull(),
            "a check saved by an older version gets the properties added since")
     doc.removeObject(rated.Name)
