@@ -41,7 +41,6 @@ DEGREE, LENGTH, AREA = "degree", "length", "area"
 # The fields show this many decimals; the largest area and margin they take.
 DECIMALS = 1
 MAX_AREA = 1000.0
-MAX_MARGIN = 100.0
 MAX_SPAN = 1000.0
 # The fields of the page, by section: the Limits field each sets, its label,
 # tooltip, unit and range.
@@ -74,12 +73,13 @@ SECTIONS = (
          LENGTH, (0.0, MAX_SPAN)),
     )),
     (QT_TRANSLATE_NOOP("FinSnap", "Stability"), (
-        ("tipping_margin", QT_TRANSLATE_NOOP("FinSnap", "At risk of tipping below"),
-         QT_TRANSLATE_NOOP("FinSnap", "The tipping margin: how far the plumb line from the centre of mass "
-                                      "lies inside the edge of the footprint. Closer than this, the part is at "
-                                      "risk of tipping and shown yellow; outside the footprint it tips, shown "
-                                      "red."),
-         LENGTH, (0.0, MAX_MARGIN)),
+        ("tipping_angle", QT_TRANSLATE_NOOP("FinSnap", "At risk of tipping below"),
+         QT_TRANSLATE_NOOP("FinSnap", "The tipping angle: how far the part would have to lean before the plumb "
+                                      "line from its centre of mass left the footprint. A tall part needs a wider "
+                                      "tipping margin than a flat one for the same angle. Below this, the part is "
+                                      "at risk of tipping and shown yellow; below 0 it tips, shown red. Check "
+                                      "stability says which acceleration from the side it withstands."),
+         DEGREE, (limits.ANGLE_MIN, limits.ANGLE_MAX)),
     )),
 )
 # The choice of strictness, in the order offered, and its tooltip.
@@ -90,7 +90,7 @@ STRICTNESS_CHOICES = ((limits.STRICT, QT_TRANSLATE_NOOP("FinSnap", "Strict")),
 STRICTNESS_TIP = QT_TRANSLATE_NOOP(
     "FinSnap", "How strictly the checks rate a part. Normal, built in, allows for what common printers manage and "
     "for the grip of the first layer on the bed. Strict counts the geometry alone: what would need support is not "
-    "printable, and the part needs a larger tipping margin. Custom: the limits set below by hand.")
+    "printable, and the part needs a larger tipping angle. Custom: the limits set below by hand.")
 
 
 class LimitsPage:

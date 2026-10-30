@@ -67,11 +67,15 @@ PROPERTIES = (
     ("Layer", "App::PropertyInteger", GROUP_SHOWN, "", EDITOR_HIDDEN),
     ("Height", "App::PropertyFloat", GROUP_SHOWN, "", EDITOR_HIDDEN),
     ("Margin", "App::PropertyFloat", GROUP_SHOWN, "", EDITOR_HIDDEN),
+    ("Angle", "App::PropertyFloat", GROUP_SHOWN, "", EDITOR_HIDDEN),
     ("Centre", "App::PropertyVector", GROUP_SHOWN, "", EDITOR_HIDDEN),
     ("Foot", "App::PropertyVector", GROUP_SHOWN, "", EDITOR_HIDDEN),
     ("Footprint", "App::PropertyVectorList", GROUP_SHOWN, "", EDITOR_HIDDEN),
     ("ProfileHeights", "App::PropertyFloatList", GROUP_SHOWN, "", EDITOR_HIDDEN),
     ("ProfileMargins", "App::PropertyFloatList", GROUP_SHOWN, "", EDITOR_HIDDEN),
+    # The tipping angles of the layers checked (degrees), which the colours by
+    # height show.
+    ("ProfileAngles", "App::PropertyFloatList", GROUP_SHOWN, "", EDITOR_HIDDEN),
     ("Cut", "Part::PropertyPartShape", GROUP_SHOWN, "", EDITOR_HIDDEN),
     # The faces that overhang without fins, critical ones and those too flat
     # to print, see limits.py.
@@ -81,8 +85,8 @@ PROPERTIES = (
     # bridge.py, on the underside of the part.
     (BRIDGE_PROPERTIES[limits.CRITICAL], "Part::PropertyPartShape", GROUP_SHOWN, "", EDITOR_HIDDEN),
     (BRIDGE_PROPERTIES[limits.UNPRINTABLE], "Part::PropertyPartShape", GROUP_SHOWN, "", EDITOR_HIDDEN),
-    # The tipping margin the check rated by, which the colours by height show.
-    ("TippingMargin", "App::PropertyFloat", GROUP_SHOWN, "", EDITOR_HIDDEN),
+    # The tipping angle the check rated by, which the colours by height show.
+    ("TippingAngle", "App::PropertyFloat", GROUP_SHOWN, "", EDITOR_HIDDEN),
     ("IslandLayers", "Part::PropertyPartShape", GROUP_SHOWN, "", EDITOR_HIDDEN),
     ("IslandsUncut", "App::PropertyVectorList", GROUP_SHOWN, "", EDITOR_HIDDEN),
 )
@@ -183,11 +187,13 @@ def record(part_obj, fins, kind, level, note, shown, cut=None, overhangs=(), isl
     obj.Layer = shown.layer if shown else 0
     obj.Height = shown.height if shown else 0.0
     obj.Margin = shown.margin if shown else 0.0
+    obj.Angle = shown.angle if shown else 0.0
     obj.Centre = shown.centre if shown else App.Vector()
     obj.Foot = shown.foot if shown else App.Vector()
     obj.Footprint = list(shown.footprint) if shown else []
-    obj.ProfileHeights = [height for height, _ in shown.profile] if shown else []
-    obj.ProfileMargins = [margin for _, margin in shown.profile] if shown else []
+    obj.ProfileHeights = [height for height, _, _ in shown.profile] if shown else []
+    obj.ProfileMargins = [margin for _, margin, _ in shown.profile] if shown else []
+    obj.ProfileAngles = [angle for _, _, angle in shown.profile] if shown else []
     obj.Cut = cut if cut is not None else Part.Shape()
     for name, chosen in (("Overhangs", limits.CRITICAL), ("UnprintableOverhangs", limits.UNPRINTABLE)):
         faces = [face for face, level in overhangs if level == chosen]
@@ -195,7 +201,7 @@ def record(part_obj, fins, kind, level, note, shown, cut=None, overhangs=(), isl
     for chosen, name in BRIDGE_PROPERTIES.items():
         regions = [spanned.region for spanned in bridges if spanned.level == chosen]
         setattr(obj, name, Part.makeCompound(regions) if regions else Part.Shape())
-    obj.TippingMargin = limits.current().tipping_margin
+    obj.TippingAngle = limits.current().tipping_angle
     layers = [island.first for island in islands if island.first is not None]
     obj.IslandLayers = Part.makeCompound(layers) if layers else Part.Shape()
     obj.IslandsUncut = [island.point for island in islands if island.first is None]

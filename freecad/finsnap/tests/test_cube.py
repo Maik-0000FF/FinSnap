@@ -43,6 +43,10 @@ PIER = (5.0, 10.0, 10.0)
 SLAB = 2.0
 GAP_SHORT, GAP_CRITICAL, GAP_FAR = 1.5, 8.0, 15.0
 DEEP_SLAB = 40.0
+# A box as wide as the one lying flat, four times as high, and how closely its
+# tipping angle is to atan(margin / height of its centre of mass) (degrees).
+TALL_BOX_HEIGHT = 80.0
+ANGLE_TOLERANCE = 0.5
 # How closely a span is measured: a bead is laid across in lines one bead apart.
 SPAN_TOLERANCE = 0.1
 ODD_TILT = 30.0        # any angle but 45, at which a right-angled edge needs its face
@@ -320,7 +324,7 @@ def check_limits():
     of overhanging faces they rate."""
     limits.Limits().validate()
     limits.Limits(overhang_critical=40.0, overhang_unprintable=40.0).validate()
-    limits.Limits(overhang_unprintable=0.0, overhang_min_area=0.0, tipping_margin=0.0).validate()
+    limits.Limits(overhang_unprintable=0.0, overhang_min_area=0.0, tipping_angle=0.0).validate()
     limits.Limits(bridge_critical=0.0, bridge_unprintable=0.0).validate()
     rating = limits.Limits()
     expect([rating.bridge_level(span) for span in (rating.bridge_critical, rating.bridge_critical + 1,
@@ -328,7 +332,8 @@ def check_limits():
            == [limits.GOOD, limits.CRITICAL, limits.CRITICAL, limits.UNPRINTABLE],
            "a span at a limit is the level below it, past it the level above")
     bad = (dict(overhang_critical=-1.0), dict(overhang_critical=91.0), dict(overhang_unprintable=50.0),
-           dict(tipping_margin=-0.1), dict(overhang_min_area=-1.0), dict(tipping_margin=float("nan")),
+           dict(tipping_angle=-0.1), dict(tipping_angle=91.0), dict(overhang_min_area=-1.0),
+           dict(tipping_angle=float("nan")),
            dict(overhang_critical=float("inf")), dict(bridge_critical=-1.0),
            dict(bridge_critical=12.0, bridge_unprintable=10.0))
     for values in bad:
@@ -342,8 +347,8 @@ def check_limits():
     expect(limits.current() == limits.Limits(), "nothing saved: the built-in limits")
     group = App.ParamGet("%s/%s" % (limits.PREFERENCES, limits.LIMITS_GROUP))
     group.SetString(limits.STRICTNESS_KEY, limits.CUSTOM)
-    group.SetFloat("tipping_margin", 3.0)
-    expect(limits.current() == limits.Limits(tipping_margin=3.0), "one custom limit saved: that, the rest built-in")
+    group.SetFloat("tipping_angle", 3.0)
+    expect(limits.current() == limits.Limits(tipping_angle=3.0), "one custom limit saved: that, the rest built-in")
     group.SetFloat("overhang_unprintable", 80.0)
     expect(limits.current() == limits.Limits(), "custom limits that do not fit together: the built-in ones")
     group.SetString(limits.STRICTNESS_KEY, limits.STRICT)
@@ -353,7 +358,7 @@ def check_limits():
     limits.save(limits.STRICTNESS[limits.STRICT])
     expect(group.GetString(limits.STRICTNESS_KEY) == limits.STRICT and not group.GetFloats(),
            "the limits of a strictness are saved by its name alone, so they follow the version")
-    own = limits.Limits(overhang_critical=50.0, overhang_unprintable=35.0, overhang_min_area=2.0, tipping_margin=1.0)
+    own = limits.Limits(overhang_critical=50.0, overhang_unprintable=35.0, overhang_min_area=2.0, tipping_angle=1.0)
     limits.save(own)
     expect(limits.current() == own and group.GetString(limits.STRICTNESS_KEY) == limits.CUSTOM,
            "custom limits are saved as values and read back")
@@ -371,8 +376,8 @@ def check_limits():
     expect(limits.strictness_of(own) == limits.CUSTOM, "limits set otherwise are custom")
     strict = limits.STRICTNESS[limits.STRICT]
     expect(strict.overhang_unprintable == strict.overhang_critical
-           and strict.tipping_margin > limits.Limits().tipping_margin,
-           "strict leaves no critical overhangs and asks a wider tipping margin")
+           and strict.tipping_angle > limits.Limits().tipping_angle,
+           "strict leaves no critical overhangs and asks a larger tipping angle")
 
     rating = limits.Limits()
     expect(overhang.rated(apex_down(SIDE_STEEP), (), rating) == [],
@@ -1153,6 +1158,14 @@ def check_stability():
     expect(flat is not None and not flat.tips and abs(flat.margin - 10) < STABLE_TOLERANCE
            and abs(flat.foot.x - 15) < STABLE_TOLERANCE and abs(flat.foot.y - 10) < STABLE_TOLERANCE,
            "a box lying on the bed stands, its plumb line in the middle: %s" % (flat,))
+    # The same footprint, the centre of mass four times as high: the same
+    # margin, a far smaller tipping angle, atan(margin / height).
+    tall = stability.check(Part.makeBox(30, 20, TALL_BOX_HEIGHT), [], first, layer, {})
+    expect(tall is not None and abs(tall.margin - flat.margin) < STABLE_TOLERANCE
+           and abs(tall.angle - math.degrees(math.atan2(tall.margin, TALL_BOX_HEIGHT / 2))) < ANGLE_TOLERANCE
+           and tall.angle < flat.angle,
+           "a taller part on the same footprint has a smaller tipping angle: %.1f, %.1f degrees"
+           % (tall.angle, flat.angle))
 
     # Flatter than deep, so standing on an edge at 45 degrees it leans to one side.
     slab = Part.makeBox(30, 20, 10)
@@ -1184,7 +1197,7 @@ def check_stability():
     stability.check(leaning, [], first, layer, centres)
     again = stability.check(leaning, [], first, layer, centres)
     expect(again == tipped, "the centres kept for a part are taken again, the result the same")
-    heights = [height for height, _ in tipped.profile]
+    heights = [height for height, _, _ in tipped.profile]
     expect(heights == sorted(heights) and tipped.profile[-1][1] < 0 < tipped.profile[0][1],
            "the profile runs from the bed up, from standing to tipping")
     cut = stability.section(leaning, tipped.height)

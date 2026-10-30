@@ -31,7 +31,8 @@ V = App.Vector
 PACKAGE_ROOT = ET.parse(PACKAGE_XML).getroot()  # nosec B314
 PACKAGE_VERSION = PACKAGE_ROOT.findtext("{https://wiki.freecad.org/Package_Metadata}version")
 BOX = (40.0, 20.0, 20.0)
-WIDER_MARGIN = 1.0  # mm past the margin a part stands at, so it is at risk of tipping
+WIDER_ANGLE = 1.0  # degrees past the tipping angle a part stands at, so it is at risk of tipping
+TIPPED_ANGLE = -5.0  # degrees, the tipping angle of a part that tips
 # Beads tried past the bridges kept for a part, this much wider each (mm).
 BEADS_PAST_KEPT = 3
 BEAD_STEP = 0.01
@@ -880,7 +881,8 @@ def stability_raised_and_counter(doc):
 
     real_supports, real_check = feature.supports_of, stability.check
     main, counter = V(0, -1, 0), V(0, 1, 0)
-    tipping = stability.Stability(True, 50, 10.0, V(), V(), -1.0, counter, [V()], [(10.0, -1.0)])
+    tipping = stability.Stability(True, 50, 10.0, V(), V(), -1.0, counter, [V()], TIPPED_ANGLE,
+                                  [(10.0, -1.0, TIPPED_ANGLE)])
     # Alone it tips lower; held, at the layer whose direction is asked.
     stability.check = lambda part, supports, *rest: tipping if supports else tipping._replace(height=5.0)
     try:
@@ -952,11 +954,11 @@ def stability_by_limits(doc):
     box.Shape = Part.makeBox(*BOX)
     doc.recompute()
     level, _, shown = feature.stability_of(box, FinParams())
-    expect(level == analysis.STANDS, "a box lying on the bed stands, %.1f mm from tipping" % shown.margin)
-    limits.save(limits.Limits(tipping_margin=shown.margin + WIDER_MARGIN))
+    expect(level == analysis.STANDS, "a box lying on the bed stands, its tipping angle %.1f degrees" % shown.angle)
+    limits.save(limits.Limits(tipping_angle=shown.angle + WIDER_ANGLE))
     try:
         level = feature.stability_of(box, FinParams())[0]
-        expect(level == analysis.CLOSE, "with a wider tipping margin set, the same box is at risk of tipping")
+        expect(level == analysis.CLOSE, "with a larger tipping angle set, the same box is at risk of tipping")
     finally:
         limits.reset()
     # Its check, of a part without fins, which no rebuild of fins reaches,
@@ -1016,9 +1018,9 @@ def check_objects(doc):
     rated = check.record(loose, [], check.PART, analysis.STANDS, "note", None,
                          overhangs=[(flat, limits.UNPRINTABLE), (steep, limits.CRITICAL)])
     expect(len(rated.Overhangs.Faces) == 1 and len(rated.UnprintableOverhangs.Faces) == 1
-           and rated.TippingMargin == limits.current().tipping_margin,
-           "a check keeps its critical and its unprintable faces apart, and the tipping margin it rated by")
-    for name in ("UnprintableOverhangs", "TippingMargin"):
+           and rated.TippingAngle == limits.current().tipping_angle,
+           "a check keeps its critical and its unprintable faces apart, and the tipping angle it rated by")
+    for name in ("UnprintableOverhangs", "TippingAngle"):
         rated.removeProperty(name)
     check.record(loose, [], check.PART, analysis.STANDS, "note", None)
     expect("UnprintableOverhangs" in rated.PropertiesList and rated.UnprintableOverhangs.isNull(),

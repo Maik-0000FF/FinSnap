@@ -364,7 +364,7 @@
     </message>
     <message>
         <location filename="../commands.py" line="823"/>
-        <location filename="../taskpanel.py" line="747"/>
+        <location filename="../taskpanel.py" line="749"/>
         <source>Add counter fin</source>
         <translation>Gegenfinne hinzufügen</translation>
     </message>
@@ -624,26 +624,6 @@
         <translation>Fußüberstand</translation>
     </message>
     <message>
-        <location filename="../analysis.py" line="65"/>
-        <source>Stands on its own while it is printed: tipping margin at least %.1f mm, smallest at layer %d (%.1f mm).</source>
-        <translation>Steht während des Drucks sicher von allein: Kippabstand mindestens %.1f mm, am kleinsten bei Schicht %d (%.1f mm).</translation>
-    </message>
-    <message>
-        <location filename="../analysis.py" line="68"/>
-        <source>At risk of tipping on its own: tipping margin only %.1f mm at layer %d (%.1f mm).</source>
-        <translation>Allein kippgefährdet: Kippabstand nur %.1f mm bei Schicht %d (%.1f mm).</translation>
-    </message>
-    <message>
-        <location filename="../analysis.py" line="72"/>
-        <source>On its own it would tip over at layer %d (%.1f mm); its fins hold it: tipping margin at least %.1f mm, smallest at layer %d (%.1f mm).</source>
-        <translation>Allein würde es bei Schicht %d (%.1f mm) umkippen; seine Finnen halten es: Kippabstand mindestens %.1f mm, am kleinsten bei Schicht %d (%.1f mm).</translation>
-    </message>
-    <message>
-        <location filename="../analysis.py" line="75"/>
-        <source>On its own it would tip over at layer %d (%.1f mm); its fins hold it, but it is at risk of tipping: tipping margin only %.1f mm at layer %d (%.1f mm).</source>
-        <translation>Allein würde es bei Schicht %d (%.1f mm) umkippen; seine Finnen halten es, aber es ist kippgefährdet: Kippabstand nur %.1f mm bei Schicht %d (%.1f mm).</translation>
-    </message>
-    <message>
         <location filename="../feature.py" line="274"/>
         <source>Tine first</source>
         <translation>Erste Zinke</translation>
@@ -764,29 +744,54 @@
         <translation>Nichts von dem Teil steht auf dem Bett.</translation>
     </message>
     <message>
-        <location filename="../analysis.py" line="70"/>
+        <location filename="../analysis.py" line="68"/>
+        <source>Stands on its own while it is printed: tipping angle at least %.1f degrees, smallest at layer %d (%.1f mm), with a tipping margin of %.1f mm; withstands %.0f mm/s² from the side.</source>
+        <translation>Steht während des Drucks sicher von allein: Kippwinkel mindestens %.1f Grad, am kleinsten bei Schicht %d (%.1f mm), mit einem Kippabstand von %.1f mm; hält %.0f mm/s² von der Seite aus.</translation>
+    </message>
+    <message>
+        <location filename="../analysis.py" line="71"/>
+        <source>At risk of tipping on its own: tipping angle only %.1f degrees at layer %d (%.1f mm), with a tipping margin of %.1f mm; withstands %.0f mm/s² from the side.</source>
+        <translation>Allein kippgefährdet: Kippwinkel nur %.1f Grad bei Schicht %d (%.1f mm), mit einem Kippabstand von %.1f mm; hält %.0f mm/s² von der Seite aus.</translation>
+    </message>
+    <message>
+        <location filename="../analysis.py" line="74"/>
         <source>Tips over at layer %d (%.1f mm) while it is printed: fins under its leaning face hold it.</source>
         <translation>Kippt während des Drucks bei Schicht %d (%.1f mm) um: Finnen unter seiner geneigten Fläche halten es.</translation>
     </message>
     <message>
-        <location filename="../analysis.py" line="78"/>
+        <location filename="../analysis.py" line="76"/>
+        <source>On its own it would tip over at layer %d (%.1f mm); its fins hold it: tipping angle at least %.1f degrees, smallest at layer %d (%.1f mm), with a tipping margin of %.1f mm; withstands %.0f mm/s² from the side.</source>
+        <translation>Allein würde es bei Schicht %d (%.1f mm) umkippen; seine Finnen halten es: Kippwinkel mindestens %.1f Grad, am kleinsten bei Schicht %d (%.1f mm), mit einem Kippabstand von %.1f mm; hält %.0f mm/s² von der Seite aus.</translation>
+    </message>
+    <message>
+        <location filename="../analysis.py" line="80"/>
+        <source>On its own it would tip over at layer %d (%.1f mm); its fins hold it, but it is at risk of tipping: tipping angle only %.1f degrees at layer %d (%.1f mm), with a tipping margin of %.1f mm; withstands %.0f mm/s² from the side.</source>
+        <translation>Allein würde es bei Schicht %d (%.1f mm) umkippen; seine Finnen halten es, aber es ist kippgefährdet: Kippwinkel nur %.1f Grad bei Schicht %d (%.1f mm), mit einem Kippabstand von %.1f mm; hält %.0f mm/s² von der Seite aus.</translation>
+    </message>
+    <message>
+        <location filename="../analysis.py" line="84"/>
         <source>Tips over at layer %d (%.1f mm), before its fins hold it from their lowest tine at %.1f mm: set the first tine lower.</source>
         <translation>Kippt bei Schicht %d (%.1f mm) um, bevor seine Finnen es ab ihrer untersten Zinke bei %.1f mm halten: setze die erste Zinke tiefer.</translation>
     </message>
     <message>
-        <location filename="../analysis.py" line="81"/>
+        <location filename="../analysis.py" line="87"/>
         <source>Tips over at layer %d (%.1f mm), away from its fins: a counter fin on that side holds it.</source>
         <translation>Kippt bei Schicht %d (%.1f mm) von seinen Finnen weg um: eine Gegenfinne auf dieser Seite hält es.</translation>
     </message>
     <message>
-        <location filename="../analysis.py" line="83"/>
+        <location filename="../analysis.py" line="89"/>
         <source>Tips over at layer %d (%.1f mm) towards its fins, past their feet: a longer foot or more fins hold it.</source>
         <translation>Kippt bei Schicht %d (%.1f mm) zu seinen Finnen hin um, über ihre Füße hinaus: ein längerer Fuß oder mehr Finnen halten es.</translation>
     </message>
     <message>
-        <location filename="../analysis.py" line="86"/>
+        <location filename="../analysis.py" line="92"/>
         <source>Tips over at layer %d (%.1f mm), past an end of the edge it stands on.</source>
         <translation>Kippt bei Schicht %d (%.1f mm) über ein Ende der Kante um, auf der es steht.</translation>
+    </message>
+    <message>
+        <location filename="../analysis.py" line="105"/>
+        <source>Colours by height: green stands, yellow is at risk of tipping (tipping angle under %.0f degrees), red tips over from there.</source>
+        <translation>Farben nach Höhe: grün steht sicher, gelb ist kippgefährdet (Kippwinkel unter %.0f Grad), rot kippt ab dort.</translation>
     </message>
     <message>
         <location filename="../feature.py" line="888"/>
@@ -805,7 +810,7 @@
         <translation>die Gegenfinne gehört unter eine ebene Fläche, nicht unter die Seite eines Zylinders oder Rohrs</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="685"/>
+        <location filename="../taskpanel.py" line="687"/>
         <source>FinSnap parameters</source>
         <translation>FinSnap-Parameter</translation>
     </message>
@@ -825,12 +830,17 @@
         <translation>Gegenfinne</translation>
     </message>
     <message>
+        <location filename="../taskpanel.py" line="166"/>
+        <source>Smallest tipping angle at layer %d, %.1f mm high</source>
+        <translation>Kleinster Kippwinkel bei Schicht %d, %.1f mm hoch</translation>
+    </message>
+    <message>
         <location filename="../taskpanel.py" line="183"/>
         <source>Top view</source>
         <translation>Draufsicht</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="689"/>
+        <location filename="../taskpanel.py" line="691"/>
         <source>Hover over a field for an explanation. Letters in brackets point to the drawings below. Every change is shown in the 3D view right away. Greyed-out fields have no effect with the current choices; their tooltip says why.</source>
         <translation>Für eine Erklärung mit der Maus über ein Feld fahren. Buchstaben in Klammern verweisen auf die Zeichnungen unten. Jede Änderung erscheint sofort in der 3D-Ansicht. Ausgegraute Felder wirken bei der aktuellen Wahl nicht; ihr Tooltip sagt, warum.</translation>
     </message>
@@ -840,17 +850,17 @@
         <translation>Finnen bearbeiten</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="745"/>
+        <location filename="../taskpanel.py" line="747"/>
         <source>Remove selected fin</source>
         <translation>Gewählte Finne entfernen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="748"/>
+        <location filename="../taskpanel.py" line="750"/>
         <source>Remove counter fin</source>
         <translation>Gegenfinne entfernen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="756"/>
+        <location filename="../taskpanel.py" line="758"/>
         <source>The fins, the main fins from the left, then the counter fins. Pick one to put the arrows on it and select it.</source>
         <translation>Die Finnen, erst die Hauptfinnen von links, dann die Gegenfinnen. Wähle eine aus, um die Pfeile auf sie zu setzen und sie auszuwählen.</translation>
     </message>
@@ -900,32 +910,22 @@
         <translation>Das Teil anders aufstellen? Die Finnen werden neu geplant: entfernte, verschobene Finnen und eigene Höhen, eine Drehung des Teils und die Gegenfinne werden aufgehoben.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="166"/>
-        <source>Smallest tipping margin at layer %d, %.1f mm high</source>
-        <translation>Kleinster Kippabstand bei Schicht %d, %.1f mm hoch</translation>
-    </message>
-    <message>
-        <location filename="../analysis.py" line="99"/>
-        <source>Colours by height: green stands, yellow is at risk of tipping (tipping margin under %.0f mm), red tips over from there.</source>
-        <translation>Farben nach Höhe: grün steht sicher, gelb ist kippgefährdet (Kippabstand unter %.0f mm), rot kippt ab dort.</translation>
-    </message>
-    <message>
-        <location filename="../analysis.py" line="94"/>
+        <location filename="../analysis.py" line="100"/>
         <source>No face overhangs without fins.</source>
         <translation>Keine Fläche hängt ohne Finnen über.</translation>
     </message>
     <message>
-        <location filename="../analysis.py" line="95"/>
+        <location filename="../analysis.py" line="101"/>
         <source>%d island(s): it would start printing in the air there.</source>
         <translation>%d Insel(n): dort würde es in der Luft zu drucken beginnen.</translation>
     </message>
     <message>
-        <location filename="../analysis.py" line="96"/>
+        <location filename="../analysis.py" line="102"/>
         <source>No islands.</source>
         <translation>Keine Inseln.</translation>
     </message>
     <message>
-        <location filename="../analysis.py" line="97"/>
+        <location filename="../analysis.py" line="103"/>
         <source>No bridge spans further than %.1f mm.</source>
         <translation>Keine Brücke spannt weiter als %.1f mm.</translation>
     </message>
@@ -945,79 +945,79 @@
         <translation>Das Teil dieser Prüfung gibt es nicht mehr; lösche die Prüfung.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="736"/>
+        <location filename="../taskpanel.py" line="738"/>
         <source>To remove one fin, click it in the 3D view and press Remove selected fin, or the Delete key. The counter fin goes under the face leaning the other way, or under a face of the part you select. Drag the two arrows on a fin to move it along the face or to change its height, or type the values below; click another fin, or pick it in the list of fins, to put the arrows there. Reset fins undoes every change by hand.</source>
         <translation>Um eine einzelne Finne zu entfernen, klicke sie in der 3D-Ansicht an und drücke „Gewählte Finne entfernen“ oder die Entf-Taste. Die Gegenfinne kommt unter die Fläche, die sich zur anderen Seite neigt, oder unter eine Fläche des Teils, die du wählst. Ziehe an den beiden Pfeilen einer Finne, um sie entlang der Fläche zu verschieben oder ihre Höhe zu ändern, oder tippe die Werte unten ein; klicke eine andere Finne an oder wähle sie in der Liste der Finnen, um die Pfeile dorthin zu setzen. „Finnen zurücksetzen“ nimmt jede Änderung von Hand zurück.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="784"/>
+        <location filename="../taskpanel.py" line="786"/>
         <source>Save as standard</source>
         <translation>Als Standard speichern</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="785"/>
+        <location filename="../taskpanel.py" line="787"/>
         <source>New fins start with these values. Fields that differ from the standard are marked, and their button puts the standard back.</source>
         <translation>Neue Finnen starten mit diesen Werten. Felder, die vom Standard abweichen, sind markiert, und ihr Knopf stellt den Standard wieder her.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="789"/>
-        <location filename="../taskpanel.py" line="975"/>
+        <location filename="../taskpanel.py" line="791"/>
+        <location filename="../taskpanel.py" line="977"/>
         <source>Factory settings</source>
         <translation>Werkseinstellungen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="790"/>
+        <location filename="../taskpanel.py" line="792"/>
         <source>Forget the saved standard and set every field to the built-in value.</source>
         <translation>Den gespeicherten Standard verwerfen und jedes Feld auf den eingebauten Wert setzen.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="810"/>
+        <location filename="../taskpanel.py" line="812"/>
         <source>Check stability</source>
         <translation>Standfestigkeit prüfen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="887"/>
+        <location filename="../taskpanel.py" line="889"/>
         <source>Stand another way</source>
         <translation>Anders aufstellen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="955"/>
+        <location filename="../taskpanel.py" line="957"/>
         <source>Back to the standard: %s</source>
         <translation>Zurück auf den Standard: %s</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="976"/>
+        <location filename="../taskpanel.py" line="978"/>
         <source>Forget the saved standard and set every field to the built-in value?</source>
         <translation>Den gespeicherten Standard verwerfen und jedes Feld auf den eingebauten Wert setzen?</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1004"/>
-        <location filename="../taskpanel.py" line="1008"/>
+        <location filename="../taskpanel.py" line="1006"/>
+        <location filename="../taskpanel.py" line="1010"/>
         <source>Nothing removed</source>
         <translation>Nichts entfernt</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1015"/>
+        <location filename="../taskpanel.py" line="1017"/>
         <source>Delete the fins?</source>
         <translation>Finnen löschen?</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1016"/>
+        <location filename="../taskpanel.py" line="1018"/>
         <source>These are the last fins. Delete the fins object? A part stood on an edge for these fins alone is laid flat again.</source>
         <translation>Das sind die letzten Finnen. Das Finnen-Objekt löschen? Ein Teil, das nur für diese Finnen auf eine Kante gestellt wurde, wird wieder flach gelegt.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1032"/>
+        <location filename="../taskpanel.py" line="1034"/>
         <source>Delete fins</source>
         <translation>Finnen löschen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1181"/>
+        <location filename="../taskpanel.py" line="1183"/>
         <source>%s %d</source>
         <translation>%s %d</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="444"/>
+        <location filename="../taskpanel.py" line="446"/>
         <source>Cancel fins</source>
         <translation>Finnen abbrechen</translation>
     </message>
@@ -1077,43 +1077,43 @@
         <translation>Kippt bei Schicht %d, %.1f mm hoch</translation>
     </message>
     <message>
-        <location filename="../analysis.py" line="90"/>
+        <location filename="../analysis.py" line="96"/>
         <source>%d faces overhang flatter than %.0f degrees from the bed without fins.</source>
         <translation>%d Flächen hängen flacher als %.0f Grad zur Bettebene über, ohne Finnen.</translation>
     </message>
     <message>
-        <location filename="../analysis.py" line="92"/>
+        <location filename="../analysis.py" line="98"/>
         <source>%d faces overhang flatter than %.0f degrees from the bed without fins, too flat to print.</source>
         <translation>%d Flächen hängen flacher als %.0f Grad zur Bettebene über, ohne Finnen, zu flach zum Drucken.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="746"/>
+        <location filename="../taskpanel.py" line="748"/>
         <source>Reset fins</source>
         <translation>Finnen zurücksetzen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1051"/>
-        <location filename="../taskpanel.py" line="1055"/>
+        <location filename="../taskpanel.py" line="1053"/>
+        <location filename="../taskpanel.py" line="1057"/>
         <source>No counter fin</source>
         <translation>Keine Gegenfinne</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1381"/>
+        <location filename="../taskpanel.py" line="1383"/>
         <source>no tine of the fin finds the face there</source>
         <translation>dort trifft keine Zinke der Finne die Fläche</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1725"/>
+        <location filename="../taskpanel.py" line="1727"/>
         <source>Not possible</source>
         <translation>Nicht möglich</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1771"/>
+        <location filename="../taskpanel.py" line="1773"/>
         <source>Notes</source>
         <translation>Hinweise</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1764"/>
+        <location filename="../taskpanel.py" line="1766"/>
         <source>%d fin(s), %.2f mm high, %.2f mm thick</source>
         <translation>%d Finne(n), %.2f mm hoch, %.2f mm dick</translation>
     </message>
@@ -1383,28 +1383,28 @@
         <translation>eine gewölbte Fläche liegt nicht mit ihrer Kante auf dem Bett; wähle sie allein oder die beiden Flächen daneben</translation>
     </message>
     <message>
-        <location filename="../limits.py" line="109"/>
+        <location filename="../limits.py" line="110"/>
         <location filename="../params.py" line="84"/>
         <source>%s is not a finite number</source>
         <translation>%s ist keine endliche Zahl</translation>
     </message>
     <message>
-        <location filename="../limits.py" line="112"/>
+        <location filename="../limits.py" line="113"/>
         <source>%s must lie between %.0f and %.0f degrees</source>
         <translation>%s muss zwischen %.0f und %.0f Grad liegen</translation>
     </message>
     <message>
-        <location filename="../limits.py" line="115"/>
+        <location filename="../limits.py" line="116"/>
         <source>overhang_unprintable must not be steeper than overhang_critical</source>
         <translation>„Nicht druckbar unter“ darf bei Überhängen nicht steiler sein als „Kritisch unter“</translation>
     </message>
     <message>
-        <location filename="../limits.py" line="119"/>
+        <location filename="../limits.py" line="120"/>
         <source>%s must be 0 or greater</source>
         <translation>%s muss 0 oder größer sein</translation>
     </message>
     <message>
-        <location filename="../limits.py" line="121"/>
+        <location filename="../limits.py" line="122"/>
         <source>bridge_unprintable must not be shorter than bridge_critical</source>
         <translation>„Nicht druckbar über“ darf bei Brücken nicht kürzer sein als „Kritisch über“</translation>
     </message>
@@ -1499,81 +1499,86 @@
         <translation>Prüfgrenzen</translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="49"/>
+        <location filename="../preferences.py" line="48"/>
         <location filename="../taskpanel.py" line="133"/>
         <source>Overhangs</source>
         <translation>Überhänge</translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="50"/>
+        <location filename="../preferences.py" line="49"/>
         <source>Critical below</source>
         <translation>Kritisch unter</translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="56"/>
+        <location filename="../preferences.py" line="55"/>
         <source>Not printable below</source>
         <translation>Nicht druckbar unter</translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="57"/>
+        <location filename="../preferences.py" line="56"/>
         <source>Faces lying flatter than this from the bed, without fins, are too flat to print and marked red. At most the critical limit.</source>
         <translation>Flächen ohne Finnen, die flacher als dieser Winkel zur Bettebene liegen, sind zu flach zum Drucken und werden rot markiert. Höchstens so groß wie die kritische Grenze.</translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="60"/>
+        <location filename="../preferences.py" line="59"/>
         <source>Least area</source>
         <translation>Mindestfläche</translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="51"/>
+        <location filename="../preferences.py" line="50"/>
         <source>Faces lying flatter than this from the bed, without fins, are critical and marked yellow. 0 degrees is a face lying flat over the bed, 90 a vertical wall, as PrusaSlicer measures its overhang threshold; Cura measures from the vertical, its value is 90 degrees minus this one.</source>
         <translation>Flächen ohne Finnen, die flacher als dieser Winkel zur Bettebene liegen, sind kritisch und werden gelb markiert. 0 Grad ist eine Fläche, die flach über dem Bett liegt, 90 Grad eine senkrechte Wand, so wie PrusaSlicer seine Überhangschwelle misst; Cura misst von der Senkrechten aus, sein Wert ist 90 Grad minus diesem.</translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="61"/>
+        <location filename="../preferences.py" line="60"/>
         <source>Overhanging faces smaller than this, like the corner facets of a chamfer, are printed over by the slicer without trouble and not reported.</source>
         <translation>Überhängende Flächen, die kleiner sind, etwa die Eckflächen einer Fase, druckt der Slicer ohne Weiteres; sie werden nicht gemeldet.</translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="65"/>
+        <location filename="../preferences.py" line="64"/>
         <location filename="../taskpanel.py" line="134"/>
         <source>Bridges</source>
         <translation>Brücken</translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="66"/>
+        <location filename="../preferences.py" line="65"/>
         <source>Critical over</source>
         <translation>Kritisch über</translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="67"/>
+        <location filename="../preferences.py" line="66"/>
         <source>A bridge, a face resting on the layer below at two or more sides, spanning further than this between its supports, is critical and marked yellow.</source>
         <translation>Eine Brücke, eine Fläche, die an zwei oder mehr Seiten auf der Schicht darunter aufliegt, ist kritisch und wird gelb markiert, wenn sie weiter als dieser Wert zwischen ihren Auflagen spannt.</translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="71"/>
+        <location filename="../preferences.py" line="70"/>
         <source>Not printable over</source>
         <translation>Nicht druckbar über</translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="72"/>
+        <location filename="../preferences.py" line="71"/>
         <source>A bridge spanning further than this sags too far to print and is marked red. At least the critical span.</source>
         <translation>Eine Brücke, die weiter spannt, hängt zu stark durch, um sie zu drucken, und wird rot markiert. Mindestens so groß wie die kritische Spannweite.</translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="76"/>
+        <location filename="../preferences.py" line="75"/>
         <source>Stability</source>
         <translation>Standfestigkeit</translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="77"/>
+        <location filename="../preferences.py" line="76"/>
         <source>At risk of tipping below</source>
         <translation>Kippgefährdet unter</translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="78"/>
-        <source>The tipping margin: how far the plumb line from the centre of mass lies inside the edge of the footprint. Closer than this, the part is at risk of tipping and shown yellow; outside the footprint it tips, shown red.</source>
-        <translation>Der Kippabstand: wie weit das Lot vom Schwerpunkt innerhalb des Rands der Standfläche liegt. Liegt es näher am Rand, ist das Teil kippgefährdet und wird gelb gezeigt; außerhalb der Standfläche kippt es, rot gezeigt.</translation>
+        <location filename="../preferences.py" line="77"/>
+        <source>The tipping angle: how far the part would have to lean before the plumb line from its centre of mass left the footprint. A tall part needs a wider tipping margin than a flat one for the same angle. Below this, the part is at risk of tipping and shown yellow; below 0 it tips, shown red. Check stability says which acceleration from the side it withstands.</source>
+        <translation>Der Kippwinkel: wie weit sich das Teil neigen müsste, bis das Lot von seinem Schwerpunkt die Standfläche verlässt. Ein hohes Teil braucht für denselben Winkel einen größeren Kippabstand als ein flaches. Darunter ist das Teil kippgefährdet und wird gelb gezeigt; unter 0 kippt es, rot gezeigt. Standfestigkeit prüfen sagt, welche Beschleunigung von der Seite es aushält.</translation>
+    </message>
+    <message>
+        <location filename="../preferences.py" line="90"/>
+        <source>How strictly the checks rate a part. Normal, built in, allows for what common printers manage and for the grip of the first layer on the bed. Strict counts the geometry alone: what would need support is not printable, and the part needs a larger tipping angle. Custom: the limits set below by hand.</source>
+        <translation>Wie streng die Prüfungen ein Teil bewerten. Normal, eingebaut, rechnet mit dem, was gängige Drucker schaffen, und mit der Haftung der ersten Schicht auf dem Bett. Streng zählt nur die Geometrie: was eine Stütze bräuchte, ist nicht druckbar, und das Teil braucht einen größeren Kippwinkel. Eigene: die unten von Hand gesetzten Grenzen.</translation>
     </message>
     <message>
         <location filename="../preferences.py" line="86"/>
@@ -1594,11 +1599,6 @@
         <location filename="../preferences.py" line="89"/>
         <source>Custom</source>
         <translation>Eigene</translation>
-    </message>
-    <message>
-        <location filename="../preferences.py" line="90"/>
-        <source>How strictly the checks rate a part. Normal, built in, allows for what common printers manage and for the grip of the first layer on the bed. Strict counts the geometry alone: what would need support is not printable, and the part needs a larger tipping margin. Custom: the limits set below by hand.</source>
-        <translation>Wie streng die Prüfungen ein Teil bewerten. Normal, eingebaut, rechnet mit dem, was gängige Drucker schaffen, und mit der Haftung der ersten Schicht auf dem Bett. Streng zählt nur die Geometrie: was eine Stütze bräuchte, ist nicht druckbar, und das Teil braucht einen größeren Kippabstand. Eigene: die unten von Hand gesetzten Grenzen.</translation>
     </message>
 </context>
 <context>
