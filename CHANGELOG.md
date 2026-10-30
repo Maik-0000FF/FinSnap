@@ -21,6 +21,7 @@ All notable changes to FinSnap are listed here. The format follows
 ### Changed
 
 - The badges of the icons are larger, so what is on them reads better; the picture on the export icons sits higher, clear of the name of the format
+- Texts and tooltips name stability, overhangs and bridges by the terms of physics and slicers: stands, at risk of tipping, tips over, tipping margin, bridge span; fixed the Cura angle (90 degrees minus the value from the bed); Foot reach and Foot height in the panel; in German Raupe, Neigungswinkel and Abstand Zinke zum Teil (#103)
 - A face a bridge covers whole is no longer reported as an overhang; one reaching past the bridge still is (#102)
 - Islands while editing is Islands and bridges while editing: off, the bridges are left to Check part as well (#102); switched on, the fins of every open document are checked at once and an open table of Quick fins is rated in place (#113)
 - Overhangs are rated in two levels: critical below 45 degrees from the bed, marked yellow, and too flat to print below 30 degrees, marked red; fins, Check part and its check in the tree say and show them apart (#101)

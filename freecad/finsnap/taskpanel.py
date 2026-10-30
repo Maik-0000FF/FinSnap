@@ -157,15 +157,16 @@ STAND_ASK = QT_TRANSLATE_NOOP("FinSnap", "Stand the part another way? The fins a
 # Rows the table of ways shows at most; more scroll.
 STAND_ROWS = 6
 # What a stability check found, in the colours of the fins while editing: green
-# where the part stands, yellow where only just, red where it tips; and the
+# where the part stands, yellow where it is at risk of tipping, red where it tips; and the
 # label of the layer its plumb line is shown for, counted from 1, beside it.
 LEVEL_COLORS = {feature.STANDS: handles.VALID_COLOR, feature.CLOSE: handles.BETWEEN_COLOR,
                 feature.TIPS: handles.INVALID_COLOR}
 LAYER_TIPS = QT_TRANSLATE_NOOP("FinSnap", "Tips at layer %d, %.1f mm high")
-LAYER_CLOSEST = QT_TRANSLATE_NOOP("FinSnap", "Closest to tipping at layer %d, %.1f mm high")
+LAYER_CLOSEST = QT_TRANSLATE_NOOP("FinSnap", "Smallest tipping margin at layer %d, %.1f mm high")
 # What the colours of a stability check mean, said with its result.
 NOTE_COLOURS = QT_TRANSLATE_NOOP(
-    "FinSnap", "Colours by height: green stands, yellow comes within %.0f mm of tipping, red tips from there.")
+    "FinSnap", "Colours by height: green stands, yellow is at risk of tipping (tipping margin under %.0f mm), red "
+    "tips over from there.")
 # The one way a check in the tree is shown in the 3D view.
 CHECK_DISPLAY_MODE = "Check"
 # The part coloured by height in a stability check, this see-through.
@@ -780,8 +781,8 @@ class FinSnapTaskPanel:
         edit_layout = QtWidgets.QGridLayout(edit)
         edit_info = QtWidgets.QLabel(translate(
             "FinSnap", "To remove one fin, click it in the 3D view and press Remove selected fin, or the "
-            "Delete key. The counter fin goes on the face leaning the other way, or on a face of the part "
-            "you select. Drag the two arrows on a fin to move it along the face or to change its height, "
+            "Delete key. The counter fin goes under the face leaning the other way, or under a face of the "
+            "part you select. Drag the two arrows on a fin to move it along the face or to change its height, "
             "or type the values below; click another fin, or pick it in the list of fins, to put the arrows "
             "there. Reset fins undoes every change by hand."))
         edit_info.setWordWrap(True)

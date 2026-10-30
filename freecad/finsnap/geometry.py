@@ -136,6 +136,13 @@ RIM_CHAMFERED, RIM_OWN, RIM_OTHER = range(3)
 # Why Quick fins finds no way to stand a part: no face takes the fins, or
 # the face selected takes them on no edge it can stand on.
 NO_LEANING_FACE = QT_TRANSLATE_NOOP("FinSnap", "no face of the part leans over the bed and takes fins")
+# Said where the face selected for fins faces up or sideways, or lies level.
+NOT_OVERHANGING = QT_TRANSLATE_NOOP("FinSnap", "the selected face does not overhang; it faces up or sideways")
+HORIZONTAL_FACE = QT_TRANSLATE_NOOP("FinSnap", "the selected face is horizontal; it rests on the bed or needs regular "
+                                               "support")
+# Said where a round side lies level at its lowest line, as a cylinder lying on it.
+HORIZONTAL_ROUND_SIDE = QT_TRANSLATE_NOOP("FinSnap", "the round side lies horizontal at its lowest line; it rests on "
+                                                     "the bed or needs regular support")
 NO_STAND_FOR_FACE = QT_TRANSLATE_NOOP("FinSnap", "the part cannot stand so that this face takes fins")
 
 
@@ -367,10 +374,10 @@ def _lowest(face):
     axis = V(face.Surface.Axis).normalize()
     n = DOWN - axis * DOWN.dot(axis)
     if n.Length < d.MIN_NORMAL_COMPONENT:
-        raise FinError(translate("FinSnap", "the selected face does not lean over the bed"))
+        raise FinError(translate("FinSnap", NOT_OVERHANGING))
     n.normalize()
     if V(n.x, n.y, 0).Length < d.MIN_NORMAL_COMPONENT:
-        raise FinError(translate("FinSnap", "the selected face is flat; it rests on the bed or needs regular support"))
+        raise FinError(translate("FinSnap", HORIZONTAL_ROUND_SIDE))
     return n
 
 
@@ -460,9 +467,9 @@ def frame_of(part, face, support=None):
     n = middle_normal(face)
     horizontal = V(n.x, n.y, 0)
     if n.z > -d.MIN_NORMAL_COMPONENT:
-        raise FinError(translate("FinSnap", "the selected face does not lean over the bed"))
+        raise FinError(translate("FinSnap", NOT_OVERHANGING))
     if horizontal.Length < d.MIN_NORMAL_COMPONENT:
-        raise FinError(translate("FinSnap", "the selected face is flat; it rests on the bed or needs regular support"))
+        raise FinError(translate("FinSnap", HORIZONTAL_FACE))
 
     out = horizontal.normalize()
     along = UP.cross(out)
@@ -960,7 +967,7 @@ def check(p, part, fins, bodies):
     if p.connection == d.CONNECTION_SEPARATE:
         overlap = fins.common(part).Volume
         if overlap > d.TOLERANCE:
-            raise FinError(translate("FinSnap", "the fins overlap the part by %.4f mm3") % overlap)
+            raise FinError(translate("FinSnap", "the fins overlap the part by %.4f mm³") % overlap)
 
     for body in bodies:
         distance = body.distToShape(part)[0]
@@ -1211,12 +1218,12 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         targets.append(WarningTarget([], [], True))
     angle = math.degrees(math.acos(min(1.0, -frame.n_z)))
     if not d.FACE_ANGLE_MIN <= angle <= d.FACE_ANGLE_MAX:
-        warnings.append(translate("FinSnap", "the face is inclined %.0f degrees against the bed, outside "
+        warnings.append(translate("FinSnap", "the face is inclined %.0f degrees to the bed, outside "
                                   "%.0f to %.0f") % (angle, d.FACE_ANGLE_MIN, d.FACE_ANGLE_MAX))
         targets.append(WarningTarget([], [], True))
     tine_length = p.gap / frame.n_out
     if tine_length < d.TINE_MIN_LENGTH_BEADS * p.bead_width:
-        warnings.append(translate("FinSnap", "tines are %.2f mm long, shorter than %.2f beads; the slicer "
+        warnings.append(translate("FinSnap", "tines are %.2f mm long, shorter than %.2f bead widths; the slicer "
                                   "may not print them to the face") % (tine_length, d.TINE_MIN_LENGTH_BEADS))
         targets.append(WarningTarget([fin.number for fin in plan.fins], [], False))
     if frame.round_side:

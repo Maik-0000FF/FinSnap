@@ -51,7 +51,7 @@ SECTIONS = (
          QT_TRANSLATE_NOOP("FinSnap", "Faces lying flatter than this from the bed, without fins, are critical "
                                       "and marked yellow. 0 degrees is a face lying flat over the bed, 90 a "
                                       "vertical wall, as PrusaSlicer measures its overhang threshold; Cura "
-                                      "measures from the vertical, its value is 90 degrees less."),
+                                      "measures from the vertical, its value is 90 degrees minus this one."),
          DEGREE, (limits.ANGLE_MIN, limits.ANGLE_MAX)),
         ("overhang_unprintable", QT_TRANSLATE_NOOP("FinSnap", "Not printable below"),
          QT_TRANSLATE_NOOP("FinSnap", "Faces lying flatter than this from the bed, without fins, are too flat "
@@ -59,7 +59,7 @@ SECTIONS = (
          DEGREE, (limits.ANGLE_MIN, limits.ANGLE_MAX)),
         ("overhang_min_area", QT_TRANSLATE_NOOP("FinSnap", "Least area"),
          QT_TRANSLATE_NOOP("FinSnap", "Overhanging faces smaller than this, like the corner facets of a "
-                                      "chamfer, are bridged over by the slicer and not reported."),
+                                      "chamfer, are printed over by the slicer without trouble and not reported."),
          AREA, (0.0, MAX_AREA)),
     )),
     (QT_TRANSLATE_NOOP("FinSnap", "Bridges"), (
@@ -90,7 +90,7 @@ STRICTNESS_CHOICES = ((limits.STRICT, QT_TRANSLATE_NOOP("FinSnap", "Strict")),
 STRICTNESS_TIP = QT_TRANSLATE_NOOP(
     "FinSnap", "How strictly the checks rate a part. Normal, built in, allows for what common printers manage and "
     "for the grip of the first layer on the bed. Strict counts the geometry alone: what would need support is not "
-    "printable, and the part needs a wider tipping margin. Custom: the limits set below by hand.")
+    "printable, and the part needs a larger tipping margin. Custom: the limits set below by hand.")
 
 
 class LimitsPage:

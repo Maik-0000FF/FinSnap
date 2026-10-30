@@ -1140,7 +1140,7 @@ class IslandsWhileEditing:
                     "FinSnap_IslandsWhileEditing",
                     "While on, fins check their part for islands and bridges as they are made and edited, and "
                     "Quick fins rates the ways to stand it by them. Off, they are not checked then, which keeps "
-                    "a large part quick on a slow computer: faces under bridges count as overhangs meanwhile, "
+                    "a large part quick on a slow computer: bridge faces count as overhangs meanwhile, "
                     "and Check part checks them at the end."),
                 "Checkable": feature.checks_while_editing()}
 
@@ -1189,7 +1189,7 @@ class CheckLimits:
                 "ToolTip": QT_TRANSLATE_NOOP(
                     "FinSnap_CheckLimits",
                     "Opens the limits the checks rate by, in Edit > Preferences: the strictness, strict or "
-                    "normal, or limits of your own for overhangs and the tipping margin.")}
+                    "normal, or limits of your own for overhangs, bridges and the tipping margin.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
         return True
