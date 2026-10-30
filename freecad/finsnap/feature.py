@@ -752,6 +752,13 @@ def follow_limits():
     """
     for document in App.listDocuments().values():
         check.outdate_all(document)
+    rebuild_fins()
+
+
+def rebuild_fins():
+    """Rebuild the fins of every open document: what they check and warn of
+    changed, the limits or the checks while editing."""
+    for document in App.listDocuments().values():
         fins = [obj for obj in document.Objects if is_fins(obj)]
         for obj in fins:
             obj.touch()

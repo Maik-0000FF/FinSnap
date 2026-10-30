@@ -293,37 +293,37 @@
         <translation>Kippwinkel (Grad):</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="425"/>
+        <location filename="../commands.py" line="426"/>
         <source>%d faces overhang flatter than %.0f degrees from the bed and are selected: they need fins or support.</source>
         <translation>%d Flächen hängen flacher als %.0f Grad zur Bettebene über und sind ausgewählt: sie brauchen Finnen oder Stützen.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="484"/>
+        <location filename="../commands.py" line="485"/>
         <source>Lay flat again</source>
         <translation>Wieder flach legen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="503"/>
+        <location filename="../commands.py" line="504"/>
         <source>Delete the fins of the part as well? No keeps them, moved along with the part, and rebuilds them once it is moved again, for example stood on its edge.</source>
         <translation>Die Finnen des Teils auch löschen? Nein behält sie, mit dem Teil mitbewegt, und baut sie neu, sobald es wieder bewegt wird, etwa auf die Kante gestellt.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="544"/>
+        <location filename="../commands.py" line="545"/>
         <source>Select an edge or a face of one part.</source>
         <translation>Wähle eine Kante oder eine Fläche eines Teils.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="883"/>
+        <location filename="../commands.py" line="901"/>
         <source>nothing to export: the parts of %s lie flat; stand them on their edge again</source>
         <translation>nichts zu exportieren: die Teile von %s liegen flach; stelle sie wieder auf die Kante</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="998"/>
+        <location filename="../commands.py" line="1016"/>
         <source>Left out, as their part lies flat: %s. Stand it on its edge again to export these fins.</source>
         <translation>Ausgelassen, weil ihr Teil flach liegt: %s. Stelle es wieder auf die Kante, um diese Finnen zu exportieren.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="469"/>
+        <location filename="../commands.py" line="470"/>
         <source>The selection was not stood on an edge with Stand on edge.</source>
         <translation>Die Auswahl wurde nicht mit Auf Kante stellen aufgestellt.</translation>
     </message>
@@ -338,32 +338,32 @@
         <translation>Diese Kante liegt nicht auf dem Bett, und ihre Flächen treffen sich nicht im rechten Winkel. Nimm „Auf Kante stellen“ mit der Kante und der Fläche, die auf das Bett soll, und danach „Finnen hinzufügen“.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="561"/>
+        <location filename="../commands.py" line="562"/>
         <source>Quick fins</source>
         <translation>Schnelle Finnen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="758"/>
+        <location filename="../commands.py" line="776"/>
         <source>Select one face to support, or two faces for a counter fin.</source>
         <translation>Eine Fläche zum Stützen auswählen, oder zwei Flächen für eine Gegenfinne.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="763"/>
+        <location filename="../commands.py" line="781"/>
         <source>Add fins</source>
         <translation>Finnen hinzufügen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="798"/>
+        <location filename="../commands.py" line="816"/>
         <source>Select one fin object, and optionally one face of its part.</source>
         <translation>Ein Finnen-Objekt auswählen, optional dazu eine Fläche seines Bauteils.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="801"/>
+        <location filename="../commands.py" line="819"/>
         <source>The face for the counter fin has to belong to the part the fins stand under.</source>
         <translation>Die Fläche für die Gegenfinne muss zu dem Teil gehören, unter dem die Finnen stehen.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="804"/>
+        <location filename="../commands.py" line="822"/>
         <location filename="../taskpanel.py" line="790"/>
         <source>Add counter fin</source>
         <translation>Gegenfinne hinzufügen</translation>
@@ -374,32 +374,32 @@
         <translation>Keine Gegenfinne auf dieser Fläche: %s</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="892"/>
+        <location filename="../commands.py" line="910"/>
         <source>Mesh fineness</source>
         <translation>Netzfeinheit</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="900"/>
+        <location filename="../commands.py" line="918"/>
         <source>Surface deviation</source>
         <translation>Oberflächenabweichung</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="907"/>
+        <location filename="../commands.py" line="925"/>
         <source>Angular deviation</source>
         <translation>Winkelabweichung</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="909"/>
+        <location filename="../commands.py" line="927"/>
         <source>Planar faces are exported exactly; these values only affect curved surfaces.</source>
         <translation>Ebene Flächen werden exakt exportiert; diese Werte wirken nur auf gekrümmte Flächen.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="944"/>
+        <location filename="../commands.py" line="962"/>
         <source>Export 3MF</source>
         <translation>3MF exportieren</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="967"/>
+        <location filename="../commands.py" line="985"/>
         <source>Export STEP</source>
         <translation>STEP exportieren</translation>
     </message>
@@ -734,63 +734,63 @@
         <translation>keine Fläche an %s gewählt</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="778"/>
+        <location filename="../feature.py" line="785"/>
         <source>Nothing of the part stands on the bed.</source>
         <translation>Nichts von dem Teil steht auf dem Bett.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="779"/>
+        <location filename="../feature.py" line="786"/>
         <source>Stands on its own while it is printed: at least %.1f mm from tipping, at layer %d (%.1f mm).</source>
         <translation>Steht während des Drucks von allein: mindestens %.1f mm vom Kippen entfernt, bei Schicht %d (%.1f mm).</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="781"/>
+        <location filename="../feature.py" line="788"/>
         <source>Stands on its own, but only just: %.1f mm from tipping at layer %d (%.1f mm).</source>
         <translation>Steht von allein, aber nur knapp: %.1f mm vom Kippen entfernt bei Schicht %d (%.1f mm).</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="783"/>
+        <location filename="../feature.py" line="790"/>
         <source>Tips over at layer %d (%.1f mm) while it is printed: fins under its leaning face hold it.</source>
         <translation>Kippt während des Drucks bei Schicht %d (%.1f mm) um: Finnen unter seiner geneigten Fläche halten es.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="785"/>
+        <location filename="../feature.py" line="792"/>
         <source>On its own it would tip over at layer %d (%.1f mm); its fins hold it: at least %.1f mm from tipping, at layer %d (%.1f mm).</source>
         <translation>Allein würde es bei Schicht %d (%.1f mm) umkippen; seine Finnen halten es: mindestens %.1f mm vom Kippen entfernt, bei Schicht %d (%.1f mm).</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="788"/>
+        <location filename="../feature.py" line="795"/>
         <source>On its own it would tip over at layer %d (%.1f mm); its fins hold it, but only just: %.1f mm from tipping at layer %d (%.1f mm).</source>
         <translation>Allein würde es bei Schicht %d (%.1f mm) umkippen; seine Finnen halten es, aber nur knapp: %.1f mm vom Kippen entfernt bei Schicht %d (%.1f mm).</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="791"/>
+        <location filename="../feature.py" line="798"/>
         <source>Tips over at layer %d (%.1f mm), before its fins hold it from their lowest tine at %.1f mm: set the first tine lower.</source>
         <translation>Kippt bei Schicht %d (%.1f mm) um, bevor seine Finnen es ab ihrer untersten Zinke bei %.1f mm halten: setze die erste Zinke tiefer.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="794"/>
+        <location filename="../feature.py" line="801"/>
         <source>Tips over at layer %d (%.1f mm), away from its fins: a counter fin on that side holds it.</source>
         <translation>Kippt bei Schicht %d (%.1f mm) von seinen Finnen weg um: eine Gegenfinne auf dieser Seite hält es.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="796"/>
+        <location filename="../feature.py" line="803"/>
         <source>Tips over at layer %d (%.1f mm) towards its fins, past their feet: a longer foot or more fins hold it.</source>
         <translation>Kippt bei Schicht %d (%.1f mm) zu seinen Finnen hin um, über ihre Füße hinaus: ein längerer Fuß oder mehr Finnen halten es.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="799"/>
+        <location filename="../feature.py" line="806"/>
         <source>Tips over at layer %d (%.1f mm), past an end of the edge it stands on.</source>
         <translation>Kippt bei Schicht %d (%.1f mm) über ein Ende der Kante um, auf der es steht.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="1093"/>
+        <location filename="../feature.py" line="1101"/>
         <source>Main fin: %s</source>
         <translation>Hauptfinne: %s</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="1053"/>
-        <location filename="../feature.py" line="1097"/>
+        <location filename="../feature.py" line="1060"/>
+        <location filename="../feature.py" line="1105"/>
         <source>Counter fin: %s</source>
         <translation>Gegenfinne: %s</translation>
     </message>
@@ -946,7 +946,7 @@
     </message>
     <message>
         <location filename="../taskpanel.py" line="832"/>
-        <location filename="../taskpanel.py" line="1003"/>
+        <location filename="../taskpanel.py" line="1018"/>
         <source>Factory settings</source>
         <translation>Werkseinstellungen</translation>
     </message>
@@ -961,43 +961,43 @@
         <translation>Standfestigkeit prüfen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="915"/>
+        <location filename="../taskpanel.py" line="930"/>
         <source>Stand another way</source>
         <translation>Anders aufstellen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="983"/>
+        <location filename="../taskpanel.py" line="998"/>
         <source>Back to the standard: %s</source>
         <translation>Zurück auf den Standard: %s</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1004"/>
+        <location filename="../taskpanel.py" line="1019"/>
         <source>Forget the saved standard and set every field to the built-in value?</source>
         <translation>Den gespeicherten Standard verwerfen und jedes Feld auf den eingebauten Wert setzen?</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1032"/>
-        <location filename="../taskpanel.py" line="1036"/>
+        <location filename="../taskpanel.py" line="1047"/>
+        <location filename="../taskpanel.py" line="1051"/>
         <source>Nothing removed</source>
         <translation>Nichts entfernt</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1043"/>
+        <location filename="../taskpanel.py" line="1058"/>
         <source>Delete the fins?</source>
         <translation>Finnen löschen?</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1044"/>
+        <location filename="../taskpanel.py" line="1059"/>
         <source>These are the last fins. Delete the fins object? A part stood on an edge for these fins alone is laid flat again.</source>
         <translation>Das sind die letzten Finnen. Das Finnen-Objekt löschen? Ein Teil, das nur für diese Finnen auf eine Kante gestellt wurde, wird wieder flach gelegt.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1060"/>
+        <location filename="../taskpanel.py" line="1075"/>
         <source>Delete fins</source>
         <translation>Finnen löschen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1209"/>
+        <location filename="../taskpanel.py" line="1224"/>
         <source>%s %d</source>
         <translation>%s %d</translation>
     </message>
@@ -1092,28 +1092,28 @@
         <translation>Finnen zurücksetzen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1079"/>
-        <location filename="../taskpanel.py" line="1083"/>
+        <location filename="../taskpanel.py" line="1094"/>
+        <location filename="../taskpanel.py" line="1098"/>
         <source>No counter fin</source>
         <translation>Keine Gegenfinne</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1409"/>
+        <location filename="../taskpanel.py" line="1424"/>
         <source>no tine of the fin finds the face there</source>
         <translation>dort trifft keine Zinke der Finne die Fläche</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1753"/>
+        <location filename="../taskpanel.py" line="1768"/>
         <source>Not possible</source>
         <translation>Nicht möglich</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1799"/>
+        <location filename="../taskpanel.py" line="1814"/>
         <source>Notes</source>
         <translation>Hinweise</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1792"/>
+        <location filename="../taskpanel.py" line="1807"/>
         <source>%d fin(s), %.2f mm high, %.2f mm thick</source>
         <translation>%d Finne(n), %.2f mm hoch, %.2f mm dick</translation>
     </message>
@@ -1273,7 +1273,7 @@
         <translation>Wähle eine Kante oder eine Fläche, eine Fläche und die Kante oder die Fase oder Rundung, auf der sie stehen soll, oder die beiden Flächen neben einer Rundung.</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1591"/>
+        <location filename="../geometry.py" line="1598"/>
         <source>the fins do not fit under the selected face standing this way: %s</source>
         <translation>die Finnen passen in dieser Lage nicht unter die gewählte Fläche: %s</translation>
     </message>
@@ -1601,12 +1601,12 @@
 <context>
     <name>FinSnap_AddCounterFin</name>
     <message>
-        <location filename="../commands.py" line="778"/>
+        <location filename="../commands.py" line="796"/>
         <source>Add counter fin</source>
         <translation>Gegenfinne hinzufügen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="779"/>
+        <location filename="../commands.py" line="797"/>
         <source>Adds a fin on the opposite side of existing fins, against tipping away, as large as the main fin; fewer counter tines in the panel make it smaller. Select the fins: the face leaning the other way is found automatically. Or select a face of the part as well to choose it yourself. To remove the counter fin, clear its face in the property view.</source>
         <translation>Fügt vorhandenen Finnen eine Finne auf der Gegenseite hinzu, gegen Wegkippen, so groß wie die Hauptfinne; weniger Zinken der Gegenfinne in der Maske machen sie kleiner. Die Finnen auswählen: Die zur anderen Seite geneigte Fläche wird automatisch gefunden. Oder zusätzlich eine Fläche des Bauteils auswählen, um sie selbst festzulegen. Zum Entfernen die Fläche der Gegenfinne in der Eigenschaftenansicht leeren.</translation>
     </message>
@@ -1614,12 +1614,12 @@
 <context>
     <name>FinSnap_AddFins</name>
     <message>
-        <location filename="../commands.py" line="746"/>
+        <location filename="../commands.py" line="764"/>
         <source>Add fins</source>
         <translation>Finnen hinzufügen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="747"/>
+        <location filename="../commands.py" line="765"/>
         <source>Select the face that leans over the bed; optionally a second face on the opposite side for a counter fin</source>
         <translation>Die Fläche auswählen, die über das Bett ragt; optional eine zweite Fläche auf der Gegenseite für eine Gegenfinne</translation>
     </message>
@@ -1627,12 +1627,12 @@
 <context>
     <name>FinSnap_CheckBridges</name>
     <message>
-        <location filename="../commands.py" line="1070"/>
+        <location filename="../commands.py" line="1088"/>
         <source>Check bridges</source>
         <translation>Brücken prüfen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1071"/>
+        <location filename="../commands.py" line="1089"/>
         <source>Checks the selected part, as it stands, for bridges: faces that span a gap between supports on the layer below, at two or more sides, which the slicer prints as straight lines across. Says how far each spans, rated by the check limits, and keeps it as a bridge check in the tree, which shows where they span too far on the underside of the part. Once the part, its place or its fins change, the check is marked out of date; double-click it to check again.</source>
         <translation>Prüft das ausgewählte Teil, so wie es steht, auf Brücken: Flächen, die eine Lücke zwischen Auflagen auf der Schicht darunter überspannen, an zwei oder mehr Seiten, die der Slicer als gerade Linien quer hinüber druckt. Sagt, wie weit jede spannt, bewertet nach den Prüfgrenzen, und legt es als Brückenprüfung im Baum ab, die an der Unterseite des Teils zeigt, wo sie zu weit spannen. Ändern sich das Teil, seine Lage oder seine Finnen, wird die Prüfung als veraltet markiert; zum erneuten Prüfen doppelklicken.</translation>
     </message>
@@ -1640,12 +1640,12 @@
 <context>
     <name>FinSnap_CheckLimits</name>
     <message>
-        <location filename="../commands.py" line="1142"/>
+        <location filename="../commands.py" line="1188"/>
         <source>Check limits...</source>
         <translation>Prüfgrenzen...</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1143"/>
+        <location filename="../commands.py" line="1189"/>
         <source>Opens the limits the checks rate by, in Edit &gt; Preferences: the strictness, strict or normal, or limits of your own for overhangs and the tipping margin.</source>
         <translation>Öffnet die Grenzen, nach denen die Prüfungen bewerten, unter Bearbeiten &gt; Einstellungen: die Strenge, streng oder normal, oder eigene Grenzen für Überhänge und den Kippabstand.</translation>
     </message>
@@ -1653,12 +1653,12 @@
 <context>
     <name>FinSnap_CheckPart</name>
     <message>
-        <location filename="../commands.py" line="1094"/>
+        <location filename="../commands.py" line="1112"/>
         <source>Check part</source>
         <translation>Teil prüfen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1095"/>
+        <location filename="../commands.py" line="1113"/>
         <source>Checks the selected part, with or without fins, as it stands, for everything that keeps it from printing, all at once: faces overhanging without fins, bridges spanning too far, islands, where it would start printing in the air, and whether it stays standing while it is printed. Says what it found and keeps it as a part check in the tree, which shows it all: the eye shows or hides it, deleting the check removes it. Once the part, its place or its fins change, the check is marked out of date; double-click it to check again.</source>
         <translation>Prüft das ausgewählte Teil, mit oder ohne Finnen, so wie es steht, auf einmal auf alles, was den Druck verhindert: Flächen, die ohne Finnen überhängen, zu weit gespannte Brücken, Inseln, wo es in der Luft zu drucken beginnen würde, und ob es während des Drucks stehen bleibt. Sagt, was gefunden wurde, und legt es als Prüfung im Baum ab, die alles anzeigt: das Auge blendet es ein und aus, Löschen der Prüfung entfernt es. Ändern sich das Teil, seine Lage oder seine Finnen, wird die Prüfung als veraltet markiert; zum erneuten Prüfen doppelklicken.</translation>
     </message>
@@ -1666,12 +1666,12 @@
 <context>
     <name>FinSnap_CheckStability</name>
     <message>
-        <location filename="../commands.py" line="1017"/>
+        <location filename="../commands.py" line="1035"/>
         <source>Check stability</source>
         <translation>Standfestigkeit prüfen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1018"/>
+        <location filename="../commands.py" line="1036"/>
         <source>Checks whether the selected part stays standing while it is printed, layer by layer, as it grows and its centre of mass moves: first on its own, then, where it would tip over, held by its fins, which hold it only from their lowest tine up. Says at which layer it would tip and which way. Keeps it as a stability check in the tree, which shows the part coloured by height, the layer it tips at and the plumb line from its centre of mass to the bed: the eye shows or hides them, deleting the check removes them. Once the part, its place or its fins change, the check is marked out of date; double-click it to check again.</source>
         <translation>Prüft Schicht für Schicht, ob das ausgewählte Teil während des Drucks stehen bleibt, während es wächst und sein Schwerpunkt wandert: zuerst allein, dann, wo es umkippen würde, von seinen Finnen gehalten, die es erst ab ihrer untersten Zinke halten. Sagt, bei welcher Schicht es kippen würde und wohin. Legt es als Standfestigkeitsprüfung im Baum ab, die das Teil nach Höhe eingefärbt, die Schicht, an der es kippt, und das Lot von seinem Schwerpunkt zum Bett zeigt: das Auge blendet sie ein und aus, Löschen der Prüfung entfernt sie. Ändern sich das Teil, seine Lage oder seine Finnen, wird die Prüfung als veraltet markiert; zum erneuten Prüfen doppelklicken.</translation>
     </message>
@@ -1679,12 +1679,12 @@
 <context>
     <name>FinSnap_Export3MF</name>
     <message>
-        <location filename="../commands.py" line="928"/>
+        <location filename="../commands.py" line="946"/>
         <source>Export 3MF</source>
         <translation>3MF exportieren</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="929"/>
+        <location filename="../commands.py" line="947"/>
         <source>Export the selection to 3MF, every body as its own object for the slicer. With nothing selected, all fins of the document are exported together with their parts.</source>
         <translation>Die Auswahl als 3MF exportieren, jeden Körper als eigenes Objekt für den Slicer. Ist nichts ausgewählt, werden alle Finnen des Dokuments mit ihren Bauteilen exportiert.</translation>
     </message>
@@ -1692,12 +1692,12 @@
 <context>
     <name>FinSnap_ExportSTEP</name>
     <message>
-        <location filename="../commands.py" line="952"/>
+        <location filename="../commands.py" line="970"/>
         <source>Export STEP</source>
         <translation>STEP exportieren</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="953"/>
+        <location filename="../commands.py" line="971"/>
         <source>Export the selection to STEP, with exact surfaces instead of a mesh. The slicer loads it as one object with a part per body: split it into objects there, so part and fins are printed separately. With nothing selected, all fins of the document are exported together with their parts.</source>
         <translation>Die Auswahl als STEP exportieren, mit exakten Flächen statt eines Netzes. Der Slicer lädt sie als ein Objekt mit einem Teil je Körper: dort in Objekte trennen, damit Bauteil und Finnen getrennt gedruckt werden. Ist nichts ausgewählt, werden alle Finnen des Dokuments mit ihren Bauteilen exportiert.</translation>
     </message>
@@ -1705,12 +1705,12 @@
 <context>
     <name>FinSnap_IslandsWhileEditing</name>
     <message>
-        <location filename="../commands.py" line="1120"/>
+        <location filename="../commands.py" line="1138"/>
         <source>Islands and bridges while editing</source>
         <translation>Inseln und Brücken beim Bearbeiten</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1121"/>
+        <location filename="../commands.py" line="1139"/>
         <source>While on, fins check their part for islands and bridges as they are made and edited, and Quick fins rates the ways to stand it by them. Off, they are not checked then, which keeps a large part quick on a slow computer: faces under bridges count as overhangs meanwhile, and Check part checks them at the end.</source>
         <translation>Eingeschaltet prüfen Finnen ihr Teil beim Erzeugen und Bearbeiten auf Inseln und Brücken, und Schnelle Finnen bewertet danach die Arten, es aufzustellen. Ausgeschaltet wird dabei nicht geprüft, das hält ein großes Teil auf einem langsamen Rechner schnell: Flächen unter Brücken zählen solange als Überhänge, und die Teilprüfung prüft sie am Ende.</translation>
     </message>
@@ -1718,12 +1718,12 @@
 <context>
     <name>FinSnap_LayFlat</name>
     <message>
-        <location filename="../commands.py" line="445"/>
+        <location filename="../commands.py" line="446"/>
         <source>Lay flat again</source>
         <translation>Wieder flach legen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="446"/>
+        <location filename="../commands.py" line="447"/>
         <source>Puts a part stood on an edge back as it lay before. Select the part or its fins. If the part has fins, it asks whether to delete them; kept fins move along with the part and are rebuilt once it is moved again. Deleting the last fins of a part lays it flat as well.</source>
         <translation>Legt ein auf eine Kante gestelltes Teil wieder so hin, wie es vorher lag. Wähle das Teil oder seine Finnen. Hat das Teil Finnen, wird gefragt, ob sie gelöscht werden; behaltene Finnen bewegen sich mit dem Teil und werden neu gebaut, sobald es wieder bewegt wird. Das Löschen der letzten Finnen eines Teils legt es ebenfalls flach.</translation>
     </message>
@@ -1731,12 +1731,12 @@
 <context>
     <name>FinSnap_MeshToSolid</name>
     <message>
-        <location filename="../commands.py" line="824"/>
+        <location filename="../commands.py" line="842"/>
         <source>Mesh to solid</source>
         <translation>Netz zu Volumenkörper</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="825"/>
+        <location filename="../commands.py" line="843"/>
         <source>Turn a selected STL mesh into a solid with planar faces, so fins can be added</source>
         <translation>Ein ausgewähltes STL-Netz in einen Volumenkörper mit ebenen Flächen umwandeln, damit Finnen hinzugefügt werden können</translation>
     </message>
@@ -1744,12 +1744,12 @@
 <context>
     <name>FinSnap_QuickFins</name>
     <message>
-        <location filename="../commands.py" line="522"/>
+        <location filename="../commands.py" line="523"/>
         <source>Quick fins</source>
         <translation>Schnelle Finnen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="523"/>
+        <location filename="../commands.py" line="524"/>
         <source>Stands the part up and adds one fin in the middle of a face in one step, then opens the panel to adjust it. Select the edge the part is to stand on: the fins go under the largest face that leans over the bed. Or select the face the fins are to support: the part is turned so that it leans 45 degrees over the bed, on its longest edge; select one of its edges as well to stand on that one, or, after the face, a chamfer or fillet to rest on. A chamfer or fillet alone, or the two faces beside a fillet, carry the part as well. The rim or the curved side of a cylinder or tube stands it on its rim, with one fin under its lowest line. A counter fin, where wanted, is added in the panel. Where the part can stand on another edge, or the fins can go under another face, a table at the top of the panel lists them to choose from; ways where the part would start printing in the air are left out while one without is found.</source>
         <translation>Stellt das Teil auf und setzt in einem Schritt eine Finne in die Mitte einer Fläche, dann öffnet sich die Maske zum Anpassen. Wähle die Kante, auf der das Teil stehen soll: Die Finnen kommen unter die größte Fläche, die über das Bett hängt. Oder wähle die Fläche, die gestützt werden soll: Das Teil wird so gedreht, dass sie mit 45 Grad über dem Bett hängt, auf ihrer längsten Kante; wähle zusätzlich eine ihrer Kanten, um auf dieser zu stehen, oder nach der Fläche eine Fase oder Rundung, auf der das Teil liegen soll. Eine Fase oder Rundung allein oder die beiden Flächen neben einer Rundung tragen das Teil ebenfalls. Der Rand oder die gewölbte Seite eines Zylinders oder Rohrs stellt es auf seinen Rand, mit einer Finne unter seiner untersten Linie. Eine Gegenfinne fügst du bei Bedarf in der Maske hinzu. Kann das Teil auch auf einer anderen Kante stehen oder passen die Finnen auch unter eine andere Fläche, listet eine Tabelle oben in der Maske diese Möglichkeiten zur Auswahl auf; Möglichkeiten, bei denen das Teil in der Luft zu drucken beginnen würde, werden weggelassen, solange es eine ohne gibt.</translation>
     </message>

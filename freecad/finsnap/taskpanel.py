@@ -879,9 +879,20 @@ class FinSnapTaskPanel:
         self.stand_list.setSelectionMode(QtWidgets.QAbstractItemView.SingleSelection)
         self.stand_list.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.stand_list.setToolTip(_wrapped(translate("FinSnap", STAND_TIP)))
+        self.fill_stands()
+        shown = min(len(self.stands), STAND_ROWS)
+        self.stand_list.setFixedHeight(self.stand_list.horizontalHeader().height()
+                                       + shown * self.stand_list.rowHeight(0) + 2 * self.stand_list.frameWidth())
+        self.stand_list.currentCellChanged.connect(lambda row, *_: self.choose_stand(row))
+        self.show_stand()
+        QtWidgets.QVBoxLayout(box).addWidget(self.stand_list)
+        return box
+
+    def fill_stands(self):
+        """Fill the table of ways from the rows of the ways found."""
         suffix = LENGTH_SUFFIX if self.stands.by_edge else AREA_SUFFIX
         for row, (name, size, islands, overhangs, spans) in enumerate(self.stands.rows):
-            # Ways not checked, with Islands while editing off, are left blank.
+            # Ways not checked, with the checks while editing off, are left blank.
             cells = [QtWidgets.QTableWidgetItem(name or STAND_ROW % (row + 1)),
                      QtWidgets.QTableWidgetItem("%.1f%s" % (size, suffix)),
                      QtWidgets.QTableWidgetItem("" if islands is None else str(islands)),
@@ -890,13 +901,17 @@ class FinSnapTaskPanel:
                                  _longest_span(spans), STAND_BRIDGES_TIP)]
             for column, cell in enumerate(cells):
                 self.stand_list.setItem(row, column, cell)
-        shown = min(len(self.stands), STAND_ROWS)
-        self.stand_list.setFixedHeight(self.stand_list.horizontalHeader().height()
-                                       + shown * self.stand_list.rowHeight(0) + 2 * self.stand_list.frameWidth())
-        self.stand_list.currentCellChanged.connect(lambda row, *_: self.choose_stand(row))
+
+    def rate_stands(self):
+        """Rate the ways of the table where they were found unchecked, and show
+        them; the row the part stands in stays marked."""
+        if self.stands is None or not self.stands.unrated():
+            return
+        self.stands.rate()
+        self.stand_list.blockSignals(True)
+        self.fill_stands()
+        self.stand_list.blockSignals(False)
         self.show_stand()
-        QtWidgets.QVBoxLayout(box).addWidget(self.stand_list)
-        return box
 
     def show_stand(self):
         """Mark the row of the way the part stands in now."""
