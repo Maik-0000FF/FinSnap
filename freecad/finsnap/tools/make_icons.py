@@ -11,6 +11,7 @@ on an edge, the fin parallel to its face at a gap, with a flat top, horizontal
 tines and a foot. Changing that picture here changes every icon.
 """
 
+import math
 import os
 
 from freecad.finsnap import paths
@@ -67,6 +68,27 @@ PLATEAU = 5.0
 FOOT_TOP = 55.0
 FOOT_REACH = 2.0     # how far the foot reaches past the outer end of the fin
 TINES = (52.0, 46.0)  # lower edge of each tine
+# The export icons: the picture of part and fins, this much smaller and moved
+# by this much on the sheet, ends above the name of the format; the name stands
+# on this line, this large. Picture bottom 3 + 58 * 0.72 = 44.8, top of the name
+# about 57 - 8 = 49, so the two keep apart in every font; its top corner,
+# 3 + 22 * 0.72 = 18.8, stays below the folded corner of the sheet.
+EXPORT_PICTURE_SCALE = 0.72
+EXPORT_PICTURE_SHIFT = (6, 3)
+EXPORT_LABEL_X = 31
+EXPORT_LABEL_BASELINE = 57
+EXPORT_LABEL_SIZE = 11
+# Where the badges sit on an icon, top right, and how large they are.
+BADGE_CENTRE = (52, 12)
+BADGE_RADIUS = 10
+# The badge of settings, Check limits: a white gear on grey, this many teeth
+# reaching from the inner to the outer radius, a hole in the middle.
+SETTINGS_FILL = "#5c6670"
+SETTINGS_LINE = "#2b2b2b"
+GEAR_TEETH = 8
+GEAR_OUTER = 7.5
+GEAR_INNER = 5.5
+GEAR_HOLE = 2.2
 TINE_HEIGHT = 2.0
 
 
@@ -148,6 +170,22 @@ def bolt_badge():
             % (bolt, WHITE, QUICK_LINE)]
 
 
+def gear_badge():
+    """A gear on grey: the settings the checks rate by."""
+    cx, cy = BADGE_CENTRE
+    corners = []
+    # Each tooth: two corners on the outer radius, then two on the inner one,
+    # each a quarter of the pitch wide.
+    for tooth in range(GEAR_TEETH):
+        for quarter, radius in enumerate((GEAR_OUTER, GEAR_OUTER, GEAR_INNER, GEAR_INNER)):
+            turn = 2 * math.pi * (tooth + quarter / 4) / GEAR_TEETH
+            corners.append((cx + radius * math.cos(turn), cy + radius * math.sin(turn)))
+    return ['<circle cx="%d" cy="%d" r="%d" fill="%s" stroke="%s" stroke-width="2"/>'
+            % (cx, cy, BADGE_RADIUS, SETTINGS_FILL, SETTINGS_LINE),
+            '<polygon points="%s" fill="%s" stroke-linejoin="round"/>' % (points(corners), WHITE),
+            '<circle cx="%d" cy="%d" r="%.1f" fill="%s"/>' % (cx, cy, GEAR_HOLE, SETTINGS_FILL)]
+
+
 def plumb():
     """The plumb line from the centre of mass of the part to the bed."""
     cx, cy = PART_CENTRE
@@ -211,11 +249,13 @@ def icons():
              'stroke-linejoin="round"/>' % (PAPER, BED),
              '<polyline points="40,2 40,16 54,16" fill="none" stroke="%s" stroke-width="2" '
              'stroke-linejoin="round"/>' % BED]
-    small = '<g transform="translate(6,8) scale(0.72)">%s</g>' % "".join(part_shape() + fin_shapes())
+    small = '<g transform="translate(%d,%d) scale(%.2f)">%s</g>' % (
+        EXPORT_PICTURE_SHIFT + (EXPORT_PICTURE_SCALE, "".join(part_shape() + fin_shapes())))
 
     def label(text):
-        return ('<text x="31" y="57" font-family="sans-serif" font-size="11" font-weight="bold" '
-                'text-anchor="middle" fill="%s">%s</text>' % (PART_LINE, text))
+        return ('<text x="%d" y="%d" font-family="sans-serif" font-size="%d" font-weight="bold" '
+                'text-anchor="middle" fill="%s">%s</text>'
+                % (EXPORT_LABEL_X, EXPORT_LABEL_BASELINE, EXPORT_LABEL_SIZE, PART_LINE, text))
 
     return {
         "finsnap.svg": workbench(),
@@ -233,6 +273,7 @@ def icons():
         "lay_flat.svg": bed() + tilted_outline + [laid_flat] + lay_arrow,
         "export_3mf.svg": paper + [small, label("3MF")],
         "export_step.svg": paper + [small, label("STEP")],
+        "check_limits.svg": workbench() + gear_badge(),
     }
 
 

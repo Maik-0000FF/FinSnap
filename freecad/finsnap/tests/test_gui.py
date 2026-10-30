@@ -26,7 +26,7 @@ from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left
 WORKBENCH = "FinSnapWorkbench"
 COMMANDS = ("FinSnap_QuickFins", "FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCounterFin",
             "FinSnap_CheckStability", "FinSnap_CheckPart", "FinSnap_IslandsWhileEditing", "FinSnap_MeshToSolid",
-            "FinSnap_Export3MF", "FinSnap_ExportSTEP")
+            "FinSnap_Export3MF", "FinSnap_ExportSTEP", "FinSnap_CheckLimits")
 DIALOG_ACCEPTED = 1
 # Answers to the questions commands ask, taken in order by answer_dialogs().
 ANSWERS = []
@@ -621,6 +621,17 @@ def limits_page(doc):
     from freecad.finsnap import defaults as d
     from freecad.finsnap.preferences import LimitsPage
 
+    expect(not Gui.getIcon("preferences-finsnap").isNull(),
+           "the group of FinSnap in Edit > Preferences has an icon, not a question mark")
+    # Check limits in the menu opens the preferences on the page.
+    opened = []
+    show = Gui.showPreferences
+    Gui.showPreferences = lambda *args: opened.append(args)
+    try:
+        Gui.runCommand("FinSnap_CheckLimits")
+    finally:
+        Gui.showPreferences = show
+    expect(opened == [("FinSnap", 0)], "Check limits opens the preferences on the page of FinSnap: %s" % opened)
     page = LimitsPage()
     page.loadSettings()
     expect(page.shown() == limits.current(), "the page shows the limits saved")

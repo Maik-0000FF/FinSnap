@@ -26,7 +26,7 @@ from . import orient
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_LAY_FLAT, ICON_MESH,
-                    ICON_CHECK_PART, ICON_ISLANDS, ICON_QUICK, ICON_STABILITY, ICON_TILT)
+                    ICON_CHECK_PART, ICON_ISLANDS, ICON_QUICK, ICON_LIMITS, ICON_STABILITY, ICON_TILT)
 from .presets import PREFERENCES
 from .shapes import FACE_PREFIX, global_shape, outermost, part_of
 from .taskpanel import (DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, check_params, check_part, check_stability,
@@ -1097,6 +1097,26 @@ class IslandsWhileEditing:
         feature.set_islands_while_editing(checked)
 
 
+class CheckLimits:
+    """Open Edit > Preferences on the page of the limits the checks rate by
+    (preferences.py), from the menu of the workbench."""
+
+    def GetResources(self):  # noqa: N802 - FreeCAD API
+        return {"Pixmap": ICON_LIMITS,
+                "MenuText": QT_TRANSLATE_NOOP("FinSnap_CheckLimits", "Check limits..."),
+                "ToolTip": QT_TRANSLATE_NOOP(
+                    "FinSnap_CheckLimits",
+                    "Opens the limits the checks rate by, in Edit > Preferences: the strictness, strict or "
+                    "normal, or limits of your own for overhangs and the tipping margin.")}
+
+    def IsActive(self):  # noqa: N802 - FreeCAD API
+        return True
+
+    def Activated(self):  # noqa: N802 - FreeCAD API
+        # The page is the first and only one of FinSnap's group.
+        Gui.showPreferences(NAME, 0)
+
+
 class SavingWatch:
     """Document observer: fins being edited look, while their document is
     saved, as they did before editing, so the file keeps that look."""
@@ -1119,6 +1139,8 @@ COMMANDS = (("FinSnap_QuickFins", QuickFins()),
             ("FinSnap_MeshToSolid", MeshToSolid()),
             ("FinSnap_Export3MF", Export3MF()),
             ("FinSnap_ExportSTEP", ExportSTEP()))
+# In the menu only, not in the toolbar: settings, not a step of the work.
+MENU_ONLY = (("FinSnap_CheckLimits", CheckLimits()),)
 
 
 # Registered once, when this module is first imported: with the workbench, or
@@ -1128,6 +1150,8 @@ App.addDocumentObserver(SavingWatch())
 
 
 def register():
-    for name, command in COMMANDS:
+    """Add the commands to FreeCAD; the names for the toolbar, and for the menu."""
+    for name, command in COMMANDS + MENU_ONLY:
         Gui.addCommand(name, command)
-    return [name for name, _ in COMMANDS]
+    toolbar = [name for name, _ in COMMANDS]
+    return toolbar, toolbar + [name for name, _ in MENU_ONLY]

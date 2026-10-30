@@ -1356,23 +1356,23 @@
         <translation>eine gewölbte Fläche liegt nicht mit ihrer Kante auf dem Bett; wähle sie allein oder die beiden Flächen daneben</translation>
     </message>
     <message>
-        <location filename="../limits.py" line="100"/>
+        <location filename="../limits.py" line="101"/>
         <location filename="../params.py" line="84"/>
         <source>%s is not a finite number</source>
         <translation>%s ist keine endliche Zahl</translation>
     </message>
     <message>
-        <location filename="../limits.py" line="103"/>
+        <location filename="../limits.py" line="104"/>
         <source>%s must lie between %.0f and %.0f degrees</source>
         <translation>%s muss zwischen %.0f und %.0f Grad liegen</translation>
     </message>
     <message>
-        <location filename="../limits.py" line="106"/>
+        <location filename="../limits.py" line="107"/>
         <source>overhang_unprintable must not be steeper than overhang_critical</source>
         <translation>overhang_unprintable darf nicht steiler sein als overhang_critical</translation>
     </message>
     <message>
-        <location filename="../limits.py" line="110"/>
+        <location filename="../limits.py" line="111"/>
         <source>%s must be 0 or greater</source>
         <translation>%s muss 0 oder größer sein</translation>
     </message>
@@ -1564,6 +1564,19 @@
     </message>
 </context>
 <context>
+    <name>FinSnap_CheckLimits</name>
+    <message>
+        <location filename="../commands.py" line="1106"/>
+        <source>Check limits...</source>
+        <translation>Prüfgrenzen...</translation>
+    </message>
+    <message>
+        <location filename="../commands.py" line="1107"/>
+        <source>Opens the limits the checks rate by, in Edit &gt; Preferences: the strictness, strict or normal, or limits of your own for overhangs and the tipping margin.</source>
+        <translation>Öffnet die Grenzen, nach denen die Prüfungen bewerten, unter Bearbeiten &gt; Einstellungen: die Strenge, streng oder normal, oder eigene Grenzen für Überhänge und den Kippabstand.</translation>
+    </message>
+</context>
+<context>
     <name>FinSnap_CheckPart</name>
     <message>
         <location filename="../commands.py" line="1062"/>
@@ -1683,12 +1696,12 @@
 <context>
     <name>Workbench</name>
     <message>
-        <location filename="../init_gui.py" line="17"/>
+        <location filename="../init_gui.py" line="20"/>
         <source>FinSnap</source>
         <translation>FinSnap</translation>
     </message>
     <message>
-        <location filename="../init_gui.py" line="18"/>
+        <location filename="../init_gui.py" line="21"/>
         <source>Breakaway fins for parts printed standing on an edge</source>
         <translation>Abbrechbare Finnen für Bauteile, die auf einer Kante stehend gedruckt werden</translation>
     </message>

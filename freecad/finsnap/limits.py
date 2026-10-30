@@ -83,7 +83,8 @@ class LimitError(ValueError):
     """The limits do not fit together."""
 
 
-@dataclass
+# Frozen: current() hands out the limits of STRICTNESS themselves.
+@dataclass(frozen=True)
 class Limits:
     # Faces lying flatter than this over the bed are critical (degrees).
     overhang_critical: float = d.OVERHANG_ANGLE

@@ -1062,23 +1062,23 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../limits.py" line="100"/>
+        <location filename="../limits.py" line="101"/>
         <location filename="../params.py" line="84"/>
         <source>%s is not a finite number</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../limits.py" line="103"/>
+        <location filename="../limits.py" line="104"/>
         <source>%s must lie between %.0f and %.0f degrees</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../limits.py" line="106"/>
+        <location filename="../limits.py" line="107"/>
         <source>overhang_unprintable must not be steeper than overhang_critical</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../limits.py" line="110"/>
+        <location filename="../limits.py" line="111"/>
         <source>%s must be 0 or greater</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1564,6 +1564,19 @@
     </message>
 </context>
 <context>
+    <name>FinSnap_CheckLimits</name>
+    <message>
+        <location filename="../commands.py" line="1106"/>
+        <source>Check limits...</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../commands.py" line="1107"/>
+        <source>Opens the limits the checks rate by, in Edit &gt; Preferences: the strictness, strict or normal, or limits of your own for overhangs and the tipping margin.</source>
+        <translation type="unfinished"></translation>
+    </message>
+</context>
+<context>
     <name>FinSnap_CheckPart</name>
     <message>
         <location filename="../commands.py" line="1062"/>
@@ -1683,12 +1696,12 @@
 <context>
     <name>Workbench</name>
     <message>
-        <location filename="../init_gui.py" line="17"/>
+        <location filename="../init_gui.py" line="20"/>
         <source>FinSnap</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../init_gui.py" line="18"/>
+        <location filename="../init_gui.py" line="21"/>
         <source>Breakaway fins for parts printed standing on an edge</source>
         <translation type="unfinished"></translation>
     </message>
