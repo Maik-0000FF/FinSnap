@@ -17,7 +17,6 @@ All notable changes to FinSnap are listed here. The format follows
 
 - Check bridges, in the toolbar: faces spanning a gap between supports on the layer below, at two or more sides, measured as a slicer bridges them, across the gap in the direction where most lines rest on both ends; rated by the check limits, critical over 2 mm, not printable over 10 mm (Strict: 2 mm), kept as a bridge check in the tree and shown on the underside of the part; fins warn of them and Check part has a line for them (#102)
 - The table of ways to stand a part in Quick fins shows the overhangs and the longest bridge of each way, shaded by level, and leaves out ways with a face or a bridge that does not print while one without is found (#111)
-
 - Check limits, a FinSnap page in Edit > Preferences: a strictness, normal (built in, allows for what common printers manage and for the grip of the first layer) or strict (the geometry alone: what would need support is not printable, a tipping angle of 15 degrees), fills the overhang angles from the bed below which a face is critical or too flat to print, the least overhang area and the tipping angle, which can also be set by hand; saved, they rebuild the fins of every open document and mark every check out of date; also opened by Check limits... in the FinSnap menu (#101)
 
 ### Changed
