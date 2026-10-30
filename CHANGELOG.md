@@ -11,6 +11,8 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.10.0] - 2026-10-30
+
 ### Added
 
 - Check bridges, in the toolbar: faces spanning a gap between supports on the layer below, at two or more sides, measured as a slicer bridges them, across the gap in the direction where most lines rest on both ends; rated by the check limits, critical over 2 mm, not printable over 10 mm (Strict: 2 mm), kept as a bridge check in the tree and shown on the underside of the part; fins warn of them and Check part has a line for them (#102)
@@ -235,7 +237,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.9.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.10.0...HEAD
+[0.10.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.10.0
 [0.9.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.9.0
 [0.8.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.8.0
 [0.7.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.7.0
