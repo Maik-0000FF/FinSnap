@@ -19,6 +19,8 @@ INPUTS this has to withstand (the page):
                                             fields match again
   the critical limit set below the
     unprintable one                     ->  the unprintable one follows it down
+  the critical span set over the
+    unprintable one                     ->  the unprintable one follows it up
 
 INPUTS this has to withstand (saveSettings()):
   the limits shown unchanged            ->  nothing rebuilt
@@ -36,11 +38,11 @@ from .i18n import QT_TRANSLATE_NOOP, translate
 # The title of the page, in the group of FinSnap in Edit > Preferences.
 TITLE = QT_TRANSLATE_NOOP("FinSnap", "Check limits")
 DEGREE, LENGTH, AREA = "degree", "length", "area"
-AREA_SUFFIX = " mm\N{SUPERSCRIPT TWO}"
 # The fields show this many decimals; the largest area and margin they take.
 DECIMALS = 1
 MAX_AREA = 1000.0
 MAX_MARGIN = 100.0
+MAX_SPAN = 1000.0
 # The fields of the page, by section: the Limits field each sets, its label,
 # tooltip, unit and range.
 SECTIONS = (
@@ -59,6 +61,17 @@ SECTIONS = (
          QT_TRANSLATE_NOOP("FinSnap", "Overhanging faces smaller than this, like the corner facets of a "
                                       "chamfer, are bridged over by the slicer and not reported."),
          AREA, (0.0, MAX_AREA)),
+    )),
+    (QT_TRANSLATE_NOOP("FinSnap", "Bridges"), (
+        ("bridge_critical", QT_TRANSLATE_NOOP("FinSnap", "Critical over"),
+         QT_TRANSLATE_NOOP("FinSnap", "A bridge, a face resting on the layer below at two or more sides, "
+                                      "spanning further than this between its supports, is critical and marked "
+                                      "yellow."),
+         LENGTH, (0.0, MAX_SPAN)),
+        ("bridge_unprintable", QT_TRANSLATE_NOOP("FinSnap", "Not printable over"),
+         QT_TRANSLATE_NOOP("FinSnap", "A bridge spanning further than this sags too far to print and is marked "
+                                      "red. At least the critical span."),
+         LENGTH, (0.0, MAX_SPAN)),
     )),
     (QT_TRANSLATE_NOOP("FinSnap", "Stability"), (
         ("tipping_margin", QT_TRANSLATE_NOOP("FinSnap", "At risk of tipping below"),
@@ -86,7 +99,7 @@ class LimitsPage:
     def __init__(self, parent=None):
         # Here, not at the top: this module is loaded when FreeCAD starts,
         # the task panel only once the page is opened.
-        from .taskpanel import DEGREE_SUFFIX, LENGTH_SUFFIX
+        from .taskpanel import AREA_SUFFIX, DEGREE_SUFFIX, LENGTH_SUFFIX
 
         suffixes = {DEGREE: DEGREE_SUFFIX, LENGTH: LENGTH_SUFFIX, AREA: AREA_SUFFIX}
         self.form = QtWidgets.QWidget(parent)
@@ -121,6 +134,8 @@ class LimitsPage:
             layout.addWidget(box)
         # The limit of faces too flat to print stays at most the critical one.
         self.fields["overhang_critical"].valueChanged.connect(self.fields["overhang_unprintable"].setMaximum)
+        # The unprintable span stays at least the critical one.
+        self.fields["bridge_critical"].valueChanged.connect(self.fields["bridge_unprintable"].setMinimum)
         layout.addStretch()
 
     def choose(self, index):
@@ -136,8 +151,8 @@ class LimitsPage:
 
     def show(self, shown):
         """Fill the fields with `shown`, a limits.Limits."""
-        # The critical limit first: it bounds the one below it.
-        for name in sorted(self.fields, key=lambda name: name != "overhang_critical"):
+        # The critical limits first: they bound the others.
+        for name in sorted(self.fields, key=lambda name: name not in ("overhang_critical", "bridge_critical")):
             self.fields[name].setValue(getattr(shown, name))
 
     def shown(self):

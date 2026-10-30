@@ -67,7 +67,7 @@ def _normals_above(face, bed_z):
     return normals
 
 
-def _steepest_down(shape, supported, min_area):
+def steepest_down(shape, supported, min_area):
     """(number, how steeply its normal points down) of each face of `shape`
     whose normal points down somewhere above the bed, as the cosine of the
     angle of the face from the bed at its flattest sample: 1 for a face
@@ -86,9 +86,9 @@ def _steepest_down(shape, supported, min_area):
     return found
 
 
-def _flatter(down, limit_deg):
+def flatter(down, limit_deg):
     """Whether a face whose normal points down `down` steeply (see
-    _steepest_down()) lies flatter than `limit_deg` over the bed."""
+    steepest_down()) lies flatter than `limit_deg` over the bed."""
     return down > math.cos(math.radians(limit_deg)) + d.TOLERANCE
 
 
@@ -98,10 +98,10 @@ def rated(shape, supported, rating):
     its overhang_unprintable, limits.CRITICAL flatter than its
     overhang_critical only."""
     found = []
-    for number, down in _steepest_down(shape, supported, rating.overhang_min_area):
-        if _flatter(down, rating.overhang_unprintable):
+    for number, down in steepest_down(shape, supported, rating.overhang_min_area):
+        if flatter(down, rating.overhang_unprintable):
             found.append((number, limits.UNPRINTABLE))
-        elif _flatter(down, rating.overhang_critical):
+        elif flatter(down, rating.overhang_critical):
             found.append((number, limits.CRITICAL))
     return found
 
@@ -151,15 +151,15 @@ def islands(part, first_layer, layer):
     resting = {}
     found = []
     for point in _lowest_points(part):
-        number = _layer_holding(point.z - bed, first_layer, layer)
+        number = layer_holding(point.z - bed, first_layer, layer)
         if number == 0:
             continue
         for key in (number, number - 1):
             if key not in cut:
-                cut[key] = _sections(part, bed + _layer_middle(key, first_layer, layer), layer)
+                cut[key] = sections(part, bed + layer_middle(key, first_layer, layer), layer)
         if cut[number] is None or cut[number - 1] is None:
             continue
-        # The sections lie in the plane of the bed, see _sections().
+        # The sections lie in the plane of the bed, see sections().
         middle = Part.Vertex(App.Vector(point.x, point.y, 0))
         for index, (section, reach, outline) in enumerate(cut[number]):
             key = (number, index)
@@ -174,7 +174,7 @@ def islands(part, first_layer, layer):
             except Part.OCCError:
                 resting[key] = True
             if not resting[key]:
-                top = bed + _layer_middle(number, first_layer, layer) + layer / 2
+                top = bed + layer_middle(number, first_layer, layer) + layer / 2
                 found.append(Island(App.Vector(point), _first_layer(part, outline, point.z, top)))
     return found
 
@@ -191,12 +191,12 @@ def _first_layer(part, outline, bottom, top):
     return piece if piece.Volume > 0 else None
 
 
-def _layer_middle(number, first_layer, layer):
+def layer_middle(number, first_layer, layer):
     """Height of the middle of layer `number` (from 0, the first) over the bed."""
     return first_layer / 2 if number == 0 else first_layer + (number - 0.5) * layer
 
 
-def _layer_holding(height, first_layer, layer):
+def layer_holding(height, first_layer, layer):
     """The layer (from 0) a point `height` over the bed is printed in first:
     the lowest one whose middle lies no lower than the point."""
     if height <= first_layer / 2 + d.TOLERANCE:
@@ -219,7 +219,7 @@ def _lowest_points(shape):
             if all(points[other].z >= point.z for other in neighbours[corner])]
 
 
-def _sections(shape, z, reach):
+def sections(shape, z, reach):
     """Where the plane at height `z` cuts `shape`, one slab SECTION_SLAB thick
     for each face of the cut, around the plane of the bed, z 0, so sections of
     different layers can be overlapped, each with its bounding box grown by
@@ -243,7 +243,7 @@ def _sections(shape, z, reach):
 
 
 def _overlap(first, second):
-    """Whether two sections, slabs from _sections(), overlap, more than touch."""
+    """Whether two sections, slabs from sections(), overlap, more than touch."""
     if not first.BoundBox.intersect(second.BoundBox):
         return False
     return first.common(second).Volume > d.ISLAND_MIN_OVERLAP * SECTION_SLAB
