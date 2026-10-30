@@ -15,6 +15,7 @@ import Part
 
 from freecad.finsnap.tests.support import (HALF_TURN, RECESS_RADIUS, expect, grooved, lower_left_face, run,
                                            split_cylinder, tilted_cube)
+from freecad.finsnap import analysis
 from freecad.finsnap import defaults as d
 from freecad.finsnap.bridge import bridges as find_bridges
 from freecad.finsnap import geometry
@@ -1119,23 +1120,23 @@ def check_printable_plans():
                  "every way with islands: the fewest first, the order given among as many")):
             left = list(counts)
             overhang.islands = lambda *args, **kwargs: [V()] * left.pop(0)
-            rated = geometry.printable_plans(box, plans, p)
+            rated = analysis.printable_plans(box, plans, p)
             expect([plans.index(entry.plan) for entry in rated] == wanted
                    and all(len(entry.islands) == counts[plans.index(entry.plan)] for entry in rated), what)
         calls = []
         overhang.islands = lambda *args, **kwargs: calls.append(args) or [V()]
-        rated = geometry.printable_plans(box, alike, p)
+        rated = analysis.printable_plans(box, alike, p)
         expect(len(alike) > 1 and len(calls) == 1 and all(len(entry.islands) == 1 for entry in rated),
                "ways standing the part alike, the fins under other faces, are checked once for islands")
         del calls[:]
-        expect(geometry.printable_plans(box, plans[:1], p) == [(plans[0], None, None, None)] and not calls,
+        expect(analysis.printable_plans(box, plans[:1], p) == [(plans[0], None, None, None)] and not calls,
                "one way is taken unchecked, its islands, overhangs and bridges None: there is no choice")
         overhang.islands = lambda *args, **kwargs: []
         real_rated = overhang.rated
         try:
             flat = [limits.UNPRINTABLE]
             overhang.rated = lambda *args, **kwargs: [(1, flat.pop(0))] if flat else []
-            rated = geometry.printable_plans(box, plans, p)
+            rated = analysis.printable_plans(box, plans, p)
             expect(plans.index(rated[0].plan) == 1 and len(rated) == len(plans) - 1,
                    "a way with a face too flat to print is left out while ways without are found")
         finally:

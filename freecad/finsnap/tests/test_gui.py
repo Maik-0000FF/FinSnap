@@ -739,7 +739,7 @@ def island_marks(doc):
     """Fins added by hand to the tilted cube with a hook hanging from its side,
     whose foot would start printing in the air: a warning says so, and the
     island is marked in the 3D view, over the part."""
-    from freecad.finsnap import commands, feature
+    from freecad.finsnap import analysis, commands, feature
     from freecad.finsnap import defaults as d
     cube = tilted_cube()
     box = cube.BoundBox
@@ -767,12 +767,12 @@ def island_marks(doc):
     real = overhang._first_layer
     overhang._first_layer = lambda *args: None
     try:
-        feature._islands_kept.clear()
+        analysis._kept.clear()
         fins.touch()
         doc.recompute()
     finally:
         overhang._first_layer = real
-        feature._islands_kept.clear()
+        analysis._kept.clear()
     expect(len(fins.Islands) == 1 and fins.IslandLayers.isNull() and list(fins.IslandsUncut) == list(fins.Islands)
            and _balls(marks, over=True) == 1,
            "an island whose first layer cannot be cut out is marked by a ball at its lowest point, over the part")
@@ -786,7 +786,7 @@ def stability_checked(doc, messages):
     check in the tree, one for each part and kind, which shows it while it is
     up to date; once the part moves it is out of date, its marks gone, and a
     double click checks again. Deleting it removes it; saved, it shows again."""
-    from freecad.finsnap import check, commands, feature, orient, paths, taskpanel
+    from freecad.finsnap import analysis, check, commands, feature, orient, paths, taskpanel
     from freecad.finsnap import defaults as d
     slab = Part.makeBox(30, 20, 10)
     bottom = [e for e in slab.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE][0]
@@ -799,7 +799,7 @@ def stability_checked(doc, messages):
     Gui.runCommand("FinSnap_CheckStability")
     stable = check.find(part, check.STABILITY)
     # What sets the note apart from the others: its words after the height.
-    needs_fins = App.Qt.translate("FinSnap", feature.NOTE_NEEDS_FINS).rsplit("mm)", 1)[1]
+    needs_fins = App.Qt.translate("FinSnap", analysis.NOTE_NEEDS_FINS).rsplit("mm)", 1)[1]
     expect(len(messages) == 1 and needs_fins in messages[0] and stable is not None and stable.Result == messages[0]
            and not stable.OutOfDate and isinstance(stable.ViewObject.Proxy, taskpanel.ViewProviderCheck)
            and stable.ViewObject.Proxy.root.getNumChildren() > 0,
@@ -876,9 +876,9 @@ def stability_checked(doc, messages):
     expect(check.find(part, check.PART) is None and check.find(part, check.STABILITY) is stable,
            "deleting a check removes it alone")
     Gui.runCommand("FinSnap_IslandsWhileEditing", 0)
-    off = feature.checks_while_editing()
+    off = analysis.checks_while_editing()
     Gui.runCommand("FinSnap_IslandsWhileEditing", 1)
-    expect(not off and feature.checks_while_editing(),
+    expect(not off and analysis.checks_while_editing(),
            "Islands and bridges while editing switches the checks off and on")
     doc.removeObject(fins.Name)
     doc.removeObject(part.Name)

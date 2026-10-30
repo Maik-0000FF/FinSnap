@@ -13,6 +13,7 @@ import Part
 from pivy import coin
 from PySide import QtCore, QtWidgets
 
+from . import analysis
 from . import check
 from . import defaults as d
 from . import export_3mf
@@ -418,7 +419,7 @@ def _report_overhangs(obj):
     """Select the faces that overhang after the tilt and say so in the status bar.
     Faces that already carry fins are left out."""
     names = [name for name, _ in feature.overhangs_of(obj, obj.Document, check_params(obj),
-                                                      feature.checks_while_editing())]
+                                                      analysis.checks_while_editing())]
     if not names:
         return
     Gui.Selection.clearSelection()
@@ -601,7 +602,7 @@ def quick_plans(obj, edge_names, face_names):
     prints without islands, as QuickWays, in the order geometry.quick_plans()
     finds them, for the task panel to step through;
     where every way has islands, all of them, the fewest first, see
-    geometry.printable_plans(). OrientError or FinError where there is none.
+    analysis.printable_plans(). OrientError or FinError where there is none.
 
     A fault in the kernel while the others are looked for ends the search: the
     plans found by then are kept, as the first one is a way to stand the part."""
@@ -619,8 +620,8 @@ def quick_plans(obj, edge_names, face_names):
     # in halves joined: on `obj` the number is another face.
     # Without islands checked while editing, the ways stand in the order found,
     # their islands not known.
-    rated = (geometry.printable_plans(shape, plans, quick_params()) if feature.checks_while_editing()
-             else [geometry.RatedPlan(plan, None, None, None) for plan in plans])
+    rated = (analysis.printable_plans(shape, plans, quick_params()) if analysis.checks_while_editing()
+             else [analysis.RatedPlan(plan, None, None, None) for plan in plans])
     return [QuickWay(way.plan, name_of(way.plan.number), way.islands, shape.Faces[way.plan.number].Area,
                      _edge_name(obj, way.plan.edge), way.overhangs, way.bridges, shape)
             for way in rated]
@@ -648,7 +649,7 @@ def _edge_name(obj, edge):
 # face the fins go under, the islands, None where there was only one way and
 # they were not checked, the area of that face (mm2), the name on the part of
 # the edge it stands on, None without one, the levels of its overhangs and its
-# bridges, see geometry.RatedPlan, None where not checked, and the shape the
+# bridges, see analysis.RatedPlan, None where not checked, and the shape the
 # plan stands, the part as Quick fins found it.
 QuickWay = namedtuple("QuickWay", "plan face islands area edge overhangs bridges shape")
 
@@ -691,7 +692,7 @@ class QuickStands:
     def rate(self):
         """Check every way, in the order listed, as Quick fins does with the
         checks while editing on, and fill its rows."""
-        rated = geometry.rate_plans(self.plans[0].shape, [way.plan for way in self.plans], quick_params())
+        rated = analysis.rate_plans(self.plans[0].shape, [way.plan for way in self.plans], quick_params())
         self.plans = [way._replace(islands=entry.islands, overhangs=entry.overhangs, bridges=entry.bridges)
                       for way, entry in zip(self.plans, rated)]
         self.rows = self._rows()
@@ -720,7 +721,7 @@ def _keep_checked(obj, way):
     to the fins, so their first build does not cut the part for them again.
     A way not checked, the only one, leaves the fins to work them out."""
     if way.islands is not None:
-        feature.keep_islands(obj, quick_params(), way.islands)
+        analysis.keep_islands(obj, quick_params(), way.islands)
 
 
 def _put_back_quick(owner, before, laid_flat, turns):
@@ -1142,13 +1143,13 @@ class IslandsWhileEditing:
                     "Quick fins rates the ways to stand it by them. Off, they are not checked then, which keeps "
                     "a large part quick on a slow computer: bridge faces count as overhangs meanwhile, "
                     "and Check part checks them at the end."),
-                "Checkable": feature.checks_while_editing()}
+                "Checkable": analysis.checks_while_editing()}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
         return True
 
     def Activated(self, checked):  # noqa: N802 - FreeCAD API
-        feature.set_checks_while_editing(checked)
+        analysis.set_checks_while_editing(checked)
         if checked:
             _check_now()
 
