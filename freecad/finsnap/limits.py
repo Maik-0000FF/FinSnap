@@ -9,7 +9,7 @@ in FreeCAD's user parameters, set on the FinSnap page in Edit > Preferences
 (preferences.py), and hold for every part. Angles are measured from the bed,
 as PrusaSlicer measures its overhang threshold: 0 degrees is a face lying
 flat over the bed, 90 a vertical wall. Cura measures its overhang angle from
-the vertical: its value is 90 degrees less.
+the vertical: its value is 90 degrees minus this one.
 
 The tipping margin is the distance of the plumb line from the centre of mass
 to the edge of the footprint. Below it the part is at risk of tipping; below

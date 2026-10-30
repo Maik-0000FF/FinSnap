@@ -1909,7 +1909,7 @@ def main():
     upward = [i for i, f in enumerate(cube.Shape.Faces, 1) if f.normalAt(0, 0).z > 1 - d.TOLERANCE][0]
     wrong = feature.create(cube, "Face%d" % upward)
     wrong_panel = FinSnapTaskPanel(wrong, created=True)
-    reason = App.Qt.translate("FinSnap", "the selected face does not lean over the bed")
+    reason = App.Qt.translate("FinSnap", geometry.NOT_OVERHANGING)
     expect(reason in wrong_panel.notes.text() and not wrong_panel.notes.isHidden()
            and taskpanel.ERROR_COLOR in wrong_panel.notes.styleSheet(),
            "the panel shows in a red box why no fins can be built: %s" % wrong_panel.notes.text())

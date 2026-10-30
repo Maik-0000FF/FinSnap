@@ -120,7 +120,7 @@ def islands(part, first_layer, layer):
     nothing there starts in the air, at its lowest point. A section beside
     another of its layer, on a foundation of its own, is no island, joined to
     it in that layer or not. Fins are no foundation: they only keep the part
-    from falling over, and a layer printed in the air does not stick to them.
+    from tipping over, and a layer printed in the air does not stick to them.
 
     Only the layers holding a lowest point of the part are cut, a point of
     its mesh with no neighbour lower: an island can only start at one. A

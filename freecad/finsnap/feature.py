@@ -64,7 +64,7 @@ ISLAND_LAYERS = "IslandLayers"
 ISLANDS_UNCUT = "IslandsUncut"
 NOTE_ISLANDS = QT_TRANSLATE_NOOP(
     "FinSnap", "%d island(s): %s would start printing in the air there, on no layer of it below. Fins do "
-    "not carry an island, they only keep the part from falling over. It cannot print standing so; the "
+    "not carry an island, they only keep the part from tipping over. It cannot print standing so; the "
     "islands are marked in the 3D view.")
 # Hidden marker on fins whose part was laid flat again with the fins kept:
 # they keep their last shape, moved along with the part, until it is moved again.
@@ -235,7 +235,7 @@ PROPERTIES = (
          "nozzle_diameter", None, STEP_PROFILE),
     Prop("BeadWidth", LENGTH, GROUP_SLICER,
          QT_TRANSLATE_NOOP("FinSnap", "Bead width"),
-         QT_TRANSLATE_NOOP("App::Property", "Extrusion width of the outer perimeter"),
+         QT_TRANSLATE_NOOP("App::Property", "Bead width, the extrusion width of the outer perimeter"),
          "bead_width", None, STEP_PROFILE),
     Prop("LayerHeight", LENGTH, GROUP_SLICER,
          QT_TRANSLATE_NOOP("FinSnap", "Layer height"),
@@ -248,7 +248,7 @@ PROPERTIES = (
     Prop("BrimWidth", LENGTH, GROUP_SLICER,
          QT_TRANSLATE_NOOP("FinSnap", "Brim width"),
          QT_TRANSLATE_NOOP("App::Property", "Width of the brim the slicer prints round the part and the fins on "
-                           "the bed, 0 without. Check stability counts it as standing on the bed with them."),
+                           "the bed, 0 without. Check stability counts it as part of the footprint."),
          "brim_width", None),
     Prop("Connection", CHOICE, GROUP_CONNECTION,
          QT_TRANSLATE_NOOP("FinSnap", "Connection"),
@@ -258,7 +258,8 @@ PROPERTIES = (
          "connection", d.CONNECTIONS),
     Prop("Gap", LENGTH, GROUP_CONNECTION,
          QT_TRANSLATE_NOOP("FinSnap", "Gap"),
-         QT_TRANSLATE_NOOP("App::Property", "Clearance between fin and face, along the face normal"),
+         QT_TRANSLATE_NOOP("App::Property", "Gap between fin and face that the tines reach across, along the face "
+                           "normal; a tine clearance adds to it"),
          "gap", None, STEP_PROFILE),
     Prop("TineClearance", LENGTH, GROUP_CONNECTION,
          QT_TRANSLATE_NOOP("FinSnap", "Tine clearance"),
@@ -273,11 +274,11 @@ PROPERTIES = (
                            "Vertical distance between tines, at least the tine height plus one layer"),
          "tine_spacing", None, STEP_LAYER),
     Prop("TineRestart", BOOL, GROUP_TINES,
-         QT_TRANSLATE_NOOP("FinSnap", "Restart tines after a gap"),
+         QT_TRANSLATE_NOOP("FinSnap", "Restart tines after an interruption"),
          QT_TRANSLATE_NOOP("App::Property",
                            "Start the tine grid anew at the lower edge of the face under each fin and above every "
-                           "gap it bridges, so a short face or one above a hole still gets tines; off, one grid "
-                           "counts from the bed for every fin"),
+                           "interruption it reaches over, so a short face or one above a hole still gets tines; off, "
+                           "one grid counts from the bed for every fin"),
          "tine_restart", None),
     Prop("TineFirst", LENGTH, GROUP_TINES,
          QT_TRANSLATE_NOOP("FinSnap", "Tine first"),
@@ -336,11 +337,11 @@ PROPERTIES = (
          QT_TRANSLATE_NOOP("App::Property", "Shape of the foot on the bed"),
          "foot_shape", d.FOOT_SHAPES),
     Prop("FootThickness", LENGTH, GROUP_FOOT,
-         QT_TRANSLATE_NOOP("FinSnap", "Foot thickness"),
+         QT_TRANSLATE_NOOP("FinSnap", "Foot height"),
          QT_TRANSLATE_NOOP("App::Property", "Height of the foot, rounded to whole layers"),
          "foot_thickness", None, STEP_LAYER),
     Prop("FootOverhang", LENGTH, GROUP_FOOT,
-         QT_TRANSLATE_NOOP("FinSnap", "Foot overhang"),
+         QT_TRANSLATE_NOOP("FinSnap", "Foot reach"),
          QT_TRANSLATE_NOOP("App::Property", "How far the foot reaches past the outer end of the fin"),
          "foot_overhang", None, STEP_HALF),
     Prop("FootWidthRatio", FLOAT, GROUP_FOOT,
@@ -784,17 +785,18 @@ STANDS, CLOSE, TIPS = "stands", "close", "tips"
 SIDE_SHARE = math.sqrt(0.5)
 NOTE_NOTHING_ON_BED = QT_TRANSLATE_NOOP("FinSnap", "Nothing of the part stands on the bed.")
 NOTE_STANDS = QT_TRANSLATE_NOOP(
-    "FinSnap", "Stands on its own while it is printed: at least %.1f mm from tipping, at layer %d (%.1f mm).")
+    "FinSnap", "Stands on its own while it is printed: tipping margin at least %.1f mm, smallest at layer %d "
+    "(%.1f mm).")
 NOTE_STANDS_CLOSE = QT_TRANSLATE_NOOP(
-    "FinSnap", "Stands on its own, but only just: %.1f mm from tipping at layer %d (%.1f mm).")
+    "FinSnap", "At risk of tipping on its own: tipping margin only %.1f mm at layer %d (%.1f mm).")
 NOTE_NEEDS_FINS = QT_TRANSLATE_NOOP(
     "FinSnap", "Tips over at layer %d (%.1f mm) while it is printed: fins under its leaning face hold it.")
 NOTE_HELD = QT_TRANSLATE_NOOP(
-    "FinSnap", "On its own it would tip over at layer %d (%.1f mm); its fins hold it: at least %.1f mm from "
-    "tipping, at layer %d (%.1f mm).")
+    "FinSnap", "On its own it would tip over at layer %d (%.1f mm); its fins hold it: tipping margin at least "
+    "%.1f mm, smallest at layer %d (%.1f mm).")
 NOTE_HELD_CLOSE = QT_TRANSLATE_NOOP(
-    "FinSnap", "On its own it would tip over at layer %d (%.1f mm); its fins hold it, but only just: %.1f mm "
-    "from tipping at layer %d (%.1f mm).")
+    "FinSnap", "On its own it would tip over at layer %d (%.1f mm); its fins hold it, but it is at risk of "
+    "tipping: tipping margin only %.1f mm at layer %d (%.1f mm).")
 NOTE_BEFORE_TINES = QT_TRANSLATE_NOOP(
     "FinSnap", "Tips over at layer %d (%.1f mm), before its fins hold it from their lowest tine at %.1f mm: "
     "set the first tine lower.")

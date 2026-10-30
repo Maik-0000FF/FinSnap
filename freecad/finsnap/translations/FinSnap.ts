@@ -54,11 +54,6 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="238"/>
-        <source>Extrusion width of the outer perimeter</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <location filename="../feature.py" line="242"/>
         <source>Layer height of the print profile</source>
         <translation type="unfinished"></translation>
@@ -69,142 +64,147 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="250"/>
-        <source>Width of the brim the slicer prints round the part and the fins on the bed, 0 without. Check stability counts it as standing on the bed with them.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <location filename="../feature.py" line="255"/>
         <source>separate: fins are their own object and only touch the part; merged: fins and part become one body</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="261"/>
-        <source>Clearance between fin and face, along the face normal</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="265"/>
+        <location filename="../feature.py" line="266"/>
         <source>Distance between the end of a tine and the face, along the face normal; 0 = the tine touches the face. More leaves fainter marks, too much and the tine does not hold: find the value by a test print.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="272"/>
+        <location filename="../feature.py" line="273"/>
         <source>Vertical distance between tines, at least the tine height plus one layer</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="277"/>
-        <source>Start the tine grid anew at the lower edge of the face under each fin and above every gap it bridges, so a short face or one above a hole still gets tines; off, one grid counts from the bed for every fin</source>
+        <location filename="../feature.py" line="238"/>
+        <source>Bead width, the extrusion width of the outer perimeter</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="284"/>
+        <location filename="../feature.py" line="250"/>
+        <source>Width of the brim the slicer prints round the part and the fins on the bed, 0 without. Check stability counts it as part of the footprint.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="261"/>
+        <source>Gap between fin and face that the tines reach across, along the face normal; a tine clearance adds to it</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="278"/>
+        <source>Start the tine grid anew at the lower edge of the face under each fin and above every interruption it reaches over, so a short face or one above a hole still gets tines; off, one grid counts from the bed for every fin</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="285"/>
         <source>Height of the lowest tine above the bed, 0 = on the top of the foot</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="288"/>
+        <location filename="../feature.py" line="289"/>
         <source>Tine height in layers</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="292"/>
+        <location filename="../feature.py" line="293"/>
         <source>Tine width in beads</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="296"/>
+        <location filename="../feature.py" line="297"/>
         <source>Number of tines per fin, 0 = as many as fit</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="300"/>
+        <location filename="../feature.py" line="301"/>
         <source>Wall thickness of a fin, 0 = from its height</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="304"/>
+        <location filename="../feature.py" line="305"/>
         <source>Height of the fins, 0 = top of the highest tine. A lower value leaves out the tines above it; the fins reach at most to just below the top of the face.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="310"/>
+        <location filename="../feature.py" line="311"/>
         <source>Width of the flat top of a fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="314"/>
+        <location filename="../feature.py" line="315"/>
         <source>auto: by face length; center: one fin; ends: two fins; corners: two fins on the face ends, each tine whole on the face and flush with its end, so the tine marks merge with the edges; the fin reaches a little past the end; left corner, right corner: one such fin on that end, left and right as seen from outside, looking at the face; distributed: FinCount fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="324"/>
+        <location filename="../feature.py" line="325"/>
         <source>Number of fins for distributed placement</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="328"/>
+        <location filename="../feature.py" line="329"/>
         <source>Distance of the outer fins from the face ends</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="332"/>
+        <location filename="../feature.py" line="333"/>
         <source>Automatic placement: one fin per this much face length</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="336"/>
+        <location filename="../feature.py" line="337"/>
         <source>Shape of the foot on the bed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="340"/>
+        <location filename="../feature.py" line="341"/>
         <source>Height of the foot, rounded to whole layers</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="344"/>
+        <location filename="../feature.py" line="345"/>
         <source>How far the foot reaches past the outer end of the fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="348"/>
+        <location filename="../feature.py" line="349"/>
         <source>Foot width as a share of its length</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="352"/>
+        <location filename="../feature.py" line="353"/>
         <source>Half width of the foot, 0 = from FootWidthRatio</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="356"/>
+        <location filename="../feature.py" line="357"/>
         <source>Tines of the counter fin, 0 = as many as the main fin. The counter fin only has to stop the part from tipping over, so it may be smaller.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="409"/>
+        <location filename="../feature.py" line="410"/>
         <source>Part and the face the fins support</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="411"/>
+        <location filename="../feature.py" line="412"/>
         <source>Outermost container of the part, so moving it rebuilds the fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="416"/>
+        <location filename="../feature.py" line="417"/>
         <source>Optional face on the opposite side for a small counter fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="431"/>
+        <location filename="../feature.py" line="432"/>
         <source>Faces of the part that overhang too flatly and carry no fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="437"/>
+        <location filename="../feature.py" line="438"/>
         <source>Where the part would start printing in the air</source>
         <translation type="unfinished"></translation>
     </message>
@@ -349,7 +349,7 @@
     </message>
     <message>
         <location filename="../commands.py" line="822"/>
-        <location filename="../taskpanel.py" line="792"/>
+        <location filename="../taskpanel.py" line="793"/>
         <source>Add counter fin</source>
         <translation type="unfinished"></translation>
     </message>
@@ -400,7 +400,7 @@
     </message>
     <message>
         <location filename="../export_3mf.py" line="74"/>
-        <source>mesh deviation and angle must be greater than 0</source>
+        <source>surface deviation and angular deviation must be greater than 0</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -433,11 +433,6 @@
     <message>
         <location filename="../feature.py" line="53"/>
         <source>%d bridges of %s span further than %.1f mm, too far to print, the longest %.1f mm: %s</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="65"/>
-        <source>%d island(s): %s would start printing in the air there, on no layer of it below. Fins do not carry an island, they only keep the part from falling over. It cannot print standing so; the islands are marked in the 3D view.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -611,204 +606,209 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="264"/>
+        <location filename="../feature.py" line="265"/>
         <source>Tine clearance</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="271"/>
+        <location filename="../feature.py" line="272"/>
         <source>Tine spacing</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="276"/>
-        <source>Restart tines after a gap</source>
+        <location filename="../feature.py" line="277"/>
+        <source>Restart tines after an interruption</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="283"/>
-        <source>Tine first</source>
+        <location filename="../feature.py" line="340"/>
+        <source>Foot height</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="287"/>
-        <source>Tine layers</source>
+        <location filename="../feature.py" line="344"/>
+        <source>Foot reach</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="291"/>
-        <source>Tine width beads</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="295"/>
-        <source>Tine count</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="299"/>
-        <source>Fin thickness</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="303"/>
-        <source>Fin height</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="309"/>
-        <source>Top width</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="313"/>
-        <source>Fin placement</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="323"/>
-        <source>Fin count</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="327"/>
-        <source>End inset</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="331"/>
-        <source>Face length per fin</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="335"/>
-        <source>Foot shape</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="339"/>
-        <source>Foot thickness</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="343"/>
-        <source>Foot overhang</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="347"/>
-        <source>Foot width ratio</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="351"/>
-        <source>Foot half width</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="355"/>
-        <source>Counter tine count</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="367"/>
-        <source>Not used without a foot.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="370"/>
-        <source>Only used with distributed placement.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="372"/>
-        <source>Only used with automatic placement.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="374"/>
-        <source>Not used with one fin in the centre or fins on the corners.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="380"/>
-        <source>Only used while Foot half width is 0.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="382"/>
-        <source>Only used with a counter fin.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="384"/>
-        <source>Not used with fins merged into the part: they need their tines on the face, or they would be loose bodies.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="464"/>
-        <source>no face selected on %s</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="785"/>
-        <source>Nothing of the part stands on the bed.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="786"/>
-        <source>Stands on its own while it is printed: at least %.1f mm from tipping, at layer %d (%.1f mm).</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="788"/>
-        <source>Stands on its own, but only just: %.1f mm from tipping at layer %d (%.1f mm).</source>
+        <location filename="../feature.py" line="787"/>
+        <source>Stands on its own while it is printed: tipping margin at least %.1f mm, smallest at layer %d (%.1f mm).</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../feature.py" line="790"/>
-        <source>Tips over at layer %d (%.1f mm) while it is printed: fins under its leaning face hold it.</source>
+        <source>At risk of tipping on its own: tipping margin only %.1f mm at layer %d (%.1f mm).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="794"/>
+        <source>On its own it would tip over at layer %d (%.1f mm); its fins hold it: tipping margin at least %.1f mm, smallest at layer %d (%.1f mm).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="797"/>
+        <source>On its own it would tip over at layer %d (%.1f mm); its fins hold it, but it is at risk of tipping: tipping margin only %.1f mm at layer %d (%.1f mm).</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="284"/>
+        <source>Tine first</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="288"/>
+        <source>Tine layers</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="292"/>
+        <source>Tine width beads</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="296"/>
+        <source>Tine count</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="300"/>
+        <source>Fin thickness</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="304"/>
+        <source>Fin height</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="310"/>
+        <source>Top width</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="314"/>
+        <source>Fin placement</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="324"/>
+        <source>Fin count</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="328"/>
+        <source>End inset</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="332"/>
+        <source>Face length per fin</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="336"/>
+        <source>Foot shape</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="348"/>
+        <source>Foot width ratio</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="352"/>
+        <source>Foot half width</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="356"/>
+        <source>Counter tine count</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="368"/>
+        <source>Not used without a foot.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="371"/>
+        <source>Only used with distributed placement.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="373"/>
+        <source>Only used with automatic placement.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="375"/>
+        <source>Not used with one fin in the centre or fins on the corners.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="381"/>
+        <source>Only used while Foot half width is 0.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="383"/>
+        <source>Only used with a counter fin.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="385"/>
+        <source>Not used with fins merged into the part: they need their tines on the face, or they would be loose bodies.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="465"/>
+        <source>no face selected on %s</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="786"/>
+        <source>Nothing of the part stands on the bed.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../feature.py" line="792"/>
-        <source>On its own it would tip over at layer %d (%.1f mm); its fins hold it: at least %.1f mm from tipping, at layer %d (%.1f mm).</source>
+        <source>Tips over at layer %d (%.1f mm) while it is printed: fins under its leaning face hold it.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="795"/>
-        <source>On its own it would tip over at layer %d (%.1f mm); its fins hold it, but only just: %.1f mm from tipping at layer %d (%.1f mm).</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../feature.py" line="798"/>
+        <location filename="../feature.py" line="800"/>
         <source>Tips over at layer %d (%.1f mm), before its fins hold it from their lowest tine at %.1f mm: set the first tine lower.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="801"/>
+        <location filename="../feature.py" line="803"/>
         <source>Tips over at layer %d (%.1f mm), away from its fins: a counter fin on that side holds it.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="803"/>
+        <location filename="../feature.py" line="805"/>
         <source>Tips over at layer %d (%.1f mm) towards its fins, past their feet: a longer foot or more fins hold it.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="806"/>
+        <location filename="../feature.py" line="808"/>
         <source>Tips over at layer %d (%.1f mm), past an end of the edge it stands on.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="1101"/>
+        <location filename="../feature.py" line="1103"/>
         <source>Main fin: %s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../feature.py" line="1060"/>
-        <location filename="../feature.py" line="1105"/>
+        <location filename="../feature.py" line="1062"/>
+        <location filename="../feature.py" line="1107"/>
         <source>Counter fin: %s</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="65"/>
+        <source>%d island(s): %s would start printing in the air there, on no layer of it below. Fins do not carry an island, they only keep the part from tipping over. It cannot print standing so; the islands are marked in the 3D view.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -817,155 +817,143 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="459"/>
+        <location filename="../geometry.py" line="463"/>
         <source>the selected face is not planar</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="370"/>
-        <location filename="../geometry.py" line="463"/>
-        <source>the selected face does not lean over the bed</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../geometry.py" line="373"/>
-        <location filename="../geometry.py" line="465"/>
-        <source>the selected face is flat; it rests on the bed or needs regular support</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../geometry.py" line="384"/>
+        <location filename="../geometry.py" line="388"/>
         <source>the selected face curves inward; fins go under the outside of a cylinder or tube</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="389"/>
+        <location filename="../geometry.py" line="393"/>
         <source>the lowest line of the selected face is cut away</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="483"/>
+        <location filename="../geometry.py" line="487"/>
         <source>fin_height %.2f reaches above the face (%.2f)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="504"/>
+        <location filename="../geometry.py" line="508"/>
         <source>no tine fits below %.2f mm</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="506"/>
+        <location filename="../geometry.py" line="510"/>
         <source>only %d of %d tines fit below %.2f mm</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="615"/>
+        <location filename="../geometry.py" line="619"/>
         <source>the face is narrower than the %.2f mm a fin needs at every tine</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="643"/>
+        <location filename="../geometry.py" line="647"/>
         <source>the face is too short for a fin on each corner</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="649"/>
+        <location filename="../geometry.py" line="653"/>
         <source>the face is too short for a fin of %.2f mm</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="667"/>
+        <location filename="../geometry.py" line="671"/>
         <source>%d fins do not fit side by side on this face</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="963"/>
-        <source>the fins overlap the part by %.4f mm3</source>
+        <location filename="../geometry.py" line="967"/>
+        <source>the fins overlap the part by %.4f mm³</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="968"/>
+        <location filename="../geometry.py" line="972"/>
         <source>a fin comes within %.3f mm of the part, closer than the %.3f mm it keeps from the face</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="998"/>
+        <location filename="../geometry.py" line="1002"/>
         <source>fins under the selected face alone, not reaching over the groove: %s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1022"/>
+        <location filename="../geometry.py" line="1026"/>
         <location filename="../params.py" line="126"/>
         <source>tines (%.2f mm) are wider than the fin (%.2f mm)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1058"/>
+        <location filename="../geometry.py" line="1062"/>
         <source>fin %d would pass fin %d; a fin stays between its neighbours</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1061"/>
+        <location filename="../geometry.py" line="1065"/>
         <source>fins %d and %d stand %.2f mm apart, closer than %.2f mm</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1102"/>
+        <location filename="../geometry.py" line="1106"/>
         <source>fin %d is %.2f mm high, above the face (%.2f mm)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1106"/>
+        <location filename="../geometry.py" line="1110"/>
         <source>fin %d is lower than its first tine</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1064"/>
+        <location filename="../geometry.py" line="1068"/>
         <source>every fin is removed; delete the fins instead, or bring them back</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1138"/>
+        <location filename="../geometry.py" line="140"/>
+        <source>the selected face does not overhang; it faces up or sideways</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../geometry.py" line="141"/>
+        <source>the selected face is horizontal; it rests on the bed or needs regular support</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../geometry.py" line="1142"/>
         <source>no tine finds the face; it has a recess or hole at every tine</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1196"/>
+        <location filename="../geometry.py" line="1200"/>
         <source>tines at %s mm above the bed left out: a recess or hole in the face lies under them</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1200"/>
+        <location filename="../geometry.py" line="1204"/>
         <source>fins moved along the face to where their tines rest, beside a hole or recess under their planned place: %s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1202"/>
+        <location filename="../geometry.py" line="1206"/>
         <source>fin %d by %.2f mm</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1205"/>
+        <location filename="../geometry.py" line="1209"/>
         <source>fins at %s mm from the end of the face left out: none of their tines lies wholly on the face</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1209"/>
+        <location filename="../geometry.py" line="1213"/>
         <source>tines at %s mm above the bed left out: the face is narrower there than the fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1214"/>
-        <source>the face is inclined %.0f degrees against the bed, outside %.0f to %.0f</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../geometry.py" line="1219"/>
-        <source>tines are %.2f mm long, shorter than %.2f beads; the slicer may not print them to the face</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../geometry.py" line="1223"/>
+        <location filename="../geometry.py" line="1227"/>
         <source>the part stands on one point of its rim: a chamfer on the rim and a brim in the slicer give it more hold on the bed</source>
         <translation type="unfinished"></translation>
     </message>
@@ -975,22 +963,32 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="139"/>
+        <location filename="../geometry.py" line="143"/>
         <source>the part cannot stand so that this face takes fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1448"/>
+        <location filename="../geometry.py" line="1218"/>
+        <source>the face is inclined %.0f degrees to the bed, outside %.0f to %.0f</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../geometry.py" line="1223"/>
+        <source>tines are %.2f mm long, shorter than %.2f bead widths; the slicer may not print them to the face</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../geometry.py" line="1452"/>
         <source>This edge does not lie on the bed, and its faces do not meet at a right angle. Use Stand on edge with the edge and the face that is to lie on the bed, then Add fins.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1477"/>
+        <location filename="../geometry.py" line="1481"/>
         <source>Select an edge or a face, a face and the edge or the chamfer or fillet it is to stand on, or the two faces beside a fillet.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1598"/>
+        <location filename="../geometry.py" line="1602"/>
         <source>the fins do not fit under the selected face standing this way: %s</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1213,42 +1211,32 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="165"/>
-        <source>Closest to tipping at layer %d, %.1f mm high</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../taskpanel.py" line="167"/>
-        <source>Colours by height: green stands, yellow comes within %.0f mm of tipping, red tips from there.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../taskpanel.py" line="174"/>
+        <location filename="../taskpanel.py" line="175"/>
         <source>%d faces overhang flatter than %.0f degrees from the bed without fins.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="176"/>
+        <location filename="../taskpanel.py" line="177"/>
         <source>%d faces overhang flatter than %.0f degrees from the bed without fins, too flat to print.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="193"/>
+        <location filename="../taskpanel.py" line="194"/>
         <source>Side view</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="194"/>
+        <location filename="../taskpanel.py" line="195"/>
         <source>Top view</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="730"/>
+        <location filename="../taskpanel.py" line="731"/>
         <source>FinSnap parameters</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="734"/>
+        <location filename="../taskpanel.py" line="735"/>
         <source>Hover over a field for an explanation. Letters in brackets point to the drawings below. Every change is shown in the 3D view right away. Greyed-out fields have no effect with the current choices; their tooltip says why.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1273,27 +1261,22 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="790"/>
+        <location filename="../taskpanel.py" line="791"/>
         <source>Remove selected fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="791"/>
+        <location filename="../taskpanel.py" line="792"/>
         <source>Reset fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="793"/>
+        <location filename="../taskpanel.py" line="794"/>
         <source>Remove counter fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="781"/>
-        <source>To remove one fin, click it in the 3D view and press Remove selected fin, or the Delete key. The counter fin goes on the face leaning the other way, or on a face of the part you select. Drag the two arrows on a fin to move it along the face or to change its height, or type the values below; click another fin, or pick it in the list of fins, to put the arrows there. Reset fins undoes every change by hand.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../taskpanel.py" line="801"/>
+        <location filename="../taskpanel.py" line="802"/>
         <source>The fins, the main fins from the left, then the counter fins. Pick one to put the arrows on it and select it.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1343,135 +1326,150 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="178"/>
-        <source>No face overhangs without fins.</source>
+        <location filename="../taskpanel.py" line="165"/>
+        <source>Smallest tipping margin at layer %d, %.1f mm high</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="167"/>
+        <source>Colours by height: green stands, yellow is at risk of tipping (tipping margin under %.0f mm), red tips over from there.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../taskpanel.py" line="179"/>
-        <source>%d island(s): it would start printing in the air there.</source>
+        <source>No face overhangs without fins.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../taskpanel.py" line="180"/>
-        <source>No islands.</source>
+        <source>%d island(s): it would start printing in the air there.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../taskpanel.py" line="181"/>
+        <source>No islands.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="182"/>
         <source>No bridge spans further than %.1f mm.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="185"/>
+        <location filename="../taskpanel.py" line="186"/>
         <source>Checks whether the part stays standing while it is printed, layer by layer, on its own and held by these fins, which hold it only from their lowest tine up, and shows the plumb line from its centre of mass to the bed. Takes a moment on a large part.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="189"/>
+        <location filename="../taskpanel.py" line="190"/>
         <source>Changed since the stability check: check again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="191"/>
+        <location filename="../taskpanel.py" line="192"/>
         <source>The part of this check is gone; delete the check.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="829"/>
-        <source>Save as standard</source>
+        <location filename="../taskpanel.py" line="782"/>
+        <source>To remove one fin, click it in the 3D view and press Remove selected fin, or the Delete key. The counter fin goes under the face leaning the other way, or under a face of the part you select. Drag the two arrows on a fin to move it along the face or to change its height, or type the values below; click another fin, or pick it in the list of fins, to put the arrows there. Reset fins undoes every change by hand.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../taskpanel.py" line="830"/>
+        <source>Save as standard</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="831"/>
         <source>New fins start with these values. Fields that differ from the standard are marked, and their button puts the standard back.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="834"/>
-        <location filename="../taskpanel.py" line="1020"/>
+        <location filename="../taskpanel.py" line="835"/>
+        <location filename="../taskpanel.py" line="1021"/>
         <source>Factory settings</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="835"/>
+        <location filename="../taskpanel.py" line="836"/>
         <source>Forget the saved standard and set every field to the built-in value.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="855"/>
+        <location filename="../taskpanel.py" line="856"/>
         <source>Check stability</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="932"/>
+        <location filename="../taskpanel.py" line="933"/>
         <source>Stand another way</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1000"/>
+        <location filename="../taskpanel.py" line="1001"/>
         <source>Back to the standard: %s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1021"/>
+        <location filename="../taskpanel.py" line="1022"/>
         <source>Forget the saved standard and set every field to the built-in value?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1049"/>
-        <location filename="../taskpanel.py" line="1053"/>
+        <location filename="../taskpanel.py" line="1050"/>
+        <location filename="../taskpanel.py" line="1054"/>
         <source>Nothing removed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1060"/>
+        <location filename="../taskpanel.py" line="1061"/>
         <source>Delete the fins?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1061"/>
+        <location filename="../taskpanel.py" line="1062"/>
         <source>These are the last fins. Delete the fins object? A part stood on an edge for these fins alone is laid flat again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1077"/>
+        <location filename="../taskpanel.py" line="1078"/>
         <source>Delete fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1096"/>
-        <location filename="../taskpanel.py" line="1100"/>
+        <location filename="../taskpanel.py" line="1097"/>
+        <location filename="../taskpanel.py" line="1101"/>
         <source>No counter fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1226"/>
+        <location filename="../taskpanel.py" line="1227"/>
         <source>%s %d</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1426"/>
+        <location filename="../taskpanel.py" line="1427"/>
         <source>no tine of the fin finds the face there</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1770"/>
+        <location filename="../taskpanel.py" line="1771"/>
         <source>Not possible</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1809"/>
+        <location filename="../taskpanel.py" line="1810"/>
         <source>%d fin(s), %.2f mm high, %.2f mm thick</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1816"/>
+        <location filename="../taskpanel.py" line="1817"/>
         <source>Notes</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="489"/>
+        <location filename="../taskpanel.py" line="490"/>
         <source>Cancel fins</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1507,11 +1505,6 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../preferences.py" line="51"/>
-        <source>Faces lying flatter than this from the bed, without fins, are critical and marked yellow. 0 degrees is a face lying flat over the bed, 90 a vertical wall, as PrusaSlicer measures its overhang threshold; Cura measures from the vertical, its value is 90 degrees less.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <location filename="../preferences.py" line="56"/>
         <source>Not printable below</source>
         <translation type="unfinished"></translation>
@@ -1527,8 +1520,13 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
+        <location filename="../preferences.py" line="51"/>
+        <source>Faces lying flatter than this from the bed, without fins, are critical and marked yellow. 0 degrees is a face lying flat over the bed, 90 a vertical wall, as PrusaSlicer measures its overhang threshold; Cura measures from the vertical, its value is 90 degrees minus this one.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
         <location filename="../preferences.py" line="61"/>
-        <source>Overhanging faces smaller than this, like the corner facets of a chamfer, are bridged over by the slicer and not reported.</source>
+        <source>Overhanging faces smaller than this, like the corner facets of a chamfer, are printed over by the slicer without trouble and not reported.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1594,7 +1592,7 @@
     </message>
     <message>
         <location filename="../preferences.py" line="90"/>
-        <source>How strictly the checks rate a part. Normal, built in, allows for what common printers manage and for the grip of the first layer on the bed. Strict counts the geometry alone: what would need support is not printable, and the part needs a wider tipping margin. Custom: the limits set below by hand.</source>
+        <source>How strictly the checks rate a part. Normal, built in, allows for what common printers manage and for the grip of the first layer on the bed. Strict counts the geometry alone: what would need support is not printable, and the part needs a larger tipping margin. Custom: the limits set below by hand.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1646,7 +1644,7 @@
     </message>
     <message>
         <location filename="../commands.py" line="1189"/>
-        <source>Opens the limits the checks rate by, in Edit &gt; Preferences: the strictness, strict or normal, or limits of your own for overhangs and the tipping margin.</source>
+        <source>Opens the limits the checks rate by, in Edit &gt; Preferences: the strictness, strict or normal, or limits of your own for overhangs, bridges and the tipping margin.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
@@ -1711,7 +1709,7 @@
     </message>
     <message>
         <location filename="../commands.py" line="1139"/>
-        <source>While on, fins check their part for islands and bridges as they are made and edited, and Quick fins rates the ways to stand it by them. Off, they are not checked then, which keeps a large part quick on a slow computer: faces under bridges count as overhangs meanwhile, and Check part checks them at the end.</source>
+        <source>While on, fins check their part for islands and bridges as they are made and edited, and Quick fins rates the ways to stand it by them. Off, they are not checked then, which keeps a large part quick on a slow computer: bridge faces count as overhangs meanwhile, and Check part checks them at the end.</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

@@ -47,7 +47,7 @@ TINE_CLEARANCE = 0.0
 # Tines are horizontal, so each one is printed within its own layers.
 TINE_SPACING = 5.0          # vertical distance between tine bottoms
 # The tine grid starts anew at the lower edge of the face under each fin and
-# above every gap it bridges; off, one grid counts from the bed for every fin.
+# above every interruption it reaches over; off, one grid counts from the bed for every fin.
 TINE_RESTART = True
 TINE_FIRST_AUTO = 0.0       # 0: the lowest tine sits on the top of the foot
 TINE_LAYERS = 1             # tine height in layers
@@ -140,7 +140,7 @@ OVERHANG_UNPRINTABLE_ANGLE = 30.0
 STABILITY_CLOSE = 2.0
 # The strict strictness counts the geometry alone: no band of critical
 # overhangs, a face needing support is not printable; and no grip of the first
-# layer on the bed, so a wider tipping margin holds against the nozzle and the
+# layer on the bed, so a larger tipping margin holds against the nozzle and the
 # moving bed (mm).
 STRICT_OVERHANG_UNPRINTABLE_ANGLE = OVERHANG_ANGLE
 STRICT_STABILITY_CLOSE = 5.0
