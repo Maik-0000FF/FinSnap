@@ -148,7 +148,9 @@ STAND_TIP = QT_TRANSLATE_NOOP("FinSnap", "Quick fins found more than one way to 
                                          "lies too flat or a bridge spans too far to print, are left out while "
                                          "one without is found. Overhangs counts the faces overhanging without "
                                          "fins, Bridges those spanning too far, with the longest span in "
-                                         "brackets; yellow is critical, red not printable.")
+                                         "brackets; yellow is critical, red not printable. Rated after the checks "
+                                         "were switched on, every way stays listed in its order, shaded by what "
+                                         "it finds.")
 STAND_ASK = QT_TRANSLATE_NOOP("FinSnap", "Stand the part another way? The fins are planned anew: fins removed, "
                                          "moved or set to a height of their own, a turn of the part and the "
                                          "counter fin are undone.")
