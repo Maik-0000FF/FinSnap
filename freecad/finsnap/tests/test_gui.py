@@ -850,7 +850,8 @@ def stability_checked(doc, messages):
     Gui.runCommand("FinSnap_IslandsWhileEditing", 0)
     off = feature.checks_while_editing()
     Gui.runCommand("FinSnap_IslandsWhileEditing", 1)
-    expect(not off and feature.checks_while_editing(), "Islands while editing switches the island check off and on")
+    expect(not off and feature.checks_while_editing(),
+           "Islands and bridges while editing switches the checks off and on")
     doc.removeObject(fins.Name)
     doc.removeObject(part.Name)
     QtWidgets.QMessageBox.information = staticmethod(lambda *args: messages.append(args[2]))

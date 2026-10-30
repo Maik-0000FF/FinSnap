@@ -417,7 +417,8 @@ def _show_on_bed(direction=None):
 def _report_overhangs(obj):
     """Select the faces that overhang after the tilt and say so in the status bar.
     Faces that already carry fins are left out."""
-    names = [name for name, _ in feature.overhangs_of(obj, obj.Document, check_params(obj))]
+    names = [name for name, _ in feature.overhangs_of(obj, obj.Document, check_params(obj),
+                                                      feature.checks_while_editing())]
     if not names:
         return
     Gui.Selection.clearSelection()

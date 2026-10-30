@@ -1059,8 +1059,9 @@ class FinSnapFeature:
             # follow the part.
             hidden_property(obj, CARRIED, "App::PropertyStringList")
             setattr(obj, CARRIED, [])
-            spans = bridges_of(obj.Base[0], obj.Document, p) if checks_while_editing() else []
-            set_overhangs(obj, overhangs_of(obj.Base[0], obj.Document, p, checks_while_editing()))
+            editing = checks_while_editing()
+            spans = bridges_of(obj.Base[0], obj.Document, p) if editing else []
+            set_overhangs(obj, overhangs_of(obj.Base[0], obj.Document, p, editing))
             set_bridges(obj, spans)
             set_islands(obj, [])
             raise
