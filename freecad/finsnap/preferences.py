@@ -38,7 +38,7 @@ from .i18n import QT_TRANSLATE_NOOP, translate
 # The title of the page, in the group of FinSnap in Edit > Preferences.
 TITLE = QT_TRANSLATE_NOOP("FinSnap", "Check limits")
 DEGREE, LENGTH, AREA = "degree", "length", "area"
-# The fields show this many decimals; the largest area and margin they take.
+# The fields show this many decimals; the largest area and span they take.
 DECIMALS = 1
 MAX_AREA = 1000.0
 MAX_SPAN = 1000.0
