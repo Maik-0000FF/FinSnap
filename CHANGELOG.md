@@ -13,10 +13,11 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Added
 
-- Check limits, a FinSnap page in Edit > Preferences: a strictness, normal (built in, allows for what common printers manage and for the grip of the first layer) or strict (the geometry alone: what would need support is not printable, a tipping margin of 5 mm), fills the overhang angles from the bed below which a face is critical or too flat to print, the least overhang area and the tipping margin, which can also be set by hand; saved, they rebuild the fins of every open document (#101)
+- Check limits, a FinSnap page in Edit > Preferences: a strictness, normal (built in, allows for what common printers manage and for the grip of the first layer) or strict (the geometry alone: what would need support is not printable, a tipping margin of 5 mm), fills the overhang angles from the bed below which a face is critical or too flat to print, the least overhang area and the tipping margin, which can also be set by hand; saved, they rebuild the fins of every open document and mark every check out of date; also opened by Check limits... in the FinSnap menu (#101)
 
 ### Changed
 
+- The badges of the icons are larger, so what is on them reads better; the picture on the export icons sits higher, clear of the name of the format
 - Overhangs are rated in two levels: critical below 45 degrees from the bed, marked yellow, and too flat to print below 30 degrees, marked red; fins, Check part and its check in the tree say and show them apart (#101)
 
 ## [0.9.0] - 2026-10-29
