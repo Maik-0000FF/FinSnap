@@ -31,7 +31,10 @@ V = App.Vector
 PACKAGE_ROOT = ET.parse(PACKAGE_XML).getroot()  # nosec B314
 PACKAGE_VERSION = PACKAGE_ROOT.findtext("{https://wiki.freecad.org/Package_Metadata}version")
 BOX = (40.0, 20.0, 20.0)
-WIDER_MARGIN = 1.0  # mm past the margin a part stands at, so it is at risk of tipping
+WIDER_MARGIN = 1.0
+# Beads tried past the bridges kept for a part, this much wider each (mm).
+BEADS_PAST_KEPT = 3
+BEAD_STEP = 0.01  # mm past the margin a part stands at, so it is at risk of tipping
 XY_PLANE = 3  # index in the origin features of a Body
 FIN_SHIFT = 1.5  # how far a fin is moved along the face by hand, in mm
 MANY_FIN_WIDTHS = 3  # far enough to run a fin into its neighbour
@@ -931,6 +934,13 @@ def bridges_apart(doc):
     covered = {"Face%d" % number for found in feature.bridges_of(spanned, doc, FinParams()) for number in found.covered}
     plain = {name for name, _ in feature.overhangs_of(spanned, doc, FinParams(), False)}
     expect(covered and covered <= plain, "without bridges looked for, a face a bridge covers is rated as an overhang")
+    # The bridges kept for one part as it stands stay bounded, however many
+    # beads are tried.
+    for step in range(analysis.KEPT + BEADS_PAST_KEPT):
+        feature.bridges_of(spanned, doc, FinParams(bead_width=FinParams().bead_width + step * BEAD_STEP))
+    kept = analysis._analysis(spanned, FinParams())[analysis.BRIDGES]
+    expect(len(kept) == analysis.KEPT, "at most %d bridges are kept for a part as it stands: %d"
+           % (analysis.KEPT, len(kept)))
     doc.removeObject(reaching.Name)
     doc.removeObject(spanned.Name)
 

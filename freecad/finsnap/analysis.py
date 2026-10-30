@@ -115,15 +115,20 @@ def stand_key(part_obj, p):
             p.first_layer_height, p.layer_height)
 
 
+def _keep(store, key, make):
+    """What `store` keeps under `key`, made by make() where it keeps nothing
+    yet; past KEPT entries the oldest goes first."""
+    if key not in store:
+        while len(store) >= KEPT:
+            store.pop(next(iter(store)))
+        store[key] = make()
+    return store[key]
+
+
 def _analysis(part_obj, p):
     """The entry kept for `part_obj` as it stands on the layers of `p`, made
     empty where there is none yet."""
-    key = stand_key(part_obj, p)
-    if key not in _kept:
-        while len(_kept) >= KEPT:
-            _kept.pop(next(iter(_kept)))
-        _kept[key] = {ISLANDS: None, BRIDGES: {}, CENTRES: {}}
-    return _kept[key]
+    return _keep(_kept, stand_key(part_obj, p), lambda: {ISLANDS: None, BRIDGES: {}, CENTRES: {}})
 
 
 def checks_while_editing():
@@ -158,15 +163,13 @@ def bridges(part_obj, shape, supported, p):
     `shape`, on the layers and beads of `p`, rated by the limits of the
     preferences; faces in `supported`, carried by fins, span nothing. Worked
     out once for the part as it stands, the bead, the limits and the faces
-    carried."""
+    carried, at most KEPT combinations of them."""
     rating = limits.current()
     carried = tuple(number for number, face in enumerate(shape.Faces, 1)
                     if any(face.isSame(other) for other in supported))
-    kept = _analysis(part_obj, p)[BRIDGES]
-    key = (p.bead_width, rating, carried)
-    if key not in kept:
-        kept[key] = bridge.bridges(shape, p.first_layer_height, p.layer_height, p.bead_width, rating, supported)
-    return list(kept[key])
+    found = _keep(_analysis(part_obj, p)[BRIDGES], (p.bead_width, rating, carried),
+                  lambda: bridge.bridges(shape, p.first_layer_height, p.layer_height, p.bead_width, rating, supported))
+    return list(found)
 
 
 def overhangs(part_obj, shape, supported, p, with_bridges=True):
@@ -371,7 +374,7 @@ def rate_plans(shape, plans, p):
         if key not in checked:
             checked[key] = (overhang.islands(stood, p.first_layer_height, p.layer_height),
                             bridge.bridges(stood, p.first_layer_height, p.layer_height, p.bead_width, rating))
-        islands, every = checked[key]
+        found_islands, every = checked[key]
         # The face under the fins spans nothing: it leaves the bridges it
         # alone lies under, the others lie under it no longer.
         carried = plan.number + 1
@@ -381,5 +384,5 @@ def rate_plans(shape, plans, p):
         spanned = {number for found in spans for number in found.covered}
         levels = [level for number, level in overhang.rated(stood, (stood.Faces[plan.number],), rating)
                   if number not in spanned]
-        rated.append(RatedPlan(plan, islands, levels, spans))
+        rated.append(RatedPlan(plan, found_islands, levels, spans))
     return rated
