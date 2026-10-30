@@ -622,7 +622,7 @@ def quick_plans(obj, edge_names, face_names):
     rated = (geometry.printable_plans(shape, plans, quick_params()) if feature.checks_while_editing()
              else [geometry.RatedPlan(plan, None, None, None) for plan in plans])
     return [QuickWay(way.plan, name_of(way.plan.number), way.islands, shape.Faces[way.plan.number].Area,
-                     _edge_name(obj, way.plan.edge), way.overhangs, way.bridges)
+                     _edge_name(obj, way.plan.edge), way.overhangs, way.bridges, shape)
             for way in rated]
 
 
@@ -647,9 +647,10 @@ def _edge_name(obj, edge):
 # A way Quick fins found to stand a part: the plan, the name on the part of the
 # face the fins go under, the islands, None where there was only one way and
 # they were not checked, the area of that face (mm2), the name on the part of
-# the edge it stands on, None without one, and the levels of its overhangs and
-# its bridges, see geometry.RatedPlan, None where not checked.
-QuickWay = namedtuple("QuickWay", "plan face islands area edge overhangs bridges")
+# the edge it stands on, None without one, the levels of its overhangs and its
+# bridges, see geometry.RatedPlan, None where not checked, and the shape the
+# plan stands, the part as Quick fins found it.
+QuickWay = namedtuple("QuickWay", "plan face islands area edge overhangs bridges shape")
 
 
 class QuickStands:
@@ -672,12 +673,28 @@ class QuickStands:
         # Under one face throughout, on edges, the plans differ by the edge.
         self.by_edge = (len({way.plan.number for way in plans}) == 1
                         and all(way.plan.edge is not None for way in plans))
-        # What tells the ways apart: the edge or the face by its name on the
-        # part, its length (mm) or area (mm2), and the islands, overhangs and
-        # bridges standing so.
-        self.rows = [((way.edge or "", way.plan.edge.Length) if self.by_edge else (way.face, way.area))
-                     + (None if way.islands is None else len(way.islands), way.overhangs, way.bridges)
-                     for way in plans]
+        self.rows = self._rows()
+
+    def _rows(self):
+        """What tells the ways apart: the edge or the face by its name on the
+        part, its length (mm) or area (mm2), and the islands, overhangs and
+        bridges standing so, None where not checked."""
+        return [((way.edge or "", way.plan.edge.Length) if self.by_edge else (way.face, way.area))
+                + (None if way.islands is None else len(way.islands), way.overhangs, way.bridges)
+                for way in self.plans]
+
+    def unrated(self):
+        """Whether the ways were not checked: found with the checks while
+        editing off."""
+        return any(way.islands is None for way in self.plans)
+
+    def rate(self):
+        """Check every way, in the order listed, as Quick fins does with the
+        checks while editing on, and fill its rows."""
+        rated = geometry.rate_plans(self.plans[0].shape, [way.plan for way in self.plans], quick_params())
+        self.plans = [way._replace(islands=entry.islands, overhangs=entry.overhangs, bridges=entry.bridges)
+                      for way, entry in zip(self.plans, rated)]
+        self.rows = self._rows()
 
     def __len__(self):
         return len(self.plans)
@@ -1132,6 +1149,34 @@ class IslandsWhileEditing:
 
     def Activated(self, checked):  # noqa: N802 - FreeCAD API
         feature.set_checks_while_editing(checked)
+        if checked:
+            _check_now()
+
+
+def _check_now():
+    """The checks while editing turned on: rebuild the fins of every open
+    document, so they warn of islands and bridges at once, and rate the ways
+    in the table of an open Quick fins panel, found unchecked.
+
+    INPUTS this has to withstand:
+      no document open, no fins             ->  nothing done
+      fins, no panel open                   ->  rebuilt
+      the panel of Quick fins open, its
+        ways found unchecked                ->  rated and shown, in their order,
+                                                the row standing marked as before
+      the panel open, its ways checked       ->  left as they are
+      a panel of other fins, no table       ->  nothing more
+    """
+    QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+    try:
+        for document in App.listDocuments().values():
+            for obj in document.Objects:
+                panel = getattr(getattr(getattr(obj, "ViewObject", None), "Proxy", None), "panel", None)
+                if feature.is_fins(obj) and panel is not None:
+                    panel.rate_stands()
+        feature.rebuild_fins()
+    finally:
+        QtWidgets.QApplication.restoreOverrideCursor()
 
 
 class CheckLimits:

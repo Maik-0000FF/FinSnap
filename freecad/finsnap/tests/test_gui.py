@@ -362,6 +362,34 @@ def quick_on_pad(doc):
         doc.removeObject(name)
 
 
+def checked_on_switch(doc):
+    """Quick fins with the checks while editing off lists its ways unchecked;
+    switched on, they are rated in place, the row standing still marked, and
+    the fins are rebuilt with the checks."""
+    from freecad.finsnap import feature
+    box = doc.addObject("Part::Feature", "Unchecked")
+    box.Shape = Part.makeBox(30, 20, 20)
+    doc.recompute()
+    side = next(i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).y < -0.9)
+    Gui.runCommand("FinSnap_IslandsWhileEditing", 0)
+    try:
+        select(box, "Face%d" % side)
+        Gui.runCommand("FinSnap_QuickFins")
+        fins = next(o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is box)
+        panel = fins.ViewObject.Proxy.panel
+        table = panel.stand_list
+        panel.stand_list.setCurrentCell(1, 0)
+        blank = all(table.item(row, 2).text() == "" for row in range(table.rowCount()))
+        Gui.runCommand("FinSnap_IslandsWhileEditing", 1)
+        expect(blank and all(table.item(row, 2).text() == "0" for row in range(table.rowCount()))
+               and not panel.stands.unrated() and panel.stands.current == 1 and table.currentRow() == 1,
+               "the ways found unchecked are rated once the checks are switched on, the row standing kept")
+        panel.reject()
+    finally:
+        Gui.runCommand("FinSnap_IslandsWhileEditing", 1)
+    doc.removeObject(box.Name)
+
+
 def chosen_stands(doc, quick, facing, messages):
     """Quick fins on a face of the box `quick` lying flat: the panel lists the
     edges the part can stand on, a click on a row stands it so, it asks before
@@ -1282,6 +1310,7 @@ def main():
         doc.recompute()
     chosen_stands(doc, quick, facing, messages)
     quick_on_pad(doc)
+    checked_on_switch(doc)
     island_marks(doc)
     limits_page(doc)
     value_colors()

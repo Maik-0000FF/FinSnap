@@ -1512,6 +1512,19 @@ def printable_plans(shape, plans, p):
     """
     if len(plans) == 1:
         return [RatedPlan(plans[0], None, None, None)]
+    rated = rate_plans(shape, plans, p)
+
+    def unprintable(entry):
+        return (entry.overhangs.count(limits.UNPRINTABLE)
+                + sum(1 for found in entry.bridges if found.level == limits.UNPRINTABLE))
+
+    clean = [entry for entry in rated if not entry.islands and not unprintable(entry)]
+    return clean or sorted(rated, key=lambda entry: (len(entry.islands), unprintable(entry)))
+
+
+def rate_plans(shape, plans, p):
+    """The QuickPlans `plans` for `shape` as RatedPlans, in the order given,
+    each rated as printable_plans() rates them, with none left out."""
     rating = limits.current()
     checked = {}
     rated = []
@@ -1532,13 +1545,7 @@ def printable_plans(shape, plans, p):
         levels = [level for number, level in overhang.rated(stood, (stood.Faces[plan.number],), rating)
                   if number not in spanned]
         rated.append(RatedPlan(plan, islands, levels, spans))
-
-    def unprintable(entry):
-        return (entry.overhangs.count(limits.UNPRINTABLE)
-                + sum(1 for found in entry.bridges if found.level == limits.UNPRINTABLE))
-
-    clean = [entry for entry in rated if not entry.islands and not unprintable(entry)]
-    return clean or sorted(rated, key=lambda entry: (len(entry.islands), unprintable(entry)))
+    return rated
 
 
 def _under_each_face(shape, change, edge, beside, p):
