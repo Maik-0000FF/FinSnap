@@ -126,12 +126,24 @@ TILT_ANGLE = 45.0
 # Two faces count as square to each other within this many degrees, so that an
 # edge alone stands the part. Solids converted from a mesh are rarely exact.
 RIGHT_ANGLE_TOLERANCE = 0.5
-# Faces lying flatter than this against the bed need support; those without
-# fins are reported and marked. 45 degrees is the usual limit of FDM printing.
+# The built-in limits of the checks, those of the normal strictness; the user
+# chooses another or sets their own in Edit > Preferences (limits.py). Angles
+# are measured from the bed: 0 degrees is a face lying flat over it, 90 a
+# vertical wall.
+# Faces lying flatter than this need support; those without fins are reported
+# as critical. 45 degrees is the usual limit of FDM printing.
 OVERHANG_ANGLE = 45.0
+# Faces lying flatter than this sag or fail even with good cooling: not printable.
+OVERHANG_UNPRINTABLE_ANGLE = 30.0
 # A part that stands, but whose plumb line comes closer to the edge of its
-# footprint than this while it is printed, is only just standing (mm).
+# footprint than this while it is printed, is at risk of tipping (mm).
 STABILITY_CLOSE = 2.0
+# The strict strictness counts the geometry alone: no band of critical
+# overhangs, a face needing support is not printable; and no grip of the first
+# layer on the bed, so a wider tipping margin holds against the nozzle and the
+# moving bed (mm).
+STRICT_OVERHANG_UNPRINTABLE_ANGLE = OVERHANG_ANGLE
+STRICT_STABILITY_CLOSE = 5.0
 # Smaller overhanging faces, like the corner facets of a chamfer, bridge over
 # without support and are not reported (mm2).
 OVERHANG_MIN_AREA = 1.0

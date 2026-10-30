@@ -16,6 +16,8 @@ import Part
 EDGE = 20.0
 # Group of FreeCAD's user parameters that stands in for the saved standard of new fins.
 TEST_STANDARD_GROUP = "StandardUnderTest"
+# The same for the limits the checks rate by.
+TEST_LIMITS_GROUP = "LimitsUnderTest"
 # A thin fin, as a saved standard for new fins might ask for.
 STANDARD_THICKNESS = 0.9
 CHAMFER = 1.0
@@ -104,12 +106,14 @@ def run(main, gui=False):
     and drops buffered output on sys.exit, so both are handled here. With the
     GUI running, sys.exit only ends the script, so the process is ended directly.
 
-    The saved standard for new fins is pointed at a group of its own while the
-    test runs, and removed afterwards, so a test never reads or changes the
-    standard of the person running it."""
-    from freecad.finsnap import presets
+    The saved standard for new fins and the limits of the checks are pointed
+    at groups of their own while the test runs, and removed afterwards, so a
+    test never reads or changes those of the person running it."""
+    from freecad.finsnap import limits, presets
     presets.STANDARD_GROUP = TEST_STANDARD_GROUP
     presets.reset()
+    limits.LIMITS_GROUP = TEST_LIMITS_GROUP
+    limits.reset()
     try:
         require_checkout(main)
         main()
@@ -120,6 +124,7 @@ def run(main, gui=False):
         print("FAILED:", error, file=sys.__stdout__)
         result = 1
     App.ParamGet(presets.PREFERENCES).RemGroup(TEST_STANDARD_GROUP)
+    App.ParamGet(presets.PREFERENCES).RemGroup(TEST_LIMITS_GROUP)
     sys.__stdout__.flush()
     if gui:
         os._exit(result)

@@ -16,6 +16,7 @@ from freecad.finsnap.tests.support import (HALF_TURN, RECESS_RADIUS, expect, gro
                                            split_cylinder, tilted_cube)
 from freecad.finsnap import defaults as d
 from freecad.finsnap import geometry
+from freecad.finsnap import limits
 from freecad.finsnap import orient
 from freecad.finsnap import overhang
 from freecad.finsnap import stability
@@ -28,6 +29,10 @@ PYRAMID_BASE = 20.0
 PYRAMID_STEEP = 20.0   # sides at 63 degrees against the base
 PYRAMID_FLAT = 5.0     # sides at 27 degrees, flatter than the overhang limit
 PYRAMID_TILT = 30.0    # flatter than the overhang limit
+# Sides of pyramids standing on their apex for the levels of overhangs, in
+# degrees from the bed: steeper than the critical limit, between the two
+# limits, and flatter than the unprintable one.
+SIDE_STEEP, SIDE_CRITICAL, SIDE_UNPRINTABLE = 60.0, 40.0, 20.0
 ODD_TILT = 30.0        # any angle but 45, at which a right-angled edge needs its face
 # First tines half a layer (0.1 mm) off the grid of 0.2 mm layers.
 HALF_LAYER_STARTS = (1.1, 1.3, 1.5, 1.7)
@@ -286,6 +291,74 @@ def pyramid(height, apex_down=False):
     shape = solid_from_polygons([base] + sides)
     shape.translate(V(0, 0, -shape.BoundBox.ZMin))
     return shape
+
+
+def apex_down(side_deg):
+    """A pyramid standing on its apex, its sides `side_deg` from the bed."""
+    return pyramid(PYRAMID_BASE / 2 * math.tan(math.radians(side_deg)), apex_down=True)
+
+
+def check_limits():
+    """The limits of the checks: validated, saved and read back; the levels
+    of overhanging faces they rate."""
+    limits.Limits().validate()
+    limits.Limits(overhang_critical=40.0, overhang_unprintable=40.0).validate()
+    limits.Limits(overhang_unprintable=0.0, overhang_min_area=0.0, tipping_margin=0.0).validate()
+    bad = (dict(overhang_critical=-1.0), dict(overhang_critical=91.0), dict(overhang_unprintable=50.0),
+           dict(tipping_margin=-0.1), dict(overhang_min_area=-1.0), dict(tipping_margin=float("nan")),
+           dict(overhang_critical=float("inf")))
+    for values in bad:
+        try:
+            limits.Limits(**values).validate()
+            expect(False, "limits %s are refused" % values)
+        except limits.LimitError:
+            expect(True, "limits %s are refused" % values)
+
+    limits.reset()
+    expect(limits.current() == limits.Limits(), "nothing saved: the built-in limits")
+    group = App.ParamGet("%s/%s" % (limits.PREFERENCES, limits.LIMITS_GROUP))
+    group.SetFloat("tipping_margin", 3.0)
+    expect(limits.current() == limits.Limits(tipping_margin=3.0), "one limit saved: that, the rest built-in")
+    group.SetFloat("overhang_unprintable", 80.0)
+    expect(limits.current() == limits.Limits(), "saved limits that do not fit together: the built-in ones")
+    own = limits.Limits(overhang_critical=50.0, overhang_unprintable=35.0, overhang_min_area=2.0, tipping_margin=1.0)
+    limits.save(own)
+    expect(limits.current() == own, "saved limits are read back")
+    try:
+        limits.save(limits.Limits(overhang_unprintable=60.0))
+        expect(False, "invalid limits are not saved")
+    except limits.LimitError:
+        expect(limits.current() == own, "invalid limits are not saved, the saved ones stay")
+    limits.reset()
+    expect(limits.current() == limits.Limits(), "reset: the built-in limits")
+    for name, preset in limits.STRICTNESS.items():
+        preset.validate()
+        expect(limits.strictness_of(preset) == name, "the limits of %s are that strictness" % name)
+    expect(limits.strictness_of(limits.Limits()) == limits.NORMAL, "the built-in limits are normal")
+    expect(limits.strictness_of(own) == limits.CUSTOM, "limits set otherwise are custom")
+    strict = limits.STRICTNESS[limits.STRICT]
+    expect(strict.overhang_unprintable == strict.overhang_critical
+           and strict.tipping_margin > limits.Limits().tipping_margin,
+           "strict leaves no critical overhangs and asks a wider tipping margin")
+
+    rating = limits.Limits()
+    expect(overhang.rated(apex_down(SIDE_STEEP), (), rating) == [],
+           "sides steeper than the critical limit are not rated")
+    for side, level in ((SIDE_CRITICAL, limits.CRITICAL), (SIDE_UNPRINTABLE, limits.UNPRINTABLE),
+                        (rating.overhang_unprintable, limits.CRITICAL)):
+        found = overhang.rated(apex_down(side), (), rating)
+        expect(len(found) == 4 and all(rated == level for _, rated in found),
+               "sides %.0f degrees from the bed are %s: %s" % (side, level, found))
+    expect(overhang.rated(apex_down(rating.overhang_critical), (), rating) == [],
+           "sides at exactly the critical limit are not rated")
+    equal = limits.Limits(overhang_critical=SIDE_STEEP, overhang_unprintable=SIDE_STEEP)
+    found = overhang.rated(apex_down(SIDE_CRITICAL), (), equal)
+    expect(found and all(level == limits.UNPRINTABLE for _, level in found),
+           "both limits equal: not printable, never critical")
+    nothing_red = limits.Limits(overhang_unprintable=0.0)
+    found = overhang.rated(apex_down(SIDE_UNPRINTABLE), (), nothing_red)
+    expect(found and all(level == limits.CRITICAL for _, level in found),
+           "an unprintable limit of 0 degrees: critical at most")
 
 
 def check_frustum():
@@ -1505,6 +1578,7 @@ def main():
     expect(len(low.fins.Solids) == 1, "a tine set below the top of the foot still reaches into the fin")
     check_corners(cube, face)
     check_overhangs(cube, face)
+    check_limits()
     check_recesses(cube, face)
     check_frustum()
     check_loft()

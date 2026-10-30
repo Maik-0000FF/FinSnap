@@ -57,6 +57,11 @@ TUBE_ANGLE = 30.0  # how far the fin under the side of a tube is turned in the p
 PLACE_STEP = 1.0  # how far a fin is moved along the face in the panel, in mm
 ZOOM_OUT = 2.0  # how far the view is zoomed out to see the arc keep its size on the screen
 ARROW_SIZE_TOLERANCE = 0.01  # share by which the size of an arrow may differ from the one reckoned
+# A box stood this far from the bed, degrees: one face leans between the
+# critical and the unprintable limit, the other is steeper than both.
+CRITICAL_TILT = 40.0
+# Limits raised for the test, so that face lies too flat to print (degrees).
+RAISED_CRITICAL, RAISED_UNPRINTABLE = 50.0, 45.0
 HOOK_REACH = 15.0  # how far the arm of a hook reaches past the side of the tilted cube, in mm
 HOOK_WIDTH = 5.0  # width and thickness of its arm and leg
 HOOK_DEPTH = 12.0  # how far below the top of the cube the arm comes out
@@ -606,6 +611,66 @@ def _layer_marked(marks):
     return any(rgb_close(material.diffuseColor[0].getValue(), handles.INVALID_COLOR)
                and abs(material.transparency[0] - handles.ISLAND_TRANSPARENCY) < COLOR_TOLERANCE
                for material in materials)
+
+
+def limits_page(doc):
+    """The page of the limits in the preferences fills them by strictness and
+    keeps them in order, and saved, rebuilds the fins so their marks follow: a
+    face rated critical, marked yellow, turns too flat to print, marked red."""
+    from freecad.finsnap import commands, feature, handles, limits, orient
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap.preferences import LimitsPage
+
+    page = LimitsPage()
+    page.loadSettings()
+    expect(page.shown() == limits.current(), "the page shows the limits saved")
+    def strictness():
+        return page.strictness.currentData()
+
+    expect(strictness() == limits.NORMAL, "the built-in limits are those of the normal strictness")
+    page.fields["overhang_critical"].setValue(limits.Limits().overhang_unprintable - 1)
+    expect(page.fields["overhang_unprintable"].value() <= page.fields["overhang_critical"].value()
+           and strictness() == limits.CUSTOM,
+           "lowering the critical limit takes the unprintable one along, and the limits are custom")
+    page.strictness.activated.emit(page.strictness.findData(limits.STRICT))
+    expect(page.shown() == limits.STRICTNESS[limits.STRICT] and strictness() == limits.STRICT,
+           "choosing strict fills its limits")
+    page.strictness.activated.emit(page.strictness.findData(limits.CUSTOM))
+    expect(page.shown() == limits.STRICTNESS[limits.STRICT], "choosing custom leaves the limits as they are")
+    page.strictness.activated.emit(page.strictness.findData(limits.NORMAL))
+    expect(page.shown() == limits.Limits() and strictness() == limits.NORMAL,
+           "choosing normal fills the built-in limits")
+
+    box = doc.addObject("Part::Feature", "Rated")
+    box.Shape = Part.makeBox(20, 20, 20)
+    edge = next(e for e in box.Shape.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE)
+    box.Placement = orient.tilt(box.Shape, edge, CRITICAL_TILT)
+    doc.recompute()
+    leaning = sorted((i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).z < -d.TOLERANCE
+                      and f.BoundBox.ZMax > box.Shape.BoundBox.ZMin + d.TOLERANCE),
+                     key=lambda i: -box.Shape.Faces[i - 1].normalAt(0, 0).z)
+    fins = feature.create(box, "Face%d" % leaning[0])
+    commands.ViewProviderFinSnap(fins.ViewObject)
+    doc.recompute()
+    marks = fins.ViewObject.Proxy.marks
+    expect(fins.Overhangs == ["Face%d" % leaning[1]] and fins.UnprintableOverhangs == []
+           and marks.getNumChildren() == 1,
+           "the face leaning %.0f degrees from the bed is critical, marked once: %s" % (CRITICAL_TILT, fins.Overhangs))
+    try:
+        page.fields["overhang_critical"].setValue(RAISED_CRITICAL)
+        page.fields["overhang_unprintable"].setValue(RAISED_UNPRINTABLE)
+        page.saveSettings()
+        expect(limits.current().overhang_unprintable == RAISED_UNPRINTABLE
+               and fins.UnprintableOverhangs == fins.Overhangs,
+               "saved, the limits rebuild the fins: the face is too flat to print now")
+        color = marks.getChild(0).getChild(0).diffuseColor[0].getValue()
+        expect(all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(color, handles.OVERHANG_COLORS[limits.UNPRINTABLE])),
+               "the face too flat to print is marked red: %s" % (color,))
+        expect(strictness() == limits.CUSTOM, "limits set by hand are custom")
+    finally:
+        limits.reset()
+    doc.removeObject(fins.Name)
+    doc.removeObject(box.Name)
 
 
 def island_marks(doc):
@@ -1182,6 +1247,7 @@ def main():
     chosen_stands(doc, quick, facing, messages)
     quick_on_pad(doc)
     island_marks(doc)
+    limits_page(doc)
     value_colors()
     stability_checked(doc, messages)
     saved_while_editing()

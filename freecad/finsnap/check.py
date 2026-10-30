@@ -18,11 +18,14 @@ INPUTS this has to withstand (record()):
   nothing of the part on the bed        ->  the note kept, nothing to show
   the part, its place or its fins
     changed after                       ->  marked out of date on the next recompute
+  an object saved by an older version,
+    without the properties added since  ->  they are added, then filled
 """
 
 import FreeCAD as App
 import Part
 
+from . import limits
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .shapes import outermost
 
@@ -65,7 +68,12 @@ PROPERTIES = (
     ("ProfileHeights", "App::PropertyFloatList", GROUP_SHOWN, "", EDITOR_HIDDEN),
     ("ProfileMargins", "App::PropertyFloatList", GROUP_SHOWN, "", EDITOR_HIDDEN),
     ("Cut", "Part::PropertyPartShape", GROUP_SHOWN, "", EDITOR_HIDDEN),
+    # The faces that overhang without fins, critical ones and those too flat
+    # to print, see limits.py.
     ("Overhangs", "Part::PropertyPartShape", GROUP_SHOWN, "", EDITOR_HIDDEN),
+    ("UnprintableOverhangs", "Part::PropertyPartShape", GROUP_SHOWN, "", EDITOR_HIDDEN),
+    # The tipping margin the check rated by, which the colours by height show.
+    ("TippingMargin", "App::PropertyFloat", GROUP_SHOWN, "", EDITOR_HIDDEN),
     ("IslandLayers", "Part::PropertyPartShape", GROUP_SHOWN, "", EDITOR_HIDDEN),
     ("IslandsUncut", "App::PropertyVectorList", GROUP_SHOWN, "", EDITOR_HIDDEN),
 )
@@ -80,9 +88,7 @@ class CheckFeature:
 
     def __init__(self, obj):
         obj.Proxy = self
-        for name, kind, group, tip, mode in PROPERTIES:
-            obj.addProperty(kind, name, group, tip)
-            obj.setEditorMode(name, mode)
+        add_properties(obj)
 
     def execute(self, obj):
         obj.OutOfDate = True
@@ -92,6 +98,14 @@ class CheckFeature:
 
     def loads(self, state):
         return None
+
+
+def add_properties(obj):
+    """Add those of PROPERTIES `obj` does not have yet."""
+    for name, kind, group, tip, mode in PROPERTIES:
+        if name not in obj.PropertiesList:
+            obj.addProperty(kind, name, group, tip)
+            obj.setEditorMode(name, mode)
 
 
 def outdate(part_obj):
@@ -116,15 +130,18 @@ def find(part_obj, kind):
                  if is_check(obj) and obj.Part is part_obj and obj.Kind == kind), None)
 
 
-def record(part_obj, fins, kind, level, note, shown, cut=None, overhangs=None, islands=()):
+def record(part_obj, fins, kind, level, note, shown, cut=None, overhangs=(), islands=()):
     """Keep what a check of `kind` of `part_obj`, with its fins `fins`, found
     in its object, made if there is none yet: `level`, that of its
     stability, and the `note` said; `shown`, the stability.Stability whose
     plumb line shows, or None; `cut`, the layer cut out of the part at it;
     and for a check of the part, `overhangs`, the faces that overhang without
-    fins, as one shape, and `islands`. Returns the object, up to date."""
+    fins, as (face, level) pairs, and `islands`. The limits of the
+    preferences are those it was checked by, just before. Returns the
+    object, up to date."""
     obj = find(part_obj, kind)
     if obj is not None:
+        add_properties(obj)
         # Shows nothing while it is filled, so it is drawn once, at the end.
         obj.OutOfDate = True
     if obj is None:
@@ -149,7 +166,10 @@ def record(part_obj, fins, kind, level, note, shown, cut=None, overhangs=None, i
     obj.ProfileHeights = [height for height, _ in shown.profile] if shown else []
     obj.ProfileMargins = [margin for _, margin in shown.profile] if shown else []
     obj.Cut = cut if cut is not None else Part.Shape()
-    obj.Overhangs = overhangs if overhangs is not None else Part.Shape()
+    for name, chosen in (("Overhangs", limits.CRITICAL), ("UnprintableOverhangs", limits.UNPRINTABLE)):
+        faces = [face for face, level in overhangs if level == chosen]
+        setattr(obj, name, Part.makeCompound(faces) if faces else Part.Shape())
+    obj.TippingMargin = limits.current().tipping_margin
     layers = [island.first for island in islands if island.first is not None]
     obj.IslandLayers = Part.makeCompound(layers) if layers else Part.Shape()
     obj.IslandsUncut = [island.point for island in islands if island.first is None]

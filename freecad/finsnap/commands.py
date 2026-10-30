@@ -20,6 +20,7 @@ from . import export_step
 from . import feature
 from . import geometry
 from . import handles
+from . import limits
 from . import mesh_input
 from . import orient
 from . import presets
@@ -131,7 +132,8 @@ class ViewProviderFinSnap:
         self.mark(vobj.Object)
 
     def updateData(self, obj, prop):  # noqa: N802 - FreeCAD API
-        if prop in (feature.OVERHANGS, feature.ISLANDS, feature.ISLAND_LAYERS, feature.ISLANDS_UNCUT):
+        if prop in (feature.OVERHANGS, feature.UNPRINTABLE_OVERHANGS, feature.ISLANDS, feature.ISLAND_LAYERS,
+                    feature.ISLANDS_UNCUT):
             self.mark(obj)
 
     def onChanged(self, vobj, prop):  # noqa: N802 - FreeCAD API
@@ -148,7 +150,8 @@ class ViewProviderFinSnap:
         self.marks.whichChild.setValue(coin.SO_SWITCH_ALL if visible else coin.SO_SWITCH_NONE)
 
     def mark(self, obj):
-        """Cover the faces that overhang without fins with red marks, and the
+        """Cover the faces that overhang without fins with marks in the colour
+        of their level, yellow where critical, red where too flat to print, and the
         first layer of each island, where the part would start printing in the
         air."""
         if not hasattr(self, "marks"):
@@ -169,8 +172,12 @@ class ViewProviderFinSnap:
             except ValueError:
                 shape = None
             if shape is not None:
-                faces = [shape.getElement(name) for name in names]
-                self.marks.addChild(handles.overhang_faces(faces))
+                unprintable = set(getattr(obj, feature.UNPRINTABLE_OVERHANGS, []))
+                for level, chosen in ((limits.CRITICAL, [name for name in names if name not in unprintable]),
+                                      (limits.UNPRINTABLE, [name for name in names if name in unprintable])):
+                    if chosen:
+                        faces = [shape.getElement(name) for name in chosen]
+                        self.marks.addChild(handles.overhang_faces(faces, level))
         self.show_marks()
 
     def setEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API
@@ -404,13 +411,13 @@ def _show_on_bed(direction=None):
 def _report_overhangs(obj):
     """Select the faces that overhang after the tilt and say so in the status bar.
     Faces that already carry fins are left out."""
-    names = feature.overhangs_of(obj, obj.Document)
+    names = [name for name, _ in feature.overhangs_of(obj, obj.Document)]
     if not names:
         return
     Gui.Selection.clearSelection()
     Gui.Selection.addSelection(obj, names)
-    text = translate("FinSnap", "%d faces overhang flatter than %.0f degrees and are selected: they need "
-                                "fins or support.") % (len(names), d.OVERHANG_ANGLE)
+    text = translate("FinSnap", "%d faces overhang flatter than %.0f degrees from the bed and are selected: "
+                                "they need fins or support.") % (len(names), limits.current().overhang_critical)
     Gui.getMainWindow().statusBar().showMessage(text, STATUS_TIMEOUT_MS)
     App.Console.PrintWarning("FinSnap: %s %s\n" % (text, ", ".join(names)))
 

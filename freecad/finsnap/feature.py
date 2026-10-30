@@ -18,6 +18,7 @@ import Part
 from . import check
 from . import defaults as d
 from . import geometry
+from . import limits
 from . import orient
 from . import overhang
 from . import presets
@@ -31,6 +32,15 @@ TYPE_NAME = "FinSnap"
 # Result property listing the faces that overhang without fins; the view
 # provider marks them.
 OVERHANGS = "Overhangs"
+# Those of them that lie too flat to print at all, see limits.UNPRINTABLE.
+UNPRINTABLE_OVERHANGS = "UnprintableOverhangs"
+# Said for the faces that overhang without fins, by level: how many, of
+# which part, the limit from the bed in degrees and their names.
+NOTE_OVERHANGS_CRITICAL = QT_TRANSLATE_NOOP(
+    "FinSnap", "%d faces of %s overhang flatter than %.0f degrees from the bed without fins: %s")
+NOTE_OVERHANGS_UNPRINTABLE = QT_TRANSLATE_NOOP(
+    "FinSnap", "%d faces of %s overhang flatter than %.0f degrees from the bed without fins, too flat to print: "
+    "%s")
 # Result property with the lowest points of the islands of the part, where it
 # would start printing in the air; the view provider marks them.
 ISLANDS = "Islands"
@@ -647,9 +657,18 @@ def _supported(part_obj, document):
 
 
 def overhangs_of(part_obj, document):
-    """Names of the faces of `part_obj` that overhang without fins."""
+    """(name, level) of the faces of `part_obj` that overhang without fins,
+    rated by the limits of the preferences: limits.CRITICAL or
+    limits.UNPRINTABLE."""
     shape, supported = _supported(part_obj, document)
-    return [face_name(number) for number in overhang.overhangs(shape, supported)]
+    return [(face_name(number), level) for number, level in overhang.rated(shape, supported, limits.current())]
+
+
+def set_overhangs(obj, rated):
+    """Keep `rated`, from overhangs_of(), in the properties of `obj`."""
+    setattr(obj, OVERHANGS, [name for name, _ in rated])
+    hidden_property(obj, UNPRINTABLE_OVERHANGS, "App::PropertyStringList")
+    setattr(obj, UNPRINTABLE_OVERHANGS, [name for name, level in rated if level == limits.UNPRINTABLE])
 
 
 # Builds of one side kept during a drag; beyond these the oldest goes.
@@ -659,7 +678,8 @@ REUSE_KEPT = 8
 WHOLE_KEPT = 16
 _whole_kept = {}
 # What a stability check finds (stability_of()): the part stands, comes
-# close to tipping, within STABILITY_CLOSE mm, or tips; and the sentence that
+# close to tipping, within the tipping margin of the preferences (limits.py),
+# or tips; and the sentence that
 # says so. The layers are counted from 1, the first on the bed. A side of the
 # part counts as that of its fins within 45 degrees.
 STANDS, CLOSE, TIPS = "stands", "close", "tips"
@@ -811,7 +831,8 @@ def stability_of(part_obj, p):
 
     CASES this has to withstand:
       stands alone, far from tipping       ->  STANDS, the closest layer
-      stands alone, within STABILITY_CLOSE ->  CLOSE
+      stands alone, within the tipping
+        margin of the preferences          ->  CLOSE
       tips alone, no fins                  ->  TIPS, add fins
       tips alone, the fins hold it         ->  STANDS or CLOSE, the layer it would tip at
       tips before the lowest tine          ->  TIPS, the height of that tine
@@ -828,12 +849,13 @@ def stability_of(part_obj, p):
             _centres_kept.pop(next(iter(_centres_kept)))
         _centres_kept[key] = {}
     centres = _centres_kept[key]
+    margin = limits.current().tipping_margin
     part = global_shape(part_obj)
     alone = stability.check(part, [], p.first_layer_height, p.layer_height, centres, p.brim_width)
     if alone is None:
         return TIPS, translate("FinSnap", NOTE_NOTHING_ON_BED), None
     if not alone.tips:
-        close = alone.margin < d.STABILITY_CLOSE
+        close = alone.margin < margin
         note = NOTE_STANDS_CLOSE if close else NOTE_STANDS
         return ((CLOSE if close else STANDS), translate("FinSnap", note)
                 % (alone.margin, alone.layer + 1, alone.height), alone)
@@ -845,7 +867,7 @@ def stability_of(part_obj, p):
     if held is None:
         return TIPS, translate("FinSnap", NOTE_NOTHING_ON_BED), None
     if not held.tips:
-        close = held.margin < d.STABILITY_CLOSE
+        close = held.margin < margin
         note = NOTE_HELD_CLOSE if close else NOTE_HELD
         return ((CLOSE if close else STANDS), translate("FinSnap", note)
                 % (tipping + (held.margin, held.layer + 1, held.height)), held)
@@ -920,7 +942,7 @@ class FinSnapFeature:
         if still_laid_flat(obj):
             # The fins keep the shape they were moved to; the face they belong
             # to no longer leans over the bed until the part stands again.
-            setattr(obj, OVERHANGS, [])
+            set_overhangs(obj, [])
             set_islands(obj, [])
             obj.Warnings = [translate("FinSnap", NOTE_LAID_FLAT)]
             return
@@ -943,7 +965,7 @@ class FinSnapFeature:
             # follow the part.
             hidden_property(obj, CARRIED, "App::PropertyStringList")
             setattr(obj, CARRIED, [])
-            setattr(obj, OVERHANGS, overhangs_of(obj.Base[0], obj.Document))
+            set_overhangs(obj, overhangs_of(obj.Base[0], obj.Document))
             set_islands(obj, [])
             raise
         # Named on the part itself, the counter face as well: a split side was
@@ -960,8 +982,10 @@ class FinSnapFeature:
                 hidden_property(obj, PLANNED[which], "App::PropertyInteger")
                 setattr(obj, PLANNED[which], built.planned)
         # The faces the fins carry stay the same while one fin is dragged.
-        overhanging = self.during_drag(OVERHANGS, lambda: overhangs_of(obj.Base[0], obj.Document))
-        setattr(obj, OVERHANGS, overhanging)
+        rated = self.during_drag(OVERHANGS, lambda: overhangs_of(obj.Base[0], obj.Document))
+        set_overhangs(obj, rated)
+        overhanging = [name for name, _ in rated]
+        unprintable = list(getattr(obj, UNPRINTABLE_OVERHANGS))
         shapes = [result.fins]
         # Each warning says which fin it is about, the main or the counter fin.
         warnings = [translate("FinSnap", "Main fin: %s") % w for w in result.warnings]
@@ -972,10 +996,13 @@ class FinSnapFeature:
             targets += [note_target(obj, COUNTER, target) for target in counter.warning_targets]
         warnings += notes
         targets += [None] * len(notes)
-        if overhanging:
-            warnings.append(translate("FinSnap", "%d faces of %s overhang flatter than %.0f degrees without fins: %s")
-                            % (len(overhanging), obj.Base[0].Label, d.OVERHANG_ANGLE, ", ".join(overhanging)))
-            targets.append(NoteTarget(None, [], [(obj.Base[0], name) for name in overhanging], [], []))
+        rating = limits.current()
+        critical = [name for name in overhanging if name not in unprintable]
+        for names, note, limit in ((critical, NOTE_OVERHANGS_CRITICAL, rating.overhang_critical),
+                                   (unprintable, NOTE_OVERHANGS_UNPRINTABLE, rating.overhang_unprintable)):
+            if names:
+                warnings.append(translate("FinSnap", note) % (len(names), obj.Base[0].Label, limit, ", ".join(names)))
+                targets.append(NoteTarget(None, [], [(obj.Base[0], name) for name in names], [], []))
         # The part stays as it is while one fin is dragged, and the islands do
         # not depend on the fins: asked once, as working out the key takes a
         # moment on a large part. A drag that turns the part asks each step.
@@ -1022,6 +1049,7 @@ class FinSnapFeature:
         obj.Proxy = self
         if OVERHANGS not in obj.PropertiesList:
             add_overhangs(obj)
+        hidden_property(obj, UNPRINTABLE_OVERHANGS, "App::PropertyStringList")
         if ISLANDS not in obj.PropertiesList:
             add_islands(obj)
         hidden_property(obj, ISLAND_LAYERS, "Part::PropertyPartShape")

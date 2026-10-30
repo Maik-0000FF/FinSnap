@@ -23,6 +23,7 @@ from . import defaults as d
 from . import feature
 from . import geometry
 from . import handles
+from . import limits
 from . import overhang
 from . import presets
 from . import stability
@@ -157,7 +158,10 @@ CHECK_DISPLAY_MODE = "Check"
 # The part coloured by height in a stability check, this see-through.
 GRADIENT_TRANSPARENCY = 0.5
 # The lines of Check part, one for each check.
-NOTE_OVERHANGS = QT_TRANSLATE_NOOP("FinSnap", "%d faces overhang flatter than %.0f degrees without fins.")
+NOTE_OVERHANGS = QT_TRANSLATE_NOOP("FinSnap", "%d faces overhang flatter than %.0f degrees from the bed without "
+                                             "fins.")
+NOTE_UNPRINTABLE = QT_TRANSLATE_NOOP("FinSnap", "%d faces overhang flatter than %.0f degrees from the bed without "
+                                               "fins, too flat to print.")
 NOTE_NO_OVERHANGS = QT_TRANSLATE_NOOP("FinSnap", "No face overhangs without fins.")
 NOTE_ISLANDS_FOUND = QT_TRANSLATE_NOOP("FinSnap", "%d island(s): it would start printing in the air there.")
 NOTE_NO_ISLANDS = QT_TRANSLATE_NOOP("FinSnap", "No islands.")
@@ -202,16 +206,27 @@ def check_part(part_obj, p):
     QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
     try:
         part = global_shape(part_obj)
-        names = feature.overhangs_of(part_obj, part_obj.Document)
+        rated = feature.overhangs_of(part_obj, part_obj.Document)
+        unprintable = [name for name, level in rated if level == limits.UNPRINTABLE]
         found = overhang.islands(part, p.first_layer_height, p.layer_height)
         level, note, shown = feature.stability_of(part_obj, p)
-        lines = [translate("FinSnap", NOTE_OVERHANGS) % (len(names), d.OVERHANG_ANGLE) if names
-                 else translate("FinSnap", NOTE_NO_OVERHANGS),
-                 translate("FinSnap", NOTE_ISLANDS_FOUND) % len(found) if found
-                 else translate("FinSnap", NOTE_NO_ISLANDS),
-                 _with_colours(note, shown)]
-        worst = feature.TIPS if names or found else level
-        overhangs = Part.makeCompound([part.getElement(name) for name in names]) if names else None
+        rating = limits.current()
+        critical = len(rated) - len(unprintable)
+        lines = []
+        if critical:
+            lines.append(translate("FinSnap", NOTE_OVERHANGS) % (critical, rating.overhang_critical))
+        if unprintable:
+            lines.append(translate("FinSnap", NOTE_UNPRINTABLE) % (len(unprintable), rating.overhang_unprintable))
+        if not rated:
+            lines.append(translate("FinSnap", NOTE_NO_OVERHANGS))
+        lines.append(translate("FinSnap", NOTE_ISLANDS_FOUND) % len(found) if found
+                     else translate("FinSnap", NOTE_NO_ISLANDS))
+        lines.append(_with_colours(note, shown))
+        # Faces too flat to print and islands keep the part from printing,
+        # critical faces are a risk, as coming close to tipping is.
+        worst = (feature.TIPS if unprintable or found
+                 else feature.CLOSE if rated and level == feature.STANDS else level)
+        overhangs = [(part.getElement(name), rated_level) for name, rated_level in rated]
         # The level of its stability, whose colour its plumb line shows.
         _in_tree(check.record(part_obj, fins_on(part_obj), check.PART, level, "\n".join(lines), shown,
                               _layer_cut(part_obj, p, shown), overhangs, found))
@@ -332,8 +347,11 @@ def check_nodes(check_obj):
         profile = [(bed + height, margin) for height, margin in zip(check_obj.ProfileHeights,
                                                                     check_obj.ProfileMargins)]
 
+        # Checks saved by an older version rated by the built-in margin.
+        close = check_obj.TippingMargin if "TippingMargin" in check_obj.PropertiesList else d.STABILITY_CLOSE
+
         def color_at(z):
-            return margin_color(_margin_at(profile, z))
+            return margin_color(_margin_at(profile, z), close)
 
         color = LEVEL_COLORS.get(check_obj.Level, handles.INVALID_COLOR)
         nodes.append(handles.gradient(global_shape(check_obj.Part), color_at, [z for z, _ in profile],
@@ -347,8 +365,13 @@ def check_nodes(check_obj):
         # Beside the layer cut out, where the plumb line passes it.
         at = App.Vector(check_obj.Foot.x, check_obj.Foot.y, bed + check_obj.Height)
         nodes.append(handles.plumb(shown, color, label, at))
-    if not check_obj.Overhangs.isNull():
-        nodes.append(handles.overhang_faces(check_obj.Overhangs.Faces))
+    # Checks saved by an older version kept every overhanging face in
+    # Overhangs, all of them shown red then.
+    older = "UnprintableOverhangs" not in check_obj.PropertiesList
+    for shape, level in ((check_obj.Overhangs, limits.UNPRINTABLE if older else limits.CRITICAL),
+                         (getattr(check_obj, "UnprintableOverhangs", Part.Shape()), limits.UNPRINTABLE)):
+        if not shape.isNull():
+            nodes.append(handles.overhang_faces(shape.Faces, level))
     if not check_obj.IslandLayers.isNull():
         nodes.append(handles.island_layers(check_obj.IslandLayers))
     if check_obj.IslandsUncut:
@@ -360,7 +383,7 @@ def _with_colours(note, shown):
     """`note`, followed by what the colours of the part mean, where they show."""
     if shown is None:
         return note
-    return note + "\n" + translate("FinSnap", NOTE_COLOURS) % d.STABILITY_CLOSE
+    return note + "\n" + translate("FinSnap", NOTE_COLOURS) % limits.current().tipping_margin
 
 
 def _margin_at(profile, z):
@@ -375,13 +398,13 @@ def _margin_at(profile, z):
     return profile[-1][1]
 
 
-def margin_color(margin):
+def margin_color(margin, close):
     """The colour of a layer whose plumb line lies `margin` mm inside its
-    footprint: green from STABILITY_CLOSE on, blended over to yellow at 0,
-    red below, where it tips."""
+    footprint: green from `close`, the tipping margin, on, blended over to
+    yellow at 0, red below, where it tips. A margin of 0 leaves no yellow."""
     if margin < 0:
         return handles.INVALID_COLOR
-    share = min(1.0, margin / d.STABILITY_CLOSE)
+    share = min(1.0, margin / close) if close > 0 else 1.0
     return tuple(close + (far - close) * share for close, far in zip(handles.BETWEEN_COLOR, handles.VALID_COLOR))
 
 

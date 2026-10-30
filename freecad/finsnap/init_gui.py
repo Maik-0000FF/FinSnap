@@ -7,10 +7,12 @@ import FreeCADGui as Gui
 
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .paths import ICON_WORKBENCH, TRANSLATIONS
-from .version import application
+from .preferences import LimitsPage
+from .version import NAME, application
 
 Gui.addLanguagePath(TRANSLATIONS)
 Gui.updateLocale()
+Gui.addPreferencePage(LimitsPage, NAME)
 
 TOOLBAR = QT_TRANSLATE_NOOP("Workbench", "FinSnap")
 TOOLTIP = QT_TRANSLATE_NOOP("Workbench", "Breakaway fins for parts printed standing on an edge")
