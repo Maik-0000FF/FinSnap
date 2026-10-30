@@ -39,7 +39,11 @@ INPUTS this has to withstand (Limits.validate()):
                                             not printable
   an angle below 0 or past 90           ->  LimitError naming it
   unprintable steeper than critical     ->  LimitError
-  tipping margin or least area below 0  ->  LimitError naming it; 0 is allowed
+  tipping margin, least area or a
+    bridge span below 0                 ->  LimitError naming it; 0 is allowed
+  unprintable span shorter than the
+    critical one                        ->  LimitError
+  equal spans                           ->  valid, no critical bridges
   NaN or infinity in any value          ->  LimitError naming it
 
 INPUTS this has to withstand (strictness_of()):
@@ -94,6 +98,10 @@ class Limits:
     overhang_min_area: float = d.OVERHANG_MIN_AREA
     # A plumb line closer than this to the edge of its footprint is at risk of tipping (mm).
     tipping_margin: float = d.STABILITY_CLOSE
+    # Bridges spanning further than this are critical (mm).
+    bridge_critical: float = d.BRIDGE_CRITICAL
+    # Bridges spanning further than this are not printable (mm).
+    bridge_unprintable: float = d.BRIDGE_UNPRINTABLE
 
     def validate(self):
         for f in fields(self):
@@ -106,14 +114,24 @@ class Limits:
         if self.overhang_unprintable > self.overhang_critical:
             raise LimitError(translate("FinSnap", "overhang_unprintable must not be steeper than "
                                                   "overhang_critical"))
-        for name in ("overhang_min_area", "tipping_margin"):
+        for name in ("overhang_min_area", "tipping_margin", "bridge_critical", "bridge_unprintable"):
             if getattr(self, name) < 0:
                 raise LimitError(translate("FinSnap", "%s must be 0 or greater") % name)
+        if self.bridge_unprintable < self.bridge_critical:
+            raise LimitError(translate("FinSnap", "bridge_unprintable must not be shorter than bridge_critical"))
+
+    def bridge_level(self, span):
+        """The level of a bridge spanning `span` mm: GOOD up to bridge_critical,
+        CRITICAL up to bridge_unprintable, UNPRINTABLE further."""
+        if span > self.bridge_unprintable:
+            return UNPRINTABLE
+        return CRITICAL if span > self.bridge_critical else GOOD
 
 
 # The limits of each strictness.
 STRICTNESS = {
-    STRICT: Limits(overhang_unprintable=d.STRICT_OVERHANG_UNPRINTABLE_ANGLE, tipping_margin=d.STRICT_STABILITY_CLOSE),
+    STRICT: Limits(overhang_unprintable=d.STRICT_OVERHANG_UNPRINTABLE_ANGLE, tipping_margin=d.STRICT_STABILITY_CLOSE,
+                   bridge_unprintable=d.STRICT_BRIDGE_UNPRINTABLE),
     NORMAL: Limits(),
 }
 

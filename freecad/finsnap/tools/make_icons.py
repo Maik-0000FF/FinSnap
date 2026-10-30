@@ -224,6 +224,14 @@ def outdated_badge():
                  '<circle cx="0" cy="5.5" r="1.8" fill="%s"/>' % QUICK_LINE)
 
 
+def bridge_badge():
+    """A deck on two piers, on blue: the bridges checked."""
+    return badge(PART_FILL, PART_LINE,
+                 '<rect x="-7" y="-4" width="14" height="3" fill="%s"/>' % WHITE,
+                 '<rect x="-7" y="-1" width="3" height="7" fill="%s"/>' % WHITE,
+                 '<rect x="4" y="-1" width="3" height="7" fill="%s"/>' % WHITE)
+
+
 def island_badge():
     """A layer printed in the air, on red: the islands checked while editing."""
     return badge(REMOVE_FILL, REMOVE_LINE,
@@ -287,6 +295,7 @@ def icons():
         "export_3mf.svg": paper + [small, label("3MF")],
         "export_step.svg": paper + [small, label("STEP")],
         "check_limits.svg": workbench() + gear_badge(),
+        "check_bridges.svg": workbench() + bridge_badge(),
     }
 
 

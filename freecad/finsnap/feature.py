@@ -15,6 +15,7 @@ from collections import namedtuple
 import FreeCAD as App
 import Part
 
+from . import bridge
 from . import check
 from . import defaults as d
 from . import geometry
@@ -25,8 +26,8 @@ from . import presets
 from . import stability
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
-from .shapes import (bounds, face_in_plane, face_like, face_name, global_shape, in_plane, moved, outermost, part_of,
-                     plane_of)
+from .shapes import (FACE_PREFIX, bounds, face_in_plane, face_like, face_name, global_shape, in_plane, moved,
+                     outermost, part_of, plane_of)
 
 TYPE_NAME = "FinSnap"
 # Result property listing the faces that overhang without fins; the view
@@ -41,6 +42,17 @@ NOTE_OVERHANGS_CRITICAL = QT_TRANSLATE_NOOP(
 NOTE_OVERHANGS_UNPRINTABLE = QT_TRANSLATE_NOOP(
     "FinSnap", "%d faces of %s overhang flatter than %.0f degrees from the bed without fins, too flat to print: "
     "%s")
+# Hidden result properties with the free regions of the bridges of the part
+# under its first layer, critical ones and those too long to print, as one
+# shape each; the view provider shows them. Said for them, by level: how many,
+# of which part, the limit and the longest span (mm), the faces they lie under.
+BRIDGES = {limits.CRITICAL: "CriticalBridges", limits.UNPRINTABLE: "UnprintableBridges"}
+NOTE_BRIDGES = {
+    limits.CRITICAL: QT_TRANSLATE_NOOP(
+        "FinSnap", "%d bridges of %s span further than %.1f mm, the longest %.1f mm: %s"),
+    limits.UNPRINTABLE: QT_TRANSLATE_NOOP(
+        "FinSnap", "%d bridges of %s span further than %.1f mm, too far to print, the longest %.1f mm: %s"),
+}
 # Result property with the lowest points of the islands of the part, where it
 # would start printing in the air; the view provider marks them.
 ISLANDS = "Islands"
@@ -656,12 +668,64 @@ def _supported(part_obj, document):
     return shape, faces
 
 
-def overhangs_of(part_obj, document):
+def overhangs_of(part_obj, document, p):
     """(name, level) of the faces of `part_obj` that overhang without fins,
     rated by the limits of the preferences: limits.CRITICAL or
-    limits.UNPRINTABLE."""
+    limits.UNPRINTABLE. Faces a bridge lies under (bridges_of(), on the
+    layers and beads of `p`) are no overhangs: their risk is their span."""
     shape, supported = _supported(part_obj, document)
-    return [(face_name(number), level) for number, level in overhang.rated(shape, supported, limits.current())]
+    spanned = {number for found in _bridges(part_obj, shape, supported, p) for number in found.faces}
+    return [(face_name(number), level) for number, level in overhang.rated(shape, supported, limits.current())
+            if number not in spanned]
+
+
+def bridges_of(part_obj, document, p):
+    """The bridges (bridge.bridges()) of `part_obj` as it stands, on the
+    layers and beads of `p`, rated by the limits of the preferences; faces
+    carrying fins of `document` span nothing. Worked out once for each part
+    as it stands, layers, bead, limits and faces carried, as every build of
+    the fins asks again."""
+    shape, supported = _supported(part_obj, document)
+    return _bridges(part_obj, shape, supported, p)
+
+
+def _bridges(part_obj, shape, supported, p):
+    rating = limits.current()
+    carried = tuple(number for number, face in enumerate(shape.Faces, 1)
+                    if any(face.isSame(other) for other in supported))
+    key = (_islands_key(part_obj, p), p.bead_width, rating, carried)
+    if key not in _bridges_kept:
+        while len(_bridges_kept) >= ISLANDS_KEPT:
+            _bridges_kept.pop(next(iter(_bridges_kept)))
+        _bridges_kept[key] = bridge.bridges(shape, p.first_layer_height, p.layer_height, p.bead_width, rating,
+                                            supported)
+    return list(_bridges_kept[key])
+
+
+def set_bridges(obj, found):
+    """Keep the free regions of the Bridges `found` on `obj`, by level; the
+    bridges that span short enough are shown nowhere."""
+    for level, name in BRIDGES.items():
+        hidden_property(obj, name, "Part::PropertyPartShape")
+        regions = [spanned.region for spanned in found if spanned.level == level]
+        setattr(obj, name, Part.makeCompound(regions) if regions else Part.Shape())
+
+
+def bridge_notes(part_obj, found):
+    """The warnings for the Bridges `found` of `part_obj`, by level, each with
+    the faces they lie under, as (note, names)."""
+    rating = limits.current()
+    limit = {limits.CRITICAL: rating.bridge_critical, limits.UNPRINTABLE: rating.bridge_unprintable}
+    notes = []
+    for level in (limits.CRITICAL, limits.UNPRINTABLE):
+        spans = [spanned for spanned in found if spanned.level == level]
+        if spans:
+            names = sorted({face_name(number) for spanned in spans for number in spanned.faces},
+                           key=lambda name: int(name[len(FACE_PREFIX):]))
+            notes.append((translate("FinSnap", NOTE_BRIDGES[level])
+                          % (len(spans), part_obj.Label, limit[level], max(s.span for s in spans), ", ".join(names)),
+                          names))
+    return notes
 
 
 def set_overhangs(obj, rated):
@@ -698,6 +762,9 @@ REUSE_KEPT = 8
 # by part, shape, placement and names asked.
 WHOLE_KEPT = 16
 _whole_kept = {}
+# Bridges of parts, see bridges_of(), by the key of their islands, the bead,
+# the limits and the faces carried by fins.
+_bridges_kept = {}
 # What a stability check finds (stability_of()): the part stands, comes
 # close to tipping, within the tipping margin of the preferences (limits.py),
 # or tips; and the sentence that
@@ -964,6 +1031,7 @@ class FinSnapFeature:
             # The fins keep the shape they were moved to; the face they belong
             # to no longer leans over the bed until the part stands again.
             set_overhangs(obj, [])
+            set_bridges(obj, [])
             set_islands(obj, [])
             obj.Warnings = [translate("FinSnap", NOTE_LAID_FLAT)]
             return
@@ -986,7 +1054,8 @@ class FinSnapFeature:
             # follow the part.
             hidden_property(obj, CARRIED, "App::PropertyStringList")
             setattr(obj, CARRIED, [])
-            set_overhangs(obj, overhangs_of(obj.Base[0], obj.Document))
+            set_overhangs(obj, overhangs_of(obj.Base[0], obj.Document, p))
+            set_bridges(obj, [])
             set_islands(obj, [])
             raise
         # Named on the part itself, the counter face as well: a split side was
@@ -1003,7 +1072,9 @@ class FinSnapFeature:
                 hidden_property(obj, PLANNED[which], "App::PropertyInteger")
                 setattr(obj, PLANNED[which], built.planned)
         # The faces the fins carry stay the same while one fin is dragged.
-        rated = self.during_drag(OVERHANGS, lambda: overhangs_of(obj.Base[0], obj.Document))
+        rated = self.during_drag(OVERHANGS, lambda: overhangs_of(obj.Base[0], obj.Document, p))
+        spans = self.during_drag(BRIDGES[limits.CRITICAL], lambda: bridges_of(obj.Base[0], obj.Document, p))
+        set_bridges(obj, spans)
         set_overhangs(obj, rated)
         overhanging = [name for name, _ in rated]
         unprintable = list(getattr(obj, UNPRINTABLE_OVERHANGS))
@@ -1024,6 +1095,9 @@ class FinSnapFeature:
             if names:
                 warnings.append(translate("FinSnap", note) % (len(names), obj.Base[0].Label, limit, ", ".join(names)))
                 targets.append(NoteTarget(None, [], [(obj.Base[0], name) for name in names], [], []))
+        for note, names in bridge_notes(obj.Base[0], spans):
+            warnings.append(note)
+            targets.append(NoteTarget(None, [], [(obj.Base[0], name) for name in names], [], []))
         # The part stays as it is while one fin is dragged, and the islands do
         # not depend on the fins: asked once, as working out the key takes a
         # moment on a large part. A drag that turns the part asks each step.
@@ -1071,6 +1145,8 @@ class FinSnapFeature:
         if OVERHANGS not in obj.PropertiesList:
             add_overhangs(obj)
         hidden_property(obj, UNPRINTABLE_OVERHANGS, "App::PropertyStringList")
+        for name in BRIDGES.values():
+            hidden_property(obj, name, "Part::PropertyPartShape")
         if ISLANDS not in obj.PropertiesList:
             add_islands(obj)
         hidden_property(obj, ISLAND_LAYERS, "Part::PropertyPartShape")

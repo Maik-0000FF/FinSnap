@@ -239,6 +239,12 @@ def overhang_faces(faces, level):
     return shaded(faces, OVERHANG_COLORS[level], OVERHANG_TRANSPARENCY)
 
 
+def bridge_regions(regions, level):
+    """A Coin node showing `regions`, the free regions of bridges on the
+    underside of the part, in the colour of their `level`, as overhangs are."""
+    return shaded([regions], OVERHANG_COLORS[level], OVERHANG_TRANSPARENCY)
+
+
 def island_layers(layers):
     """A Coin node showing `layers`, the first layers of islands in the air."""
     return shaded([layers], INVALID_COLOR, ISLAND_TRANSPARENCY)

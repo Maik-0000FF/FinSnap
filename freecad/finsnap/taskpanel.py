@@ -129,15 +129,26 @@ BUTTON_PADDING = 6
 STAND_CAPTION = QT_TRANSLATE_NOOP("FinSnap", "Stand")
 # A way whose edge is not found on the part by name is shown by its row.
 STAND_ROW = "#%d"
-STAND_HEADERS = {True: (QT_TRANSLATE_NOOP("FinSnap", "Stands on"), QT_TRANSLATE_NOOP("FinSnap", "Length"),
-                        QT_TRANSLATE_NOOP("FinSnap", "Islands")),
-                 False: (QT_TRANSLATE_NOOP("FinSnap", "Fins under"), QT_TRANSLATE_NOOP("FinSnap", "Area"),
-                         QT_TRANSLATE_NOOP("FinSnap", "Islands"))}
+STAND_RATED = (QT_TRANSLATE_NOOP("FinSnap", "Islands"), QT_TRANSLATE_NOOP("FinSnap", "Overhangs"),
+               QT_TRANSLATE_NOOP("FinSnap", "Bridges"))
+STAND_HEADERS = {True: (QT_TRANSLATE_NOOP("FinSnap", "Stands on"), QT_TRANSLATE_NOOP("FinSnap", "Length"))
+                 + STAND_RATED,
+                 False: (QT_TRANSLATE_NOOP("FinSnap", "Fins under"), QT_TRANSLATE_NOOP("FinSnap", "Area"))
+                 + STAND_RATED}
+# A cell of the table rated critical or not printable is shaded so; its
+# tooltip says how many of each, the bridges by their longest span.
+STAND_LEVEL_COLORS = {limits.CRITICAL: WARNING_COLOR, limits.UNPRINTABLE: ERROR_COLOR}
+STAND_OVERHANGS_TIP = QT_TRANSLATE_NOOP("FinSnap", "%d faces overhang critically, %d too flat to print.")
+STAND_BRIDGES = "%d (%.1f%s)"
+STAND_BRIDGES_TIP = QT_TRANSLATE_NOOP("FinSnap", "%d bridges span critically, %d too far to print.")
 AREA_SUFFIX = " mm\N{SUPERSCRIPT TWO}"
 STAND_TIP = QT_TRANSLATE_NOOP("FinSnap", "Quick fins found more than one way to stand the part. Click a row to "
                                          "stand it so; the part and its fins follow in the 3D view. Ways where "
-                                         "the part would start printing in the air, an island, are left out "
-                                         "while one without is found.")
+                                         "the part would start printing in the air, an island, or where a face "
+                                         "lies too flat or a bridge spans too far to print, are left out while "
+                                         "one without is found. Overhangs counts the faces overhanging without "
+                                         "fins, Bridges those spanning too far, with the longest span in "
+                                         "brackets; yellow is critical, red not printable.")
 STAND_ASK = QT_TRANSLATE_NOOP("FinSnap", "Stand the part another way? The fins are planned anew: fins removed, "
                                          "moved or set to a height of their own, a turn of the part and the "
                                          "counter fin are undone.")
@@ -165,6 +176,7 @@ NOTE_UNPRINTABLE = QT_TRANSLATE_NOOP("FinSnap", "%d faces overhang flatter than 
 NOTE_NO_OVERHANGS = QT_TRANSLATE_NOOP("FinSnap", "No face overhangs without fins.")
 NOTE_ISLANDS_FOUND = QT_TRANSLATE_NOOP("FinSnap", "%d island(s): it would start printing in the air there.")
 NOTE_NO_ISLANDS = QT_TRANSLATE_NOOP("FinSnap", "No islands.")
+NOTE_NO_BRIDGES = QT_TRANSLATE_NOOP("FinSnap", "No bridge spans further than %.1f mm.")
 # The frame of the note of a stability check in the task panel, by what was
 # found; OUTDATED_COLOR once a change has made it out of date.
 STABILITY_FRAMES = {feature.STANDS: STANDS_COLOR, feature.CLOSE: WARNING_COLOR, feature.TIPS: ERROR_COLOR}
@@ -199,15 +211,16 @@ def check_stability(part_obj, p):
 
 def check_part(part_obj, p):
     """Check `part_obj` as it stands for everything that keeps it from
-    printing: faces overhanging without fins, islands and whether it stays
-    standing, in the layers of `p`, and keep it in its part check in the tree,
-    which shows it. Returns the level of the worst found, and a note with a
-    line for each check."""
+    printing: faces overhanging without fins, bridges, islands and whether it
+    stays standing, in the layers and beads of `p`, and keep it in its part
+    check in the tree, which shows it. Returns the level of the worst found,
+    and a note with a line for each check."""
     QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
     try:
         part = global_shape(part_obj)
-        rated = feature.overhangs_of(part_obj, part_obj.Document)
+        rated = feature.overhangs_of(part_obj, part_obj.Document, p)
         unprintable = [name for name, level in rated if level == limits.UNPRINTABLE]
+        spans = feature.bridges_of(part_obj, part_obj.Document, p)
         found = overhang.islands(part, p.first_layer_height, p.layer_height)
         level, note, shown = feature.stability_of(part_obj, p)
         rating = limits.current()
@@ -219,20 +232,47 @@ def check_part(part_obj, p):
             lines.append(translate("FinSnap", NOTE_UNPRINTABLE) % (len(unprintable), rating.overhang_unprintable))
         if not rated:
             lines.append(translate("FinSnap", NOTE_NO_OVERHANGS))
+        lines += _bridge_lines(part_obj, spans)
         lines.append(translate("FinSnap", NOTE_ISLANDS_FOUND) % len(found) if found
                      else translate("FinSnap", NOTE_NO_ISLANDS))
         lines.append(_with_colours(note, shown))
-        # Faces too flat to print and islands keep the part from printing,
-        # critical faces are a risk, as coming close to tipping is.
-        worst = (feature.TIPS if unprintable or found
-                 else feature.CLOSE if rated and level == feature.STANDS else level)
+        # Faces too flat to print, bridges too long and islands keep the part
+        # from printing; critical ones are a risk, as coming close to tipping is.
+        levels = {rated_level for _, rated_level in rated} | {spanned.level for spanned in spans}
+        worst = (feature.TIPS if limits.UNPRINTABLE in levels or found
+                 else feature.CLOSE if limits.CRITICAL in levels and level == feature.STANDS else level)
         overhangs = [(part.getElement(name), rated_level) for name, rated_level in rated]
         # The level of its stability, whose colour its plumb line shows.
         _in_tree(check.record(part_obj, fins_on(part_obj), check.PART, level, "\n".join(lines), shown,
-                              _layer_cut(part_obj, p, shown), overhangs, found))
+                              _layer_cut(part_obj, p, shown), overhangs, found, spans))
     finally:
         QtWidgets.QApplication.restoreOverrideCursor()
     return worst, "\n".join(lines)
+
+
+def check_bridges(part_obj, p):
+    """Check `part_obj` as it stands for bridges, in the layers and beads of
+    `p`, and keep them in its bridge check in the tree, which shows them.
+    Returns the level of the longest found, as those of a stability check,
+    and a note."""
+    QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+    try:
+        spans = feature.bridges_of(part_obj, part_obj.Document, p)
+        levels = {spanned.level for spanned in spans}
+        level = (feature.TIPS if limits.UNPRINTABLE in levels
+                 else feature.CLOSE if limits.CRITICAL in levels else feature.STANDS)
+        note = "\n".join(_bridge_lines(part_obj, spans))
+        _in_tree(check.record(part_obj, fins_on(part_obj), check.BRIDGES, level, note, None, bridges=spans))
+    finally:
+        QtWidgets.QApplication.restoreOverrideCursor()
+    return level, note
+
+
+def _bridge_lines(part_obj, spans):
+    """The lines saying what the bridges `spans` of `part_obj` are, by level;
+    one saying none spans too far where none does."""
+    lines = [note for note, _ in feature.bridge_notes(part_obj, spans)]
+    return lines or [translate("FinSnap", NOTE_NO_BRIDGES) % limits.current().bridge_critical]
 
 
 def fins_on(part_obj):
@@ -250,9 +290,10 @@ def check_params(part_obj):
 
 def check_again(check_obj):
     """Check the part of `check_obj`, a check in the tree, again, as it was
-    checked: its stability or the whole part. Returns the note found."""
+    checked: its stability, its bridges or the whole part. Returns the note
+    found."""
     part_obj = check_obj.Part
-    run = check_part if check_obj.Kind == check.PART else check_stability
+    run = {check.PART: check_part, check.BRIDGES: check_bridges}.get(check_obj.Kind, check_stability)
     return run(part_obj, check_params(part_obj))[1]
 
 
@@ -372,11 +413,39 @@ def check_nodes(check_obj):
                          (getattr(check_obj, "UnprintableOverhangs", Part.Shape()), limits.UNPRINTABLE)):
         if not shape.isNull():
             nodes.append(handles.overhang_faces(shape.Faces, level))
+    for name, level in (("CriticalBridges", limits.CRITICAL), ("UnprintableBridges", limits.UNPRINTABLE)):
+        regions = getattr(check_obj, name, Part.Shape())
+        if not regions.isNull():
+            nodes.append(handles.bridge_regions(regions, level))
     if not check_obj.IslandLayers.isNull():
         nodes.append(handles.island_layers(check_obj.IslandLayers))
     if check_obj.IslandsUncut:
         nodes.append(handles.island_spots(list(check_obj.IslandsUncut)))
     return nodes
+
+
+def _longest_span(spans):
+    """The bridges `spans` that span too far, as the table of ways shows them:
+    how many, and the longest span in brackets, "1 (17.9 mm)"; 0 where none
+    does, None where not checked."""
+    if spans is None:
+        return None
+    far = [found.span for found in spans if found.level != limits.GOOD]
+    return STAND_BRIDGES % (len(far), max(far), LENGTH_SUFFIX) if far else 0
+
+
+def _rated_cell(levels, shown, tip):
+    """A cell of the table of ways showing `shown`, blank for None, shaded by
+    the worst of `levels`, limits.CRITICAL or UNPRINTABLE, its tooltip `tip`
+    saying how many of each."""
+    cell = QtWidgets.QTableWidgetItem("" if shown is None else str(shown))
+    if levels:
+        for level in (limits.UNPRINTABLE, limits.CRITICAL):
+            if level in levels:
+                cell.setBackground(QtGui.QColor(STAND_LEVEL_COLORS[level]))
+                break
+        cell.setToolTip(translate("FinSnap", tip) % (levels.count(limits.CRITICAL), levels.count(limits.UNPRINTABLE)))
+    return cell
 
 
 def _with_colours(note, shown):
@@ -811,11 +880,16 @@ class FinSnapTaskPanel:
         self.stand_list.setEditTriggers(QtWidgets.QAbstractItemView.NoEditTriggers)
         self.stand_list.setToolTip(_wrapped(translate("FinSnap", STAND_TIP)))
         suffix = LENGTH_SUFFIX if self.stands.by_edge else AREA_SUFFIX
-        for row, (name, size, islands) in enumerate(self.stands.rows):
-            # Islands not checked, with Islands while editing off, are left blank.
-            counted = "" if islands is None else str(islands)
-            for column, text in enumerate((name or STAND_ROW % (row + 1), "%.1f%s" % (size, suffix), counted)):
-                self.stand_list.setItem(row, column, QtWidgets.QTableWidgetItem(text))
+        for row, (name, size, islands, overhangs, spans) in enumerate(self.stands.rows):
+            # Ways not checked, with Islands while editing off, are left blank.
+            cells = [QtWidgets.QTableWidgetItem(name or STAND_ROW % (row + 1)),
+                     QtWidgets.QTableWidgetItem("%.1f%s" % (size, suffix)),
+                     QtWidgets.QTableWidgetItem("" if islands is None else str(islands)),
+                     _rated_cell(overhangs, None if overhangs is None else len(overhangs), STAND_OVERHANGS_TIP),
+                     _rated_cell([found.level for found in spans] if spans is not None else None,
+                                 _longest_span(spans), STAND_BRIDGES_TIP)]
+            for column, cell in enumerate(cells):
+                self.stand_list.setItem(row, column, cell)
         shown = min(len(self.stands), STAND_ROWS)
         self.stand_list.setFixedHeight(self.stand_list.horizontalHeader().height()
                                        + shown * self.stand_list.rowHeight(0) + 2 * self.stand_list.frameWidth())

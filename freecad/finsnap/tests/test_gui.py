@@ -26,7 +26,7 @@ from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left
 WORKBENCH = "FinSnapWorkbench"
 COMMANDS = ("FinSnap_QuickFins", "FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCounterFin",
             "FinSnap_CheckStability", "FinSnap_CheckPart", "FinSnap_IslandsWhileEditing", "FinSnap_MeshToSolid",
-            "FinSnap_Export3MF", "FinSnap_ExportSTEP", "FinSnap_CheckLimits")
+            "FinSnap_Export3MF", "FinSnap_ExportSTEP", "FinSnap_CheckLimits", "FinSnap_CheckBridges")
 DIALOG_ACCEPTED = 1
 # Answers to the questions commands ask, taken in order by answer_dialogs().
 ANSWERS = []
@@ -406,9 +406,11 @@ def chosen_stands(doc, quick, facing, messages):
            and sorted(table.item(row, 0).text() for row in range(len(edges))) == sorted(names)
            and [table.item(row, 1).text() for row in range(len(edges))]
            == ["%.1f%s" % (length, taskpanel.LENGTH_SUFFIX) for length in lengths]
-           and all(table.item(row, 2).text() == "0" for row in range(len(edges))),
+           and all(table.item(row, 2).text() == "0" for row in range(len(edges)))
+           and table.columnCount() == len(taskpanel.STAND_HEADERS[True])
+           and all(table.item(row, 4).text() == "0" for row in range(len(edges))),
            "after Quick fins on a face the panel lists each edge it can stand on by its name, its length, "
-           "no islands: %s"
+           "no islands, its overhangs and no bridge: %s"
            % messages)
     first = App.Placement(quick.Placement)
     table.setCurrentCell(2, 0)
@@ -613,6 +615,27 @@ def _layer_marked(marks):
                for material in materials)
 
 
+def bridges_checked(doc, messages):
+    """Check bridges from the toolbar: the bridge of a slab across a gap is
+    said and kept as a check of its own, which shows it on the underside."""
+    from freecad.finsnap import check, limits, taskpanel
+    width, depth, height, gap, slab = 5.0, 10.0, 10.0, 8.0, 2.0
+    part = doc.addObject("Part::Feature", "Bridged")
+    part.Shape = Part.makeBox(width, depth, height).fuse(
+        [Part.makeBox(width, depth, height, App.Vector(width + gap, 0, 0)),
+         Part.makeBox(2 * width + gap, depth, slab, App.Vector(0, 0, height))]).removeSplitter()
+    doc.recompute()
+    select(part)
+    Gui.runCommand("FinSnap_CheckBridges")
+    spanned = check.find(part, check.BRIDGES)
+    expect(spanned is not None and not spanned.CriticalBridges.isNull() and taskpanel.check_nodes(spanned)
+           and "%.1f" % limits.current().bridge_critical in messages[-1],
+           "Check bridges says the bridge of the part and keeps it as a check, shown on the underside: %s"
+           % messages[-1])
+    doc.removeObject(spanned.Name)
+    doc.removeObject(part.Name)
+
+
 def limits_page(doc):
     """The page of the limits in the preferences fills them by strictness and
     keeps them in order, and saved, rebuilds the fins so their marks follow: a
@@ -785,9 +808,10 @@ def stability_checked(doc, messages):
     whole = check.find(part, check.PART)
     lines = messages[-1].split("\n")
     marks = whole.ViewObject.Proxy.root
-    expect(whole is not None and whole is not stable and len(lines) == 4 and messages[-1].endswith(said)
+    expect(whole is not None and whole is not stable and len(lines) == 5 and messages[-1].endswith(said)
            and _coloured_by_height(marks) and _layer_cut_shown(marks),
-           "Check part keeps a check of its own: overhangs, islands and stability, coloured by height: %s" % lines)
+           "Check part keeps a check of its own: overhangs, bridges, islands and stability, coloured by height: %s"
+           % lines)
 
     part.Placement = App.Placement(App.Vector(1, 0, 0), App.Rotation()).multiply(part.Placement)
     doc.recompute()
@@ -1261,6 +1285,7 @@ def main():
     limits_page(doc)
     value_colors()
     stability_checked(doc, messages)
+    bridges_checked(doc, messages)
     saved_while_editing()
     # Fins of the part laid flat keep their mark and shape over a Quick fins
     # cancelled: standing the part rebuilt them, Cancel gives them back.

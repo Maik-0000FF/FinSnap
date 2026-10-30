@@ -144,6 +144,12 @@ STABILITY_CLOSE = 2.0
 # moving bed (mm).
 STRICT_OVERHANG_UNPRINTABLE_ANGLE = OVERHANG_ANGLE
 STRICT_STABILITY_CLOSE = 5.0
+# A bridge spanning further than this between its supports sags: critical (mm).
+BRIDGE_CRITICAL = 2.0
+# Further than this, a common printer no longer bridges it: not printable (mm).
+BRIDGE_UNPRINTABLE = 10.0
+# Strict counts any bridge needing more than a short span as not printable.
+STRICT_BRIDGE_UNPRINTABLE = BRIDGE_CRITICAL
 # Smaller overhanging faces, like the corner facets of a chamfer, bridge over
 # without support and are not reported (mm2).
 OVERHANG_MIN_AREA = 1.0

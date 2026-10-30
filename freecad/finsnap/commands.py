@@ -26,11 +26,12 @@ from . import orient
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_LAY_FLAT, ICON_MESH,
-                    ICON_CHECK_PART, ICON_ISLANDS, ICON_QUICK, ICON_LIMITS, ICON_STABILITY, ICON_TILT)
+                    ICON_CHECK_PART, ICON_ISLANDS, ICON_QUICK, ICON_LIMITS, ICON_STABILITY, ICON_TILT,
+                    ICON_BRIDGES)
 from .presets import PREFERENCES
 from .shapes import FACE_PREFIX, global_shape, outermost, part_of
-from .taskpanel import (DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, check_params, check_part, check_stability,
-                        discard_created)
+from .taskpanel import (DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, check_bridges, check_params, check_part,
+                        check_stability, discard_created)
 from .version import NAME
 
 EDGE_PREFIX = "Edge"
@@ -133,7 +134,7 @@ class ViewProviderFinSnap:
 
     def updateData(self, obj, prop):  # noqa: N802 - FreeCAD API
         if prop in (feature.OVERHANGS, feature.UNPRINTABLE_OVERHANGS, feature.ISLANDS, feature.ISLAND_LAYERS,
-                    feature.ISLANDS_UNCUT):
+                    feature.ISLANDS_UNCUT) + tuple(feature.BRIDGES.values()):
             self.mark(obj)
 
     def onChanged(self, vobj, prop):  # noqa: N802 - FreeCAD API
@@ -153,7 +154,7 @@ class ViewProviderFinSnap:
         """Cover the faces that overhang without fins with marks in the colour
         of their level, yellow where critical, red where too flat to print, and the
         first layer of each island, where the part would start printing in the
-        air."""
+        air, and the free regions of bridges spanning too far, by level."""
         if not hasattr(self, "marks"):
             return
         self.marks.removeAllChildren()
@@ -165,6 +166,11 @@ class ViewProviderFinSnap:
         uncut = getattr(obj, feature.ISLANDS_UNCUT, [])
         if uncut:
             self.marks.addChild(handles.island_spots(uncut))
+        # The free regions of the bridges spanning too far, on the underside.
+        for level, name in feature.BRIDGES.items():
+            regions = getattr(obj, name, None)
+            if regions is not None and not regions.isNull():
+                self.marks.addChild(handles.bridge_regions(regions, level))
         names = getattr(obj, feature.OVERHANGS, [])
         if names and obj.Base:
             try:
@@ -411,7 +417,7 @@ def _show_on_bed(direction=None):
 def _report_overhangs(obj):
     """Select the faces that overhang after the tilt and say so in the status bar.
     Faces that already carry fins are left out."""
-    names = [name for name, _ in feature.overhangs_of(obj, obj.Document)]
+    names = [name for name, _ in feature.overhangs_of(obj, obj.Document, check_params(obj))]
     if not names:
         return
     Gui.Selection.clearSelection()
@@ -613,9 +619,10 @@ def quick_plans(obj, edge_names, face_names):
     # Without islands checked while editing, the ways stand in the order found,
     # their islands not known.
     rated = (geometry.printable_plans(shape, plans, quick_params()) if feature.islands_while_editing()
-             else [(plan, None) for plan in plans])
-    return [QuickWay(plan, name_of(plan.number), points, shape.Faces[plan.number].Area, _edge_name(obj, plan.edge))
-            for plan, points in rated]
+             else [geometry.RatedPlan(plan, None, None, None) for plan in plans])
+    return [QuickWay(way.plan, name_of(way.plan.number), way.islands, shape.Faces[way.plan.number].Area,
+                     _edge_name(obj, way.plan.edge), way.overhangs, way.bridges)
+            for way in rated]
 
 
 def _edge_name(obj, edge):
@@ -638,9 +645,10 @@ def _edge_name(obj, edge):
 
 # A way Quick fins found to stand a part: the plan, the name on the part of the
 # face the fins go under, the islands, None where there was only one way and
-# they were not checked, the area of that face (mm2), and the
-# name on the part of the edge it stands on, None without one.
-QuickWay = namedtuple("QuickWay", "plan face islands area edge")
+# they were not checked, the area of that face (mm2), the name on the part of
+# the edge it stands on, None without one, and the levels of its overhangs and
+# its bridges, see geometry.RatedPlan, None where not checked.
+QuickWay = namedtuple("QuickWay", "plan face islands area edge overhangs bridges")
 
 
 class QuickStands:
@@ -664,9 +672,10 @@ class QuickStands:
         self.by_edge = (len({way.plan.number for way in plans}) == 1
                         and all(way.plan.edge is not None for way in plans))
         # What tells the ways apart: the edge or the face by its name on the
-        # part, its length (mm) or area (mm2), and the islands standing so.
-        self.rows = [(way.edge or "", way.plan.edge.Length, None if way.islands is None else len(way.islands))
-                     if self.by_edge else (way.face, way.area, None if way.islands is None else len(way.islands))
+        # part, its length (mm) or area (mm2), and the islands, overhangs and
+        # bridges standing so.
+        self.rows = [((way.edge or "", way.plan.edge.Length) if self.by_edge else (way.face, way.area))
+                     + (None if way.islands is None else len(way.islands), way.overhangs, way.bridges)
                      for way in plans]
 
     def __len__(self):
@@ -1024,7 +1033,7 @@ class CheckStability:
 
 
 def _run_check(run):
-    """Run `run`, check_stability() or check_part(), on the part selected and
+    """Run `run`, check_stability(), check_bridges() or check_part(), on the part selected and
     say what it found; it keeps that as a check in the tree. With nothing
     selected, or an object without a shape, ask for a part."""
     selected = Gui.Selection.getSelection()
@@ -1052,10 +1061,33 @@ def _checked_part(obj):
     return part, check_params(part)
 
 
+class CheckBridges:
+    """Check a part, as it stands, for bridges, see taskpanel.check_bridges().
+    Selections as for CheckStability."""
+
+    def GetResources(self):  # noqa: N802 - FreeCAD API
+        return {"Pixmap": ICON_BRIDGES,
+                "MenuText": QT_TRANSLATE_NOOP("FinSnap_CheckBridges", "Check bridges"),
+                "ToolTip": QT_TRANSLATE_NOOP(
+                    "FinSnap_CheckBridges",
+                    "Checks the selected part, as it stands, for bridges: faces that span a gap between "
+                    "supports on the layer below, at two or more sides, which the slicer prints as straight "
+                    "lines across. Says how far each spans, rated by the check limits, and keeps it as a bridge "
+                    "check in the tree, which shows where they span too far on the underside of the part. Once "
+                    "the part, its place or its fins change, the check is marked out of date; double-click it "
+                    "to check again.")}
+
+    def IsActive(self):  # noqa: N802 - FreeCAD API
+        return App.ActiveDocument is not None
+
+    def Activated(self):  # noqa: N802 - FreeCAD API
+        _run_check(check_bridges)
+
+
 class CheckPart:
     """Check a part, as it stands, for everything that keeps it from printing:
-    faces overhanging without fins, islands and whether it stays standing;
-    see taskpanel.check_part(). Selections as for CheckStability."""
+    faces overhanging without fins, bridges, islands and whether it stays
+    standing; see taskpanel.check_part(). Selections as for CheckStability."""
 
     def GetResources(self):  # noqa: N802 - FreeCAD API
         return {"Pixmap": ICON_CHECK_PART,
@@ -1063,8 +1095,9 @@ class CheckPart:
                 "ToolTip": QT_TRANSLATE_NOOP(
                     "FinSnap_CheckPart",
                     "Checks the selected part, with or without fins, as it stands, for everything that keeps it "
-                    "from printing, all at once: faces overhanging without fins, islands, where it would start "
-                    "printing in the air, and whether it stays standing while it is printed. Says what it found "
+                    "from printing, all at once: faces overhanging without fins, bridges spanning too far, "
+                    "islands, where it would start printing in the air, and whether it stays standing while it "
+                    "is printed. Says what it found "
                     "and keeps it as a part check in the tree, which shows it all: the eye shows or hides it, "
                     "deleting the check removes it. Once the part, its place or its fins change, the check is "
                     "marked out of date; double-click it to check again.")}
@@ -1134,6 +1167,7 @@ COMMANDS = (("FinSnap_QuickFins", QuickFins()),
             ("FinSnap_AddFins", AddFins()),
             ("FinSnap_AddCounterFin", AddCounterFin()),
             ("FinSnap_CheckStability", CheckStability()),
+            ("FinSnap_CheckBridges", CheckBridges()),
             ("FinSnap_CheckPart", CheckPart()),
             ("FinSnap_IslandsWhileEditing", IslandsWhileEditing()),
             ("FinSnap_MeshToSolid", MeshToSolid()),

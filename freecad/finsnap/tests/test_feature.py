@@ -141,7 +141,7 @@ def t_profile_in_part(doc):
     arms = [i for i, f in enumerate(shape.Faces, 1) if f.normalAt(0, 0).z < -1 + d.TOLERANCE
             and f.BoundBox.ZMin > shape.BoundBox.ZMin + d.TOLERANCE]
     expect(len(arms) == 2, "the T has two arms facing down")
-    rated = feature.overhangs_of(pad, doc)
+    rated = feature.overhangs_of(pad, doc, FinParams())
     expect(rated == [("Face%d" % i, limits.UNPRINTABLE) for i in arms],
            "both arms, lying flat over the bed, are reported as too flat to print: %s" % rated)
 
@@ -153,7 +153,7 @@ def t_profile_in_part(doc):
     tilted = global_shape(pad)
     expect(abs(tilted.BoundBox.ZMin) < d.TOLERANCE, "the nested part rests on the bed after the tilt")
 
-    hanging = [name for name, _ in feature.overhangs_of(pad, doc)]
+    hanging = [name for name, _ in feature.overhangs_of(pad, doc, FinParams())]
     expect(len(hanging) == 3, "tilted by %.0f degrees the stem and both arms overhang: %s" % (FLAT_TILT, hanging))
     stem = min(hanging, key=lambda name: tilted.getElement(name).BoundBox.ZMin)
     fins = feature.create(pad, stem)
@@ -896,6 +896,29 @@ def stability_raised_and_counter(doc):
            "tipping away from its fins it is told to add a counter fin; towards its counter fin, not: %s" % notes)
 
 
+def bridges_apart(doc):
+    """A face a bridge lies under is no overhang: its risk is its span. The
+    bridges are rated by the limits and kept in a check of the part."""
+    width, depth, height, gap, slab = 5.0, 10.0, 10.0, 8.0, 2.0
+    spanned = doc.addObject("Part::Feature", "Spanned")
+    spanned.Shape = Part.makeBox(width, depth, height).fuse(
+        [Part.makeBox(width, depth, height, V(width + gap, 0, 0)),
+         Part.makeBox(2 * width + gap, depth, slab, V(0, 0, height))]).removeSplitter()
+    doc.recompute()
+    spans = feature.bridges_of(spanned, doc, FinParams())
+    under = {"Face%d" % number for found in spans for number in found.faces}
+    hanging = [name for name, _ in feature.overhangs_of(spanned, doc, FinParams())]
+    expect(len(spans) == 1 and spans[0].level == limits.CRITICAL and under and not under & set(hanging),
+           "the underside of a slab across a gap is a critical bridge, no overhang: %s, %s" % (under, hanging))
+    notes = feature.bridge_notes(spanned, spans)
+    expect(len(notes) == 1 and notes[0][1] == sorted(under), "the bridge is said once, naming the face it lies under")
+    checked = check.record(spanned, [], check.BRIDGES, feature.CLOSE, notes[0][0], None, bridges=spans)
+    expect(not checked.CriticalBridges.isNull() and checked.UnprintableBridges.isNull()
+           and checked.Label.endswith(spanned.Label), "a bridge check keeps the critical bridge of the part")
+    doc.removeObject(checked.Name)
+    doc.removeObject(spanned.Name)
+
+
 def stability_by_limits(doc):
     """A part standing far from tipping by the built-in tipping margin is at
     risk of tipping by a wider one set in the preferences."""
@@ -1098,6 +1121,7 @@ def main():
     stability_raised_and_counter(doc)
     check_objects(doc)
     stability_by_limits(doc)
+    bridges_apart(doc)
     fins_follow_the_body(doc)
     step_with_offset_curves()
     print("all checks passed", file=sys.__stdout__)

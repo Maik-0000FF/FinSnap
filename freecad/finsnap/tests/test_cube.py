@@ -8,6 +8,7 @@ Run in FreeCAD, with this checkout installed as an addon (see CONTRIBUTING.md):
 """
 
 import math
+import os
 import sys
 
 import Part
@@ -15,6 +16,7 @@ import Part
 from freecad.finsnap.tests.support import (HALF_TURN, RECESS_RADIUS, expect, grooved, lower_left_face, run,
                                            split_cylinder, tilted_cube)
 from freecad.finsnap import defaults as d
+from freecad.finsnap.bridge import bridges as find_bridges
 from freecad.finsnap import geometry
 from freecad.finsnap import limits
 from freecad.finsnap import orient
@@ -33,6 +35,15 @@ PYRAMID_TILT = 30.0    # flatter than the overhang limit
 # degrees from the bed: steeper than the critical limit, between the two
 # limits, and flatter than the unprintable one.
 SIDE_STEEP, SIDE_CRITICAL, SIDE_UNPRINTABLE = 60.0, 40.0, 20.0
+# A slab on two piers for bridges: the piers this wide, deep and high, the
+# slab this thick; gaps between the piers spanned short, critically and too far
+# by the built-in limits, and a slab this much deeper than wide across the gap.
+PIER = (5.0, 10.0, 10.0)
+SLAB = 2.0
+GAP_SHORT, GAP_CRITICAL, GAP_FAR = 1.5, 8.0, 15.0
+DEEP_SLAB = 40.0
+# How closely a span is measured: a bead is laid across in lines one bead apart.
+SPAN_TOLERANCE = 0.1
 ODD_TILT = 30.0        # any angle but 45, at which a right-angled edge needs its face
 # First tines half a layer (0.1 mm) off the grid of 0.2 mm layers.
 HALF_LAYER_STARTS = (1.1, 1.3, 1.5, 1.7)
@@ -309,9 +320,16 @@ def check_limits():
     limits.Limits().validate()
     limits.Limits(overhang_critical=40.0, overhang_unprintable=40.0).validate()
     limits.Limits(overhang_unprintable=0.0, overhang_min_area=0.0, tipping_margin=0.0).validate()
+    limits.Limits(bridge_critical=0.0, bridge_unprintable=0.0).validate()
+    rating = limits.Limits()
+    expect([rating.bridge_level(span) for span in (rating.bridge_critical, rating.bridge_critical + 1,
+                                                    rating.bridge_unprintable, rating.bridge_unprintable + 1)]
+           == [limits.GOOD, limits.CRITICAL, limits.CRITICAL, limits.UNPRINTABLE],
+           "a span at a limit is the level below it, past it the level above")
     bad = (dict(overhang_critical=-1.0), dict(overhang_critical=91.0), dict(overhang_unprintable=50.0),
            dict(tipping_margin=-0.1), dict(overhang_min_area=-1.0), dict(tipping_margin=float("nan")),
-           dict(overhang_critical=float("inf")))
+           dict(overhang_critical=float("inf")), dict(bridge_critical=-1.0),
+           dict(bridge_critical=12.0, bridge_unprintable=10.0))
     for values in bad:
         try:
             limits.Limits(**values).validate()
@@ -373,6 +391,67 @@ def check_limits():
     found = overhang.rated(apex_down(SIDE_UNPRINTABLE), (), nothing_red)
     expect(found and all(level == limits.CRITICAL for _, level in found),
            "an unprintable limit of 0 degrees: critical at most")
+
+
+def piers(gap, depth=PIER[1]):
+    """A slab on two piers `gap` apart, `depth` deep, the slab across the gap."""
+    width, _, height = PIER
+    first = Part.makeBox(width, depth, height)
+    second = Part.makeBox(width, depth, height, V(width + gap, 0, 0))
+    slab = Part.makeBox(2 * width + gap, depth, SLAB, V(0, 0, height))
+    return first.fuse([second, slab]).removeSplitter()
+
+
+def check_bridges():
+    """Bridges: where a layer spans a gap between supports, how far, rated."""
+    first, layer, bead = d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, d.BEAD_WIDTH
+    rating = limits.Limits()
+
+    def found(shape, rate=rating, supported=()):
+        return find_bridges(shape, first, layer, bead, rate, supported)
+
+    expect(found(Part.makeBox(30, 10, 10)) == [], "a box lying on the bed has no bridge")
+    for gap, level in ((GAP_SHORT, limits.GOOD), (GAP_CRITICAL, limits.CRITICAL), (GAP_FAR, limits.UNPRINTABLE)):
+        spans = found(piers(gap))
+        expect(len(spans) == 1 and abs(spans[0].span - gap) < SPAN_TOLERANCE and spans[0].level == level,
+               "a slab across a %.1f mm gap between piers spans it, %s: %s"
+               % (gap, level, [(s.span, s.level) for s in spans]))
+    deep = found(piers(GAP_CRITICAL, DEEP_SLAB))
+    expect(len(deep) == 1 and abs(deep[0].span - GAP_CRITICAL) < SPAN_TOLERANCE,
+           "a slab deeper than the gap spans across the gap, not along it: %s" % [s.span for s in deep])
+    slab = piers(GAP_CRITICAL)
+    under = slab.Faces[found(slab)[0].faces[0] - 1]
+    expect(abs(under.BoundBox.ZMin - PIER[2]) < d.TOLERANCE and under.BoundBox.ZMax - under.BoundBox.ZMin < d.TOLERANCE,
+           "the bridge lies under the underside of the slab")
+    expect(found(slab, supported=(under,)) == [], "a face carried by fins spans nothing")
+    strict = limits.STRICTNESS[limits.STRICT]
+    expect(found(slab, strict)[0].level == limits.UNPRINTABLE, "strict: a critical span is not printable")
+    width, depth, height = PIER
+    arm = Part.makeBox(width, depth, height + SLAB).fuse(
+        Part.makeBox(width + GAP_CRITICAL, depth, SLAB, V(0, 0, height))).removeSplitter()
+    expect(found(arm) == [], "an arm reaching out at one side is no bridge, it overhangs")
+    floating = Part.makeBox(width, width, width, V(0, 0, height))
+    expect(found(floating) == [], "a block floating above the bed is no bridge, it is an island")
+    expect(found(Part.Shape()) == [], "an empty shape has no bridge said, nothing raised")
+
+
+# Calls into the kernel that crash FreeCAD on some shapes, in a way no
+# exception catches: the 2D offset dies in its medial axis on some outlines.
+FRAGILE_CALLS = ("makeOffset2D",)
+
+
+def check_no_fragile_calls():
+    """No module of FinSnap calls into the kernel where it can crash FreeCAD."""
+    from freecad.finsnap.paths import PACKAGE
+    found = []
+    for folder, folders, files in os.walk(PACKAGE):
+        folders[:] = [name for name in folders if name != "tests"]
+        for name in files:
+            if name.endswith(".py"):
+                with open(os.path.join(folder, name), encoding="utf-8") as handle:
+                    text = handle.read()
+                found += ["%s: %s" % (name, call) for call in FRAGILE_CALLS if call in text]
+    expect(not found, "no module calls into the kernel where it can crash FreeCAD: %s" % found)
 
 
 def check_frustum():
@@ -1036,16 +1115,26 @@ def check_printable_plans():
             left = list(counts)
             overhang.islands = lambda *args, **kwargs: [V()] * left.pop(0)
             rated = geometry.printable_plans(box, plans, p)
-            expect([plans.index(plan) for plan, _ in rated] == wanted
-                   and all(len(points) == counts[plans.index(plan)] for plan, points in rated), what)
+            expect([plans.index(entry.plan) for entry in rated] == wanted
+                   and all(len(entry.islands) == counts[plans.index(entry.plan)] for entry in rated), what)
         calls = []
         overhang.islands = lambda *args, **kwargs: calls.append(args) or [V()]
         rated = geometry.printable_plans(box, alike, p)
-        expect(len(alike) > 1 and len(calls) == 1 and all(len(points) == 1 for _, points in rated),
-               "ways standing the part alike, the fins under other faces, are checked once")
+        expect(len(alike) > 1 and len(calls) == 1 and all(len(entry.islands) == 1 for entry in rated),
+               "ways standing the part alike, the fins under other faces, are checked once for islands")
         del calls[:]
-        expect(geometry.printable_plans(box, plans[:1], p) == [(plans[0], None)] and not calls,
-               "one way is taken unchecked, its islands None: there is no choice")
+        expect(geometry.printable_plans(box, plans[:1], p) == [(plans[0], None, None, None)] and not calls,
+               "one way is taken unchecked, its islands, overhangs and bridges None: there is no choice")
+        overhang.islands = lambda *args, **kwargs: []
+        real_rated = overhang.rated
+        try:
+            flat = [limits.UNPRINTABLE]
+            overhang.rated = lambda *args, **kwargs: [(1, flat.pop(0))] if flat else []
+            rated = geometry.printable_plans(box, plans, p)
+            expect(plans.index(rated[0].plan) == 1 and len(rated) == len(plans) - 1,
+                   "a way with a face too flat to print is left out while ways without are found")
+        finally:
+            overhang.rated = real_rated
     finally:
         overhang.islands = real
 
@@ -1613,6 +1702,8 @@ def main():
     check_quick_plan()
     check_quick_plans()
     check_islands()
+    check_bridges()
+    check_no_fragile_calls()
     check_printable_plans()
     check_stability()
     check_round_side()
