@@ -11,10 +11,17 @@ that hold it by then. A fin holds the part only from its lowest tine up;
 below, the part stands on its own. The first layer whose plumb line falls
 outside tips the part over.
 
+How safely a layer stands is its tipping angle: how far the part printed up
+to it would have to lean before its plumb line left the footprint,
+atan(margin / height of its centre of mass over the bed). A force from the
+side tips the part once its share of the weight passes the tangent of that
+angle, as the acceleration of a moving bed does: a tall part needs a wider
+margin than a flat one for the same angle.
+
 Every layer is too many to work out at once on a large part: the part is
 checked every SAMPLE_STEP mm and wherever a fin starts to hold it, and
-layer by layer only between the checks around where it tips or comes
-closest to tipping. The centres of mass found are kept in a dict the caller
+layer by layer only between the checks around where it tips or where its
+tipping angle is smallest. The centres of mass found are kept in a dict the caller
 holds for the part as it stands, so a check after the fins changed only
 measures the footprints anew.
 
@@ -28,7 +35,9 @@ INPUTS this has to withstand (check()):
     up                                  ->  tips at the layer that carries its
                                             centre of mass past the edge
   plumb line past an end of the edge    ->  tips, its outward direction along the edge
-  plumb line just inside                ->  stands, the margin small
+  plumb line just inside                ->  stands, the margin and angle small
+  the same margin, the centre of mass
+    higher                              ->  a smaller tipping angle
   a brim                                ->  the footprint grown by its width all round
   an empty part, or one with nothing on
     the bed                             ->  None
@@ -57,14 +66,15 @@ BRIM_CORNER_POINTS = 16
 FACE_MAKER = "Part::FaceMakerBullseye"
 
 # The result of check(): whether the part tips; the layer (from 0, the first)
-# it tips at or, if it stands, comes closest to tipping at, and the height of
+# it tips at or, if it stands, has its smallest tipping angle at, and the height of
 # its top over the bed (mm); the centre of mass of the part printed up to it
 # and the foot of its plumb line on the bed; the margin, how far that foot
 # lies inside the footprint (mm, below 0 outside); the direction on the bed
 # out of the footprint nearest the foot; the footprint, as points round it on
-# the bed; and the margins found on the way, as (height over the bed, margin)
-# pairs from the bed up, the layers checked only.
-Stability = namedtuple("Stability", "tips layer height centre foot margin outward footprint profile")
+# the bed; the tipping angle (degrees, below 0 where it tips); and the margins
+# and angles found on the way, as (height over the bed, margin, angle) from
+# the bed up, the layers checked only.
+Stability = namedtuple("Stability", "tips layer height centre foot margin outward footprint angle profile")
 
 
 def check(part, supports, first_layer, layer, centres, brim=0.0):
@@ -107,8 +117,9 @@ def check(part, supports, first_layer, layer, centres, brim=0.0):
         margin += brim
         shown = _hull([(x + brim * math.cos(turn), y + brim * math.sin(turn)) for x, y in hull for turn in
                        (2 * math.pi * k / BRIM_CORNER_POINTS for k in range(BRIM_CORNER_POINTS))]) if brim > 0 else hull
+        angle = math.degrees(math.atan2(margin, centre.z - bed))
         result = Stability(margin < 0, number, top(number) - bed, centre, App.Vector(centre.x, centre.y, bed),
-                           margin, outward, [App.Vector(x, y, bed) for x, y in shown], None)
+                           margin, outward, [App.Vector(x, y, bed) for x, y in shown], angle, None)
         seen[number] = result
         return result
 
@@ -134,18 +145,18 @@ def check(part, supports, first_layer, layer, centres, brim=0.0):
         between = [measure(number) for number in range(before + 1, first.layer)]
         return _with_profile(next((result for result in between if result is not None and result.tips), first),
                              seen)
-    closest = min(found, key=lambda result: result.margin)
+    closest = min(found, key=lambda result: result.angle)
     at = ordered.index(closest.layer)
     low = ordered[at - 1] if at > 0 else closest.layer
     high = ordered[at + 1] if at + 1 < len(ordered) else closest.layer
     around = [measure(number) for number in range(low + 1, high) if number != closest.layer]
     return _with_profile(min([closest] + [result for result in around if result is not None],
-                             key=lambda result: result.margin), seen)
+                             key=lambda result: result.angle), seen)
 
 
 def _with_profile(result, seen):
-    """`result` with the margins of every layer checked, from the bed up."""
-    return result._replace(profile=[(found.height, found.margin) for _, found in sorted(seen.items())])
+    """`result` with the margins and angles of every layer checked, from the bed up."""
+    return result._replace(profile=[(found.height, found.margin, found.angle) for _, found in sorted(seen.items())])
 
 
 def section(part, z):

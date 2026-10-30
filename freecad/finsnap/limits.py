@@ -11,9 +11,10 @@ as PrusaSlicer measures its overhang threshold: 0 degrees is a face lying
 flat over the bed, 90 a vertical wall. Cura measures its overhang angle from
 the vertical: its value is 90 degrees minus this one.
 
-The tipping margin is the distance of the plumb line from the centre of mass
-to the edge of the footprint. Below it the part is at risk of tipping; below
-0 it tips, which is physics and no limit to set.
+The tipping angle is how far the part would have to lean before the plumb
+line from its centre of mass left its footprint (stability.py). Below the
+limit the part is at risk of tipping; below 0 it tips, which is physics and
+no limit to set.
 
 Two strictnesses set all limits at once (STRICTNESS): normal, the built-in
 one, allows for what common printers manage and for the grip of the first
@@ -39,8 +40,8 @@ INPUTS this has to withstand (Limits.validate()):
                                             not printable
   an angle below 0 or past 90           ->  LimitError naming it
   unprintable steeper than critical     ->  LimitError
-  tipping margin, least area or a
-    bridge span below 0                 ->  LimitError naming it; 0 is allowed
+  a tipping angle below 0 or past 90    ->  LimitError naming it
+  least area or a bridge span below 0   ->  LimitError naming it; 0 is allowed
   unprintable span shorter than the
     critical one                        ->  LimitError
   equal spans                           ->  valid, no critical bridges
@@ -96,8 +97,8 @@ class Limits:
     overhang_unprintable: float = d.OVERHANG_UNPRINTABLE_ANGLE
     # Overhanging faces smaller than this are not reported (mm2).
     overhang_min_area: float = d.OVERHANG_MIN_AREA
-    # A plumb line closer than this to the edge of its footprint is at risk of tipping (mm).
-    tipping_margin: float = d.STABILITY_CLOSE
+    # A part tipping once leaned less than this is at risk of tipping (degrees).
+    tipping_angle: float = d.TIPPING_ANGLE
     # Bridges spanning further than this are critical (mm).
     bridge_critical: float = d.BRIDGE_CRITICAL
     # Bridges spanning further than this are not printable (mm).
@@ -107,14 +108,14 @@ class Limits:
         for f in fields(self):
             if not math.isfinite(getattr(self, f.name)):
                 raise LimitError(translate("FinSnap", "%s is not a finite number") % f.name)
-        for name in ("overhang_critical", "overhang_unprintable"):
+        for name in ("overhang_critical", "overhang_unprintable", "tipping_angle"):
             if not ANGLE_MIN <= getattr(self, name) <= ANGLE_MAX:
                 raise LimitError(translate("FinSnap", "%s must lie between %.0f and %.0f degrees")
                                  % (name, ANGLE_MIN, ANGLE_MAX))
         if self.overhang_unprintable > self.overhang_critical:
             raise LimitError(translate("FinSnap", "overhang_unprintable must not be steeper than "
                                                   "overhang_critical"))
-        for name in ("overhang_min_area", "tipping_margin", "bridge_critical", "bridge_unprintable"):
+        for name in ("overhang_min_area", "bridge_critical", "bridge_unprintable"):
             if getattr(self, name) < 0:
                 raise LimitError(translate("FinSnap", "%s must be 0 or greater") % name)
         if self.bridge_unprintable < self.bridge_critical:
@@ -130,7 +131,7 @@ class Limits:
 
 # The limits of each strictness.
 STRICTNESS = {
-    STRICT: Limits(overhang_unprintable=d.STRICT_OVERHANG_UNPRINTABLE_ANGLE, tipping_margin=d.STRICT_STABILITY_CLOSE,
+    STRICT: Limits(overhang_unprintable=d.STRICT_OVERHANG_UNPRINTABLE_ANGLE, tipping_angle=d.STRICT_TIPPING_ANGLE,
                    bridge_unprintable=d.STRICT_BRIDGE_UNPRINTABLE),
     NORMAL: Limits(),
 }

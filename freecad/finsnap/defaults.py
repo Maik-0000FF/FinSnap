@@ -135,15 +135,20 @@ RIGHT_ANGLE_TOLERANCE = 0.5
 OVERHANG_ANGLE = 45.0
 # Faces lying flatter than this sag or fail even with good cooling: not printable.
 OVERHANG_UNPRINTABLE_ANGLE = 30.0
-# A part that stands, but whose plumb line comes closer to the edge of its
-# footprint than this while it is printed, is at risk of tipping (mm).
-STABILITY_CLOSE = 2.0
+# A part that stands, but would tip once leaned by less than this tipping
+# angle while it is printed, is at risk of tipping (degrees, see stability.py).
+# About a margin of 2 mm with the centre of mass 20 mm over the bed.
+TIPPING_ANGLE = 5.0
+# Gravity, to say which acceleration from the side a tipping angle withstands
+# (mm/s2).
+GRAVITY = 9806.65
 # The strict strictness counts the geometry alone: no band of critical
 # overhangs, a face needing support is not printable; and no grip of the first
-# layer on the bed, so a larger tipping margin holds against the nozzle and the
-# moving bed (mm).
+# layer on the bed, so a larger tipping angle holds against the nozzle and the
+# moving bed: 15 degrees withstands about 0.27 g from the side, as a bed slinger
+# accelerates (degrees).
 STRICT_OVERHANG_UNPRINTABLE_ANGLE = OVERHANG_ANGLE
-STRICT_STABILITY_CLOSE = 5.0
+STRICT_TIPPING_ANGLE = 15.0
 # A bridge spanning further than this between its supports sags: critical (mm).
 BRIDGE_CRITICAL = 2.0
 # Further than this, a common printer no longer bridges it: not printable (mm).

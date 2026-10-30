@@ -62,19 +62,25 @@ NOTE_BRIDGES = {
 STANDS, CLOSE, TIPS = "stands", "close", "tips"
 SIDE_SHARE = math.sqrt(0.5)
 NOTE_NOTHING_ON_BED = QT_TRANSLATE_NOOP("FinSnap", "Nothing of the part stands on the bed.")
+# The notes of a part that stands say its smallest tipping angle (degrees), the
+# layer and height of it, the tipping margin there (mm) and the acceleration
+# from the side it withstands (mm/s2), see _standing().
 NOTE_STANDS = QT_TRANSLATE_NOOP(
-    "FinSnap", "Stands on its own while it is printed: tipping margin at least %.1f mm, smallest at layer %d "
-    "(%.1f mm).")
+    "FinSnap", "Stands on its own while it is printed: tipping angle at least %.1f degrees, smallest at layer %d "
+    "(%.1f mm), with a tipping margin of %.1f mm; withstands %.0f mm/s² from the side.")
 NOTE_STANDS_CLOSE = QT_TRANSLATE_NOOP(
-    "FinSnap", "At risk of tipping on its own: tipping margin only %.1f mm at layer %d (%.1f mm).")
+    "FinSnap", "At risk of tipping on its own: tipping angle only %.1f degrees at layer %d (%.1f mm), with a "
+    "tipping margin of %.1f mm; withstands %.0f mm/s² from the side.")
 NOTE_NEEDS_FINS = QT_TRANSLATE_NOOP(
     "FinSnap", "Tips over at layer %d (%.1f mm) while it is printed: fins under its leaning face hold it.")
 NOTE_HELD = QT_TRANSLATE_NOOP(
-    "FinSnap", "On its own it would tip over at layer %d (%.1f mm); its fins hold it: tipping margin at least "
-    "%.1f mm, smallest at layer %d (%.1f mm).")
+    "FinSnap", "On its own it would tip over at layer %d (%.1f mm); its fins hold it: tipping angle at least "
+    "%.1f degrees, smallest at layer %d (%.1f mm), with a tipping margin of %.1f mm; withstands %.0f mm/s² from "
+    "the side.")
 NOTE_HELD_CLOSE = QT_TRANSLATE_NOOP(
     "FinSnap", "On its own it would tip over at layer %d (%.1f mm); its fins hold it, but it is at risk of "
-    "tipping: tipping margin only %.1f mm at layer %d (%.1f mm).")
+    "tipping: tipping angle only %.1f degrees at layer %d (%.1f mm), with a tipping margin of %.1f mm; "
+    "withstands %.0f mm/s² from the side.")
 NOTE_BEFORE_TINES = QT_TRANSLATE_NOOP(
     "FinSnap", "Tips over at layer %d (%.1f mm), before its fins hold it from their lowest tine at %.1f mm: "
     "set the first tine lower.")
@@ -97,8 +103,8 @@ NOTE_NO_ISLANDS = QT_TRANSLATE_NOOP("FinSnap", "No islands.")
 NOTE_NO_BRIDGES = QT_TRANSLATE_NOOP("FinSnap", "No bridge spans further than %.1f mm.")
 # What the colours of a stability check mean, said with its result.
 NOTE_COLOURS = QT_TRANSLATE_NOOP(
-    "FinSnap", "Colours by height: green stands, yellow is at risk of tipping (tipping margin under %.0f mm), red "
-    "tips over from there.")
+    "FinSnap", "Colours by height: green stands, yellow is at risk of tipping (tipping angle under %.0f degrees), "
+    "red tips over from there.")
 
 
 def stand_key(part_obj, p):
@@ -245,11 +251,25 @@ def part_report(part_obj, rated, spans, found, level, note, shown):
     return worst, lines
 
 
+def withstood(angle):
+    """The acceleration from the side (mm/s2) a part withstands whose tipping
+    angle is `angle` (degrees): it tips once that share of gravity pushes it,
+    the tangent of the angle."""
+    return d.GRAVITY * math.tan(math.radians(angle))
+
+
+def _standing(shown):
+    """What the notes of a part that stands say of `shown`, a
+    stability.Stability: its tipping angle, the layer, counted from 1, and
+    the height of it, its tipping margin and the acceleration withstood."""
+    return shown.angle, shown.layer + 1, shown.height, shown.margin, withstood(shown.angle)
+
+
 def with_colours(note, shown):
     """`note`, followed by what the colours of the part mean, where they show."""
     if shown is None:
         return note
-    return note + "\n" + translate("FinSnap", NOTE_COLOURS) % limits.current().tipping_margin
+    return note + "\n" + translate("FinSnap", NOTE_COLOURS) % limits.current().tipping_angle
 
 
 def stability(part_obj, p, holders):
@@ -266,8 +286,8 @@ def stability(part_obj, p, holders):
 
     CASES this has to withstand:
       stands alone, far from tipping       ->  STANDS, the closest layer
-      stands alone, within the tipping
-        margin of the preferences          ->  CLOSE
+      stands alone, below the tipping
+        angle of the preferences           ->  CLOSE
       tips alone, no fins                  ->  TIPS, add fins
       tips alone, the fins hold it         ->  STANDS or CLOSE, the layer it would tip at
       tips before the lowest tine          ->  TIPS, the height of that tine
@@ -279,16 +299,15 @@ def stability(part_obj, p, holders):
       nothing on the bed                   ->  TIPS, None to show
     """
     centres = _analysis(part_obj, p)[CENTRES]
-    margin = limits.current().tipping_margin
+    least = limits.current().tipping_angle
     part = global_shape(part_obj)
     alone = standing.check(part, [], p.first_layer_height, p.layer_height, centres, p.brim_width)
     if alone is None:
         return TIPS, translate("FinSnap", NOTE_NOTHING_ON_BED), None
     if not alone.tips:
-        close = alone.margin < margin
+        close = alone.angle < least
         note = NOTE_STANDS_CLOSE if close else NOTE_STANDS
-        return ((CLOSE if close else STANDS), translate("FinSnap", note)
-                % (alone.margin, alone.layer + 1, alone.height), alone)
+        return (CLOSE if close else STANDS), translate("FinSnap", note) % _standing(alone), alone
     tipping = (alone.layer + 1, alone.height)
     supports, sides = holders()
     if not supports:
@@ -297,10 +316,9 @@ def stability(part_obj, p, holders):
     if held is None:
         return TIPS, translate("FinSnap", NOTE_NOTHING_ON_BED), None
     if not held.tips:
-        close = held.margin < margin
+        close = held.angle < least
         note = NOTE_HELD_CLOSE if close else NOTE_HELD
-        return ((CLOSE if close else STANDS), translate("FinSnap", note)
-                % (tipping + (held.margin, held.layer + 1, held.height)), held)
+        return (CLOSE if close else STANDS), translate("FinSnap", note) % (tipping + _standing(held)), held
     at = (held.layer + 1, held.height)
     # Over the bed, as the heights of the layers are.
     lowest = min(height for _, height in supports) - held.foot.z

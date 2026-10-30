@@ -163,7 +163,7 @@ STAND_ROWS = 6
 LEVEL_COLORS = {analysis.STANDS: handles.VALID_COLOR, analysis.CLOSE: handles.BETWEEN_COLOR,
                 analysis.TIPS: handles.INVALID_COLOR}
 LAYER_TIPS = QT_TRANSLATE_NOOP("FinSnap", "Tips at layer %d, %.1f mm high")
-LAYER_CLOSEST = QT_TRANSLATE_NOOP("FinSnap", "Smallest tipping margin at layer %d, %.1f mm high")
+LAYER_CLOSEST = QT_TRANSLATE_NOOP("FinSnap", "Smallest tipping angle at layer %d, %.1f mm high")
 # The one way a check in the tree is shown in the 3D view.
 CHECK_DISPLAY_MODE = "Check"
 # The part coloured by height in a stability check, this see-through.
@@ -349,22 +349,24 @@ def check_nodes(check_obj):
     nodes = []
     if check_obj.Footprint:
         bed = check_obj.Foot.z
-        profile = [(bed + height, margin) for height, margin in zip(check_obj.ProfileHeights,
-                                                                    check_obj.ProfileMargins)]
-
-        # Checks saved by an older version rated by the built-in margin.
-        close = check_obj.TippingMargin if "TippingMargin" in check_obj.PropertiesList else d.STABILITY_CLOSE
+        profile = [(bed + height, margin, angle) for height, margin, angle
+                   in zip(check_obj.ProfileHeights, check_obj.ProfileMargins, getattr(check_obj, "ProfileAngles", []))]
+        least = getattr(check_obj, "TippingAngle", d.TIPPING_ANGLE)
 
         def color_at(z):
-            return margin_color(_margin_at(profile, z), close)
+            return angle_color(_angle_at(profile, z), least)
 
         color = LEVEL_COLORS.get(check_obj.Level, handles.INVALID_COLOR)
-        nodes.append(handles.gradient(global_shape(check_obj.Part), color_at, [z for z, _ in profile],
-                                      GRADIENT_TRANSPARENCY))
+        # Checks saved before the tipping angle keep no angles: no colours by
+        # height until checked again.
+        if profile:
+            nodes.append(handles.gradient(global_shape(check_obj.Part), color_at, [z for z, _, _ in profile],
+                                          GRADIENT_TRANSPARENCY))
         if not check_obj.Cut.isNull():
             nodes.append(handles.layer_cut(check_obj.Cut, color))
         shown = stability.Stability(check_obj.Tips, check_obj.Layer, check_obj.Height, check_obj.Centre,
-                                    check_obj.Foot, check_obj.Margin, None, list(check_obj.Footprint), profile)
+                                    check_obj.Foot, check_obj.Margin, None, list(check_obj.Footprint),
+                                    getattr(check_obj, "Angle", 0.0), profile)
         label = translate("FinSnap", LAYER_TIPS if check_obj.Tips else LAYER_CLOSEST) % (check_obj.Layer + 1,
                                                                                         check_obj.Height)
         # Beside the layer cut out, where the plumb line passes it.
@@ -412,25 +414,25 @@ def _rated_cell(levels, shown, tip):
     return cell
 
 
-def _margin_at(profile, z):
-    """The margin at height `z`, between those of `profile`, (height, margin)
-    pairs from the bed up; that of the nearest end beyond them."""
+def _angle_at(profile, z):
+    """The tipping angle at height `z`, between those of `profile`, (height,
+    margin, angle) from the bed up; that of the nearest end beyond them."""
     if z <= profile[0][0]:
-        return profile[0][1]
-    for (low, below), (high, above) in zip(profile, profile[1:]):
+        return profile[0][2]
+    for (low, _, below), (high, _, above) in zip(profile, profile[1:]):
         if z <= high:
             share = (z - low) / (high - low) if high > low else 1.0
             return below + (above - below) * share
-    return profile[-1][1]
+    return profile[-1][2]
 
 
-def margin_color(margin, close):
-    """The colour of a layer whose plumb line lies `margin` mm inside its
-    footprint: green from `close`, the tipping margin, on, blended over to
-    yellow at 0, red below, where it tips. A margin of 0 leaves no yellow."""
-    if margin < 0:
+def angle_color(angle, least):
+    """The colour of a layer with the tipping angle `angle` (degrees): green
+    from `least`, the tipping angle of the limits, on, blended over to yellow
+    at 0, red below, where it tips. A limit of 0 leaves no yellow."""
+    if angle < 0:
         return handles.INVALID_COLOR
-    share = min(1.0, margin / close) if close > 0 else 1.0
+    share = min(1.0, angle / least) if least > 0 else 1.0
     return tuple(at_risk + (stands - at_risk) * share
                  for at_risk, stands in zip(handles.BETWEEN_COLOR, handles.VALID_COLOR))
 
