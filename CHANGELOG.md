@@ -11,6 +11,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Fins under part of a curved side, such as the half round end of a slot or a convex fillet, wherever its lowest line lies on it: one fin under that line, which stays there, its place along the face neither typed nor dragged; a counter fin goes under such a side too, or under a flat face when the main fin stands under one; a curved side that does not reach round to its lowest line, or curves inward, is refused, saying why
+
 ## [0.10.0] - 2026-10-30
 
 ### Added

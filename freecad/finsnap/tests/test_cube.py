@@ -14,7 +14,7 @@ import sys
 import Part
 
 from freecad.finsnap.tests.support import (HALF_TURN, RECESS_RADIUS, expect, grooved, lower_left_face, run,
-                                           split_cylinder, tilted_cube)
+                                           slot_on_end, split_cylinder, tilted_cube)
 from freecad.finsnap import analysis
 from freecad.finsnap import defaults as d
 from freecad.finsnap.bridge import bridges as find_bridges
@@ -1269,6 +1269,7 @@ def check_round_side():
     expect(orient.is_round_side(rod.Faces[round_side_of(rod)])
            and not any(orient.is_round_side(f) for f in filleted.Faces),
            "the side of a cylinder is a round side, a fillet is not")
+    expect(any(orient.is_curved_side(f) for f in filleted.Faces), "a fillet is a curved side")
 
     for name, shape in (("cylinder", rod), ("tube", tube), ("cylinder on its side", lying),
                         ("mirrored cylinder", mirrored)):
@@ -1410,6 +1411,47 @@ def check_round_side():
     expect(abs(shown - ROUND_TURN) < d.TOLERANCE and abs(shifted.radius - ROD_RADIUS) < d.TOLERANCE
            and shifted.fins.BoundBox.isInside(whole.fins.BoundBox.Center),
            "the fin stays under the lowest line, its place on the face shows the turn")
+
+
+def check_part_of_side():
+    """The half round end of a slot takes one fin under its lowest line, and a
+    counter fin goes under it or under the end face leaning the other way."""
+    p = FinParams(placement=d.PLACEMENT_CENTER)
+    slot = slot_on_end()
+    halves = [i for i, f in enumerate(slot.Faces) if orient.is_curved_side(f)]
+    expect(len(halves) == 2 and not any(orient.is_round_side(slot.Faces[i]) for i in halves),
+           "a slot has two half round ends, neither a whole round side")
+    taking, refused = [], []
+    for number in halves:
+        try:
+            geometry.frame_of(slot, slot.Faces[number])
+        except geometry.FinError as error:
+            refused.append(str(error))
+        else:
+            taking.append(number)
+    expect(len(taking) == 1 and len(refused) == 1 and "lowest line" in refused[0],
+           "the lower half round end takes fins, the upper one does not reach round to its lowest line: %s"
+           % refused)
+    half = taking[0]
+    frame = geometry.frame_of(slot, slot.Faces[half])
+    result = geometry.build(slot, slot.Faces[half], FinParams(placement=d.PLACEMENT_ENDS))
+    expect(frame.round_side and not frame.whole_side and len(result.positions) == 1 and len(result.tines) > 1
+           and max(t.distToShape(slot)[0] for t in result.tines) < d.TOLERANCE
+           and result.fins.common(slot).Volume < d.TOLERANCE,
+           "the half round end takes one fin, whatever the placement, every tine ends on it, none in it")
+    expect(not any("rim" in w for w in result.warnings), "a slot does not stand on a rim: no note on one")
+    shifted = geometry.build(slot, slot.Faces[half], p, shifts={1: ROUND_TURN})
+    expect(shifted.fins.BoundBox.isInside(result.fins.BoundBox.Center)
+           and abs(shifted.starts[1] - result.starts[1]) < d.TOLERANCE,
+           "the fin under a half round end stays under its lowest line, a shift by hand moves it nowhere")
+
+    end = geometry.opposite_faces(slot, slot.Faces[half])
+    expect(end and end[0].findPlane() is not None, "the end face leans the other way from the half round end")
+    end_number = [i for i, f in enumerate(slot.Faces) if f.isSame(end[0])][0]
+    geometry.build(slot, end[0], p)
+    counter = geometry.opposite_faces(slot, slot.Faces[end_number])
+    expect(any(f.isSame(slot.Faces[half]) for f in counter),
+           "under the end face, the half round end is offered for the counter fin")
 
 
 def check_left_out(cube, face):
@@ -1728,6 +1770,7 @@ def main():
     check_printable_plans()
     check_stability()
     check_round_side()
+    check_part_of_side()
     check_split_side()
     check_left_out(cube, face)
     check_moved_fins(cube, face)

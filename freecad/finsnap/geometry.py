@@ -22,7 +22,10 @@ The fin occupies s >= s_flank(z); the part lies at smaller s.
 
 ROUND SIDE: a cylinder or tube standing on its rim leans its curved side over
 the bed. Its lowest line is straight, and the plane touching the side along it
-stands in for the face: one fin stands in the middle under that line. Across a
+stands in for the face: one fin stands in the middle under that line. A part
+of a side, the round end of a slot or a fillet, takes its fin the same way
+where its lowest line lies on it; that fin stays where it is, as turning the
+part about the axis would carry its lowest line off the face. Across a
 tine the side falls away behind the plane by a few thousandths of a millimetre,
 so a tine ends on it wherever the side lies within ROUND_SIDE_MAX_DROP of the
 plane.
@@ -30,7 +33,7 @@ plane.
 INPUTS this has to withstand (orient.is_round_side()):
   curved side of a cylinder or tube     ->  True
   inner side of a tube                  ->  True; frame_of() refuses it
-  fillet, part of a cylinder            ->  False
+  fillet, part of a cylinder            ->  False; orient.is_curved_side() True
   cone, planar face                     ->  False
 
 INPUTS this has to withstand (frame_of() on a round side):
@@ -43,6 +46,11 @@ INPUTS this has to withstand (frame_of() on a round side):
   lowest line cut away or through a
     hole, cylinder cut at a slant       ->  the frame reaches as far as the line runs
                                             on the side; tines over a hole left out
+  part of a side (half round end of a
+    slot, fillet), lowest line on it    ->  frame as on a whole side, not whole_side
+  part of a side, lowest line off it    ->  FinError: it does not reach round to it
+  part of a side curving inward (an
+    inner fillet)                       ->  FinError: it curves inward
 
 INPUTS this has to withstand (build()):
   inclined planar face, part standing on the bed  ->  FinResult
@@ -104,6 +112,8 @@ INPUTS this has to withstand (build()):
   round side                            ->  one fin under its lowest line, whatever
                                             the placement; a note to give the rim
                                             more hold on the bed
+  part of a side                        ->  one fin under its lowest line, whatever
+                                            the placement and shift; no note on a rim
 """
 
 import itertools
@@ -141,6 +151,10 @@ HORIZONTAL_FACE = QT_TRANSLATE_NOOP("FinSnap", "the selected face is horizontal;
 HORIZONTAL_ROUND_SIDE = QT_TRANSLATE_NOOP("FinSnap", "the round side lies horizontal at its lowest line; it rests on "
                                                      "the bed or needs regular support")
 NO_STAND_FOR_FACE = QT_TRANSLATE_NOOP("FinSnap", "the part cannot stand so that this face takes fins")
+# Said where a part of a curved side, a fillet or the round end of a slot,
+# does not reach round to the line it lies lowest along, under which its fin stands.
+PART_OF_SIDE_OFF_LOWEST = QT_TRANSLATE_NOOP("FinSnap", "the selected curved face does not reach round to its "
+                                                       "lowest line, under which its fin would stand")
 
 
 class FinError(ValueError):
@@ -169,6 +183,9 @@ class Frame:
     # The radius of the face when it is the curved side of a cylinder, its
     # plane the one touching its lowest line; 0 for a planar face.
     radius: float = 0.0
+    # Whether that curved side goes all the way round, so the part stands on
+    # one point of its rim and turns about its axis to move the fin.
+    whole_side: bool = False
 
     @property
     def round_side(self):
@@ -388,9 +405,11 @@ def _round_frame(part, face):
         raise FinError(translate("FinSnap", "the selected face curves inward; fins go under the outside of a "
                                             "cylinder or tube"))
     _, _, v0, v1 = face.ParameterRange
+    whole = orient.is_round_side(face)
     line = Part.LineSegment(surface.value(u, v0), surface.value(u, v1)).toShape().common(face)
     if not line.Edges:
-        raise FinError(translate("FinSnap", "the lowest line of the selected face is cut away"))
+        raise FinError(translate("FinSnap", "the lowest line of the selected face is cut away") if whole
+                       else translate("FinSnap", PART_OF_SIDE_OFF_LOWEST))
 
     out = V(n.x, n.y, 0).normalize()
     along = UP.cross(out)
@@ -400,7 +419,7 @@ def _round_frame(part, face):
     line_box = bounds(line)
     return Frame(out=out, along=along, n_out=n.dot(out), n_z=n.z, c=n.dot(lowest), bed_z=bounds(part).ZMin,
                  along_min=middle - half_width, along_max=middle + half_width, face_top_z=line_box.ZMax,
-                 face_bottom_z=line_box.ZMin, radius=surface.Radius)
+                 face_bottom_z=line_box.ZMin, radius=surface.Radius, whole_side=whole)
 
 
 def turn_of(face, mm):
@@ -457,7 +476,7 @@ def round_angle(degrees, tolerance=d.TOLERANCE):
 def frame_of(part, face, support=None):
     """The frame of `face`; its extent along and up is that of `support`, the
     face with the faces in its plane, if given."""
-    if orient.is_round_side(face):
+    if orient.is_curved_side(face):
         return _round_frame(part, face)
     if face.findPlane() is None:
         raise FinError(translate("FinSnap", "the selected face is not planar"))
@@ -1043,6 +1062,9 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
         # part was turned (turn_of()); measured from the middle, the place on
         # the face is that shift.
         face_start = (low + high) / 2
+    if frame.round_side and not frame.whole_side:
+        # A part of a side has no turn to show: its fin stands where it stands.
+        shifts = {}
 
     def refused(message, kind=FinError):
         """A FinError, or `kind`, that says how many fins the face is planned
@@ -1223,7 +1245,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         warnings.append(translate("FinSnap", "tines are %.2f mm long, shorter than %.2f bead widths; the slicer "
                                   "may not print them to the face") % (tine_length, d.TINE_MIN_LENGTH_BEADS))
         targets.append(WarningTarget([fin.number for fin in plan.fins], [], False))
-    if frame.round_side:
+    if frame.whole_side:
         warnings.append(translate("FinSnap", "the part stands on one point of its rim: a chamfer on the rim and "
                                   "a brim in the slicer give it more hold on the bed"))
         targets.append(WarningTarget([], [], False))
@@ -1253,8 +1275,10 @@ def opposite_faces(part, face):
     """The faces of `part` that lean the other way, for a counter fin, the
     largest first: the side the part could tip towards. Whether a counter fin
     can be built under one is the caller's to try, on the face as it names
-    it. The side of a cylinder or tube is passed over: its fin stays under its
-    lowest line and moves only by turning the part, which the main fin does.
+    it. The whole side of a cylinder or tube is passed over: its fin stays
+    under its lowest line and moves only by turning the part, which the main
+    fin does. A part of a side, the round end of a slot, counts: its fin stays
+    where it stands.
     """
     out = frame_of(part, face).out
     leaning = []
@@ -1271,7 +1295,7 @@ def opposite_faces(part, face):
 
 
 def best_face(shape, p, tried=()):
-    """Number (from 0) of the face of `shape` that takes fins best: of the planar
+    """Number (from 0) of the face of `shape` that takes fins best: of the
     faces leaning over the bed, the largest one the fins can be built under.
     Faces numbered in `tried` were tried before and are passed over.
 
@@ -1285,7 +1309,7 @@ def best_face(shape, p, tried=()):
 
 
 def faces_taking_fins(shape, p, tried=()):
-    """The numbers (from 0) of the planar faces of `shape` leaning over the bed
+    """The numbers (from 0) of the faces of `shape` leaning over the bed
     that the fins can be built under, the largest first, passing over those
     numbered in `tried`. Each is built to see that the fins fit, one at a
     time: best_face() takes the first and builds no further, Quick fins takes

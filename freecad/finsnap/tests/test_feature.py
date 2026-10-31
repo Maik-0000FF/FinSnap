@@ -17,7 +17,8 @@ import zipfile
 
 import FreeCAD as App
 import Part
-from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left_face, run, split_cylinder, tilted_cube
+from freecad.finsnap.tests.support import (STANDARD_THICKNESS, expect, lower_left_face, run, slot_on_end,
+                                           split_cylinder, tilted_cube)
 from freecad.finsnap import defaults as d
 from freecad.finsnap import analysis, check, export_3mf, export_step, feature, geometry, orient, overhang, stability
 from freecad.finsnap import limits, presets
@@ -524,6 +525,28 @@ def counter_beside_bore(doc):
            "the counter fin over the bore of a tube moves beside it: %s" % list(fins.Warnings))
     doc.removeObject(fins.Name)
     doc.removeObject(tube.Name)
+    doc.recompute()
+
+
+def counter_under_slot_end(doc):
+    """A slot standing on the edge of its end face: fins under the end face
+    find their counter fin under the half round end leaning the other way, and
+    fins under the half round end find theirs under the end face."""
+    slot = doc.addObject("Part::Feature", "Slot")
+    slot.Shape = slot_on_end()
+    half = next(i for i, f in enumerate(slot.Shape.Faces, 1) if orient.is_curved_side(f)
+                and f.normalAt(*f.Surface.parameter(f.CenterOfMass)).z < 0)
+    end = face_name(slot.Shape, geometry.opposite_faces(slot.Shape, slot.Shape.Faces[half - 1])[0])
+    for main, other in ((end, "Face%d" % half), ("Face%d" % half, end)):
+        fins = feature.create(slot, main)
+        doc.recompute()
+        named = feature.add_counter(fins)
+        doc.recompute()
+        expect(named == other and fins.isValid() and len(fins.Shape.Solids) == 2
+               and not any("rim" in w for w in fins.Warnings),
+               "fins under %s of a slot take their counter fin under %s: %s" % (main, named, list(fins.Warnings)))
+        doc.removeObject(fins.Name)
+    doc.removeObject(slot.Name)
     doc.recompute()
 
 
@@ -1143,6 +1166,7 @@ def main():
     counter_bridges_bore(doc)
     counter_beside_bore(doc)
     counter_on_thin_tube(doc)
+    counter_under_slot_end(doc)
     tapered_pad(doc)
     warnings_and_old_files(doc)
     kept_islands(doc)
