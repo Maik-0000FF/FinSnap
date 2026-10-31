@@ -154,10 +154,10 @@ HORIZONTAL_FACE = QT_TRANSLATE_NOOP("FinSnap", "the selected face is horizontal;
 HORIZONTAL_ROUND_SIDE = QT_TRANSLATE_NOOP("FinSnap", "the round side lies horizontal at its lowest line; it rests on "
                                                      "the bed or needs regular support")
 NO_STAND_FOR_FACE = QT_TRANSLATE_NOOP("FinSnap", "the part cannot stand so that this face takes fins")
-# Said where a part of a curved side, a fillet or the round end of a slot,
-# does not reach round to the line it lies lowest along, under which its fin stands.
 # Said where the face is narrower than a fin, or its tine, at every tine height.
 NARROW_AT_EVERY_TINE = QT_TRANSLATE_NOOP("FinSnap", "the face is narrower than the %.2f mm a fin needs at every tine")
+# Said where a part of a curved side, a fillet or the round end of a slot,
+# does not reach round to the line it lies lowest along, under which its fin stands.
 PART_OF_SIDE_OFF_LOWEST = QT_TRANSLATE_NOOP("FinSnap", "the selected curved face does not reach round to its "
                                                        "lowest line, under which its fin would stand")
 
@@ -1066,9 +1066,8 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
         thickness = thickness_for(p, height)
     # Fins left out are named by their distance from this end of the face.
     face_start = frame.along_min
-    # A fin moved by hand past the stretch every tine of the face shares
-    # keeps the tines of its own grid where the face is wide enough under it;
-    # those are measured on the whole face, not on that stretch.
+    # The face as a whole, before it is narrowed to the stretch every tine
+    # shares: tines_at() measures a fin moved by hand on it.
     whole_face = frame
     frame = replace(frame, along_min=low, along_max=high)
     positions = positions_for(p, frame, thickness)
@@ -1109,18 +1108,34 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
 
     def tines_at(t, own):
         """The heights the tines of a fin starting at t are planned at, those
-        of them below a height of its own, and those of its own grid left out
-        where the face is narrower than the fin (wide_enough())."""
+        of them below a height of its own, and those of its grid left out
+        where the face is narrower than the fin (wide_enough()).
+
+        INPUTS this has to withstand:
+          fin within the stretch every tine
+            of the face shares               ->  every tine of its grid planned
+          fin moved by hand past that stretch,
+            restart on or off                ->  the tines where the face is wide
+                                                 enough under it, the others narrow
+          fin past the end of the face       ->  none planned, every one narrow
+                                                 (restart off) or no grid (on)
+          round side                         ->  every tine planned: only the tine
+                                                 rests on it, on a stretch narrower
+                                                 than the fin
+        """
         own_z = None
         if restart:
             own_z = restarted_tines(p, frame, support, t, thickness,
                                     p.fin_height if p.fin_height > 0 else room, count)
-        if own_z is None:
-            planned_z, narrow = tine_z, []
+        grid = tine_z if own_z is None else own_z
+        if frame.round_side:
+            planned_z, narrow = grid, []
         else:
-            wide = [wide_enough(_extent_at(support, whole_face, z, p, slices), p, t, thickness) for z in own_z]
-            planned_z = [z for z, fits in zip(own_z, wide) if fits]
-            narrow = [z for z, fits in zip(own_z, wide) if not fits]
+            # Measured on the whole face: a fin moved past the stretch every
+            # tine of the face shares keeps the tines where it is wide enough.
+            wide = [wide_enough(_extent_at(support, whole_face, z, p, slices), p, t, thickness) for z in grid]
+            planned_z = [z for z, fits in zip(grid, wide) if fits]
+            narrow = [z for z, fits in zip(grid, wide) if not fits]
         return planned_z, [z for z in planned_z if own is None or z + p.tine_height <= own + d.TOLERANCE], narrow
 
     def rests_at(t, own):

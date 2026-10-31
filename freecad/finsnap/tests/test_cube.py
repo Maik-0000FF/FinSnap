@@ -1457,18 +1457,21 @@ def check_part_of_side():
     # The end face narrows to its round ends at the bottom and the top: moved
     # past the stretch its narrowest tine allows, the fin keeps the tines where
     # the face is wide enough under it.
-    planned = geometry.build(slot, end[0], p)
-    aside = geometry.build(slot, end[0], p, shifts={1: SLOT_ASIDE})
-    expect(p.tine_restart and SLOT_ASIDE > planned.frame.along_max
-           and 0 < len(aside.tines) < len(planned.tines) and any("narrower" in w for w in aside.warnings),
-           "a fin moved %.0f mm along the end face of a slot keeps its tines where the face is wide enough: %s"
-           % (SLOT_ASIDE, aside.warnings))
-    try:
-        geometry.build(slot, end[0], p, shifts={1: SLOT_PAST_SIDE})
-    except geometry.FinError as error:
-        expect("narrower" in str(error), "a fin moved past the side of the end face is too narrow there: %s" % error)
-    else:
-        raise AssertionError("a fin moved past the side of the end face of a slot was built")
+    for restart in (True, False):
+        q = FinParams(placement=d.PLACEMENT_CENTER, tine_restart=restart)
+        planned = geometry.build(slot, end[0], q)
+        aside = geometry.build(slot, end[0], q, shifts={1: SLOT_ASIDE})
+        expect(SLOT_ASIDE > planned.frame.along_max
+               and 0 < len(aside.tines) < len(planned.tines) and any("narrower" in w for w in aside.warnings),
+               "restart %s: a fin moved %.0f mm along the end face of a slot keeps its tines where the face is "
+               "wide enough: %s" % (restart, SLOT_ASIDE, aside.warnings))
+        try:
+            geometry.build(slot, end[0], q, shifts={1: SLOT_PAST_SIDE})
+        except geometry.FinError as error:
+            expect("narrower" in str(error),
+                   "restart %s: a fin moved past the side of the end face is too narrow there: %s" % (restart, error))
+        else:
+            raise AssertionError("restart %s: a fin moved past the side of the end face of a slot was built" % restart)
 
 
 def check_left_out(cube, face):

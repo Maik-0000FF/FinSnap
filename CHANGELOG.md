@@ -18,7 +18,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Fixed
 
-- With Restart tines after an interruption on, a fin moved by hand towards the end of a face that narrows at its bottom or top, such as the end face of a slot, keeps its tines where the face is wide enough under it, only the narrow ones left out with a warning; it was refused as if a hole lay under every tine, once it left the stretch the narrowest tine of the face allows
+- A fin moved by hand towards the end of a face that narrows at its bottom or top, such as the end face of a slot, keeps its tines where the face is wide enough under it, only the narrow ones left out with a warning; it was refused as if a hole lay under every tine, once it left the stretch the narrowest tine of the face allows
 - A fin moved by hand where the face is narrower than it at every tine is refused saying so, no longer naming a recess or hole under every tine
 
 ## [0.10.0] - 2026-10-30
