@@ -53,6 +53,9 @@ DEGREE_SUFFIX = " \N{DEGREE SIGN}"
 PREVIEW_DELAY_MS = 400
 # The keys that end typing in a field.
 ENTER_KEYS = (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter)
+# Pause after the last repeat of an arrow key held before the fin is built
+# for all of them at once: repeats come faster than the fins are built.
+KEY_REPEAT_PAUSE_MS = 150
 # Keys that move the fin with the arrows while the 3D view has the focus: left
 # and right along the face as it runs on the screen, by one step of its field;
 # with Shift, up and down to the next tine that finds the face.
@@ -703,7 +706,7 @@ class FinSnapTaskPanel:
         self.key_steps = {}
         self.key_timer = QtCore.QTimer(self.form)
         self.key_timer.setSingleShot(True)
-        self.key_timer.setInterval(DRAG_PREVIEW_MS)
+        self.key_timer.setInterval(KEY_REPEAT_PAUSE_MS)
         self.key_timer.timeout.connect(self.take_keys)
         self.ends_timer = QtCore.QTimer(self.form)
         self.ends_timer.setSingleShot(True)
@@ -1426,7 +1429,9 @@ class FinSnapTaskPanel:
           a key pressed                         ->  built at once, with any repeats
                                                     still counted before it
           a key held                            ->  repeats counted, built once after
-                                                    they pause for DRAG_PREVIEW_MS
+                                                    they pause for KEY_REPEAT_PAUSE_MS
+          steps past where the fin can stand,
+            a corner, a neighbour, the top      ->  as far as it can, as an arrow let go
           held right, then left                 ->  the steps add up, both ways
           no fin with the arrows, an arrow
             held, or along a fixed fin          ->  False: the key goes on
@@ -1454,18 +1459,25 @@ class FinSnapTaskPanel:
     def key_along(self, count):
         """Move the fin with the arrows `count` steps of its field along the
         face, to the right on the screen where `count` is positive, as
-        set_fin() does. Under a round side a step is a degree the part turns."""
+        set_fin() does; where it cannot stand there, as far as it can, as an
+        arrow let go (finish_drag()). Under a round side a step is a degree
+        the part turns."""
         result = self.handled_result()[0]
         step = self.fin_fields[handles.ALONG].singleStep()
         mm = abs(geometry.turn_mm(feature.round_side(self.obj), step)) if self.turns_part() else step
-        sense = self.along_on_screen(result.along)
-        self.set_fin(handles.ALONG, self.built_value(handles.ALONG) + sense * count * mm)
+        last = self.built_value(handles.ALONG)
+        target = last + self.along_on_screen(result.along) * count * mm
+        if not self.set_fin(handles.ALONG, target) and self.handled_result() is not None:
+            limit = self.nearest_standing(handles.ALONG, last, target)
+            if abs(limit - last) >= d.TOLERANCE:
+                self.set_fin(handles.ALONG, limit)
 
     def key_height(self, count):
         """Give the fin with the arrows the height of the `count`-th tine above
         it that finds the face, below it where `count` is negative, as
         set_fin() does; with fewer tines that way, the last of them, and none
-        leaves it as it is."""
+        leaves it as it is. Where it cannot stand at that tine, the nearest
+        tine on the way it can, as an arrow let go (finish_drag())."""
         result, number = self.handled_result()[0], self.handled[1]
         current = result.heights[number]
         tine = feature.params_of(self.obj).tine_height
@@ -1473,8 +1485,13 @@ class FinSnapTaskPanel:
         tops = (z + tine for z in result.touching_z[number])
         further = sorted((top for top in tops if sense * (top - current) > FIELD_TOLERANCE),
                          key=lambda top: abs(top - current))
-        if further:
-            self.set_fin(handles.UP, further[min(abs(count), len(further)) - 1])
+        if not further:
+            return
+        target = further[min(abs(count), len(further)) - 1]
+        if not self.set_fin(handles.UP, target) and self.handled_result() is not None:
+            limit = self.standing_step(current, target)
+            if abs(limit - current) >= d.TOLERANCE:
+                self.set_fin(handles.UP, limit)
 
     def along_on_screen(self, along):
         """1 where `along`, the direction along the face, points to the right

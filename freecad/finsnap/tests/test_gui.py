@@ -1026,6 +1026,17 @@ def check_arrow_keys(panel, fins):
     press(QtCore.Qt.Key_Left)
     expect(abs(panel.built_value(handles.ALONG) - shift) < d.TOLERANCE and not panel.key_timer.isActive(),
            "a key pressed after repeats builds them with it at once")
+    # Steps held past the left corner of the face end at the corner.
+    for _ in range(2 * HELD_REPEATS):
+        press(QtCore.Qt.Key_Left, repeated=True)
+    panel.take_keys()
+    cornered = panel.built_value(handles.ALONG)
+    expect(cornered < shift and not panel.can_stand(handles.ALONG, cornered - taskpanel.SNAP_RESOLUTION),
+           "steps held past the corner of the face end at the corner, as an arrow let go there: %.3f mm" % cornered)
+    fin_shift = feature.edits(fins, feature.MAIN)[1].get(1)
+    panel.set_fin(handles.ALONG, shift)
+    expect(fin_shift is not None and abs(panel.built_value(handles.ALONG) - shift) < d.TOLERANCE,
+           "typed back, the fin stands where it started")
 
     tine = feature.params_of(fins).tine_height
     tops = sorted(z + tine for z in result().touching_z[1])
