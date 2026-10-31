@@ -171,6 +171,12 @@ def is_round_side(face):
     return u1 - u0 >= FULL_TURN - d.TOLERANCE
 
 
+def is_curved_side(face):
+    """Whether `face` curves round an axis as the side of a cylinder does: the
+    whole side, or a part of one, as the round end of a slot or a fillet."""
+    return isinstance(face.Surface, Part.Cylinder)
+
+
 def joined(shape):
     """A copy of `shape` with the faces split along one surface, and the
     edges split along one curve, joined again: a side or a rim that a STEP

@@ -683,20 +683,21 @@ class Handles:
             for end, switch in halves.items():
                 switch.whichChild.setValue(coin.SO_SWITCH_ALL if end in ends else coin.SO_SWITCH_NONE)
 
-    def show(self, edge, along, out, turn=None):
+    def show(self, edge, along, out, turn=None, fixed=False):
         """Put the arrows at `edge`, the middle of the upright outer edge of a
         fin, a little off it in the direction `out`, away from the part;
         `along` is the direction along the face. With `turn`, a point on the
         axis of a round side, its direction and how far the fin moves along
         the face (mm) as the part turns one degree about it, the arrow along
-        the face is an arc round that axis through `edge`."""
+        the face is an arc round that axis through `edge`. A `fixed` fin, under
+        a part of a curved side, has no arrow along the face."""
         self._clear(self.preview)
         # The arrow along the face takes the colour of the axis it is nearest to.
         axis = "x" if abs(along.x) >= abs(along.y) else "y"
         if axis != self.along_axis:
             self._look(ALONG, TRANSLATE_PARTS[0], axis_color(axis))
             self.along_axis = axis
-        self.shown[ALONG].whichChild.setValue(coin.SO_SWITCH_NONE if turn else coin.SO_SWITCH_ALL)
+        self.shown[ALONG].whichChild.setValue(coin.SO_SWITCH_NONE if turn or fixed else coin.SO_SWITCH_ALL)
         self.shown[UP].whichChild.setValue(coin.SO_SWITCH_ALL)
         self.shown[TURNING].whichChild.setValue(coin.SO_SWITCH_ALL if turn else coin.SO_SWITCH_NONE)
         if turn:
