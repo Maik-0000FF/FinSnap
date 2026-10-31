@@ -14,6 +14,7 @@ All notable changes to FinSnap are listed here. The format follows
 ### Added
 
 - Fins under part of a curved side, such as the half round end of a slot or a convex fillet, wherever its lowest line lies on it: one fin under that line, which stays there, its place along the face neither typed nor dragged; a counter fin goes under such a side too, or under a flat face when the main fin stands under one; a curved side that does not reach round to its lowest line, or curves inward, is refused, saying why
+- In the 3D view, the left and right arrow keys move the fin with the arrows along the face, one step of its field, the way the face runs on the screen (to the right seen from outside the face where it runs into the screen), a key held in one move once its repeats pause; Shift with the up or down arrow key steps its height to the next tine that finds the face (#79)
 - Quick fins offers part of a curved side as well where the fins go under the largest leaning face, so a large half round end can come before a smaller flat face
 
 ### Fixed
