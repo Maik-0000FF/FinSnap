@@ -11,11 +11,17 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-31
+
 ### Added
 
 - Fins under part of a curved side, such as the half round end of a slot or a convex fillet, wherever its lowest line lies on it: one fin under that line, which stays there, its place along the face neither typed nor dragged; a counter fin goes under such a side too, or under a flat face when the main fin stands under one; a curved side that does not reach round to its lowest line, or curves inward, is refused, saying why
-- In the 3D view, the left and right arrow keys move the fin with the arrows along the face, one step of its field, the way the face runs on the screen (to the right seen from outside the face where it runs into the screen), a key held in one move once its repeats pause; Shift with the up or down arrow key steps its height to the next tine that finds the face (#79)
+- In the 3D view, the left and right arrow keys move the fin with the arrows along the face, one step of its field, the way the face runs on the screen (to the right seen from outside the face where it runs into the screen), a key held in one move once its repeats pause, and as far as the fin can stand where it would go past it; Shift with the up or down arrow key steps its height to the next tine that finds the face (#79)
 - Quick fins offers part of a curved side as well where the fins go under the largest leaning face, so a large half round end can come before a smaller flat face
+
+### Changed
+
+- The README notes that part and fins must reach the slicer as separate objects or parts, as Export 3MF and Export STEP write them: as one mesh, the slicer closes a tine clearance below about 0.1 mm across the layer
 
 ### Fixed
 
@@ -247,7 +253,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.11.0
 [0.10.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.10.0
 [0.9.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.9.0
 [0.8.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.8.0
