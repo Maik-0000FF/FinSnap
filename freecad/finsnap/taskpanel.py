@@ -58,6 +58,9 @@ ENTER_KEYS = (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter)
 # with Shift, up and down to the next tine that finds the face.
 ALONG_KEYS = {QtCore.Qt.Key_Left: -1, QtCore.Qt.Key_Right: 1}
 HEIGHT_KEYS = {QtCore.Qt.Key_Down: -1, QtCore.Qt.Key_Up: 1}
+# How far the direction along the face has to point sideways on the screen
+# (cosine to the screen's right) before left and right follow the screen.
+SIDEWAYS_LEAST = 0.25
 # Pause after the last move of a handle before the preview for it is built.
 DRAG_PREVIEW_MS = 150
 # Places of fins whose arrow ends are kept while the panel is open; beyond
@@ -80,22 +83,28 @@ SNAP_RESOLUTION = 0.1
 MIN_PREVIEW_HEIGHT = 0.1
 NOTE_CLICK_FIN = QT_TRANSLATE_NOOP("FinSnap", "Click a fin of these fins in the 3D view first.")
 # The fields of the fin with the arrows, as (label, tooltip, suffix, decimals,
-# lowest, highest, whether it wraps round): where it stands along the face, or
+# lowest, highest, whether it wraps round, the step of its arrows, its mouse
+# wheel and the arrow keys in the 3D view): where it stands along the face, or
 # round the side of a cylinder or tube, and how high it is.
+# One step of the place on the face (mm), of the angle round a cylinder or
+# tube (degrees) and of the height typed or wheeled (mm).
+PLACE_STEP = 1.0
+ANGLE_STEP = 1.0
+HEIGHT_STEP = 1.0
 FIN_FIELD_PLACE = (QT_TRANSLATE_NOOP("FinSnap", "Place on the face"),
                    QT_TRANSLATE_NOOP("FinSnap", "Distance of the middle of the fin from the left end of the face, "
                                      "seen from outside. Type a value to move the fin there."),
-                   LENGTH_SUFFIX, LENGTH_DECIMALS, -MAX_LENGTH, MAX_LENGTH, False)
+                   LENGTH_SUFFIX, LENGTH_DECIMALS, -MAX_LENGTH, MAX_LENGTH, False, PLACE_STEP)
 ANGLE_DECIMALS = 2
 FIN_FIELD_ANGLE = (QT_TRANSLATE_NOOP("FinSnap", "Angle on the part"),
                    QT_TRANSLATE_NOOP("FinSnap", "Position of the fin around the cylinder or tube, measured at the "
                                      "middle of its tines, in degrees from 0°, where it is first placed. Type a "
                                      "value to turn the part to it; the fin keeps its place."),
-                   DEGREE_SUFFIX, ANGLE_DECIMALS, 0.0, geometry.FULL_CIRCLE, True)
+                   DEGREE_SUFFIX, ANGLE_DECIMALS, 0.0, geometry.FULL_CIRCLE, True, ANGLE_STEP)
 FIN_FIELD_HEIGHT = (QT_TRANSLATE_NOOP("FinSnap", "Height"),
                     QT_TRANSLATE_NOOP("FinSnap", "Height of this fin alone. Type a value to set it; Reset fins "
                                       "gives it the height of the others again."),
-                    LENGTH_SUFFIX, LENGTH_DECIMALS, -MAX_LENGTH, MAX_LENGTH, False)
+                    LENGTH_SUFFIX, LENGTH_DECIMALS, -MAX_LENGTH, MAX_LENGTH, False, HEIGHT_STEP)
 # Half the last place the angle field shows: an angle closer than this is the one shown.
 ANGLE_TOLERANCE = 0.5 * 10 ** -ANGLE_DECIMALS
 SIDES = {feature.MAIN: QT_TRANSLATE_NOOP("FinSnap", "Main fin"),
@@ -520,13 +529,14 @@ class EnterTakes(QtCore.QObject):
 
 class FinKeys(QtCore.QObject):
     """Moves the fin with the arrows by the keys of ALONG_KEYS and, with Shift,
-    HEIGHT_KEYS, pressed in the 3D view: `along` and `height` are called with
-    1 or -1 and say whether they took the key. Any other key, or one they do
-    not take, goes on to the view, which turns or pans with it.
+    HEIGHT_KEYS, pressed in the 3D view: `pressed` is called with ALONG or UP,
+    1 or -1 and whether the key repeats as it is held, and says whether it
+    took the key. Any other key, or one it does not take, goes on to the
+    view, which turns or pans with it.
 
     INPUTS this has to withstand:
-      left or right, no modifier            ->  along(-1 or 1)
-      up or down with Shift                 ->  height(-1 or 1)
+      left or right, no modifier            ->  pressed(ALONG, -1 or 1, repeated)
+      up or down with Shift                 ->  pressed(UP, -1 or 1, repeated)
       up or down without Shift              ->  passed on: the view pans
       left or right with Shift or Ctrl      ->  passed on
       an arrow on the number pad            ->  as the arrow itself
@@ -534,9 +544,9 @@ class FinKeys(QtCore.QObject):
       a key released                        ->  passed on
     """
 
-    def __init__(self, along, height, parent):
+    def __init__(self, pressed, parent):
         super().__init__(parent)
-        self.along, self.height = along, height
+        self.pressed = pressed
 
     def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
         if event.type() != QtCore.QEvent.KeyPress:
@@ -544,9 +554,9 @@ class FinKeys(QtCore.QObject):
         modifiers = event.modifiers() & ~QtCore.Qt.KeypadModifier
         key = event.key()
         if modifiers == QtCore.Qt.NoModifier and key in ALONG_KEYS:
-            return self.along(ALONG_KEYS[key])
+            return self.pressed(handles.ALONG, ALONG_KEYS[key], event.isAutoRepeat())
         if modifiers == QtCore.Qt.ShiftModifier and key in HEIGHT_KEYS:
-            return self.height(HEIGHT_KEYS[key])
+            return self.pressed(handles.UP, HEIGHT_KEYS[key], event.isAutoRepeat())
         return False
 
 
@@ -689,6 +699,12 @@ class FinSnapTaskPanel:
         self.drag_timer.setSingleShot(True)
         self.drag_timer.setInterval(DRAG_PREVIEW_MS)
         self.drag_timer.timeout.connect(self.drag_step)
+        # Steps of the arrow keys held, by ALONG or UP, built once their repeats pause.
+        self.key_steps = {}
+        self.key_timer = QtCore.QTimer(self.form)
+        self.key_timer.setSingleShot(True)
+        self.key_timer.setInterval(DRAG_PREVIEW_MS)
+        self.key_timer.timeout.connect(self.take_keys)
         self.ends_timer = QtCore.QTimer(self.form)
         self.ends_timer.setSingleShot(True)
         self.ends_timer.setInterval(ENDS_DELAY_MS)
@@ -723,7 +739,7 @@ class FinSnapTaskPanel:
         self.key_widgets = []
         view = self.handles.view.graphicsView() if hasattr(self.handles.view, "graphicsView") else None
         if view is not None:
-            self.fin_keys = FinKeys(self.key_along, self.key_height, view)
+            self.fin_keys = FinKeys(self.key_pressed, view)
             self.key_widgets = [view, view.viewport()]
             for widget in self.key_widgets:
                 widget.installEventFilter(self.fin_keys)
@@ -947,9 +963,10 @@ class FinSnapTaskPanel:
     def set_field(self, kind, spec):
         """Make the field of the handled fin for `kind` the one `spec` describes,
         FIN_FIELD_PLACE, FIN_FIELD_ANGLE or FIN_FIELD_HEIGHT."""
-        text, tip, suffix, decimals, lowest, highest, wraps = spec
+        text, tip, suffix, decimals, lowest, highest, wraps, step = spec
         box, label = self.fin_fields[kind], self.fin_field_labels[kind]
         self.filling_fields = True
+        box.setSingleStep(step)
         box.setDecimals(decimals)
         box.setSuffix(suffix)
         box.setRange(lowest, highest)
@@ -1397,48 +1414,84 @@ class FinSnapTaskPanel:
         self.refuse(error)
         return False
 
-    def key_along(self, sense):
-        """Move the fin with the arrows one step of its field along the face,
-        to the right on the screen for `sense` 1, to the left for -1, as
-        set_fin() does; False where there is nothing to move, so the key goes
-        on to the view. Under a round side the step is a degree the part turns."""
-        box = self.fin_fields[handles.ALONG]
-        if self.handled_result() is None or not box.isEnabled() or self.handles.held:
+    def key_pressed(self, kind, sense, repeated):
+        """An arrow key for the fin with the arrows, from FinKeys: one step of
+        `kind` (ALONG or UP) the way `sense` (1 or -1) says. A key pressed
+        moves the fin at once; a key held repeats faster than the fins are
+        built, so its repeats are counted and built as one move once they
+        pause. False where the fin cannot move that way, so the key goes on
+        to the view.
+
+        INPUTS this has to withstand:
+          a key pressed                         ->  built at once, with any repeats
+                                                    still counted before it
+          a key held                            ->  repeats counted, built once after
+                                                    they pause for DRAG_PREVIEW_MS
+          held right, then left                 ->  the steps add up, both ways
+          no fin with the arrows, an arrow
+            held, or along a fixed fin          ->  False: the key goes on
+        """
+        if (self.handled_result() is None or self.handles.held
+                or (kind == handles.ALONG and not self.fin_fields[kind].isEnabled())):
             return False
-        self.take_typed()
-        found = self.handled_result()
-        if found is None:
-            return True
-        step = box.singleStep()
-        mm = abs(geometry.turn_mm(feature.round_side(self.obj), step)) if self.turns_part() else step
-        sense *= self.along_on_screen(found[0].along)
-        self.set_fin(handles.ALONG, self.built_value(handles.ALONG) + sense * mm)
+        self.key_steps[kind] = self.key_steps.get(kind, 0) + sense
+        if repeated:
+            self.key_timer.start()
+        else:
+            self.take_keys()
         return True
 
-    def key_height(self, sense):
-        """Give the fin with the arrows the height of the next tine above it
-        that finds the face, for `sense` 1, or below it, for -1, as set_fin()
-        does; none further that way leaves it as it is. False where there is
-        no fin with the arrows, so the key goes on to the view."""
-        if self.handled_result() is None or self.handles.held:
-            return False
+    def take_keys(self):
+        """Move the fin with the arrows by the steps of the keys counted since
+        it was last built, one build for each kind of step."""
+        self.key_timer.stop()
+        steps, self.key_steps = self.key_steps, {}
         self.take_typed()
-        found = self.handled_result()
-        if found is None:
-            return True
-        result, number = found[0], self.handled[1]
+        for kind, count in steps.items():
+            if count and self.handled_result() is not None:
+                (self.key_along if kind == handles.ALONG else self.key_height)(count)
+
+    def key_along(self, count):
+        """Move the fin with the arrows `count` steps of its field along the
+        face, to the right on the screen where `count` is positive, as
+        set_fin() does. Under a round side a step is a degree the part turns."""
+        result = self.handled_result()[0]
+        step = self.fin_fields[handles.ALONG].singleStep()
+        mm = abs(geometry.turn_mm(feature.round_side(self.obj), step)) if self.turns_part() else step
+        sense = self.along_on_screen(result.along)
+        self.set_fin(handles.ALONG, self.built_value(handles.ALONG) + sense * count * mm)
+
+    def key_height(self, count):
+        """Give the fin with the arrows the height of the `count`-th tine above
+        it that finds the face, below it where `count` is negative, as
+        set_fin() does; with fewer tines that way, the last of them, and none
+        leaves it as it is."""
+        result, number = self.handled_result()[0], self.handled[1]
         current = result.heights[number]
         tine = feature.params_of(self.obj).tine_height
-        further = [z + tine for z in result.touching_z[number] if sense * (z + tine - current) > FIELD_TOLERANCE]
+        sense = 1 if count > 0 else -1
+        tops = (z + tine for z in result.touching_z[number])
+        further = sorted((top for top in tops if sense * (top - current) > FIELD_TOLERANCE),
+                         key=lambda top: abs(top - current))
         if further:
-            self.set_fin(handles.UP, min(further, key=lambda top: abs(top - current)))
-        return True
+            self.set_fin(handles.UP, further[min(abs(count), len(further)) - 1])
 
     def along_on_screen(self, along):
         """1 where `along`, the direction along the face, points to the right
-        on the screen, -1 where it points to the left."""
+        on the screen, -1 where it points to the left. Where it runs nearly
+        into the screen or up it, as the side view after standing a part
+        shows it, it has no side on the screen: 1, to the right seen from
+        outside the face, as `along` runs.
+
+        INPUTS this has to withstand:
+          along to the right on the screen      ->  1
+          along to the left on the screen       ->  -1
+          along into the screen, or up or
+            down it, within SIDEWAYS_LEAST      ->  1
+        """
         right = self.handles.view.getCameraNode().orientation.getValue().multVec(coin.SbVec3f(1, 0, 0))
-        return 1 if along.dot(App.Vector(*right.getValue())) >= 0 else -1
+        sideways = along.dot(App.Vector(*right.getValue()))
+        return -1 if sideways <= -SIDEWAYS_LEAST else 1
 
     def built_value(self, kind):
         """What the handled fin is built with: its shift along the face (ALONG)
@@ -1797,7 +1850,7 @@ class FinSnapTaskPanel:
             return
         self.released = True
         # Closed by FreeCAD first, the panel's form and its timers are gone already.
-        for timer in (self.timer, self.drag_timer, self.ends_timer, self.field_timer):
+        for timer in (self.timer, self.drag_timer, self.ends_timer, self.field_timer, self.key_timer):
             try:
                 timer.stop()
             except RuntimeError:

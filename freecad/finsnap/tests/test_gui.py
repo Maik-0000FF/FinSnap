@@ -10,6 +10,7 @@ Dialogs that would wait for a click are replaced by fixed answers; everything
 else, from the selection to the written file, runs as in FreeCAD.
 """
 
+import functools
 import math
 import os
 import sys
@@ -55,6 +56,7 @@ TUBE_BORE = 6.0
 TUBE_HEIGHT = 40.0
 TUBE_ANGLE = 30.0  # how far the fin under the side of a tube is turned in the panel, in degrees
 PLACE_STEP = 1.0  # how far a fin is moved along the face in the panel, in mm
+HELD_REPEATS = 3  # repeats of an arrow key held down
 ZOOM_OUT = 2.0  # how far the view is zoomed out to see the arc keep its size on the screen
 ARROW_SIZE_TOLERANCE = 0.01  # share by which the size of an arrow may differ from the one reckoned
 # A box stood this far from the bed, degrees: one face leans between the
@@ -224,7 +226,7 @@ def turned_tube(doc):
     turns the tube about its axis, the fin stays under the lowest line; Reset
     fins and Cancel turn it back."""
     from freecad.finsnap import defaults as d
-    from freecad.finsnap import feature, geometry, handles
+    from freecad.finsnap import feature, geometry, handles, taskpanel
     tube = doc.addObject("Part::Feature", "Tube")
     tube.Shape = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
     side = [i for i, f in enumerate(tube.Shape.Faces, 1) if isinstance(f.Surface, Part.Cylinder)
@@ -247,6 +249,21 @@ def turned_tube(doc):
     expect(panel.turns_part() and panel.handles.turning(),
            "the fin under the side of a tube turns the tube when moved, by an arc round its axis")
     expect(abs(angle()) < d.TOLERANCE, "the fin is first put at 0 degrees of the side")
+    # The fin stays under the lowest line and the tube turns under it: the
+    # right arrow key carries the tube the other way, so the fin stands
+    # further right on it. Seen side-on, as after Quick fins, the face runs
+    # into the screen, and right is to the right seen from outside the face.
+    from PySide import QtCore
+    along = fins.Proxy.results[feature.MAIN].along
+    before = App.Placement(tube.Placement)
+    press_key(panel, QtCore.Qt.Key_Right)
+    carried = tube.Placement.multiply(before.inverse()).multVec(fin_middle) - fin_middle
+    expect(abs(turned() - taskpanel.ANGLE_STEP) < ARC_TURN_TOLERANCE
+           and carried.dot(along) * panel.along_on_screen(along) < 0,
+           "the right arrow key turns the tube %.0f degree, carrying it the other way under the fin"
+           % taskpanel.ANGLE_STEP)
+    press_key(panel, QtCore.Qt.Key_Left)
+    expect(turned() < ARC_TURN_TOLERANCE, "the left arrow key turns it back")
     arc = panel.handles
     camera = Gui.ActiveDocument.ActiveView.getCameraNode()
     unit = arc.arc_unit
@@ -963,6 +980,13 @@ def check_typed_fields(panel, fins, place):
     panel.field_entered(handles.ALONG)
 
 
+def press_key(panel, key, modifiers=None, repeated=False):
+    """Press `key` in the 3D view of `panel`, held and repeating with `repeated`."""
+    from PySide import QtCore, QtGui
+    event = QtGui.QKeyEvent(QtCore.QEvent.KeyPress, key, modifiers or QtCore.Qt.NoModifier, "", repeated)
+    QtWidgets.QApplication.sendEvent(panel.key_widgets[0], event)
+
+
 def check_arrow_keys(panel, fins):
     """In the 3D view, left and right move the fin with the arrows one step of
     its field along the face, the way it runs on the screen; Shift with up or
@@ -971,8 +995,8 @@ def check_arrow_keys(panel, fins):
     from freecad.finsnap import defaults as d
     from freecad.finsnap import feature, handles
 
-    def press(key, modifiers=QtCore.Qt.NoModifier):
-        QtWidgets.QApplication.sendEvent(panel.key_widgets[0], QtGui.QKeyEvent(QtCore.QEvent.KeyPress, key, modifiers))
+    from freecad.finsnap import taskpanel
+    press = functools.partial(press_key, panel)
 
     def result():
         return fins.Proxy.results[feature.MAIN]
@@ -980,13 +1004,28 @@ def check_arrow_keys(panel, fins):
     camera = Gui.ActiveDocument.ActiveView.getCameraNode()
     right = App.Vector(*camera.orientation.getValue().multVec(coin.SbVec3f(1, 0, 0)).getValue())
     edge, shift = result().edges[1], panel.built_value(handles.ALONG)
-    step = panel.fin_fields[handles.ALONG].singleStep()
+    step = taskpanel.PLACE_STEP
     press(QtCore.Qt.Key_Right)
     moved_by = panel.built_value(handles.ALONG) - shift
-    expect(abs(abs(moved_by) - step) < d.TOLERANCE and (result().edges[1] - edge).dot(right) > 0,
-           "the right arrow key moves the fin one step along the face, to the right on the screen")
+    expect(abs(panel.fin_fields[handles.ALONG].singleStep() - step) < d.TOLERANCE
+           and abs(abs(moved_by) - step) < d.TOLERANCE and (result().edges[1] - edge).dot(right) > 0,
+           "the right arrow key moves the fin one step of %.0f mm along the face, to the right on the screen" % step)
     press(QtCore.Qt.Key_Left)
     expect(abs(panel.built_value(handles.ALONG) - shift) < d.TOLERANCE, "the left arrow key moves it back")
+    for _ in range(HELD_REPEATS):
+        press(QtCore.Qt.Key_Right, repeated=True)
+    held = panel.built_value(handles.ALONG)
+    # What the timer does once the repeats pause.
+    panel.take_keys()
+    expect(abs(held - shift) < d.TOLERANCE and panel.key_steps == {}
+           and abs(abs(panel.built_value(handles.ALONG) - shift) - HELD_REPEATS * step) < d.TOLERANCE,
+           "a key held is counted while it repeats and built once, %d steps, as the repeats pause" % HELD_REPEATS)
+    # Back to where it started: the repeats and the press that ends them.
+    for _ in range(HELD_REPEATS - 1):
+        press(QtCore.Qt.Key_Left, repeated=True)
+    press(QtCore.Qt.Key_Left)
+    expect(abs(panel.built_value(handles.ALONG) - shift) < d.TOLERANCE and not panel.key_timer.isActive(),
+           "a key pressed after repeats builds them with it at once")
 
     tine = feature.params_of(fins).tine_height
     tops = sorted(z + tine for z in result().touching_z[1])
