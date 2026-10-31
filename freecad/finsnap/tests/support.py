@@ -25,6 +25,10 @@ TILT = 45.0
 HALF_TURN = 180.0  # degrees
 RECESS_RADIUS = 1.5    # wider than a tine, so a tine above it touches nothing
 GROOVE_TOP_GAP = 0.5   # face left above a groove, so the groove does not split the face, too low for a tine
+# A slot: a box this long and twice the radius wide between two half round ends, this high.
+SLOT_RADIUS = 10.0
+SLOT_LENGTH = 40.0
+SLOT_HEIGHT = 30.0
 V = App.Vector
 
 
@@ -47,6 +51,18 @@ def split_cylinder(radius, height, bore=0.0):
         half.rotate(V(0, 0, 0), V(0, 0, 1), turn)
         halves.append(half)
     return halves[0].fuse(halves[1])
+
+
+def slot_on_end():
+    """A slot, two half round ends joined by flat sides, standing on the edge
+    of its end face, its axis leaning TILT: one half round end leans over the
+    bed one way, the end face the other."""
+    middle = Part.makeBox(SLOT_LENGTH, 2 * SLOT_RADIUS, SLOT_HEIGHT, V(-SLOT_LENGTH / 2, -SLOT_RADIUS, 0))
+    ends = [Part.makeCylinder(SLOT_RADIUS, SLOT_HEIGHT, V(x, 0, 0)) for x in (-SLOT_LENGTH / 2, SLOT_LENGTH / 2)]
+    slot = middle.fuse(ends).removeSplitter()
+    slot.rotate(V(0, 0, 0), V(0, 1, 0), TILT)
+    slot.translate(V(0, 0, -slot.BoundBox.ZMin))
+    return slot
 
 
 def grooved(cube, face, t):

@@ -1024,6 +1024,8 @@ def check_counter_face(shape, face, p):
         takes a counter fin                 ->  passes
       the side of a cylinder or tube        ->  FinError: its fin would move only by
                                                 turning the part, the main fin with it
+      a part of a curved side leaning over
+        the bed, the round end of a slot    ->  passes: its fin stays under its lowest line
       a face lying flat, facing up or
         sideways, or not planar             ->  FinError from geometry.frame_of()
       a face too narrow for the fin, or one

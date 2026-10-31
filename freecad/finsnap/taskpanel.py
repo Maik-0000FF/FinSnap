@@ -1272,13 +1272,15 @@ class FinSnapTaskPanel:
         result = found[0]
         which, number = self.handled
         turning = self.turns_part()
+        fixed = result.frame.fixed_fin
+        self.fin_fields[handles.ALONG].setEnabled(not fixed)
         if turning != self.angle_field:
             self.set_field(handles.ALONG, FIN_FIELD_ANGLE if turning else FIN_FIELD_PLACE)
             self.angle_field = turning
         # A held arrow stays where it was grabbed; only the numbers follow it.
         if not self.handles.held:
             self.handles.show(result.edges[number], result.along, result.out,
-                              self.turn_of_handles() if turning else None)
+                              self.turn_of_handles() if turning else None, fixed)
             # On another fin, both ends until tried, rather than those of the fin before.
             if self.handled != self.ends_of:
                 for kind in handles.KINDS:

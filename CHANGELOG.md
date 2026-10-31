@@ -11,6 +11,16 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Fins under part of a curved side, such as the half round end of a slot or a convex fillet, wherever its lowest line lies on it: one fin under that line, which stays there, its place along the face neither typed nor dragged; a counter fin goes under such a side too, or under a flat face when the main fin stands under one; a curved side that does not reach round to its lowest line, or curves inward, is refused, saying why
+- Quick fins offers part of a curved side as well where the fins go under the largest leaning face, so a large half round end can come before a smaller flat face
+
+### Fixed
+
+- A fin moved by hand towards the end of a face that narrows at its bottom or top, such as the end face of a slot, keeps its tines where the face is wide enough under it, only the narrow ones left out with a warning; it was refused as if a hole lay under every tine, once it left the stretch the narrowest tine of the face allows
+- A fin moved by hand where the face is narrower than it at every tine is refused saying so, no longer naming a recess or hole under every tine
+
 ## [0.10.0] - 2026-10-30
 
 ### Added
