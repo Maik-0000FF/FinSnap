@@ -78,6 +78,9 @@ INPUTS this has to withstand (build()):
     tines (side of a frustum)           ->  those tines left out, warning
   face narrower than the fin at every
     tine                                ->  FinError
+  fin moved by hand where the face is
+    narrower than it at every tine, or
+    past its end                        ->  FinError saying so, not naming a hole
   fixed tine count, some tines miss the
     face (narrow face or recess)        ->  those tines left out, warning
   face ending above the bed             ->  no tines below it
@@ -153,6 +156,8 @@ HORIZONTAL_ROUND_SIDE = QT_TRANSLATE_NOOP("FinSnap", "the round side lies horizo
 NO_STAND_FOR_FACE = QT_TRANSLATE_NOOP("FinSnap", "the part cannot stand so that this face takes fins")
 # Said where a part of a curved side, a fillet or the round end of a slot,
 # does not reach round to the line it lies lowest along, under which its fin stands.
+# Said where the face is narrower than a fin, or its tine, at every tine height.
+NARROW_AT_EVERY_TINE = QT_TRANSLATE_NOOP("FinSnap", "the face is narrower than the %.2f mm a fin needs at every tine")
 PART_OF_SIDE_OFF_LOWEST = QT_TRANSLATE_NOOP("FinSnap", "the selected curved face does not reach round to its "
                                                        "lowest line, under which its fin would stand")
 
@@ -190,6 +195,13 @@ class Frame:
     @property
     def round_side(self):
         return self.radius > 0
+
+    @property
+    def fixed_fin(self):
+        """Whether the fin stays where it is planned, under the lowest line of
+        a part of a side: it has no place along the face to be moved to, and
+        no turn of the part moves it."""
+        return self.round_side and not self.whole_side
 
     def normal(self):
         """The outward normal of the plane of the face."""
@@ -635,8 +647,7 @@ def tines_on_face(face, frame, tine_z, p, width, slices=None):
             if best is None or len(run) > len(best[0]):
                 best = (run, low, high)
     if best is None:
-        raise FinError(translate("FinSnap", "the face is narrower than the %.2f mm a fin needs at every tine")
-                       % width)
+        raise FinError(translate("FinSnap", NARROW_AT_EVERY_TINE) % width)
     return (*best, gaps)
 
 
@@ -1055,6 +1066,10 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
         thickness = thickness_for(p, height)
     # Fins left out are named by their distance from this end of the face.
     face_start = frame.along_min
+    # A fin moved by hand past the stretch every tine of the face shares
+    # keeps the tines of its own grid where the face is wide enough under it;
+    # those are measured on the whole face, not on that stretch.
+    whole_face = frame
     frame = replace(frame, along_min=low, along_max=high)
     positions = positions_for(p, frame, thickness)
     if frame.round_side:
@@ -1062,7 +1077,7 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
         # part was turned (turn_of()); measured from the middle, the place on
         # the face is that shift.
         face_start = (low + high) / 2
-    if frame.round_side and not frame.whole_side:
+    if frame.fixed_fin:
         # A part of a side has no turn to show: its fin stands where it stands.
         shifts = {}
 
@@ -1103,7 +1118,7 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
         if own_z is None:
             planned_z, narrow = tine_z, []
         else:
-            wide = [wide_enough(_extent_at(support, frame, z, p, slices), p, t, thickness) for z in own_z]
+            wide = [wide_enough(_extent_at(support, whole_face, z, p, slices), p, t, thickness) for z in own_z]
             planned_z = [z for z, fits in zip(own_z, wide) if fits]
             narrow = [z for z, fits in zip(own_z, wide) if not fits]
         return planned_z, [z for z in planned_z if own is None or z + p.tine_height <= own + d.TOLERANCE], narrow
@@ -1117,6 +1132,10 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
     # Fins planned over a hole and moved beside it, as (number, mm moved).
     moved_fins = []
     fins_left_out = []
+    # Whether every fin left out had no tine where the face is wide enough
+    # under it, or no face under it at all, rather than its tines over a
+    # hole: said so when none is left. Only width leaves no tine planned.
+    all_too_narrow = True
     for number, t0 in starts.items():
         if number in left_out:
             continue
@@ -1152,6 +1171,7 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
         kept_z = [z for z, whole in zip(candidate_z, on_face) if whole]
         if not kept_z:
             fins_left_out.append(t0 + thickness / 2 - face_start)
+            all_too_narrow = all_too_narrow and not planned_z
             continue
         # An automatic fin ends at its highest tine left, so no part of it
         # stands above the last contact with the face.
@@ -1160,6 +1180,8 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
         else:
             fin_height = p.fin_height if p.fin_height > 0 else kept_z[-1] + p.tine_height
         fins.append(PlannedFin(number, t0, fin_height, candidate_z, on_face, sorted(touching)))
+    if not fins and fins_left_out and all_too_narrow:
+        raise refused(translate("FinSnap", NARROW_AT_EVERY_TINE) % thickness)
     if not fins:
         raise refused(translate("FinSnap", "no tine finds the face; it has a recess or hole at every tine"))
     return FacePlan(frame, height, thickness, tine_z, gap_z, narrow_heights, positions, face_start,

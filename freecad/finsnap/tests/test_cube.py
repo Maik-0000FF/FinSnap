@@ -94,6 +94,8 @@ DISC_HEIGHT = 4.0      # a disc: its flat face is larger than its side, the side
 BORE_RADIUS = 6.0      # the hole that makes it a tube
 ROUND_TURN = 5.0       # how far the fin under a round side is moved by hand, in mm round it
 ROUND_DEGREES = 30.0   # how far a part is turned about its round side, in degrees
+SLOT_PAST_SIDE = 10.0  # moved that far, the fin stands past the side of the end face, in mm
+SLOT_ASIDE = 7.0       # how far a fin is moved along the end face of a slot, towards its side, in mm
 ODD_TURNS = (77.0, 200.0)  # turns of a part about its axis before it is stood, in degrees
 ABOVE_FACE = 30.0      # how far above its own height a fin is drawn, beyond the face, in mm
 NORMAL_DECIMALS = 6    # places to which the directions of faces are compared
@@ -1452,6 +1454,21 @@ def check_part_of_side():
     counter = geometry.opposite_faces(slot, slot.Faces[end_number])
     expect(any(f.isSame(slot.Faces[half]) for f in counter),
            "under the end face, the half round end is offered for the counter fin")
+    # The end face narrows to its round ends at the bottom and the top: moved
+    # past the stretch its narrowest tine allows, the fin keeps the tines where
+    # the face is wide enough under it.
+    planned = geometry.build(slot, end[0], p)
+    aside = geometry.build(slot, end[0], p, shifts={1: SLOT_ASIDE})
+    expect(p.tine_restart and SLOT_ASIDE > planned.frame.along_max
+           and 0 < len(aside.tines) < len(planned.tines) and any("narrower" in w for w in aside.warnings),
+           "a fin moved %.0f mm along the end face of a slot keeps its tines where the face is wide enough: %s"
+           % (SLOT_ASIDE, aside.warnings))
+    try:
+        geometry.build(slot, end[0], p, shifts={1: SLOT_PAST_SIDE})
+    except geometry.FinError as error:
+        expect("narrower" in str(error), "a fin moved past the side of the end face is too narrow there: %s" % error)
+    else:
+        raise AssertionError("a fin moved past the side of the end face of a slot was built")
 
 
 def check_left_out(cube, face):

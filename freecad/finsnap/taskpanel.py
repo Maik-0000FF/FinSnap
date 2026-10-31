@@ -1272,9 +1272,7 @@ class FinSnapTaskPanel:
         result = found[0]
         which, number = self.handled
         turning = self.turns_part()
-        # Under a part of a curved side the fin stays under its lowest line:
-        # it has no place along the face to move to.
-        fixed = result.radius > 0 and not turning
+        fixed = result.frame.fixed_fin
         self.fin_fields[handles.ALONG].setEnabled(not fixed)
         if turning != self.angle_field:
             self.set_field(handles.ALONG, FIN_FIELD_ANGLE if turning else FIN_FIELD_PLACE)
