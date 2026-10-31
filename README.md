@@ -214,7 +214,7 @@ Sliced in PrusaSlicer (part tilted 45 degrees, 0.45 mm beads, gap 0.25 mm), meas
 
 The slicer prints the tines exactly with the planned distance. Measured across the layer it is larger than the clearance itself, 1.41 times at 45 degrees, because the face leans.
 
-This holds as long as part and fins reach the slicer as separate objects or parts, as **Export 3MF** and **Export STEP** write them. Exported together as one mesh, for example one STL of both, the slicer fills cracks narrower than twice its slice gap closing radius (PrusaSlicer: 0.049 mm, so below about 0.1 mm across the layer), so tines that end closer to the part than that across the layer fuse with it.
+This holds as long as part and fins reach the slicer as separate objects or parts, as **Export 3MF** and **Export STEP** write them. Exported together as one mesh, for example one STL of both, the slicer fills cracks narrower than twice its slice gap closing radius (PrusaSlicer: 0.049 mm, so below about 0.1 mm across the layer), and tines ending closer to the part than that fuse with it.
 
 Whether a tine still holds the part across that distance depends on how far the bead swells while printing, which depends on material, temperature and speed. **Find the value with a test print:**
 
