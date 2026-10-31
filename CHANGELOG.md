@@ -11,6 +11,8 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.11.0] - 2026-10-31
+
 ### Added
 
 - Fins under part of a curved side, such as the half round end of a slot or a convex fillet, wherever its lowest line lies on it: one fin under that line, which stays there, its place along the face neither typed nor dragged; a counter fin goes under such a side too, or under a flat face when the main fin stands under one; a curved side that does not reach round to its lowest line, or curves inward, is refused, saying why
@@ -247,7 +249,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.10.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.11.0...HEAD
+[0.11.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.11.0
 [0.10.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.10.0
 [0.9.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.9.0
 [0.8.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.8.0
