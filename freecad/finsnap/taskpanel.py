@@ -53,6 +53,11 @@ DEGREE_SUFFIX = " \N{DEGREE SIGN}"
 PREVIEW_DELAY_MS = 400
 # The keys that end typing in a field.
 ENTER_KEYS = (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter)
+# Keys that move the fin with the arrows while the 3D view has the focus: left
+# and right along the face as it runs on the screen, by one step of its field;
+# with Shift, up and down to the next tine that finds the face.
+ALONG_KEYS = {QtCore.Qt.Key_Left: -1, QtCore.Qt.Key_Right: 1}
+HEIGHT_KEYS = {QtCore.Qt.Key_Down: -1, QtCore.Qt.Key_Up: 1}
 # Pause after the last move of a handle before the preview for it is built.
 DRAG_PREVIEW_MS = 150
 # Places of fins whose arrow ends are kept while the panel is open; beyond
@@ -513,6 +518,38 @@ class EnterTakes(QtCore.QObject):
         return False
 
 
+class FinKeys(QtCore.QObject):
+    """Moves the fin with the arrows by the keys of ALONG_KEYS and, with Shift,
+    HEIGHT_KEYS, pressed in the 3D view: `along` and `height` are called with
+    1 or -1 and say whether they took the key. Any other key, or one they do
+    not take, goes on to the view, which turns or pans with it.
+
+    INPUTS this has to withstand:
+      left or right, no modifier            ->  along(-1 or 1)
+      up or down with Shift                 ->  height(-1 or 1)
+      up or down without Shift              ->  passed on: the view pans
+      left or right with Shift or Ctrl      ->  passed on
+      an arrow on the number pad            ->  as the arrow itself
+      any other key                         ->  passed on
+      a key released                        ->  passed on
+    """
+
+    def __init__(self, along, height, parent):
+        super().__init__(parent)
+        self.along, self.height = along, height
+
+    def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
+        if event.type() != QtCore.QEvent.KeyPress:
+            return False
+        modifiers = event.modifiers() & ~QtCore.Qt.KeypadModifier
+        key = event.key()
+        if modifiers == QtCore.Qt.NoModifier and key in ALONG_KEYS:
+            return self.along(ALONG_KEYS[key])
+        if modifiers == QtCore.Qt.ShiftModifier and key in HEIGHT_KEYS:
+            return self.height(HEIGHT_KEYS[key])
+        return False
+
+
 def _icon_button(icon, text):
     """A button with its icon and text side by side, flush left, a fixed gap
     between them, so the buttons of a group line up."""
@@ -681,6 +718,15 @@ class FinSnapTaskPanel:
         # True while the panel fills the fields of the fin, not the user.
         self.filling_fields = False
         self.handles = handles.Handles(obj.ViewObject, self.handle_started, self.handle_moved, self.handle_done)
+        # The arrow keys in the 3D view move the fin with the arrows; the
+        # widget that has the focus there is the view or its viewport.
+        self.key_widgets = []
+        view = self.handles.view.graphicsView() if hasattr(self.handles.view, "graphicsView") else None
+        if view is not None:
+            self.fin_keys = FinKeys(self.key_along, self.key_height, view)
+            self.key_widgets = [view, view.viewport()]
+            for widget in self.key_widgets:
+                widget.installEventFilter(self.fin_keys)
         # The fins keep their last build for the arrows while the panel is open.
         obj.Proxy.editing = True
         Gui.Selection.addObserver(self)
@@ -740,7 +786,8 @@ class FinSnapTaskPanel:
             "Delete key. The counter fin goes under the face leaning the other way, or under a face of the "
             "part you select. Drag the two arrows on a fin to move it along the face or to change its height, "
             "or type the values below; click another fin, or pick it in the list of fins, to put the arrows "
-            "there. Reset fins undoes every change by hand."))
+            "there. In the 3D view, the left and right arrow keys move that fin along the face, and Shift with "
+            "the up or down arrow key steps its height to the next tine. Reset fins undoes every change by hand."))
         edit_info.setWordWrap(True)
         edit_layout.addWidget(edit_info, 0, 0, 1, 2)
         for column, row, icon, text, action in (
@@ -1350,6 +1397,49 @@ class FinSnapTaskPanel:
         self.refuse(error)
         return False
 
+    def key_along(self, sense):
+        """Move the fin with the arrows one step of its field along the face,
+        to the right on the screen for `sense` 1, to the left for -1, as
+        set_fin() does; False where there is nothing to move, so the key goes
+        on to the view. Under a round side the step is a degree the part turns."""
+        box = self.fin_fields[handles.ALONG]
+        if self.handled_result() is None or not box.isEnabled() or self.handles.held:
+            return False
+        self.take_typed()
+        found = self.handled_result()
+        if found is None:
+            return True
+        step = box.singleStep()
+        mm = abs(geometry.turn_mm(feature.round_side(self.obj), step)) if self.turns_part() else step
+        sense *= self.along_on_screen(found[0].along)
+        self.set_fin(handles.ALONG, self.built_value(handles.ALONG) + sense * mm)
+        return True
+
+    def key_height(self, sense):
+        """Give the fin with the arrows the height of the next tine above it
+        that finds the face, for `sense` 1, or below it, for -1, as set_fin()
+        does; none further that way leaves it as it is. False where there is
+        no fin with the arrows, so the key goes on to the view."""
+        if self.handled_result() is None or self.handles.held:
+            return False
+        self.take_typed()
+        found = self.handled_result()
+        if found is None:
+            return True
+        result, number = found[0], self.handled[1]
+        current = result.heights[number]
+        tine = feature.params_of(self.obj).tine_height
+        further = [z + tine for z in result.touching_z[number] if sense * (z + tine - current) > FIELD_TOLERANCE]
+        if further:
+            self.set_fin(handles.UP, min(further, key=lambda top: abs(top - current)))
+        return True
+
+    def along_on_screen(self, along):
+        """1 where `along`, the direction along the face, points to the right
+        on the screen, -1 where it points to the left."""
+        right = self.handles.view.getCameraNode().orientation.getValue().multVec(coin.SbVec3f(1, 0, 0))
+        return 1 if along.dot(App.Vector(*right.getValue())) >= 0 else -1
+
     def built_value(self, kind):
         """What the handled fin is built with: its shift along the face (ALONG)
         from where it was planned, by hand and where it was moved beside a
@@ -1713,6 +1803,11 @@ class FinSnapTaskPanel:
             except RuntimeError:
                 pass
         Gui.Selection.removeObserver(self)
+        for widget in self.key_widgets:
+            try:
+                widget.removeEventFilter(self.fin_keys)
+            except RuntimeError:
+                pass
         self.handles.remove()
         self.obj.Proxy.editing = False
         self.obj.Proxy.reuse = None

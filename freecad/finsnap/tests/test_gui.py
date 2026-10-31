@@ -963,6 +963,48 @@ def check_typed_fields(panel, fins, place):
     panel.field_entered(handles.ALONG)
 
 
+def check_arrow_keys(panel, fins):
+    """In the 3D view, left and right move the fin with the arrows one step of
+    its field along the face, the way it runs on the screen; Shift with up or
+    down steps its height to the next tine; up or down alone go on to the view."""
+    from PySide import QtCore, QtGui
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, handles
+
+    def press(key, modifiers=QtCore.Qt.NoModifier):
+        QtWidgets.QApplication.sendEvent(panel.key_widgets[0], QtGui.QKeyEvent(QtCore.QEvent.KeyPress, key, modifiers))
+
+    def result():
+        return fins.Proxy.results[feature.MAIN]
+
+    camera = Gui.ActiveDocument.ActiveView.getCameraNode()
+    right = App.Vector(*camera.orientation.getValue().multVec(coin.SbVec3f(1, 0, 0)).getValue())
+    edge, shift = result().edges[1], panel.built_value(handles.ALONG)
+    step = panel.fin_fields[handles.ALONG].singleStep()
+    press(QtCore.Qt.Key_Right)
+    moved_by = panel.built_value(handles.ALONG) - shift
+    expect(abs(abs(moved_by) - step) < d.TOLERANCE and (result().edges[1] - edge).dot(right) > 0,
+           "the right arrow key moves the fin one step along the face, to the right on the screen")
+    press(QtCore.Qt.Key_Left)
+    expect(abs(panel.built_value(handles.ALONG) - shift) < d.TOLERANCE, "the left arrow key moves it back")
+
+    tine = feature.params_of(fins).tine_height
+    tops = sorted(z + tine for z in result().touching_z[1])
+    height = result().heights[1]
+    alone = QtGui.QKeyEvent(QtCore.QEvent.KeyPress, QtCore.Qt.Key_Up, QtCore.Qt.NoModifier)
+    expect(not panel.fin_keys.eventFilter(panel.key_widgets[0], alone)
+           and abs(result().heights[1] - height) < d.TOLERANCE,
+           "the up arrow key alone goes on to the view and leaves the fin as it is")
+    press(QtCore.Qt.Key_Up, QtCore.Qt.ShiftModifier)
+    raised = result().heights[1]
+    expect(raised > height + d.TOLERANCE and min(abs(raised - top) for top in tops) < d.TOLERANCE,
+           "Shift and the up arrow key raise the fin to the next tine: %.2f to %.2f mm" % (height, raised))
+    press(QtCore.Qt.Key_Down, QtCore.Qt.ShiftModifier)
+    lowered = result().heights[1]
+    expect(lowered < raised - d.TOLERANCE and min(abs(lowered - top) for top in tops) < d.TOLERANCE,
+           "Shift and the down arrow key lower it to the tine below: %.2f mm" % lowered)
+
+
 def check_sections(panel):
     """Each section of the panel folds away and opens again as it was left;
     its header is marked while a field in it differs from the standard."""
@@ -1727,6 +1769,7 @@ def main():
     moving.field_entered(handles.ALONG)
     expect(not feature.edits(lined, feature.MAIN)[1], "a place typed into the field moves the fin there")
     check_typed_fields(moving, lined, place)
+    check_arrow_keys(moving, lined)
     check_sections(moving)
     lowered = lined.Proxy.results[feature.MAIN]
     off_edge = App.Vector(*moving.handles.offsets[handles.UP].translation.getValue().getValue())
