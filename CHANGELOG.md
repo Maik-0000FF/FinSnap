@@ -20,6 +20,7 @@ All notable changes to FinSnap are listed here. The format follows
 ### Changed
 
 - The stability check works out the centres of mass of the part from one mesh of it instead of a cut for every millimetre of height, up to eight times faster on a large part (#114)
+- The stability check sums the mesh of the part with numpy, which FreeCAD ships, about twice as fast again; numpy is named as a dependency in `package.xml` (#128)
 - Islands and bridges cut each layer they look at with one thin boolean cut instead of a slice, up to twice as fast on a part of many faces, finding the same (#114)
 
 ### Fixed
