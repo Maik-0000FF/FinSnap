@@ -11,6 +11,14 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A double click on an arrow in the 3D view lays a field over the view just past the tip of the half clicked (a click with the mouse shaking within the drag distance of Qt still counts, and an arrow is dragged only once the mouse leaves it, so a short drag no longer moves the fin and drops it back), with the value, unit and limits of its field in the task panel: Enter takes what is typed as that field does, Escape or a click elsewhere drops it; the field stays at the arrow while the view turns or zooms (#88)
+
+### Fixed
+
+- The arrows no longer flash an end the fin cannot go to before it is taken away: until where it can go is tried, an arrow shows the ends found before for the fin as it stands, else only those there is a step to, so the arrow up of a fin at its highest tine shows no end up from the start
+
 ### Removed
 
 - The Mesh to solid command: it ran the three commands of the Part workbench that do the same, Shape From Mesh, Convert to Solid and Refine Shape, and stalled FreeCAD on a large STL; the README says how to turn an STL into a solid with them

@@ -364,7 +364,7 @@
     </message>
     <message>
         <location filename="../commands.py" line="898"/>
-        <location filename="../taskpanel.py" line="830"/>
+        <location filename="../taskpanel.py" line="877"/>
         <source>Add counter fin</source>
         <translation>Gegenfinne hinzufügen</translation>
     </message>
@@ -810,72 +810,72 @@
         <translation>die Gegenfinne gehört unter eine ebene Fläche, nicht unter die Seite eines Zylinders oder Rohrs</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="760"/>
+        <location filename="../taskpanel.py" line="807"/>
         <source>FinSnap parameters</source>
         <translation>FinSnap-Parameter</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="202"/>
+        <location filename="../taskpanel.py" line="207"/>
         <source>Side view</source>
         <translation>Seitenansicht</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="113"/>
+        <location filename="../taskpanel.py" line="118"/>
         <source>Main fin</source>
         <translation>Hauptfinne</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="114"/>
+        <location filename="../taskpanel.py" line="119"/>
         <source>Counter fin</source>
         <translation>Gegenfinne</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="176"/>
+        <location filename="../taskpanel.py" line="181"/>
         <source>The part no longer stands one of the ways Quick fins found, or there is only one.</source>
         <translation>Das Teil steht nicht mehr so, wie es eine der von Quick fins gefundenen Möglichkeiten vorsieht, oder es gibt nur eine.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="186"/>
+        <location filename="../taskpanel.py" line="191"/>
         <source>Smallest tipping angle at layer %d, %.1f mm high</source>
         <translation>Kleinster Kippwinkel bei Schicht %d, %.1f mm hoch</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="203"/>
+        <location filename="../taskpanel.py" line="208"/>
         <source>Top view</source>
         <translation>Draufsicht</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="771"/>
+        <location filename="../taskpanel.py" line="818"/>
         <source>Hover over a field for an explanation. Letters in brackets point to the drawings below. Every change is shown in the 3D view right away. Greyed-out fields have no effect with the current choices; their tooltip says why.</source>
         <translation>Für eine Erklärung mit der Maus über ein Feld fahren. Buchstaben in Klammern verweisen auf die Zeichnungen unten. Jede Änderung erscheint sofort in der 3D-Ansicht. Ausgegraute Felder wirken bei der aktuellen Wahl nicht; ihr Tooltip sagt, warum.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="137"/>
+        <location filename="../taskpanel.py" line="142"/>
         <source>Edit fins</source>
         <translation>Finnen bearbeiten</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="818"/>
+        <location filename="../taskpanel.py" line="865"/>
         <source>To remove one fin, click it in the 3D view and press Remove selected fin, or the Delete key. The counter fin goes under the face leaning the other way, or under a face of the part you select. Drag the two arrows on a fin to move it along the face or to change its height, or type the values below; click another fin, or pick it in the list of fins, to put the arrows there. In the 3D view, the left and right arrow keys move that fin along the face, and Shift with the up or down arrow key steps its height to the next tine. Reset fins undoes every change by hand.</source>
         <translation>Um eine einzelne Finne zu entfernen, klicke sie in der 3D-Ansicht an und drücke „Gewählte Finne entfernen“ oder die Entf-Taste. Die Gegenfinne kommt unter die Fläche, die sich zur anderen Seite neigt, oder unter eine Fläche des Teils, die du wählst. Ziehe an den beiden Pfeilen einer Finne, um sie entlang der Fläche zu verschieben oder ihre Höhe zu ändern, oder tippe die Werte unten ein; klicke eine andere Finne an oder wähle sie in der Liste der Finnen, um die Pfeile dorthin zu setzen. In der 3D-Ansicht verschieben die Pfeiltasten links und rechts diese Finne entlang der Fläche, und Umschalt mit Pfeil hoch oder runter setzt ihre Höhe auf die nächste Zinke. „Finnen zurücksetzen“ nimmt jede Änderung von Hand zurück.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="828"/>
+        <location filename="../taskpanel.py" line="875"/>
         <source>Remove selected fin</source>
         <translation>Gewählte Finne entfernen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="831"/>
+        <location filename="../taskpanel.py" line="878"/>
         <source>Remove counter fin</source>
         <translation>Gegenfinne entfernen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="839"/>
+        <location filename="../taskpanel.py" line="886"/>
         <source>The fins, the main fins from the left, then the counter fins. Pick one to put the arrows on it and select it.</source>
         <translation>Die Finnen, erst die Hauptfinnen von links, dann die Gegenfinnen. Wähle eine aus, um die Pfeile auf sie zu setzen und sie auszuwählen.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="97"/>
+        <location filename="../taskpanel.py" line="102"/>
         <source>Place on the face</source>
         <translation>Lage auf der Fläche</translation>
     </message>
@@ -890,32 +890,32 @@
         <translation>aus</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="102"/>
+        <location filename="../taskpanel.py" line="107"/>
         <source>Angle on the part</source>
         <translation>Winkel am Teil</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="107"/>
+        <location filename="../taskpanel.py" line="112"/>
         <source>Height</source>
         <translation>Höhe</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="159"/>
+        <location filename="../taskpanel.py" line="164"/>
         <source>%d faces overhang critically, %d too flat to print.</source>
         <translation>%d Flächen hängen kritisch über, %d zu flach zum Drucken.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="161"/>
+        <location filename="../taskpanel.py" line="166"/>
         <source>%d bridges span critically, %d too far to print.</source>
         <translation>%d Brücken spannen kritisch weit, %d zu weit zum Drucken.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="163"/>
+        <location filename="../taskpanel.py" line="168"/>
         <source>Quick fins found more than one way to stand the part. Click a row to stand it so; the part and its fins follow in the 3D view. Ways where the part would start printing in the air, an island, or where a face lies too flat or a bridge spans too far to print, are left out while one without is found. Overhangs counts the faces overhanging without fins, Bridges those spanning too far, with the longest span in brackets; yellow is critical, red not printable. Rated after the checks were switched on, every way stays listed in its order, shaded by what it finds.</source>
         <translation>Schnelle Finnen hat mehr als eine Möglichkeit gefunden, das Teil aufzustellen. Eine Zeile anklicken, um es so aufzustellen; Teil und Finnen folgen in der 3D-Ansicht. Möglichkeiten, bei denen das Teil in der Luft zu drucken beginnen würde, eine Insel, oder bei denen eine Fläche zu flach liegt oder eine Brücke zu weit spannt, um sie zu drucken, werden weggelassen, solange eine ohne gefunden wird. Überhänge zählt die Flächen, die ohne Finnen überhängen, Brücken die, die zu weit spannen, mit der längsten Spannweite in Klammern; gelb ist kritisch, rot nicht druckbar. Erst nach dem Einschalten der Prüfungen bewertet, bleibt jede Möglichkeit in ihrer Reihenfolge stehen, eingefärbt nach dem, was die Prüfung findet.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="172"/>
+        <location filename="../taskpanel.py" line="177"/>
         <source>Stand the part another way? The fins are planned anew: fins removed, moved or set to a height of their own, a turn of the part and the counter fin are undone.</source>
         <translation>Das Teil anders aufstellen? Die Finnen werden neu geplant: entfernte, verschobene Finnen und eigene Höhen, eine Drehung des Teils und die Gegenfinne werden aufgehoben.</translation>
     </message>
@@ -940,144 +940,144 @@
         <translation>Keine Brücke spannt weiter als %.1f mm.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="194"/>
+        <location filename="../taskpanel.py" line="199"/>
         <source>Checks whether the part stays standing while it is printed, layer by layer, on its own and held by these fins, which hold it only from their lowest tine up, and shows the plumb line from its centre of mass to the bed. Takes a moment on a large part.</source>
         <translation>Prüft Schicht für Schicht, ob das Teil während des Drucks stehen bleibt, allein und von diesen Finnen gehalten, die es erst ab ihrer untersten Zinke halten, und zeigt das Lot von seinem Schwerpunkt zum Bett. Dauert bei einem großen Teil einen Moment.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="198"/>
+        <location filename="../taskpanel.py" line="203"/>
         <source>Changed since the stability check: check again.</source>
         <translation>Seit der Prüfung der Standfestigkeit geändert: erneut prüfen.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="200"/>
+        <location filename="../taskpanel.py" line="205"/>
         <source>The part of this check is gone; delete the check.</source>
         <translation>Das Teil dieser Prüfung gibt es nicht mehr; lösche die Prüfung.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="867"/>
+        <location filename="../taskpanel.py" line="914"/>
         <source>Save as standard</source>
         <translation>Als Standard speichern</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="868"/>
+        <location filename="../taskpanel.py" line="915"/>
         <source>New fins start with these values. Fields that differ from the standard are marked, and their button puts the standard back.</source>
         <translation>Neue Finnen starten mit diesen Werten. Felder, die vom Standard abweichen, sind markiert, und ihr Knopf stellt den Standard wieder her.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="872"/>
-        <location filename="../taskpanel.py" line="1073"/>
+        <location filename="../taskpanel.py" line="919"/>
+        <location filename="../taskpanel.py" line="1120"/>
         <source>Factory settings</source>
         <translation>Werkseinstellungen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="873"/>
+        <location filename="../taskpanel.py" line="920"/>
         <source>Forget the saved standard and set every field to the built-in value.</source>
         <translation>Den gespeicherten Standard verwerfen und jedes Feld auf den eingebauten Wert setzen.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="893"/>
+        <location filename="../taskpanel.py" line="940"/>
         <source>Check stability</source>
         <translation>Standfestigkeit prüfen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="984"/>
+        <location filename="../taskpanel.py" line="1031"/>
         <source>Stand another way</source>
         <translation>Anders aufstellen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1053"/>
+        <location filename="../taskpanel.py" line="1100"/>
         <source>Back to the standard: %s</source>
         <translation>Zurück auf den Standard: %s</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1074"/>
+        <location filename="../taskpanel.py" line="1121"/>
         <source>Forget the saved standard and set every field to the built-in value?</source>
         <translation>Den gespeicherten Standard verwerfen und jedes Feld auf den eingebauten Wert setzen?</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1102"/>
-        <location filename="../taskpanel.py" line="1106"/>
+        <location filename="../taskpanel.py" line="1149"/>
+        <location filename="../taskpanel.py" line="1153"/>
         <source>Nothing removed</source>
         <translation>Nichts entfernt</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1113"/>
+        <location filename="../taskpanel.py" line="1160"/>
         <source>Delete the fins?</source>
         <translation>Finnen löschen?</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1114"/>
+        <location filename="../taskpanel.py" line="1161"/>
         <source>These are the last fins. Delete the fins object? A part stood on an edge for these fins alone is laid flat again.</source>
         <translation>Das sind die letzten Finnen. Das Finnen-Objekt löschen? Ein Teil, das nur für diese Finnen auf eine Kante gestellt wurde, wird wieder flach gelegt.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1130"/>
+        <location filename="../taskpanel.py" line="1177"/>
         <source>Delete fins</source>
         <translation>Finnen löschen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1279"/>
+        <location filename="../taskpanel.py" line="1326"/>
         <source>%s %d</source>
         <translation>%s %d</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="466"/>
+        <location filename="../taskpanel.py" line="471"/>
         <source>Cancel fins</source>
         <translation>Finnen abbrechen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="87"/>
+        <location filename="../taskpanel.py" line="92"/>
         <source>Click a fin of these fins in the 3D view first.</source>
         <translation>Klicke zuerst eine dieser Finnen in der 3D-Ansicht an.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="98"/>
+        <location filename="../taskpanel.py" line="103"/>
         <source>Distance of the middle of the fin from the left end of the face, seen from outside. Type a value to move the fin there.</source>
         <translation>Abstand der Mitte der Finne vom linken Ende der Fläche, von außen gesehen. Wert eingeben, um die Finne dorthin zu verschieben.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="103"/>
+        <location filename="../taskpanel.py" line="108"/>
         <source>Position of the fin around the cylinder or tube, measured at the middle of its tines, in degrees from 0°, where it is first placed. Type a value to turn the part to it; the fin keeps its place.</source>
         <translation>Position der Finne am Umfang des Zylinders oder Rohrs, gemessen an der Mitte der Zinken, in Grad ab 0°, wo sie zuerst gesetzt wird. Wert eingeben, um das Teil dorthin zu drehen; die Finne bleibt an ihrem Platz.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="108"/>
+        <location filename="../taskpanel.py" line="113"/>
         <source>Height of this fin alone. Type a value to set it; Reset fins gives it the height of the others again.</source>
         <translation>Höhe nur dieser Finne. Wert eingeben, um sie zu setzen; Finnen zurücksetzen gibt ihr wieder die Höhe der anderen.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="147"/>
+        <location filename="../taskpanel.py" line="152"/>
         <source>Stand</source>
         <translation>Aufstellung</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="152"/>
+        <location filename="../taskpanel.py" line="157"/>
         <source>Stands on</source>
         <translation>Steht auf</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="152"/>
+        <location filename="../taskpanel.py" line="157"/>
         <source>Length</source>
         <translation>Länge</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="150"/>
+        <location filename="../taskpanel.py" line="155"/>
         <source>Islands</source>
         <translation>Inseln</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="154"/>
+        <location filename="../taskpanel.py" line="159"/>
         <source>Fins under</source>
         <translation>Finnen unter</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="154"/>
+        <location filename="../taskpanel.py" line="159"/>
         <source>Area</source>
         <translation>Flächeninhalt</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="185"/>
+        <location filename="../taskpanel.py" line="190"/>
         <source>Tips at layer %d, %.1f mm high</source>
         <translation>Kippt bei Schicht %d, %.1f mm hoch</translation>
     </message>
@@ -1092,33 +1092,33 @@
         <translation>%d Flächen hängen flacher als %.0f Grad zur Bettebene über, ohne Finnen, zu flach zum Drucken.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="829"/>
+        <location filename="../taskpanel.py" line="876"/>
         <source>Reset fins</source>
         <translation>Finnen zurücksetzen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1149"/>
-        <location filename="../taskpanel.py" line="1153"/>
+        <location filename="../taskpanel.py" line="1196"/>
+        <location filename="../taskpanel.py" line="1200"/>
         <source>No counter fin</source>
         <translation>Keine Gegenfinne</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1574"/>
+        <location filename="../taskpanel.py" line="1622"/>
         <source>no tine of the fin finds the face there</source>
         <translation>dort trifft keine Zinke der Finne die Fläche</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1923"/>
+        <location filename="../taskpanel.py" line="2098"/>
         <source>Not possible</source>
         <translation>Nicht möglich</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1969"/>
+        <location filename="../taskpanel.py" line="2144"/>
         <source>Notes</source>
         <translation>Hinweise</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1962"/>
+        <location filename="../taskpanel.py" line="2137"/>
         <source>%d fin(s), %.2f mm high, %.2f mm thick</source>
         <translation>%d Finne(n), %.2f mm hoch, %.2f mm dick</translation>
     </message>
@@ -1483,7 +1483,7 @@
         <translation>%s hat keine Form</translation>
     </message>
     <message>
-        <location filename="../handles.py" line="535"/>
+        <location filename="../handles.py" line="543"/>
         <source>No 3D view of %s is open to edit the fins in.</source>
         <translation>Von %s ist keine 3D-Ansicht offen, in der die Finnen bearbeitet werden können.</translation>
     </message>
@@ -1509,7 +1509,7 @@
     </message>
     <message>
         <location filename="../preferences.py" line="48"/>
-        <location filename="../taskpanel.py" line="150"/>
+        <location filename="../taskpanel.py" line="155"/>
         <source>Overhangs</source>
         <translation>Überhänge</translation>
     </message>
@@ -1545,7 +1545,7 @@
     </message>
     <message>
         <location filename="../preferences.py" line="64"/>
-        <location filename="../taskpanel.py" line="151"/>
+        <location filename="../taskpanel.py" line="156"/>
         <source>Bridges</source>
         <translation>Brücken</translation>
     </message>

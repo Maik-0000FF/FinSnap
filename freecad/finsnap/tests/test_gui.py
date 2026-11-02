@@ -285,6 +285,8 @@ def turned_tube(doc):
            and abs(angle() - TUBE_ANGLE) < d.TOLERANCE,
            "an angle typed for the fin turns the tube that far round its axis, the fin stays")
     arc._held(handles.ALONG, None)
+    # The mouse past the drag distance of Qt: a drag, which the fin follows.
+    arc.dragging = True
     arc._moved(handles.ALONG, None)
     # A copy: the field gives its own vector, which follows it.
     unturned = coin.SbVec3f(arc.value_at.translation.getValue())
@@ -611,6 +613,147 @@ def released_without_button(arrows, name):
                    "grabbed again" % (name, "arc" if turning else kind))
     finally:
         arrows.on_start, arrows.on_done = real_start, real_done
+
+
+def arrow_field(panel, fins):
+    """A double click on an arrow lays a field over the 3D view at it, with
+    the value of its field in the panel: Escape drops it, Enter takes what is
+    typed as the field in the panel takes it. Two clicks count as a double
+    click only on one arrow, in time, without a drag between."""
+    from PySide import QtCore, QtGui
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, handles, taskpanel
+    arrows = panel.handles
+    viewport = arrows.view.graphicsView().viewport()
+
+    def on_view(kind, end, share):
+        """The point `share` along the half `end` of the arrow of `kind`, from
+        its start to its tip, in the view widget the field lies in."""
+        (x0, y0), (x1, y1) = arrows.tip_points(kind, end)
+        x, y = x0 + (x1 - x0) * share, y0 + (y1 - y0) * share
+        return viewport.mapTo(viewport.parentWidget(), QtCore.QPoint(round(x * viewport.width()),
+                                                                     round(y * viewport.height())))
+
+    doubles, done = [], []
+    real = (arrows.on_start, arrows.on_done, arrows.on_double, QtGui.QCursor.pos, arrows.on_move)
+    arrows.on_start, arrows.on_done = (lambda kind: None), (lambda kind, mm: done.append(mm))
+    arrows.on_double = lambda kind, end: doubles.append((kind, end))
+    # No click of a test before counts.
+    arrows.clicked = None
+    shake = QtWidgets.QApplication.startDragDistance()
+    try:
+        def click(kind, moved=0, at=None):
+            """Grab the arrow of `kind` with the mouse at `at`, on the screen, and
+            let it go, the mouse `moved` pixels on."""
+            at = at or QtCore.QPoint(0, 0)
+            QtGui.QCursor.pos = staticmethod(lambda: QtCore.QPoint(at))
+            arrows._held(kind, None)
+            QtGui.QCursor.pos = staticmethod(lambda: at + QtCore.QPoint(moved, 0))
+            arrows._let_go(kind, None)
+        click(handles.UP)
+        click(handles.UP, shake)
+        click(handles.UP)
+        twice = [kind for kind, _ in doubles]
+        click(handles.ALONG)
+        click(handles.UP)
+        click(handles.UP, shake + 1)
+        click(handles.UP)
+        kinds = [kind for kind, _ in doubles]
+        # A double click on each half shown of each arrow names that half.
+        del doubles[:]
+        for kind in handles.KINDS:
+            for end in arrows.ends[kind]:
+                middle = viewport.parentWidget().mapToGlobal(on_view(kind, end, 0.5))
+                click(kind, at=middle)
+                click(kind, at=middle)
+        halves = list(doubles)
+        # Moved within the drag distance the fin does not follow, or it would
+        # jump back on letting go; once past it, it follows, also back near
+        # where it was grabbed, and letting go there is no click.
+        moves = []
+        arrows.on_move = lambda kind, mm: moves.append(mm)
+        QtGui.QCursor.pos = staticmethod(lambda: QtCore.QPoint(0, 0))
+        arrows._held(handles.UP, None)
+        followed = []
+        for to in (shake, shake + 1, 0):
+            QtGui.QCursor.pos = staticmethod(lambda to=to: QtCore.QPoint(to, 0))
+            arrows._moved(handles.UP, None)
+            followed.append(len(moves))
+        arrows._let_go(handles.UP, None)
+        clicked_after = arrows.clicked
+    finally:
+        arrows.on_start, arrows.on_done, arrows.on_double, QtGui.QCursor.pos, arrows.on_move = real
+        arrows.clicked = None
+    expect(followed == [0, 1, 2] and clicked_after is None,
+           "moved within the drag distance the fin stays, past it it follows, and let go then it was no click: "
+           "%s" % followed)
+    expect(twice == [handles.UP] and kinds == [handles.UP] and set(done[:3]) == {0.0},
+           "two clicks on one arrow are a double click, the mouse shaking within Qt's drag distance, a third is "
+           "not, nor a click on each arrow, nor a click after a drag; a click moves nothing: %s" % kinds)
+    expect(halves == [(kind, end) for kind in handles.KINDS for end in arrows.ends[kind]] and len(halves) > 2,
+           "a double click names the half of the arrow clicked on: %s" % halves)
+
+    def key(field, pressed):
+        for kind in (QtCore.QEvent.KeyPress, QtCore.QEvent.KeyRelease):
+            QtWidgets.QApplication.sendEvent(field, QtGui.QKeyEvent(kind, pressed, QtCore.Qt.NoModifier))
+
+    box = panel.fin_fields[handles.ALONG]
+    place, shifts = box.value(), dict(feature.edits(fins, feature.MAIN)[1])
+    panel.edit_at_arrow(handles.ALONG)
+    field = panel.arrow_field[2] if panel.arrow_field else None
+    expect(field is not None and field.isVisible() and abs(field.value() - place) < d.TOLERANCE
+           and field.suffix() == box.suffix() and field.parentWidget() is viewport.parentWidget(),
+           "a double click opens a field at the arrow over the 3D view, with the value and unit of its field")
+    for kind in handles.KINDS:
+        for end in (handles.BACK, handles.FORTH):
+            panel.edit_at_arrow(kind, end)
+            placed = panel.arrow_field[2].geometry()
+            start, tip = on_view(kind, end, 0), on_view(kind, end, 1)
+            # How far the tip lies outside the field, in pixels.
+            off = math.hypot(max(placed.left() - tip.x(), 0, tip.x() - placed.right()),
+                             max(placed.top() - tip.y(), 0, tip.y() - placed.bottom()))
+            expect(not placed.contains(start) and off <= taskpanel.ARROW_FIELD_GAP + 1,
+                   "the field of the half %d of the arrow %s stands just past its tip, %.1f pixels off it, not "
+                   "over the arrow" % (end, kind, off))
+    # The fin as high as it can be: the arrow up shows its lower half alone,
+    # and without a half clicked the field goes below its tip.
+    shown = arrows.ends[handles.UP]
+    arrows.show_ends(handles.UP, (handles.BACK,))
+    try:
+        panel.edit_at_arrow(handles.UP)
+        lower = panel.arrow_field[2].geometry()
+        start, tip = (QtCore.QPoint(round(x * viewport.width()), round(y * viewport.height()))
+                      for x, y in arrows.tip_points(handles.UP))
+    finally:
+        arrows.show_ends(handles.UP, shown)
+    expect(tip.y() > start.y() and lower.top() > viewport.mapTo(viewport.parentWidget(), tip).y(),
+           "with only the lower half of the arrow up shown, its field stands below that tip")
+    panel.edit_at_arrow(handles.ALONG)
+    field = panel.arrow_field[2]
+    # Enter and Escape are kept from FreeCAD whole: a shortcut on them, the
+    # press, and the release, on which the 3D view would leave edit mode and
+    # close the panel; held, their repeats too. None of them acts before the
+    # key is let go, so the field stays open through all of these.
+    claimed = []
+    for pressed in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Escape):
+        for kind, repeat in ((QtCore.QEvent.ShortcutOverride, False), (QtCore.QEvent.KeyPress, False),
+                             (QtCore.QEvent.KeyPress, True), (QtCore.QEvent.KeyRelease, True)):
+            event = QtGui.QKeyEvent(kind, pressed, QtCore.Qt.NoModifier, "", repeat)
+            event.ignore()
+            claimed.append(QtWidgets.QApplication.sendEvent(field, event) and event.isAccepted())
+    expect(all(claimed) and panel.arrow_field is not None,
+           "Enter and Escape, pressed, held and their shortcuts, are kept by the field from FreeCAD: %s" % claimed)
+    field.setValue(place - FIN_SHIFT)
+    key(field, QtCore.Qt.Key_Escape)
+    expect(panel.arrow_field is None and abs(box.value() - place) < d.TOLERANCE
+           and feature.edits(fins, feature.MAIN)[1] == shifts, "Escape closes the field, the fin stays")
+    for moved_to in (place - FIN_SHIFT, place):
+        panel.edit_at_arrow(handles.ALONG)
+        panel.arrow_field[2].setValue(moved_to)
+        key(panel.arrow_field[2], QtCore.Qt.Key_Return)
+        expect(panel.arrow_field is None and abs(box.value() - moved_to) < d.TOLERANCE,
+               "Enter takes the value typed at the arrow as the field in the panel takes it: %.2f" % box.value())
+    expect(feature.edits(fins, feature.MAIN)[1] == shifts, "typed back, the fin stands where it stood")
 
 
 def value_colors():
@@ -1775,6 +1918,7 @@ def main():
     expect(all(moving.handles.draggers[kind] is held[kind] for kind in held),
            "the arrows stay the same after a move; Coin may still hold the one let go")
     released_without_button(moving.handles, "a box")
+    arrow_field(moving, lined)
     expect(all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(handles.axis_color("z"), AXIS_Z_RGB)),
            "the arrow up has the colour of the z axis: %s" % (handles.axis_color("z"),))
     result = lined.Proxy.results[feature.MAIN]
@@ -1842,6 +1986,8 @@ def main():
     tallest = moving.built_value(handles.UP)
     expect(abs(tallest - tops[-1]) < d.TOLERANCE and len(lined.ViewObject.ShapeAppearance) == 1,
            "let go far above the face, the fin ends with its highest tine, green: %.3f mm" % tallest)
+    expect(moving.handles.ends[handles.UP] == (handles.BACK,),
+           "at its highest tine, the arrow up shows no end up even before the ends are tried, so none flashes")
     moving.update_ends()
     expect(moving.handles.ends[handles.UP] == (handles.BACK,), "at its highest tine, the arrow up shows no end up")
     moving.handle_started(handles.UP)
