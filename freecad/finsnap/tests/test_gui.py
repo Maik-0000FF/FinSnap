@@ -694,8 +694,8 @@ def arrow_field(panel, fins):
            "a double click names the half of the arrow clicked on: %s" % halves)
 
     def key(field, pressed):
-        QtWidgets.QApplication.sendEvent(field, QtGui.QKeyEvent(QtCore.QEvent.KeyPress, pressed,
-                                                                QtCore.Qt.NoModifier))
+        for kind in (QtCore.QEvent.KeyPress, QtCore.QEvent.KeyRelease):
+            QtWidgets.QApplication.sendEvent(field, QtGui.QKeyEvent(kind, pressed, QtCore.Qt.NoModifier))
 
     box = panel.fin_fields[handles.ALONG]
     place, shifts = box.value(), dict(feature.edits(fins, feature.MAIN)[1])
@@ -730,14 +730,19 @@ def arrow_field(panel, fins):
            "with only the lower half of the arrow up shown, its field stands below that tip")
     panel.edit_at_arrow(handles.ALONG)
     field = panel.arrow_field[2]
+    # Enter and Escape are kept from FreeCAD whole: a shortcut on them, the
+    # press, and the release, on which the 3D view would leave edit mode and
+    # close the panel; held, their repeats too. None of them acts before the
+    # key is let go, so the field stays open through all of these.
     claimed = []
     for pressed in (QtCore.Qt.Key_Return, QtCore.Qt.Key_Escape):
-        override = QtGui.QKeyEvent(QtCore.QEvent.ShortcutOverride, pressed, QtCore.Qt.NoModifier)
-        override.ignore()
-        QtWidgets.QApplication.sendEvent(field, override)
-        claimed.append(override.isAccepted())
-    expect(claimed == [True, True] and panel.arrow_field is not None,
-           "Enter and Escape are claimed by the field before a shortcut of FreeCAD can take them")
+        for kind, repeat in ((QtCore.QEvent.ShortcutOverride, False), (QtCore.QEvent.KeyPress, False),
+                             (QtCore.QEvent.KeyPress, True), (QtCore.QEvent.KeyRelease, True)):
+            event = QtGui.QKeyEvent(kind, pressed, QtCore.Qt.NoModifier, "", repeat)
+            event.ignore()
+            claimed.append(QtWidgets.QApplication.sendEvent(field, event) and event.isAccepted())
+    expect(all(claimed) and panel.arrow_field is not None,
+           "Enter and Escape, pressed, held and their shortcuts, are kept by the field from FreeCAD: %s" % claimed)
     field.setValue(place - FIN_SHIFT)
     key(field, QtCore.Qt.Key_Escape)
     expect(panel.arrow_field is None and abs(box.value() - place) < d.TOLERANCE

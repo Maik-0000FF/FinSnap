@@ -543,14 +543,17 @@ class EnterTakes(QtCore.QObject):
 class ArrowFieldKeys(QtCore.QObject):
     """Ends typing in the field at an arrow: Enter calls `take`, Escape and
     the field losing the focus call `cancel`. Enter and Escape are kept from
-    the task dialog, which would close the panel on them, and claimed before
-    a shortcut of FreeCAD on them takes them, so the field sees them.
+    FreeCAD whole, pressed and let go: the field lies in the 3D view, which
+    leaves edit mode on Escape let go, closing the task panel, and a shortcut
+    on them is claimed for the field before FreeCAD takes it. The field acts
+    when the key is let go, so it still holds the focus and takes that too.
 
     INPUTS this has to withstand:
-      Enter or Return                       ->  take(), the key kept
-      Escape                                ->  cancel(), the key kept
-      a shortcut on Enter or Escape         ->  claimed for the field, which then
-                                                gets the key
+      Enter or Return let go                ->  take(), press and release kept
+      Escape let go                         ->  cancel(), press and release kept,
+                                                the task panel left open
+      a key held, repeating                 ->  the repeats kept, acted on once let go
+      a shortcut on Enter or Escape         ->  claimed for the field
       the focus gone, a click elsewhere     ->  cancel()
       any other key, digits, a sign         ->  passed on to the field
     """
@@ -560,18 +563,17 @@ class ArrowFieldKeys(QtCore.QObject):
         self.take, self.cancel = take, cancel
 
     def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
-        if event.type() == QtCore.QEvent.ShortcutOverride and event.key() in ENTER_KEYS + CANCEL_KEYS:
-            event.accept()
-            return True
-        if event.type() == QtCore.QEvent.KeyPress and event.key() in ENTER_KEYS:
-            self.take()
-            return True
-        if event.type() == QtCore.QEvent.KeyPress and event.key() in CANCEL_KEYS:
+        kind = event.type()
+        if kind == QtCore.QEvent.FocusOut:
             self.cancel()
-            return True
-        if event.type() == QtCore.QEvent.FocusOut:
-            self.cancel()
-        return False
+            return False
+        if kind not in (QtCore.QEvent.ShortcutOverride, QtCore.QEvent.KeyPress, QtCore.QEvent.KeyRelease) \
+                or event.key() not in ENTER_KEYS + CANCEL_KEYS:
+            return False
+        event.accept()
+        if kind == QtCore.QEvent.KeyRelease and not event.isAutoRepeat():
+            (self.take if event.key() in ENTER_KEYS else self.cancel)()
+        return True
 
 
 class FinKeys(QtCore.QObject):
