@@ -257,99 +257,99 @@
 <context>
     <name>FinSnap</name>
     <message>
-        <location filename="../commands.py" line="49"/>
+        <location filename="../commands.py" line="48"/>
         <source>3MF files (*.3mf)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="51"/>
+        <location filename="../commands.py" line="50"/>
         <source>STEP files (*.step *.stp)</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="53"/>
+        <location filename="../commands.py" line="52"/>
         <source>Select a part, or its fins, to check whether it stays standing while it is printed.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="56"/>
+        <location filename="../commands.py" line="55"/>
         <source>Another task panel is open. Close it first, then make the fins again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="259"/>
+        <location filename="../commands.py" line="257"/>
         <source>Remove fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="342"/>
+        <location filename="../commands.py" line="340"/>
         <source>Select one edge of the part, and the face of that edge that is to lie on the bed; or a face alone, a chamfer or a fillet; or the two faces beside it.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="362"/>
-        <location filename="../commands.py" line="373"/>
+        <location filename="../commands.py" line="360"/>
+        <location filename="../commands.py" line="371"/>
         <source>Stand on edge</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="363"/>
+        <location filename="../commands.py" line="361"/>
         <source>Tilt angle (degrees):</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="431"/>
+        <location filename="../commands.py" line="429"/>
         <source>%d faces overhang flatter than %.0f degrees from the bed and are selected: they need fins or support.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="475"/>
+        <location filename="../commands.py" line="473"/>
         <source>The selection was not stood on an edge with Stand on edge.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="490"/>
+        <location filename="../commands.py" line="488"/>
         <source>Lay flat again</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="509"/>
+        <location filename="../commands.py" line="507"/>
         <source>Delete the fins of the part as well? No keeps them, moved along with the part, and rebuilds them once it is moved again, for example stood on its edge.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="551"/>
+        <location filename="../commands.py" line="549"/>
         <source>Select an edge or a face of one part.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="568"/>
+        <location filename="../commands.py" line="566"/>
         <source>Quick fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="854"/>
+        <location filename="../commands.py" line="852"/>
         <source>Select one face to support, or two faces for a counter fin.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="859"/>
+        <location filename="../commands.py" line="857"/>
         <source>Add fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="894"/>
+        <location filename="../commands.py" line="892"/>
         <source>Select one fin object, and optionally one face of its part.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="897"/>
+        <location filename="../commands.py" line="895"/>
         <source>The face for the counter fin has to belong to the part the fins stand under.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="900"/>
-        <location filename="../taskpanel.py" line="830"/>
+        <location filename="../commands.py" line="898"/>
+        <location filename="../taskpanel.py" line="877"/>
         <source>Add counter fin</source>
         <translation type="unfinished"></translation>
     </message>
@@ -359,42 +359,42 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="979"/>
+        <location filename="../commands.py" line="949"/>
         <source>nothing to export: the parts of %s lie flat; stand them on their edge again</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="988"/>
+        <location filename="../commands.py" line="958"/>
         <source>Mesh fineness</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="996"/>
+        <location filename="../commands.py" line="966"/>
         <source>Surface deviation</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1003"/>
+        <location filename="../commands.py" line="973"/>
         <source>Angular deviation</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1005"/>
+        <location filename="../commands.py" line="975"/>
         <source>Planar faces are exported exactly; these values only affect curved surfaces.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1040"/>
+        <location filename="../commands.py" line="1010"/>
         <source>Export 3MF</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1063"/>
+        <location filename="../commands.py" line="1033"/>
         <source>Export STEP</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1094"/>
+        <location filename="../commands.py" line="1064"/>
         <source>Left out, as their part lies flat: %s. Stand it on its edge again to export these fins.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1018,19 +1018,8 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../handles.py" line="535"/>
+        <location filename="../handles.py" line="543"/>
         <source>No 3D view of %s is open to edit the fins in.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../mesh_input.py" line="26"/>
-        <source>the mesh is empty</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../mesh_input.py" line="32"/>
-        <location filename="../mesh_input.py" line="34"/>
-        <source>the mesh is not closed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
@@ -1186,52 +1175,52 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="87"/>
+        <location filename="../taskpanel.py" line="92"/>
         <source>Click a fin of these fins in the 3D view first.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="113"/>
+        <location filename="../taskpanel.py" line="118"/>
         <source>Main fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="114"/>
+        <location filename="../taskpanel.py" line="119"/>
         <source>Counter fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="147"/>
+        <location filename="../taskpanel.py" line="152"/>
         <source>Stand</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="152"/>
+        <location filename="../taskpanel.py" line="157"/>
         <source>Stands on</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="152"/>
+        <location filename="../taskpanel.py" line="157"/>
         <source>Length</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="150"/>
+        <location filename="../taskpanel.py" line="155"/>
         <source>Islands</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="154"/>
+        <location filename="../taskpanel.py" line="159"/>
         <source>Fins under</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="154"/>
+        <location filename="../taskpanel.py" line="159"/>
         <source>Area</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="185"/>
+        <location filename="../taskpanel.py" line="190"/>
         <source>Tips at layer %d, %.1f mm high</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1246,82 +1235,82 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="202"/>
+        <location filename="../taskpanel.py" line="207"/>
         <source>Side view</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="203"/>
+        <location filename="../taskpanel.py" line="208"/>
         <source>Top view</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="760"/>
+        <location filename="../taskpanel.py" line="807"/>
         <source>FinSnap parameters</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="771"/>
+        <location filename="../taskpanel.py" line="818"/>
         <source>Hover over a field for an explanation. Letters in brackets point to the drawings below. Every change is shown in the 3D view right away. Greyed-out fields have no effect with the current choices; their tooltip says why.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="137"/>
+        <location filename="../taskpanel.py" line="142"/>
         <source>Edit fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="98"/>
+        <location filename="../taskpanel.py" line="103"/>
         <source>Distance of the middle of the fin from the left end of the face, seen from outside. Type a value to move the fin there.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="103"/>
+        <location filename="../taskpanel.py" line="108"/>
         <source>Position of the fin around the cylinder or tube, measured at the middle of its tines, in degrees from 0°, where it is first placed. Type a value to turn the part to it; the fin keeps its place.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="108"/>
+        <location filename="../taskpanel.py" line="113"/>
         <source>Height of this fin alone. Type a value to set it; Reset fins gives it the height of the others again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="176"/>
+        <location filename="../taskpanel.py" line="181"/>
         <source>The part no longer stands one of the ways Quick fins found, or there is only one.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="186"/>
+        <location filename="../taskpanel.py" line="191"/>
         <source>Smallest tipping angle at layer %d, %.1f mm high</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="818"/>
+        <location filename="../taskpanel.py" line="865"/>
         <source>To remove one fin, click it in the 3D view and press Remove selected fin, or the Delete key. The counter fin goes under the face leaning the other way, or under a face of the part you select. Drag the two arrows on a fin to move it along the face or to change its height, or type the values below; click another fin, or pick it in the list of fins, to put the arrows there. In the 3D view, the left and right arrow keys move that fin along the face, and Shift with the up or down arrow key steps its height to the next tine. Reset fins undoes every change by hand.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="828"/>
+        <location filename="../taskpanel.py" line="875"/>
         <source>Remove selected fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="829"/>
+        <location filename="../taskpanel.py" line="876"/>
         <source>Reset fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="831"/>
+        <location filename="../taskpanel.py" line="878"/>
         <source>Remove counter fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="839"/>
+        <location filename="../taskpanel.py" line="886"/>
         <source>The fins, the main fins from the left, then the counter fins. Pick one to put the arrows on it and select it.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="97"/>
+        <location filename="../taskpanel.py" line="102"/>
         <source>Place on the face</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1336,32 +1325,32 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="102"/>
+        <location filename="../taskpanel.py" line="107"/>
         <source>Angle on the part</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="107"/>
+        <location filename="../taskpanel.py" line="112"/>
         <source>Height</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="159"/>
+        <location filename="../taskpanel.py" line="164"/>
         <source>%d faces overhang critically, %d too flat to print.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="161"/>
+        <location filename="../taskpanel.py" line="166"/>
         <source>%d bridges span critically, %d too far to print.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="163"/>
+        <location filename="../taskpanel.py" line="168"/>
         <source>Quick fins found more than one way to stand the part. Click a row to stand it so; the part and its fins follow in the 3D view. Ways where the part would start printing in the air, an island, or where a face lies too flat or a bridge spans too far to print, are left out while one without is found. Overhangs counts the faces overhanging without fins, Bridges those spanning too far, with the longest span in brackets; yellow is critical, red not printable. Rated after the checks were switched on, every way stays listed in its order, shaded by what it finds.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="172"/>
+        <location filename="../taskpanel.py" line="177"/>
         <source>Stand the part another way? The fins are planned anew: fins removed, moved or set to a height of their own, a turn of the part and the counter fin are undone.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1386,115 +1375,115 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="194"/>
+        <location filename="../taskpanel.py" line="199"/>
         <source>Checks whether the part stays standing while it is printed, layer by layer, on its own and held by these fins, which hold it only from their lowest tine up, and shows the plumb line from its centre of mass to the bed. Takes a moment on a large part.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="198"/>
+        <location filename="../taskpanel.py" line="203"/>
         <source>Changed since the stability check: check again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="200"/>
+        <location filename="../taskpanel.py" line="205"/>
         <source>The part of this check is gone; delete the check.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="867"/>
+        <location filename="../taskpanel.py" line="914"/>
         <source>Save as standard</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="868"/>
+        <location filename="../taskpanel.py" line="915"/>
         <source>New fins start with these values. Fields that differ from the standard are marked, and their button puts the standard back.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="872"/>
-        <location filename="../taskpanel.py" line="1073"/>
+        <location filename="../taskpanel.py" line="919"/>
+        <location filename="../taskpanel.py" line="1120"/>
         <source>Factory settings</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="873"/>
+        <location filename="../taskpanel.py" line="920"/>
         <source>Forget the saved standard and set every field to the built-in value.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="893"/>
+        <location filename="../taskpanel.py" line="940"/>
         <source>Check stability</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="984"/>
+        <location filename="../taskpanel.py" line="1031"/>
         <source>Stand another way</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1053"/>
+        <location filename="../taskpanel.py" line="1100"/>
         <source>Back to the standard: %s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1074"/>
+        <location filename="../taskpanel.py" line="1121"/>
         <source>Forget the saved standard and set every field to the built-in value?</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../taskpanel.py" line="1102"/>
-        <location filename="../taskpanel.py" line="1106"/>
-        <source>Nothing removed</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../taskpanel.py" line="1113"/>
-        <source>Delete the fins?</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../taskpanel.py" line="1114"/>
-        <source>These are the last fins. Delete the fins object? A part stood on an edge for these fins alone is laid flat again.</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../taskpanel.py" line="1130"/>
-        <source>Delete fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../taskpanel.py" line="1149"/>
         <location filename="../taskpanel.py" line="1153"/>
+        <source>Nothing removed</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1160"/>
+        <source>Delete the fins?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1161"/>
+        <source>These are the last fins. Delete the fins object? A part stood on an edge for these fins alone is laid flat again.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1177"/>
+        <source>Delete fins</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1196"/>
+        <location filename="../taskpanel.py" line="1200"/>
         <source>No counter fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1279"/>
+        <location filename="../taskpanel.py" line="1326"/>
         <source>%s %d</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1574"/>
+        <location filename="../taskpanel.py" line="1622"/>
         <source>no tine of the fin finds the face there</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1923"/>
+        <location filename="../taskpanel.py" line="2098"/>
         <source>Not possible</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1962"/>
+        <location filename="../taskpanel.py" line="2137"/>
         <source>%d fin(s), %.2f mm high, %.2f mm thick</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1969"/>
+        <location filename="../taskpanel.py" line="2144"/>
         <source>Notes</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="466"/>
+        <location filename="../taskpanel.py" line="471"/>
         <source>Cancel fins</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1520,7 +1509,7 @@
     </message>
     <message>
         <location filename="../preferences.py" line="48"/>
-        <location filename="../taskpanel.py" line="150"/>
+        <location filename="../taskpanel.py" line="155"/>
         <source>Overhangs</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1556,7 +1545,7 @@
     </message>
     <message>
         <location filename="../preferences.py" line="64"/>
-        <location filename="../taskpanel.py" line="151"/>
+        <location filename="../taskpanel.py" line="156"/>
         <source>Bridges</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1624,12 +1613,12 @@
 <context>
     <name>FinSnap_AddCounterFin</name>
     <message>
-        <location filename="../commands.py" line="874"/>
+        <location filename="../commands.py" line="872"/>
         <source>Add counter fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="875"/>
+        <location filename="../commands.py" line="873"/>
         <source>Adds a fin on the opposite side of existing fins, against tipping away, as large as the main fin; fewer counter tines in the panel make it smaller. Select the fins: the face leaning the other way is found automatically. Or select a face of the part as well to choose it yourself. To remove the counter fin, clear its face in the property view.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1637,12 +1626,12 @@
 <context>
     <name>FinSnap_AddFins</name>
     <message>
-        <location filename="../commands.py" line="842"/>
+        <location filename="../commands.py" line="840"/>
         <source>Add fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="843"/>
+        <location filename="../commands.py" line="841"/>
         <source>Select the face that leans over the bed; optionally a second face on the opposite side for a counter fin</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1650,12 +1639,12 @@
 <context>
     <name>FinSnap_CheckBridges</name>
     <message>
-        <location filename="../commands.py" line="1166"/>
+        <location filename="../commands.py" line="1136"/>
         <source>Check bridges</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1167"/>
+        <location filename="../commands.py" line="1137"/>
         <source>Checks the selected part, as it stands, for bridges: faces that span a gap between supports on the layer below, at two or more sides, which the slicer prints as straight lines across. Says how far each spans, rated by the check limits, and keeps it as a bridge check in the tree, which shows where they span too far on the underside of the part. Once the part, its place or its fins change, the check is marked out of date; double-click it to check again.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1663,12 +1652,12 @@
 <context>
     <name>FinSnap_CheckLimits</name>
     <message>
-        <location filename="../commands.py" line="1266"/>
+        <location filename="../commands.py" line="1236"/>
         <source>Check limits...</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1267"/>
+        <location filename="../commands.py" line="1237"/>
         <source>Opens the limits the checks rate by, in Edit &gt; Preferences: the strictness, strict or normal, or limits of your own for overhangs, bridges and the tipping margin.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1676,12 +1665,12 @@
 <context>
     <name>FinSnap_CheckPart</name>
     <message>
-        <location filename="../commands.py" line="1190"/>
+        <location filename="../commands.py" line="1160"/>
         <source>Check part</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1191"/>
+        <location filename="../commands.py" line="1161"/>
         <source>Checks the selected part, with or without fins, as it stands, for everything that keeps it from printing, all at once: faces overhanging without fins, bridges spanning too far, islands, where it would start printing in the air, and whether it stays standing while it is printed. Says what it found and keeps it as a part check in the tree, which shows it all: the eye shows or hides it, deleting the check removes it. Once the part, its place or its fins change, the check is marked out of date; double-click it to check again.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1689,12 +1678,12 @@
 <context>
     <name>FinSnap_CheckStability</name>
     <message>
-        <location filename="../commands.py" line="1113"/>
+        <location filename="../commands.py" line="1083"/>
         <source>Check stability</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1114"/>
+        <location filename="../commands.py" line="1084"/>
         <source>Checks whether the selected part stays standing while it is printed, layer by layer, as it grows and its centre of mass moves: first on its own, then, where it would tip over, held by its fins, which hold it only from their lowest tine up. Says at which layer it would tip and which way. Keeps it as a stability check in the tree, which shows the part coloured by height, the layer it tips at and the plumb line from its centre of mass to the bed: the eye shows or hides them, deleting the check removes them. Once the part, its place or its fins change, the check is marked out of date; double-click it to check again.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1702,12 +1691,12 @@
 <context>
     <name>FinSnap_Export3MF</name>
     <message>
-        <location filename="../commands.py" line="1024"/>
+        <location filename="../commands.py" line="994"/>
         <source>Export 3MF</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1025"/>
+        <location filename="../commands.py" line="995"/>
         <source>Export the selection to 3MF, every body as its own object for the slicer. With nothing selected, all fins of the document are exported together with their parts.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1715,12 +1704,12 @@
 <context>
     <name>FinSnap_ExportSTEP</name>
     <message>
-        <location filename="../commands.py" line="1048"/>
+        <location filename="../commands.py" line="1018"/>
         <source>Export STEP</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1049"/>
+        <location filename="../commands.py" line="1019"/>
         <source>Export the selection to STEP, with exact surfaces instead of a mesh. The slicer loads it as one object with a part per body: split it into objects there, so part and fins are printed separately. With nothing selected, all fins of the document are exported together with their parts.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1728,12 +1717,12 @@
 <context>
     <name>FinSnap_IslandsWhileEditing</name>
     <message>
-        <location filename="../commands.py" line="1216"/>
+        <location filename="../commands.py" line="1186"/>
         <source>Islands and bridges while editing</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1217"/>
+        <location filename="../commands.py" line="1187"/>
         <source>While on, fins check their part for islands and bridges as they are made and edited, and Quick fins rates the ways to stand it by them. Off, they are not checked then, which keeps a large part quick on a slow computer: bridge faces count as overhangs meanwhile, and Check part checks them at the end.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1741,38 +1730,25 @@
 <context>
     <name>FinSnap_LayFlat</name>
     <message>
-        <location filename="../commands.py" line="451"/>
+        <location filename="../commands.py" line="449"/>
         <source>Lay flat again</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="452"/>
+        <location filename="../commands.py" line="450"/>
         <source>Puts a part stood on an edge back as it lay before. Select the part or its fins. If the part has fins, it asks whether to delete them; kept fins move along with the part and are rebuilt once it is moved again. Deleting the last fins of a part lays it flat as well.</source>
-        <translation type="unfinished"></translation>
-    </message>
-</context>
-<context>
-    <name>FinSnap_MeshToSolid</name>
-    <message>
-        <location filename="../commands.py" line="920"/>
-        <source>Mesh to solid</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
-        <location filename="../commands.py" line="921"/>
-        <source>Turn a selected STL mesh into a solid with planar faces, so fins can be added</source>
         <translation type="unfinished"></translation>
     </message>
 </context>
 <context>
     <name>FinSnap_QuickFins</name>
     <message>
-        <location filename="../commands.py" line="528"/>
+        <location filename="../commands.py" line="526"/>
         <source>Quick fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="529"/>
+        <location filename="../commands.py" line="527"/>
         <source>Stands the part up and adds one fin in the middle of a face in one step, then opens the panel to adjust it. Select the edge the part is to stand on: the fins go under the largest face that leans over the bed. Or select the face the fins are to support: the part is turned so that it leans 45 degrees over the bed, on its longest edge, or, for a round face, on its lowest point; select one of its edges as well to stand on that one, or, after the face, a chamfer or fillet to rest on. A chamfer or fillet alone, or the two faces beside a fillet, carry the part as well. The rim or the curved side of a cylinder or tube stands it on its rim, with one fin under its lowest line. A counter fin, where wanted, is added in the panel. Where the part can stand on another edge, or the fins can go under another face, a table at the top of the panel lists them to choose from; ways where the part would start printing in the air are left out while one without is found.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1780,12 +1756,12 @@
 <context>
     <name>FinSnap_Tilt</name>
     <message>
-        <location filename="../commands.py" line="321"/>
+        <location filename="../commands.py" line="319"/>
         <source>Stand on edge</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../commands.py" line="322"/>
+        <location filename="../commands.py" line="320"/>
         <source>Select an edge of the part and the face of that edge that is to lie on the bed. The face is laid onto the bed, the part is turned about the edge by the tilt angle and set back onto the bed, standing on the edge. For an edge already on the bed, the edge alone is enough; so it is for an edge between two flat faces at a right angle, on which the part stands at 45 degrees. A face alone, a chamfer or a fillet, is laid onto the bed and carries the part: a chamfer lies flat on it, a fillet touches it along its middle. Two faces alone, such as the two beside a fillet, stand the part on what joins them, both equally steep. The rim of a cylinder or tube stands it on that rim, leaning to the front.</source>
         <translation type="unfinished"></translation>
     </message>

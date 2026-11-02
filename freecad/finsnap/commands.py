@@ -22,11 +22,10 @@ from . import feature
 from . import geometry
 from . import handles
 from . import limits
-from . import mesh_input
 from . import orient
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
-from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_LAY_FLAT, ICON_MESH,
+from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_LAY_FLAT,
                     ICON_CHECK_PART, ICON_ISLANDS, ICON_QUICK, ICON_LIMITS, ICON_STABILITY, ICON_TILT,
                     ICON_BRIDGES)
 from .presets import PREFERENCES
@@ -61,7 +60,6 @@ MESH_LINEAR_RANGE = (0.001, 1.0)
 MESH_ANGULAR_RANGE = (0.1, 30.0)
 MESH_LINEAR_DECIMALS = 3
 MESH_ANGULAR_DECIMALS = 1
-SOLID_SUFFIX = "_solid"
 FINS_SUFFIX = "_fins"
 STATUS_TIMEOUT_MS = 10000
 # What an export writes, and the fins it leaves out because their part lies flat.
@@ -914,34 +912,6 @@ class AddCounterFin:
         doc.recompute()
 
 
-class MeshToSolid:
-    def GetResources(self):  # noqa: N802 - FreeCAD API
-        return {"Pixmap": ICON_MESH,
-                "MenuText": QT_TRANSLATE_NOOP("FinSnap_MeshToSolid", "Mesh to solid"),
-                "ToolTip": QT_TRANSLATE_NOOP(
-                    "FinSnap_MeshToSolid",
-                    "Turn a selected STL mesh into a solid with planar faces, so fins can be added")}
-
-    def IsActive(self):  # noqa: N802 - FreeCAD API
-        return any(o.isDerivedFrom("Mesh::Feature") for o in Gui.Selection.getSelection())
-
-    def Activated(self):  # noqa: N802 - FreeCAD API
-        doc = App.ActiveDocument
-        for mesh_obj in Gui.Selection.getSelection():
-            if not mesh_obj.isDerivedFrom("Mesh::Feature"):
-                continue
-            try:
-                solid = mesh_input.solid_from_mesh(mesh_obj.Mesh)
-            except ValueError as error:
-                _message("%s: %s" % (mesh_obj.Label, error))
-                continue
-            part = doc.addObject("Part::Feature", mesh_obj.Name + SOLID_SUFFIX)
-            part.Label = mesh_obj.Label + SOLID_SUFFIX
-            part.Shape = solid
-            mesh_obj.Visibility = False
-        doc.recompute()
-
-
 def _to_export():
     """The selection, or every fin object of the document when nothing is selected."""
     selected = Gui.Selection.getSelection()
@@ -1297,7 +1267,6 @@ COMMANDS = (("FinSnap_QuickFins", QuickFins()),
             ("FinSnap_CheckBridges", CheckBridges()),
             ("FinSnap_CheckPart", CheckPart()),
             ("FinSnap_IslandsWhileEditing", IslandsWhileEditing()),
-            ("FinSnap_MeshToSolid", MeshToSolid()),
             ("FinSnap_Export3MF", Export3MF()),
             ("FinSnap_ExportSTEP", ExportSTEP()))
 # In the menu only, not in the toolbar: settings, not a step of the work.

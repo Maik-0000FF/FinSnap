@@ -53,6 +53,11 @@ DEGREE_SUFFIX = " \N{DEGREE SIGN}"
 PREVIEW_DELAY_MS = 400
 # The keys that end typing in a field.
 ENTER_KEYS = (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter)
+# The field a double click on an arrow lays over the 3D view past its tip:
+# Escape, or a click elsewhere, closes it untaken.
+CANCEL_KEYS = (QtCore.Qt.Key_Escape,)
+# It stands this many pixels past the tip of its arrow.
+ARROW_FIELD_GAP = 4
 # Pause after the last repeat of an arrow key held before the fin is built
 # for all of them at once: repeats come faster than the fins are built.
 KEY_REPEAT_PAUSE_MS = 150
@@ -535,6 +540,42 @@ class EnterTakes(QtCore.QObject):
         return False
 
 
+class ArrowFieldKeys(QtCore.QObject):
+    """Ends typing in the field at an arrow: Enter calls `take`, Escape and
+    the field losing the focus call `cancel`. Enter and Escape are kept from
+    FreeCAD whole, pressed and let go: the field lies in the 3D view, which
+    leaves edit mode on Escape let go, closing the task panel, and a shortcut
+    on them is claimed for the field before FreeCAD takes it. The field acts
+    when the key is let go, so it still holds the focus and takes that too.
+
+    INPUTS this has to withstand:
+      Enter or Return let go                ->  take(), press and release kept
+      Escape let go                         ->  cancel(), press and release kept,
+                                                the task panel left open
+      a key held, repeating                 ->  the repeats kept, acted on once let go
+      a shortcut on Enter or Escape         ->  claimed for the field
+      the focus gone, a click elsewhere     ->  cancel()
+      any other key, digits, a sign         ->  passed on to the field
+    """
+
+    def __init__(self, take, cancel, parent):
+        super().__init__(parent)
+        self.take, self.cancel = take, cancel
+
+    def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
+        kind = event.type()
+        if kind == QtCore.QEvent.FocusOut:
+            self.cancel()
+            return False
+        if kind not in (QtCore.QEvent.ShortcutOverride, QtCore.QEvent.KeyPress, QtCore.QEvent.KeyRelease) \
+                or event.key() not in ENTER_KEYS + CANCEL_KEYS:
+            return False
+        event.accept()
+        if kind == QtCore.QEvent.KeyRelease and not event.isAutoRepeat():
+            (self.take if event.key() in ENTER_KEYS else self.cancel)()
+        return True
+
+
 class FinKeys(QtCore.QObject):
     """Moves the fin with the arrows by the keys of ALONG_KEYS and, with Shift,
     HEIGHT_KEYS, pressed in the 3D view: `pressed` is called with ALONG or UP,
@@ -727,6 +768,13 @@ class FinSnapTaskPanel:
         self.field_timer.setInterval(PREVIEW_DELAY_MS)
         self.field_timer.timeout.connect(lambda: self.field_entered(self.typed_field, paused=True))
         self.typed_field = None
+        # The field at an arrow a double click opened, as (kind, end, field):
+        # past the tip of its half end, BACK or FORTH; and the timer that keeps
+        # it at the arrow while the view turns or zooms.
+        self.arrow_field = None
+        self.arrow_field_timer = QtCore.QTimer(self.form)
+        self.arrow_field_timer.setInterval(handles.ZOOM_POLL_MS)
+        self.arrow_field_timer.timeout.connect(self.place_arrow_field)
         # The field of the fin being typed into while its value is taken after
         # a pause: the panel leaves it as typed.
         self.typing = None
@@ -734,8 +782,6 @@ class FinSnapTaskPanel:
         # arrow being dragged with how far, as (kind, mm); and the shift and
         # height of the fin, and the values in its fields, when it was grabbed.
         self.handled = None
-        # The fin the ends of the arrows were last tried on.
-        self.ends_of = None
         # The arrow ends found, by what they depend on (ends_key).
         self.known_ends = {}
         self.dragged = None
@@ -744,7 +790,8 @@ class FinSnapTaskPanel:
         self.released = False
         # True while the panel fills the fields of the fin, not the user.
         self.filling_fields = False
-        self.handles = handles.Handles(obj.ViewObject, self.handle_started, self.handle_moved, self.handle_done)
+        self.handles = handles.Handles(obj.ViewObject, self.handle_started, self.handle_moved, self.handle_done,
+                                       self.arrow_double_clicked)
         # The arrow keys in the 3D view move the fin with the arrows; the
         # widget that has the focus there is the view or its viewport.
         self.key_widgets = []
@@ -1377,10 +1424,11 @@ class FinSnapTaskPanel:
         if not self.handles.held:
             self.handles.show(result.edges[number], result.along, result.out,
                               self.turn_of_handles() if turning else None, fixed)
-            # On another fin, both ends until tried, rather than those of the fin before.
-            if self.handled != self.ends_of:
-                for kind in handles.KINDS:
-                    self.handles.show_ends(kind, (handles.BACK, handles.FORTH))
+            # Until tried, the ends found for the fin as it stands, else every
+            # end there is a step to, never those of the fin before: shown
+            # first and taken away after would flash.
+            for kind in handles.KINDS:
+                self.handles.show_ends(kind, self.untried_ends(kind))
             self.ends_timer.start()
         self.show_fin_values(self.fin_values())
         self.fin_label.setText(self.fin_name(self.handled))
@@ -1628,13 +1676,30 @@ class FinSnapTaskPanel:
                 feature.edits_key(*feature.edits(self.obj, which)), tuple(faces),
                 part.Shape.hashCode(), str(part.getGlobalPlacement()))
 
+    def untried_ends(self, kind):
+        """The ends of the arrow of `kind` shown until update_ends() has tried
+        where the handled fin can go: those found before for it as it stands
+        now, else every end there is a step to (next_values()), which needs
+        no build. A fin at its highest tine has no step up, so the arrow up
+        shows no upper end even before it is tried.
+
+        INPUTS this has to withstand:
+          the fin as it stood when last tried   ->  the ends found then, at once
+          a fin at its highest tine, untried    ->  no end up
+          a fin at its lowest tine, untried     ->  no end down
+          along the face, untried               ->  both ends, until tried
+        """
+        known = self.known_ends.get(self.ends_key())
+        if known is not None:
+            return known[kind]
+        return tuple(end for end, _ in self.next_values(kind, self.built_value(kind)))
+
     def update_ends(self):
         """Leave out each end of an arrow where the handled fin cannot go.
         Tried once for each fin as it stands: a rebuild that changed nothing
         it depends on takes the ends found before."""
         if self.handles.held or self.handled_result() is None:
             return
-        self.ends_of = self.handled
         key = self.ends_key()
         if key not in self.known_ends:
             while len(self.known_ends) >= ENDS_KEPT:
@@ -1650,6 +1715,8 @@ class FinSnapTaskPanel:
         """An arrow grabbed: note where the fin stands and what it has by hand;
         the drag starts from there."""
         self.ends_timer.stop()
+        # A field at an arrow is dropped, as a click elsewhere drops it.
+        self.close_arrow_field()
         # A value typed just before is built first, or the drag would keep the
         # parameters from before it, or the value would come in the middle of it.
         if self.timer.isActive():
@@ -1890,11 +1957,119 @@ class FinSnapTaskPanel:
         finally:
             self.typing = None
 
+    def arrow_double_clicked(self, kind, end):
+        """The half `end` of the arrow of `kind` double clicked: a field past its
+        tip, once the click and the arrow let go are through, as they put the
+        keyboard on the field of the panel."""
+        QtCore.QTimer.singleShot(0, functools.partial(self.edit_at_arrow, kind, end))
+
+    def edit_at_arrow(self, kind, end=None):
+        """Lay a field over the 3D view past the tip of the half `end` of the
+        arrow of `kind`, the one clicked; without `end`, of the half
+        handles.tip_points() takes. It holds the value of the field of that
+        arrow in the panel, with the same unit, steps and limits; Enter takes
+        what is typed as that field does (field_entered()), Escape or a click
+        elsewhere drops it.
+
+        INPUTS this has to withstand:
+          the arrow up or along the face        ->  a field at it with its value
+          either half of it clicked             ->  past the tip of that half
+          the arc under a round side            ->  a field at it with the angle
+          along a fin that stays where it is    ->  nothing: its field is disabled too
+          a field open already                  ->  closed, the new one opened
+          no fin with the arrows, or the panel
+            closed meanwhile                    ->  nothing
+          no view widget to lay it over         ->  nothing
+        """
+        self.close_arrow_field()
+        box = self.fin_fields[kind]
+        widget = self.handles.view.graphicsView() if hasattr(self.handles.view, "graphicsView") else None
+        if self.released or self.handled_result() is None or not box.isEnabled() or widget is None:
+            return
+        field = QtWidgets.QDoubleSpinBox(widget)
+        field.setDecimals(box.decimals())
+        field.setRange(box.minimum(), box.maximum())
+        field.setSingleStep(box.singleStep())
+        field.setWrapping(box.wrapping())
+        field.setSuffix(box.suffix())
+        field.setValue(box.value())
+        field.setToolTip(box.toolTip())
+        field.installEventFilter(ArrowFieldKeys(self.take_arrow_field, self.close_arrow_field, field))
+        # Its size settled before it is placed: shown, it would take another.
+        field.resize(field.sizeHint())
+        self.arrow_field = (kind, end, field)
+        self.place_arrow_field()
+        field.show()
+        field.setFocus()
+        field.selectAll()
+        self.arrow_field_timer.start()
+
+    def place_arrow_field(self):
+        """Keep the field at its arrow, past the tip of a half of it that shows
+        (handles.tip_points()), on along that half as it runs on the screen,
+        ARROW_FIELD_GAP pixels off the tip: above the arrow up, below it where
+        the fin is as high as it can be and only its lower half shows, beyond
+        the end of the arrow along the face, never over the arrow itself. An
+        arrow pointing into the screen has it on its tip.
+
+        INPUTS this has to withstand:
+          arrow pointing up on the screen       ->  the field above the tip, its middle over it
+          only the lower half of the arrow up   ->  the field below its tip
+          arrow pointing left or right          ->  the field beyond the tip, its middle level
+                                                    with it
+          arrow pointing aslant                 ->  the field beyond the tip on that slant
+          arrow pointing into the screen        ->  the field on the tip
+          the view turned or zoomed             ->  placed anew at each tick of its timer
+        """
+        if self.arrow_field is None:
+            return
+        kind, end, field = self.arrow_field
+        viewport = field.parentWidget().viewport()
+        start, tip = (viewport.mapTo(field.parentWidget(), QtCore.QPoint(round(x * viewport.width()),
+                                                                          round(y * viewport.height())))
+                      for x, y in self.handles.tip_points(kind, end))
+        along_x, along_y = tip.x() - start.x(), tip.y() - start.y()
+        length = math.hypot(along_x, along_y)
+        if length > 0:
+            along_x, along_y = along_x / length, along_y / length
+        # The middle of the field as far past the tip as reaches, along the
+        # arrow, its side facing the tip the gap off it.
+        middle_x = tip.x() + along_x * (ARROW_FIELD_GAP + field.width() / 2)
+        middle_y = tip.y() + along_y * (ARROW_FIELD_GAP + field.height() / 2)
+        field.move(round(middle_x - field.width() / 2), round(middle_y - field.height() / 2))
+
+    def take_arrow_field(self):
+        """Take the value typed at the arrow as if typed into its field in the
+        panel and Enter pressed there, then close the field."""
+        if self.arrow_field is None:
+            return
+        kind, _, field = self.arrow_field
+        field.interpretText()
+        value = field.value()
+        self.close_arrow_field()
+        self.fin_fields[kind].setValue(value)
+        self.field_entered(kind)
+
+    def close_arrow_field(self):
+        """Close the field at an arrow, if one is open, leaving its value untaken."""
+        self.arrow_field_timer.stop()
+        if self.arrow_field is None:
+            return
+        _, _, field = self.arrow_field
+        # Gone first: closing it takes the focus away, which would close it again.
+        self.arrow_field = None
+        field.hide()
+        field.deleteLater()
+
     def release_handles(self):
         """Take the arrows away and stop listening, once, whichever way the panel closes."""
         if self.released:
             return
         self.released = True
+        try:
+            self.close_arrow_field()
+        except RuntimeError:
+            pass
         # Closed by FreeCAD first, the panel's form and its timers are gone already.
         for timer in (self.timer, self.drag_timer, self.ends_timer, self.field_timer, self.key_timer):
             try:
