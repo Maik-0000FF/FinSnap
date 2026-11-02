@@ -99,6 +99,7 @@ INPUTS this has to withstand (side_direction()):
                                             and square to its axis after the change
   two faces (sharp edge or fillet)      ->  the line joining them after the change
   face alone, turned                    ->  the axis of the turn
+  face alone, leaned (lean())           ->  LEAN_LINE, the line given
   face alone, already on the bed        ->  None
   line pointing to -Y, or along -X      ->  reversed, so a line is always seen from one side
 
@@ -128,6 +129,9 @@ UP = V(0, 0, 1)
 # which runs along X.
 RIM_LEAN = V(0, -1, 0)
 RIM_LINE = V(1, 0, 0)
+# A flat face without a straight edge leans the same way, about a line along X
+# through its middle, see lean().
+LEAN_LINE = RIM_LINE
 # How finely a face is drawn to find a point on it (mm): coarse is enough.
 POINT_DEVIATION = 1.0
 # A side that wraps all the way round the axis, not a fillet of part of a turn.
@@ -354,10 +358,15 @@ def right_angle_faces(shape, edge):
     return tuple(faces)
 
 
-def tilt(shape, edge, angle_deg):
-    """The placement change that stands `shape` on `edge`, tilted by angle_deg."""
+def _check_tilt(angle_deg):
+    """OrientError unless angle_deg lies between 0 and 90 degrees, as a tilt must."""
     if not 0 < angle_deg < RIGHT_ANGLE:
         raise OrientError(translate("FinSnap", "the tilt angle must lie between 0 and 90 degrees"))
+
+
+def tilt(shape, edge, angle_deg):
+    """The placement change that stands `shape` on `edge`, tilted by angle_deg."""
+    _check_tilt(angle_deg)
     start, end = edge.Vertexes[0].Point, edge.Vertexes[-1].Point
     axis = end - start
     # Measured instead of asking for a line: the side edges of a loft are
@@ -397,6 +406,29 @@ def lay_flat(shape, face):
     if contact.z > lowest + d.TOLERANCE:
         raise OrientError(translate("FinSnap", "the part cannot rest on this face"))
     lift = App.Placement(V(0, 0, bounds(shape).ZMin - lowest), App.Rotation())
+    return lift.multiply(turn)
+
+
+def lean(shape, face, angle_deg):
+    """The placement change that leans the flat face `face` of `shape` angle_deg
+    over the bed, towards RIM_LEAN, with the part resting on whatever of it
+    then reaches lowest: a point of a round edge, or of a fillet bulging past
+    it. For a face without a straight edge to stand on, see stand().
+
+    The face is laid onto the bed, turned about the line along LEAN_LINE
+    through its middle and lifted until the part rests on the bed.
+
+    INPUTS this has to withstand:
+      round flat face, sharp rim            ->  rests on a point of the rim
+      round flat face, fillet round it      ->  rests on the fillet, the face just
+                                                above the bed
+      angle_deg not between 0 and 90        ->  OrientError, as tilt()
+    """
+    _check_tilt(angle_deg)
+    flat = lay_flat(shape, face)
+    middle = moved(face, flat).CenterOfMass
+    turn = App.Placement(V(0, 0, 0), App.Rotation(LEAN_LINE, angle_deg), middle).multiply(flat)
+    lift = App.Placement(V(0, 0, bounds(shape).ZMin - bounds(moved(shape, turn)).ZMin), App.Rotation())
     return lift.multiply(turn)
 
 
@@ -494,20 +526,23 @@ def stand(shape, edge, angle_deg, face=None):
     return tilt(moved(shape, flat), moved(edge, flat), angle_deg).multiply(flat)
 
 
-def side_direction(change, edge=None, faces=()):
+def side_direction(change, edge=None, faces=(), line=None):
     """The horizontal direction of the line the part stands on after `change`.
 
     Looking along it shows the part from the side, the tilt angle in profile.
-    The line is the edge, or for a rim the line touching it on the bed, which
-    after the change lies level and square to the axis of the rim; or what joins
-    two faces (its direction is the cross product of their normals), or for a
-    face alone the axis the part was turned about. Of the two senses the one
-    pointing to +Y (or +X for a line along X) is returned, so the same line is
-    always seen from the same side: for a line along Y that is FreeCAD's front
-    view, for one along X the view from the left.
+    The line is `line`, the direction it was leaned about on the bed (lean()),
+    where given; else the edge, or for a rim the line touching it on the bed,
+    which after the change lies level and square to the axis of the rim; or
+    what joins two faces (its direction is the cross product of their
+    normals), or for a face alone the axis the part was turned about. Of the
+    two senses the one pointing to +Y (or +X for a line along X) is returned,
+    so the same line is always seen from the same side: for a line along Y
+    that is FreeCAD's front view, for one along X the view from the left.
     None if the part was not turned, a face that already lay on the bed.
     """
-    if edge is not None and is_rim(edge):
+    if line is not None:
+        line = V(line)
+    elif edge is not None and is_rim(edge):
         line = change.Rotation.multVec(edge.Curve.Axis).cross(UP)
     else:
         if edge is not None:

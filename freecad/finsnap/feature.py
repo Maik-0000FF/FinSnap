@@ -61,6 +61,10 @@ NOTE_ISLANDS = QT_TRANSLATE_NOOP(
 LAID_FLAT = "LaidFlat"
 # Where the part was laid flat; moved from there, the fins are rebuilt.
 LAID_FLAT_AT = "LaidFlatAt"
+# Hidden on fins made by Quick fins: the part it stood, by name, where it stood
+# before and the edges and faces selected, so its ways can be listed again.
+QUICK_PART, QUICK_FROM, QUICK_TILTED = "QuickPart", "QuickFrom", "QuickFromTilted"
+QUICK_EDGES, QUICK_FACES = "QuickEdges", "QuickFaces"
 # The faces of the part the fins were last built under, so overhang marks leave
 # out exactly those.
 CARRIED = "CarriedFaces"
@@ -1139,6 +1143,35 @@ def hidden_property(obj, name, kind):
     if name not in obj.PropertiesList:
         obj.addProperty(kind, name, GROUP_RESULT, "", 1)
         obj.setEditorMode(name, EDITOR_HIDDEN)
+
+
+def keep_quick_start(obj, part, before, edge_names, face_names):
+    """Keep on the fins `obj` what Quick fins started from, so its table of
+    ways can be shown again when they are edited later: the part, by name,
+    how it stood before (orient.snapshot()) and the edges and faces
+    selected, by name on the part."""
+    placement, tilted = before
+    for name, kind, value in ((QUICK_PART, "App::PropertyString", part.Name),
+                              (QUICK_FROM, "App::PropertyPlacement", placement),
+                              (QUICK_TILTED, "App::PropertyBool", tilted),
+                              (QUICK_EDGES, "App::PropertyStringList", list(edge_names)),
+                              (QUICK_FACES, "App::PropertyStringList", list(face_names))):
+        hidden_property(obj, name, kind)
+        setattr(obj, name, value)
+
+
+def quick_start(obj):
+    """What Quick fins started from for the fins `obj` (keep_quick_start()):
+    (part, how it stood as orient.snapshot() says it, edge names, face
+    names); None for fins not made by Quick fins, made before it kept this,
+    or whose part is gone."""
+    if QUICK_PART not in obj.PropertiesList:
+        return None
+    part = obj.Document.getObject(getattr(obj, QUICK_PART))
+    if part is None:
+        return None
+    before = (App.Placement(getattr(obj, QUICK_FROM)), bool(getattr(obj, QUICK_TILTED)))
+    return part, before, list(getattr(obj, QUICK_EDGES)), list(getattr(obj, QUICK_FACES))
 
 
 def is_laid_flat(obj):

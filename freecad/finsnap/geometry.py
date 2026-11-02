@@ -1400,8 +1400,9 @@ def stand_for_face(shape, number, p, angle_deg):
       the kernel fails at one edge or rim   ->  the next one, as where fins do not fit
       round side                            ->  stood on the first rim of rims_on_axis()
                                                 that works
-      face without a straight edge, or none
-        works                               ->  FinError
+      flat face without a straight edge     ->  leaned over the bed, resting on its
+                                                lowest point (orient.lean()), edge None
+      none works                            ->  FinError
     """
     return next(_or_refused(stands_for_face(shape, number, p, angle_deg), NO_STAND_FOR_FACE))
 
@@ -1413,7 +1414,9 @@ def stands_for_face(shape, number, p, angle_deg):
 
     The face is laid onto the bed and the part turned about one of its straight
     edges, the longest first. A round side stands the part on a rim on its axis
-    instead, see rims_on_axis().
+    instead, see rims_on_axis(). A flat face without a straight edge, a round
+    one, is leaned over the bed with the part resting on its lowest point,
+    see orient.lean().
     """
     face = shape.Faces[number]
     if orient.is_round_side(face):
@@ -1424,6 +1427,8 @@ def stands_for_face(shape, number, p, angle_deg):
                     if abs(edge.Length - (edge.Vertexes[-1].Point - edge.Vertexes[0].Point).Length) < d.TOLERANCE]
         tries = [(edge, partial(orient.stand, shape, edge, angle_deg, face))
                  for edge in sorted(straight, key=lambda candidate: -candidate.Length)]
+        if not straight:
+            tries = [(None, partial(orient.lean, shape, face, angle_deg))]
     # A fault in the kernel at one edge or rim passes to the next, as a face
     # without room for fins does: the next is there to fall back on.
     for edge, stand in tries:
@@ -1437,9 +1442,9 @@ def stands_for_face(shape, number, p, angle_deg):
 
 
 # How Quick fins stands a part: the placement change, the face (number from 0)
-# the fins go under, and the edge or the two faces the part stands on, for the
-# side view.
-QuickPlan = namedtuple("QuickPlan", "change number edge beside")
+# the fins go under, the edge or the two faces the part stands on, and the line
+# it was leaned about where it stands on neither (orient.lean()), for the side view.
+QuickPlan = namedtuple("QuickPlan", "change number edge beside line", defaults=(None,))
 
 
 def quick_plan(shape, edges, faces, p, angle_deg):
@@ -1522,7 +1527,8 @@ def quick_plans(shape, edges, faces, p, angle_deg):
             yield from _under_each_face(shape, orient.lay_flat(shape, face), None, (), p)
             return
         for change, edge in _or_refused(stands_for_face(shape, number, p, angle_deg), NO_STAND_FOR_FACE):
-            yield QuickPlan(change, number, edge, ())
+            # Without an edge, the face was leaned about LEAN_LINE.
+            yield QuickPlan(change, number, edge, (), orient.LEAN_LINE if edge is None else None)
         return
     if len(edges) == 1 and len(faces) == 1:
         (edge, _), (face, number) = edges[0], faces[0]

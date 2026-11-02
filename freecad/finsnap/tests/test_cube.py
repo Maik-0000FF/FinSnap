@@ -72,6 +72,12 @@ STABLE_BASE = 10.0     # side of a column on the bed, and of the arm out of its 
 STABLE_HEIGHT = 20.0   # height of that column
 STABLE_REACH = 30.0    # how far its arm reaches out, carrying the centre of mass past the column
 STABLE_BRIM = 20.0     # a brim wide enough to hold a slab standing on its edge
+LEAN_DISC_RADIUS = 20.0         # a disc whose round flat face takes fins leaning
+LEAN_DISC_HEIGHT = 10.0         # its height, the face on top
+LEAN_DISC_FILLET = 4.0          # a fillet round its top, bulging past the rim of that face once it leans
+TINY_LEAN_DISC_RADIUS = 0.5     # a disc whose round face takes no fin
+LEAN_DISC_TURN = 30.0           # how far the disc is turned before Quick fins, in degrees
+LEAN_DISC_TURN_AXIS = V(1, 1, 0)  # about an axis neither along X nor Y
 CENTRE_SHARES = (0.1, 0.37, 0.5, 0.83)  # heights the centres of mass are compared at, as shares of the part's
 CENTRE_FLAT_TOLERANCE = 1e-6    # how far a centre from the mesh may lie off the cut one, flat faces only, in mm
 CENTRE_CURVED_TOLERANCE = 0.05  # the same with curved faces, which the mesh only follows, in mm
@@ -966,14 +972,47 @@ def check_quick_fins():
            "a chosen face is turned to lean 45 degrees over the bed, standing on its longest edge")
     expect(abs(resting_height(leant)) < d.TOLERANCE, "the part turned for that face rests on the bed")
 
-    disc = Part.makeCylinder(10, 5)
-    top = [i for i, f in enumerate(disc.Faces) if f.findPlane() is not None and f.BoundBox.ZMin > 5 - d.TOLERANCE][0]
+    # A round flat face, sharp or with a fillet round it bulging past its rim:
+    # leaned 45 degrees, the part resting on its lowest point, the face at the
+    # bed with a sharp rim and just above it with the fillet.
+    plain = Part.makeCylinder(LEAN_DISC_RADIUS, LEAN_DISC_HEIGHT)
+    rounded = plain.makeFillet(LEAN_DISC_FILLET,
+                               [e for e in plain.Edges if e.BoundBox.ZMin > LEAN_DISC_HEIGHT - d.TOLERANCE])
+    for name, disc, above in (("sharp", plain, False), ("filleted", rounded, True)):
+        top = [i for i, f in enumerate(disc.Faces)
+               if f.findPlane() is not None and f.BoundBox.ZMin > LEAN_DISC_HEIGHT - d.TOLERANCE][0]
+        change, edge = geometry.stand_for_face(disc, top, p, d.TILT_ANGLE)
+        leant = moved(disc, change)
+        gap = leant.Faces[top].BoundBox.ZMin - leant.BoundBox.ZMin
+        expect(edge is None and abs(leant.Faces[top].normalAt(0, 0).z + math.sqrt(0.5)) < 1e-6
+               and abs(resting_height(leant)) < d.TOLERANCE and (gap > d.TOLERANCE) == above,
+               "a round face of a %s disc leans 45 degrees, the part resting on its lowest point, the face %.2f mm "
+               "above the bed" % (name, gap))
+    # The side view looks along the line the face was leaned about, the disc
+    # lying flat or turned first: the 45 degrees in profile.
+    # Turning a shape keeps the order of its faces.
+    top = [i for i, f in enumerate(plain.Faces)
+           if f.findPlane() is not None and f.BoundBox.ZMin > LEAN_DISC_HEIGHT - d.TOLERANCE][0]
+    for name, turn in (("lying", 0.0), ("turned", LEAN_DISC_TURN)):
+        disc = plain.copy()
+        disc.rotate(V(0, 0, 0), LEAN_DISC_TURN_AXIS, turn)
+        plan = geometry.quick_plan(disc, [], [(disc.Faces[top], top)], p, d.TILT_ANGLE)
+        seen = orient.side_direction(plan.change, plan.edge, plan.beside, plan.line)
+        # Seen along that line, the face leans across the view, in profile.
+        normal = moved(disc, plan.change).Faces[top].normalAt(0, 0)
+        expect(seen is not None and abs(abs(seen.dot(orient.LEAN_LINE)) - 1) < d.TOLERANCE
+               and abs(normal.dot(seen)) < d.TOLERANCE,
+               "the side view of a %s disc leaned on a round face looks along the line it leans about: %s"
+               % (name, seen))
+    tiny = Part.makeCylinder(TINY_LEAN_DISC_RADIUS, LEAN_DISC_HEIGHT)
+    top = [i for i, f in enumerate(tiny.Faces)
+           if f.findPlane() is not None and f.BoundBox.ZMin > LEAN_DISC_HEIGHT - d.TOLERANCE][0]
     try:
-        geometry.stand_for_face(disc, top, p, d.TILT_ANGLE)
+        geometry.stand_for_face(tiny, top, p, d.TILT_ANGLE)
     except geometry.FinError as error:
-        expect("cannot stand" in str(error), "a face without a straight edge is refused: %s" % error)
+        expect("cannot stand" in str(error), "a round face too small for fins is refused: %s" % error)
     else:
-        raise AssertionError("a round face was stood on an edge")
+        raise AssertionError("fins were planned under a round face too small for them")
 
 
 def check_quick_plan():

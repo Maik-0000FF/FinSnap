@@ -14,11 +14,16 @@ All notable changes to FinSnap are listed here. The format follows
 ### Added
 
 - `tools/time_checks.py` times each check, overhangs, islands, bridges and stability, on the test parts and on given documents, and lists the calls that cost most (#114)
+- The table of ways Quick fins found shows again when its fins are opened later with a double click, folded away so the panel opens at once, worked out anew once unfolded from where the part stood before, the way it stands in marked, as long as it still stands one of them; Cancel after choosing another puts the part back as it stood when the ways were unfolded
 
 ### Changed
 
 - The stability check works out the centres of mass of the part from one mesh of it instead of a cut for every millimetre of height, up to eight times faster on a large part (#114)
 - Islands and bridges cut each layer they look at with one thin boolean cut instead of a slice, up to twice as fast on a part of many faces, finding the same (#114)
+
+### Fixed
+
+- Quick fins on a flat face without a straight edge, such as the round end of a disc, leans it 45 degrees over the bed with the part resting on its lowest point, a fillet round the face included; it was refused, saying the part cannot stand so
 
 ## [0.11.0] - 2026-10-31
 

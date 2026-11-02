@@ -172,6 +172,9 @@ STAND_TIP = QT_TRANSLATE_NOOP("FinSnap", "Quick fins found more than one way to 
 STAND_ASK = QT_TRANSLATE_NOOP("FinSnap", "Stand the part another way? The fins are planned anew: fins removed, "
                                          "moved or set to a height of their own, a turn of the part and the "
                                          "counter fin are undone.")
+# Said in the folded section of ways of fins opened again, where there is none to choose.
+NOTE_NO_STANDS = QT_TRANSLATE_NOOP("FinSnap", "The part no longer stands one of the ways Quick fins found, or "
+                                              "there is only one.")
 # Rows the table of ways shows at most; more scroll.
 STAND_ROWS = 6
 # What a stability check found, in the colours of the fins while editing: green
@@ -480,7 +483,8 @@ class Section(QtWidgets.QWidget):
     """A section of the panel that folds away: a header to click, with an
     arrow and the caption, and below it `content`, the widget it holds.
     Whether it is open is kept under `key` in FinSnap's preferences, so the
-    panel opens as it was left; never opened or closed, it is `open_first`."""
+    panel opens as it was left; never opened or closed, it is `open_first`.
+    Without a `key` it opens `open_first` each time, nothing kept."""
 
     def __init__(self, caption, key, open_first):
         super().__init__()
@@ -496,7 +500,7 @@ class Section(QtWidgets.QWidget):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.header)
         layout.addWidget(self.content)
-        self.header.setChecked(App.ParamGet(SECTION_PREFERENCES).GetBool(key, open_first))
+        self.header.setChecked(App.ParamGet(SECTION_PREFERENCES).GetBool(key, open_first) if key else open_first)
         self.show_open(self.header.isChecked())
         self.header.toggled.connect(self.toggled)
 
@@ -506,7 +510,8 @@ class Section(QtWidgets.QWidget):
 
     def toggled(self, opened):
         self.show_open(opened)
-        App.ParamGet(SECTION_PREFERENCES).SetBool(self.key, opened)
+        if self.key:
+            App.ParamGet(SECTION_PREFERENCES).SetBool(self.key, opened)
 
     def mark(self, modified):
         """Mark the header while a field in it differs from the standard,
@@ -665,13 +670,16 @@ def _same_mm(a, b):
 
 
 class FinSnapTaskPanel:
-    def __init__(self, obj, created=False, on_cancel=None, stands=None):
+    def __init__(self, obj, created=False, on_cancel=None, stands=None, later=None):
         self.obj = obj
         # Fins just made: Cancel deletes them, then calls on_cancel, if any.
         self.created = created
         self.on_cancel = on_cancel
         # The ways Quick fins found to stand the part, if more than one.
         self.stands = stands if stands is not None and len(stands) > 1 else None
+        # Fins opened again: a call working out those ways, made once the
+        # folded section of them is opened, as it takes as long as Quick fins.
+        self.later = later
         self.widgets = {}
         self.labels = {}
         self.resets = {}
@@ -752,7 +760,14 @@ class FinSnapTaskPanel:
         self.form.setWindowTitle("%s (%s)" % (translate("FinSnap", "FinSnap parameters"), application()))
         layout = QtWidgets.QVBoxLayout(self.form)
         if self.stands is not None:
-            layout.addWidget(self.stand_table())
+            box = QtWidgets.QGroupBox(translate("FinSnap", STAND_CAPTION))
+            QtWidgets.QVBoxLayout(box).addWidget(self.stand_table())
+            layout.addWidget(box)
+        elif later is not None:
+            self.stand_section = Section(translate("FinSnap", STAND_CAPTION), None, False)
+            QtWidgets.QVBoxLayout(self.stand_section.content)
+            self.stand_section.header.toggled.connect(self.find_stands)
+            layout.addWidget(self.stand_section)
         intro = QtWidgets.QLabel(translate(
             "FinSnap", "Hover over a field for an explanation. Letters in brackets point to the drawings "
             "below. Every change is shown in the 3D view right away. Greyed-out fields have no effect "
@@ -891,10 +906,25 @@ class FinSnapTaskPanel:
         self.update_marks()
         self.preview()
 
+    def find_stands(self, opened):
+        """Work out the ways Quick fins found, the first time their folded
+        section is opened, and show them there; where there are none to
+        choose from, say so."""
+        if not opened or self.later is None:
+            return
+        later, self.later = self.later, None
+        stands = later()
+        if stands is not None and len(stands) > 1:
+            self.stands = stands
+            shown = self.stand_table()
+        else:
+            shown = QtWidgets.QLabel(translate("FinSnap", NOTE_NO_STANDS))
+            shown.setWordWrap(True)
+        self.stand_section.content.layout().addWidget(shown)
+
     def stand_table(self):
-        """The section at the top that lists the ways Quick fins found to stand
+        """The table at the top that lists the ways Quick fins found to stand
         the part, one row each, the one it stands in now marked."""
-        box = QtWidgets.QGroupBox(translate("FinSnap", STAND_CAPTION))
         headers = [translate("FinSnap", text) for text in STAND_HEADERS[self.stands.by_edge]]
         self.stand_list = QtWidgets.QTableWidget(len(self.stands), len(headers))
         self.stand_list.setHorizontalHeaderLabels(headers)
@@ -910,8 +940,7 @@ class FinSnapTaskPanel:
                                        + shown * self.stand_list.rowHeight(0) + 2 * self.stand_list.frameWidth())
         self.stand_list.currentCellChanged.connect(lambda row, *_: self.choose_stand(row))
         self.show_stand()
-        QtWidgets.QVBoxLayout(box).addWidget(self.stand_list)
-        return box
+        return self.stand_list
 
     def fill_stands(self):
         """Fill the table of ways from the rows of the ways found."""
@@ -1962,11 +1991,17 @@ class FinSnapTaskPanel:
           fins edited, the part not turned      ->  values back, placement untouched
           fins edited, the face of the main fin
             no round side any more              ->  values back, no turn
+          fins edited, another way of Quick
+            fins chosen in the table            ->  part, other fins and the face of
+                                                    these as when the ways were
+                                                    unfolded, then values back
         """
         self.close()
         if self.created:
             discard_created(self.obj, self.on_cancel)
             return True
+        if self.stands is not None:
+            self.stands.back(self.obj)
         # How far the part is turned now, read before the changes by hand,
         # which hold it, are put back.
         turned = feature.round_shift(self.obj)
