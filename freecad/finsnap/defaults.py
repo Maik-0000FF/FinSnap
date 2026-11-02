@@ -163,6 +163,11 @@ OVERHANG_SAMPLES = 8
 # How closely the mesh the lowest points of a part are looked for on follows
 # its faces (mm): fine enough to find the lowest point of a fillet or a boss.
 ISLAND_MESH_DEFLECTION = 0.1
+# How closely the mesh the centres of mass of a part are worked out on follows
+# its faces (mm). The same as for islands: the kernel keeps one mesh with the
+# shape, and a finer one asked first would be reused for the islands. At 0.1 mm
+# a centre lies within a few thousandths of a millimetre of the exact one.
+CENTRE_MESH_DEFLECTION = ISLAND_MESH_DEFLECTION
 # Two sections of neighbouring layers overlapping by less than this area carry
 # nothing (mm2): they only touch.
 ISLAND_MIN_OVERLAP = 1e-6
