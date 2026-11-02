@@ -400,6 +400,30 @@ def lay_flat(shape, face):
     return lift.multiply(turn)
 
 
+def lean(shape, face, angle_deg):
+    """The placement change that leans the flat face `face` of `shape` angle_deg
+    over the bed, towards RIM_LEAN, with the part resting on whatever of it
+    then reaches lowest: a point of a round edge, or of a fillet bulging past
+    it. For a face without a straight edge to stand on, see stand().
+
+    The face is laid onto the bed, turned about the line along RIM_LINE
+    through its middle and lifted until the part rests on the bed.
+
+    INPUTS this has to withstand:
+      round flat face, sharp rim            ->  rests on a point of the rim
+      round flat face, fillet round it      ->  rests on the fillet, the face just
+                                                above the bed
+      angle_deg not between 0 and 90        ->  OrientError, as tilt()
+    """
+    if not 0 < angle_deg < RIGHT_ANGLE:
+        raise OrientError(translate("FinSnap", "the tilt angle must lie between 0 and 90 degrees"))
+    flat = lay_flat(shape, face)
+    middle = moved(face, flat).CenterOfMass
+    turn = App.Placement(V(0, 0, 0), App.Rotation(RIM_LINE, angle_deg), middle).multiply(flat)
+    lift = App.Placement(V(0, 0, bounds(shape).ZMin - bounds(moved(shape, turn)).ZMin), App.Rotation())
+    return lift.multiply(turn)
+
+
 def side_tilt(angle_deg):
     """The tilt of a part on its rim that leans its curved side angle_deg over
     the bed: the side runs square to the flat face of the rim."""

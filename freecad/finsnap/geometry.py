@@ -1400,8 +1400,9 @@ def stand_for_face(shape, number, p, angle_deg):
       the kernel fails at one edge or rim   ->  the next one, as where fins do not fit
       round side                            ->  stood on the first rim of rims_on_axis()
                                                 that works
-      face without a straight edge, or none
-        works                               ->  FinError
+      flat face without a straight edge     ->  leaned over the bed, resting on its
+                                                lowest point (orient.lean()), edge None
+      none works                            ->  FinError
     """
     return next(_or_refused(stands_for_face(shape, number, p, angle_deg), NO_STAND_FOR_FACE))
 
@@ -1413,7 +1414,9 @@ def stands_for_face(shape, number, p, angle_deg):
 
     The face is laid onto the bed and the part turned about one of its straight
     edges, the longest first. A round side stands the part on a rim on its axis
-    instead, see rims_on_axis().
+    instead, see rims_on_axis(). A flat face without a straight edge, a round
+    one, is leaned over the bed with the part resting on its lowest point,
+    see orient.lean().
     """
     face = shape.Faces[number]
     if orient.is_round_side(face):
@@ -1424,6 +1427,8 @@ def stands_for_face(shape, number, p, angle_deg):
                     if abs(edge.Length - (edge.Vertexes[-1].Point - edge.Vertexes[0].Point).Length) < d.TOLERANCE]
         tries = [(edge, partial(orient.stand, shape, edge, angle_deg, face))
                  for edge in sorted(straight, key=lambda candidate: -candidate.Length)]
+        if not straight:
+            tries = [(None, partial(orient.lean, shape, face, angle_deg))]
     # A fault in the kernel at one edge or rim passes to the next, as a face
     # without room for fins does: the next is there to fall back on.
     for edge, stand in tries:
