@@ -154,6 +154,13 @@ HORIZONTAL_FACE = QT_TRANSLATE_NOOP("FinSnap", "the selected face is horizontal;
 HORIZONTAL_ROUND_SIDE = QT_TRANSLATE_NOOP("FinSnap", "the round side lies horizontal at its lowest line; it rests on "
                                                      "the bed or needs regular support")
 NO_STAND_FOR_FACE = QT_TRANSLATE_NOOP("FinSnap", "the part cannot stand so that this face takes fins")
+# Said where the end of a tine, measured on the part itself, lies further off
+# its surface than the tine clearance and tolerance, or reaches into the part:
+# the heights of those tines over the bed and the tolerance (mm).
+NOTE_TINES_MISS = QT_TRANSLATE_NOOP("FinSnap", "tines at %s mm above the bed miss the face of the part by more "
+                                               "than %.2f mm")
+NOTE_TINES_CUT_IN = QT_TRANSLATE_NOOP("FinSnap", "tines at %s mm above the bed reach more than %.2f mm into the "
+                                                 "part")
 # Said where the face is narrower than a fin, or its tine, at every tine height.
 NARROW_AT_EVERY_TINE = QT_TRANSLATE_NOOP("FinSnap", "the face is narrower than the %.2f mm a fin needs at every tine")
 # Said where a part of a curved side, a fillet or the round end of a slot,
@@ -922,6 +929,76 @@ def contact_share(frame, face, t, p, z):
     return min(1.0, probe.common(face).Area / end.Area)
 
 
+def tine_end(p, frame, z):
+    """Where the tine at height z over the bed ends, as one_fin() builds it
+    and tine_end_points() measures it: the heights of its bottom and top, and
+    how far out its end lies at each (s of the frame). It ends parallel to
+    the face, following its slope, on it or the tine clearance short of it,
+    so every tine is equally long, also where the part behind the face ends
+    early."""
+    bottom = frame.bed_z + z
+    top = bottom + p.tine_height
+    return bottom, top, frame.s_flank(bottom, p.clearance), frame.s_flank(top, p.clearance)
+
+
+def tine_end_points(p, frame, t0, thickness, z):
+    """The corners and the middle of the end of the tine of the fin starting
+    at t0 at height z over the bed, see tine_end()."""
+    bottom, top, s_bottom, s_top = tine_end(p, frame, z)
+    t_tine = tine_start(p, t0, thickness)
+    corners = [frame.point(t, s, height)
+               for t in (t_tine, t_tine + p.tine_width) for s, height in ((s_bottom, bottom), (s_top, top))]
+    # The end runs straight from bottom to top: its middle lies halfway.
+    middle = frame.point(t_tine + p.tine_width / 2, (s_bottom + s_top) / 2, (bottom + top) / 2)
+    return corners + [middle]
+
+
+# What is wrong with the end of a tine, see tine_end_fault().
+TINE_MISSES, TINE_CUTS_IN = "misses", "cuts in"
+
+
+def tine_end_fault(surface, points, clearance):
+    """Whether the end of a tine, its corners and middle `points`, lies on
+    `surface`, the faces of the part the fins carry, or `clearance` short of
+    them, within TINE_END_TOLERANCE: None if it does, TINE_CUTS_IN where a
+    point reaches further into the part, else TINE_MISSES where one stays
+    further off. The faces themselves are measured, not the plane the tine was
+    planned on, so a round side, a face a STEP file brings in halves and a
+    solid converted from a mesh are held to the same.
+
+    Which side of a face a point lies on is told by the outward normal there,
+    at the nearest point, not by classifying it in the whole part: that costs
+    as much again as building the fins, at every drag of an arrow.
+
+    INPUTS this has to withstand:
+      every point on the surface, no clearance       ->  None
+      every point the clearance off the surface      ->  None
+      a point off by less than the tolerance, as on
+        a round side falling away behind its plane    ->  None
+      a point further off than clearance and tolerance ->  TINE_MISSES
+      a point behind the face beyond the tolerance  ->  TINE_CUTS_IN, also where
+                                                        another misses
+      a point nearest an edge of the faces, past
+        their end                                   ->  counted in front: it misses
+                                                        where it is that far off
+      a point the kernel cannot measure             ->  None: not said to be wrong
+    """
+    offsets = []
+    for point in points:
+        try:
+            distance, nearest, where = surface.distToShape(Part.Vertex(point))
+        except Part.OCCError:
+            continue
+        on_surface, kind, index, uv = nearest[0][0], where[0][0], where[0][1], where[0][2]
+        behind = kind == "Face" and (point - on_surface).dot(surface.Faces[index].normalAt(*uv)) < 0
+        offsets.append((-distance if behind else distance) - clearance)
+    if any(offset < -d.TINE_END_TOLERANCE for offset in offsets):
+        return TINE_CUTS_IN
+    if any(offset > d.TINE_END_TOLERANCE for offset in offsets):
+        return TINE_MISSES
+    return None
+
+
 def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
     """A fin without tines, its tines, which end on the face, and the middle
     of the upright outer edge of its blade, where the handles go."""
@@ -946,8 +1023,7 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
     tines = []
     t_tine = tine_start(p, t0, thickness)
     for z in tine_z:
-        bottom = zb + z
-        top = bottom + p.tine_height
+        bottom, top, s_end_bottom, s_end_top = tine_end(p, frame, z)
         # The fin edge furthest out along the tine: the flank at its top, or the
         # vertical inner end of the foot for a tine below the top of the foot.
         # Measured from there, a tine always reaches into the fin.
@@ -955,11 +1031,6 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
         if p.foot_height > 0 and bottom < zb + p.foot_height:
             edge = max(edge, foot_span(p, frame, height)[0])
         s_into_fin = edge + d.TINE_INTO_FIN
-        # The tine ends parallel to the face, following its slope, on it or the
-        # tine clearance short of it, so every tine is equally long, also where
-        # the part behind the face ends early.
-        s_end_bottom = frame.s_flank(bottom, p.clearance)
-        s_end_top = frame.s_flank(top, p.clearance)
         tines.append(frame.section(t_tine, [(s_end_bottom, bottom), (s_into_fin, bottom),
                                             (s_into_fin, top), (s_end_top, top)], p.tine_width))
     return body, tines, outer_middle
@@ -1235,6 +1306,9 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     # Tines over the gap between two faces in one plane are named as over a recess.
     gap_heights = set(plan.gap_z)
     edges = []
+    # Tines whose end misses the face or reaches into the part, by fault, as
+    # (fin number, height, tine).
+    off_ends = {TINE_MISSES: [], TINE_CUTS_IN: []}
     for fin in plan.fins:
         gap_heights.update(z for z, whole in zip(fin.candidate_z, fin.on_face) if not whole)
         body, tines, edge = one_fin(p, frame, fin.t0, fin.height, thickness, plan.half_foot, fin.candidate_z)
@@ -1245,6 +1319,11 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         edges.append(edge)
         bodies.append(body)
         all_tines.extend(kept)
+        # Each tine kept, its end measured against the part itself.
+        for z, tine in zip([z for z, whole in zip(fin.candidate_z, fin.on_face) if whole], kept):
+            fault = tine_end_fault(support, tine_end_points(p, frame, fin.t0, thickness, z), p.clearance)
+            if fault is not None:
+                off_ends[fault].append((fin.number, z, tine))
         # One general fuse instead of one tine after the other: the lowest tine
         # sits on the top of the foot, where foot, flank and tine share an edge,
         # and fusing them pairwise fails on that edge.
@@ -1259,6 +1338,12 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         warnings.append(translate("FinSnap", "tines at %s mm above the bed left out: a recess or hole in the "
                                   "face lies under them") % _mm_list(gap_heights))
         targets.append(WarningTarget(gapped, dropped, False))
+    for fault, note in ((TINE_MISSES, NOTE_TINES_MISS), (TINE_CUTS_IN, NOTE_TINES_CUT_IN)):
+        found = off_ends[fault]
+        if found:
+            warnings.append(translate("FinSnap", note) % (_mm_list({z for _, z, _ in found}), d.TINE_END_TOLERANCE))
+            targets.append(WarningTarget(sorted({number for number, _, _ in found}), [tine for _, _, tine in found],
+                                         False))
     if plan.moved:
         warnings.append(translate("FinSnap", "fins moved along the face to where their tines rest, beside a "
                                   "hole or recess under their planned place: %s") % ", ".join(
@@ -1400,8 +1485,9 @@ def stand_for_face(shape, number, p, angle_deg):
       the kernel fails at one edge or rim   ->  the next one, as where fins do not fit
       round side                            ->  stood on the first rim of rims_on_axis()
                                                 that works
-      face without a straight edge, or none
-        works                               ->  FinError
+      flat face without a straight edge     ->  leaned over the bed, resting on its
+                                                lowest point (orient.lean()), edge None
+      none works                            ->  FinError
     """
     return next(_or_refused(stands_for_face(shape, number, p, angle_deg), NO_STAND_FOR_FACE))
 
@@ -1413,7 +1499,9 @@ def stands_for_face(shape, number, p, angle_deg):
 
     The face is laid onto the bed and the part turned about one of its straight
     edges, the longest first. A round side stands the part on a rim on its axis
-    instead, see rims_on_axis().
+    instead, see rims_on_axis(). A flat face without a straight edge, a round
+    one, is leaned over the bed with the part resting on its lowest point,
+    see orient.lean().
     """
     face = shape.Faces[number]
     if orient.is_round_side(face):
@@ -1424,6 +1512,8 @@ def stands_for_face(shape, number, p, angle_deg):
                     if abs(edge.Length - (edge.Vertexes[-1].Point - edge.Vertexes[0].Point).Length) < d.TOLERANCE]
         tries = [(edge, partial(orient.stand, shape, edge, angle_deg, face))
                  for edge in sorted(straight, key=lambda candidate: -candidate.Length)]
+        if not straight:
+            tries = [(None, partial(orient.lean, shape, face, angle_deg))]
     # A fault in the kernel at one edge or rim passes to the next, as a face
     # without room for fins does: the next is there to fall back on.
     for edge, stand in tries:
@@ -1437,9 +1527,9 @@ def stands_for_face(shape, number, p, angle_deg):
 
 
 # How Quick fins stands a part: the placement change, the face (number from 0)
-# the fins go under, and the edge or the two faces the part stands on, for the
-# side view.
-QuickPlan = namedtuple("QuickPlan", "change number edge beside")
+# the fins go under, the edge or the two faces the part stands on, and the line
+# it was leaned about where it stands on neither (orient.lean()), for the side view.
+QuickPlan = namedtuple("QuickPlan", "change number edge beside line", defaults=(None,))
 
 
 def quick_plan(shape, edges, faces, p, angle_deg):
@@ -1522,7 +1612,8 @@ def quick_plans(shape, edges, faces, p, angle_deg):
             yield from _under_each_face(shape, orient.lay_flat(shape, face), None, (), p)
             return
         for change, edge in _or_refused(stands_for_face(shape, number, p, angle_deg), NO_STAND_FOR_FACE):
-            yield QuickPlan(change, number, edge, ())
+            # Without an edge, the face was leaned about LEAN_LINE.
+            yield QuickPlan(change, number, edge, (), orient.LEAN_LINE if edge is None else None)
         return
     if len(edges) == 1 and len(faces) == 1:
         (edge, _), (face, number) = edges[0], faces[0]

@@ -30,7 +30,7 @@ from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_
                     ICON_CHECK_PART, ICON_ISLANDS, ICON_QUICK, ICON_LIMITS, ICON_STABILITY, ICON_TILT,
                     ICON_BRIDGES)
 from .presets import PREFERENCES
-from .shapes import FACE_PREFIX, global_shape, outermost, part_of
+from .shapes import FACE_PREFIX, global_shape, moved, outermost, part_of
 from .taskpanel import (DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, check_bridges, check_params, check_part,
                         check_stability, discard_created)
 from .version import NAME
@@ -195,8 +195,12 @@ class ViewProviderFinSnap:
         created, self.created = getattr(self, "created", False), False
         on_cancel, self.on_cancel = getattr(self, "on_cancel", None), None
         stands, self.stands = getattr(self, "stands", None), None
+        # Fins opened again: the ways Quick fins found, worked out anew only
+        # once their folded section is opened, as that takes a while.
+        later = (functools.partial(stands_again, vobj.Object)
+                 if stands is None and not created and feature.quick_start(vobj.Object) is not None else None)
         try:
-            panel = FinSnapTaskPanel(vobj.Object, created=created, on_cancel=on_cancel, stands=stands)
+            panel = FinSnapTaskPanel(vobj.Object, created=created, on_cancel=on_cancel, stands=stands, later=later)
         except handles.NoView as error:
             _message(str(error))
             return False
@@ -528,7 +532,8 @@ class QuickFins:
                     "the panel to adjust it. "
                     "Select the edge the part is to stand on: the fins go under the largest face that "
                     "leans over the bed. Or select the face the fins are to support: the part is turned "
-                    "so that it leans 45 degrees over the bed, on its longest edge; select one of its "
+                    "so that it leans 45 degrees over the bed, on its longest edge, or, for a round face, on "
+                    "its lowest point; select one of its "
                     "edges as well to stand on that one, or, after the face, a chamfer or fillet to rest "
                     "on. A chamfer or fillet alone, or the two faces beside a fillet, carry the part as "
                     "well. The rim or the curved side of a cylinder or tube stands it on its rim, with one fin "
@@ -572,10 +577,11 @@ class QuickFins:
         # The main fin only; a counter fin is added in the panel or with Add counter fin.
         fins = feature.create(obj, fin_face)
         fins.FinPlacement = p.placement
+        feature.keep_quick_start(fins, obj, before, [n for _, n in edges], [n for _, n in faces])
         ViewProviderFinSnap(fins.ViewObject)
         doc.commitTransaction()
         doc.recompute()
-        _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside))
+        _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside, plan.line))
         # Cancel deletes the fins and stands the part as it stood before.
         _edit_new(fins, functools.partial(_put_back_quick, owner, before, laid_flat, turns),
                   QuickStands(obj, owner, before, plans))
@@ -597,20 +603,26 @@ def quick_plan(obj, edge_names, face_names):
     return way.plan, way.face
 
 
-def quick_plans(obj, edge_names, face_names):
+def quick_plans(obj, edge_names, face_names, change=None):
     """Every way Quick fins can stand `obj` for its edges and faces named that
     prints without islands, as QuickWays, in the order geometry.quick_plans()
     finds them, for the task panel to step through;
     where every way has islands, all of them, the fewest first, see
     analysis.printable_plans(). OrientError or FinError where there is none.
+    With `change`, a placement change, they are worked out for the part moved
+    by it, the part itself left where it stands.
 
     A fault in the kernel while the others are looked for ends the search: the
     plans found by then are kept, as the first one is a way to stand the part."""
     shape, elements, name_of = feature.whole_elements(obj, list(edge_names) + list(face_names))
-    edges, faces = elements[:len(edge_names)], elements[len(edge_names):]
-    numbers = [next(i for i, candidate in enumerate(shape.Faces) if candidate.isSame(face)) for face in faces]
-    found = geometry.quick_plans(shape, [(edge, None) for edge in edges], list(zip(faces, numbers)),
-                                 quick_params(), d.TILT_ANGLE)
+    # Found by number on the shape as it stands, then taken from it moved.
+    numbers = [next(i for i, candidate in enumerate(shape.Edges if n < len(edge_names) else shape.Faces)
+                    if candidate.isSame(element)) for n, element in enumerate(elements)]
+    if change is not None:
+        shape = moved(shape, change)
+    edges = [(shape.Edges[number], None) for number in numbers[:len(edge_names)]]
+    faces = [(shape.Faces[number], number) for number in numbers[len(edge_names):]]
+    found = geometry.quick_plans(shape, edges, faces, quick_params(), d.TILT_ANGLE)
     plans = [next(found)]
     try:
         plans.extend(found)
@@ -623,19 +635,20 @@ def quick_plans(obj, edge_names, face_names):
     rated = (analysis.printable_plans(shape, plans, quick_params()) if analysis.checks_while_editing()
              else [analysis.RatedPlan(plan, None, None, None) for plan in plans])
     return [QuickWay(way.plan, name_of(way.plan.number), way.islands, shape.Faces[way.plan.number].Area,
-                     _edge_name(obj, way.plan.edge), way.overhangs, way.bridges, shape)
+                     _edge_name(obj, way.plan.edge, change), way.overhangs, way.bridges, shape)
             for way in rated]
 
 
-def _edge_name(obj, edge):
+def _edge_name(obj, edge, change=None):
     """The name of `edge` on `obj` as FreeCAD shows it, "Edge7": the edge of
-    its global shape that is the same, or failing that, that has the same
-    ends and length, as an edge of a shape with halves joined may be another
-    one; None for no edge, or none found."""
+    its global shape, moved by `change` if given, that is the same, or failing
+    that, that has the same ends and length, as an edge of a shape with halves
+    joined may be another one; None for no edge, or none found."""
     if edge is None:
         return None
     ends = sorted(tuple(vertex.Point) for vertex in edge.Vertexes)
-    for number, candidate in enumerate(global_shape(obj).Edges, 1):
+    own = global_shape(obj) if change is None else moved(global_shape(obj), change)
+    for number, candidate in enumerate(own.Edges, 1):
         if candidate.isSame(edge) or (
                 abs(candidate.Length - edge.Length) < d.TOLERANCE
                 and len(candidate.Vertexes) == len(edge.Vertexes)
@@ -668,9 +681,12 @@ class QuickStands:
       part turned about its round side      ->  stands unturned, the turn dropped with the shifts
     """
 
-    def __init__(self, obj, owner, before, plans):
+    def __init__(self, obj, owner, before, plans, current=0):
         self.obj, self.owner, self.before, self.plans = obj, owner, before, plans
-        self.current = 0
+        self.current = current
+        # Fins opened again later: how part and fins stood when the ways were
+        # unfolded, for back().
+        self.opened = None
         # Under one face throughout, on edges, the plans differ by the edge.
         self.by_edge = (len({way.plan.number for way in plans}) == 1
                         and all(way.plan.edge is not None for way in plans))
@@ -713,7 +729,68 @@ class QuickStands:
         part, name = feature.on_part(self.obj, face)
         fins.Base = (part, [name])
         self.current = index
-        _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside))
+        _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside, plan.line))
+
+    def keep_opened(self, fins):
+        """Note how the part and `fins` stand when the ways are unfolded in
+        their panel opened again, for back()."""
+        doc = self.owner.Document
+        self.opened = (self.current, orient.snapshot(self.owner), feature.laid_flat_marks(self.owner, doc),
+                       feature.round_turns(self.owner, doc), (fins.Base[0], list(fins.Base[1])))
+
+    def back(self, fins):
+        """Cancel on fins opened again: where another way was chosen, the part
+        and its other fins stand as they did when the ways were unfolded,
+        `fins` under their face of then. Fins just made are deleted instead, see
+        discard_created()."""
+        if self.opened is None or self.current == self.opened[0]:
+            return
+        current, before, laid_flat, turns, (part, names) = self.opened
+        _put_back_quick(self.owner, before, laid_flat, turns)
+        fins.Base = (part, names)
+        self.current = current
+
+
+def stands_again(fins):
+    """The ways Quick fins found for `fins`, worked out again from where the
+    part stood before it (feature.quick_start()), the way it stands in now
+    marked, for their panel opened later; None for fins Quick fins did not
+    make, a part that no longer stands one of those ways, as after Lay flat
+    or a move by hand, or one way only.
+
+    INPUTS this has to withstand:
+      fins just accepted from Quick fins   ->  the ways, the one chosen marked
+      fins made before the start was kept,
+        or by Add fins                      ->  None
+      part moved or laid flat since        ->  None
+      part deleted                          ->  None
+      the ways can no longer be found       ->  None
+    """
+    start = feature.quick_start(fins)
+    if start is None or not fins.Base:
+        return None
+    part, before, edge_names, face_names = start
+    placement = before[0]
+    owner = outermost(part)
+    now = App.Placement(owner.Placement)
+    # Worked out on the part moved back where it stood, by a copy of its
+    # shape: the part itself stays, so nothing of it or its checks changes.
+    QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+    try:
+        plans = quick_plans(part, edge_names, face_names, placement.multiply(now.inverse()))
+    except (orient.OrientError, geometry.FinError, Part.OCCError):
+        return None
+    finally:
+        QtWidgets.QApplication.restoreOverrideCursor()
+    linked = (fins.Base[0], fins.Base[1][0] if fins.Base[1] else None)
+    current = next((index for index, way in enumerate(plans)
+                    if way.plan.change.multiply(placement).isSame(now, d.TOLERANCE)
+                    and feature.on_part(part, way.face) == linked), None)
+    if current is None or len(plans) < 2:
+        return None
+    stands = QuickStands(part, owner, before, plans, current)
+    stands.keep_opened(fins)
+    return stands
 
 
 def _keep_checked(obj, way):

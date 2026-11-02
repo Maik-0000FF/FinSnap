@@ -42,8 +42,12 @@ from . import defaults as d
 from . import limits
 from .shapes import bounds, middle_normal
 
-# Turns the wires of a section into faces, holes inside their outlines.
-FACE_MAKER = "Part::FaceMakerBullseye"
+# A section is the top of a thin cut-out of the part, a box this high (mm)
+# reaching this far past the part all round, ending at the plane: one boolean
+# cut makes its faces, holes and all, in about half the time a slice and the
+# faces made from its wires take on a part of many faces.
+SECTION_CUT_HEIGHT = 0.05
+SECTION_CUT_MARGIN = 1.0
 # Sections are compared as slabs this thick around the plane of the bed (mm):
 # solids overlap reliably, faces only when they lie in one plane exactly.
 SECTION_SLAB = 1.0
@@ -219,18 +223,33 @@ def _lowest_points(shape):
             if all(points[other].z >= point.z for other in neighbours[corner])]
 
 
-def sections(shape, z, reach):
-    """Where the plane at height `z` cuts `shape`, one slab SECTION_SLAB thick
-    for each face of the cut, around the plane of the bed, z 0, so sections of
-    different layers can be overlapped, each with its bounding box grown by
-    `reach` (mm) and the face of the cut where it lies; None where the kernel
-    cannot make them."""
+def layer_faces(shape, z):
+    """The faces where the plane at height `z` cuts `shape`, holes and all:
+    the top of a thin cut-out of it ending at the plane, see
+    SECTION_CUT_HEIGHT. A face of the part lying in the plane is cut whole.
+    None where the kernel cannot make them."""
+    box = bounds(shape)
     try:
-        wires = shape.slice(App.Vector(0, 0, 1), z)
-        if not wires:
-            return []
+        cutter = Part.makeBox(box.XLength + 2 * SECTION_CUT_MARGIN, box.YLength + 2 * SECTION_CUT_MARGIN,
+                              SECTION_CUT_HEIGHT, App.Vector(box.XMin - SECTION_CUT_MARGIN,
+                                                             box.YMin - SECTION_CUT_MARGIN, z - SECTION_CUT_HEIGHT))
+        return [face for face in shape.common(cutter).Faces
+                if abs(face.BoundBox.ZMin - z) < d.TOLERANCE and face.BoundBox.ZLength < d.TOLERANCE]
+    except Part.OCCError:
+        return None
+
+
+def sections(shape, z, reach):
+    """Where the plane at height `z` cuts `shape` (layer_faces()), one slab
+    SECTION_SLAB thick for each face of the cut, around the plane of the bed,
+    z 0, so sections of different layers can be overlapped, each with its
+    bounding box grown by `reach` (mm) and the face of the cut where it lies;
+    None where the kernel cannot make them."""
+    faces = layer_faces(shape, z)
+    if not faces:
+        return faces
+    try:
         bottom = App.Vector(0, 0, -z - SECTION_SLAB / 2)
-        faces = Part.makeFace(wires, FACE_MAKER).Faces
         slabs = [face.translated(bottom).extrude(App.Vector(0, 0, SECTION_SLAB)) for face in faces]
     except Part.OCCError:
         return None

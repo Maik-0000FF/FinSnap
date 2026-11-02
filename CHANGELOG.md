@@ -11,6 +11,24 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-02
+
+### Added
+
+- `tools/time_checks.py` times each check, overhangs, islands, bridges and stability, on the test parts and on given documents, and lists the calls that cost most (#114)
+- The table of ways Quick fins found shows again when its fins are opened later with a double click, folded away so the panel opens at once, worked out anew once unfolded from where the part stood before, the way it stands in marked, as long as it still stands one of them; Cancel after choosing another puts the part back as it stood when the ways were unfolded
+- The end of every tine is measured on the face of the part itself, not on the plane it was planned on: a tine whose end misses the face, or reaches into the part, by more than 0.05 mm beyond the tine clearance is named in the warnings and marked, on a round side, a face a STEP file brings in halves and a solid converted from a mesh alike (#108)
+
+### Changed
+
+- The stability check works out the centres of mass of the part from one mesh of it instead of a cut for every millimetre of height, up to eight times faster on a large part (#114)
+- The stability check sums the mesh of the part with numpy, which FreeCAD ships, about twice as fast again; numpy is named as a dependency in `package.xml` (#128)
+- Islands and bridges cut each layer they look at with one thin boolean cut instead of a slice, up to twice as fast on a part of many faces, finding the same (#114)
+
+### Fixed
+
+- Quick fins on a flat face without a straight edge, such as the round end of a disc, leans it 45 degrees over the bed with the part resting on its lowest point, a fillet round the face included; it was refused, saying the part cannot stand so
+
 ## [0.11.0] - 2026-10-31
 
 ### Added
@@ -253,7 +271,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.12.0
 [0.11.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.11.0
 [0.10.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.10.0
 [0.9.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.9.0

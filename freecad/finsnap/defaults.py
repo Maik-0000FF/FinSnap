@@ -163,6 +163,11 @@ OVERHANG_SAMPLES = 8
 # How closely the mesh the lowest points of a part are looked for on follows
 # its faces (mm): fine enough to find the lowest point of a fillet or a boss.
 ISLAND_MESH_DEFLECTION = 0.1
+# How closely the mesh the centres of mass of a part are worked out on follows
+# its faces (mm). The same as for islands: the kernel keeps one mesh with the
+# shape, and a finer one asked first would be reused for the islands. At 0.1 mm
+# a centre lies within a few hundredths of a millimetre of the exact one.
+CENTRE_MESH_DEFLECTION = ISLAND_MESH_DEFLECTION
 # Two sections of neighbouring layers overlapping by less than this area carry
 # nothing (mm2): they only touch.
 ISLAND_MIN_OVERLAP = 1e-6
@@ -180,6 +185,10 @@ TINE_MIN_CONTACT = 1.0
 # side falls away behind the plane; a tine still ends on it where it lies no
 # further behind than this (mm), a fifth of the gap.
 ROUND_SIDE_MAX_DROP = 0.05
+# The end of a tine counts as on the face, or the tine clearance short of it,
+# within this (mm): as far as a round side may fall away behind the plane its
+# tines end on. Further off, the tine misses the face or reaches into the part.
+TINE_END_TOLERANCE = ROUND_SIDE_MAX_DROP
 
 # --- Checks -------------------------------------------------------------------
 TOLERANCE = 1e-4

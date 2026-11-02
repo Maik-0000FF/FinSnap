@@ -72,6 +72,18 @@ STABLE_BASE = 10.0     # side of a column on the bed, and of the arm out of its 
 STABLE_HEIGHT = 20.0   # height of that column
 STABLE_REACH = 30.0    # how far its arm reaches out, carrying the centre of mass past the column
 STABLE_BRIM = 20.0     # a brim wide enough to hold a slab standing on its edge
+LEAN_DISC_RADIUS = 20.0         # a disc whose round flat face takes fins leaning
+LEAN_DISC_HEIGHT = 10.0         # its height, the face on top
+LEAN_DISC_FILLET = 4.0          # a fillet round its top, bulging past the rim of that face once it leans
+TINY_LEAN_DISC_RADIUS = 0.5     # a disc whose round face takes no fin
+LEAN_DISC_TURN = 30.0           # how far the disc is turned before Quick fins, in degrees
+LEAN_DISC_TURN_AXIS = V(1, 1, 0)  # about an axis neither along X nor Y
+TINE_END_MESH_DEFLECTION = 0.1  # how closely the mesh of the reference cube, made a solid again, follows it, in mm
+TINE_END_SHIFT = 0.5  # how far tine ends are measured off the face to be named, in mm
+CENTRE_SHARES = (0.1, 0.37, 0.5, 0.83)  # heights the centres of mass are compared at, as shares of the part's
+CENTRE_FLAT_TOLERANCE = 1e-6    # how far a centre from the mesh may lie off the cut one, flat faces only, in mm
+CENTRE_CURVED_TOLERANCE = 0.05  # the same with curved faces, which the mesh only follows, in mm
+CENTRE_CUT_MARGIN = 1.0         # how far the box cutting out the part below a height reaches past it, in mm
 FILLET_RADIUS = 3.0    # a fillet along the edge a part rests on, its leaning face starting above it
 WIDE_FIN = 3.0         # a fin thick enough for a hole under its flank, clear of its tine, in mm
 FLANK_HOLE_RADIUS = 0.5  # that hole, across the side of the fin, in mm
@@ -645,6 +657,74 @@ def check_one_corner(cube, face):
                "%s gives one fin, its tine flush with that end of the face" % placement)
 
 
+def check_tine_ends(cube, face):
+    """The end of every tine is measured on the part itself: on the face, or
+    the tine clearance short of it, within the tolerance; one that misses the
+    face or reaches into the part is said so."""
+    box = Part.makeBox(BOX_SIDE, BOX_SIDE, BOX_SIDE)
+    bottom = [f for f in box.Faces if f.BoundBox.ZMax < d.TOLERANCE][0]
+    middle = BOX_SIDE / 2
+    clearance = d.GAP / 2
+    far = 2 * d.TINE_END_TOLERANCE
+
+    def at(*depths):
+        """Points under the middle of the bottom face, `depths` below it (mm,
+        negative inside the box)."""
+        return [V(middle + k, middle, -depth) for k, depth in enumerate(depths)]
+
+    for points, gap, wanted, what in (
+            (at(0, 0), 0.0, None, "on the face, no clearance"),
+            (at(clearance, clearance), clearance, None, "the clearance short of it"),
+            (at(clearance + d.TINE_END_TOLERANCE / 2), clearance, None, "within the tolerance"),
+            (at(clearance, clearance + far), clearance, geometry.TINE_MISSES, "further off"),
+            (at(clearance - far, clearance + far), clearance, geometry.TINE_CUTS_IN,
+             "into the part, another further off"),
+            ([V(BOX_SIDE + clearance + far, middle, -clearance)], clearance, geometry.TINE_MISSES,
+             "past the end of the face")):
+        found = geometry.tine_end_fault(bottom, points, gap)
+        expect(found == wanted, "a tine end %s: %s" % (what, found))
+
+    def said(result):
+        return [w for w in result.warnings if "miss the face" in w or "into the part" in w]
+
+    # The ends measured as if every tine stopped short of the face or reached
+    # into the part: the build names them and marks every fin and tine.
+    real = geometry.tine_end_points
+    for shift, words in ((TINE_END_SHIFT, "miss the face"), (-TINE_END_SHIFT, "into the part")):
+        geometry.tine_end_points = lambda p, frame, *args, by=shift: [
+            point + frame.normal() * by for point in real(p, frame, *args)]
+        try:
+            result = geometry.build(cube, face, FinParams())
+        finally:
+            geometry.tine_end_points = real
+        found = [i for i, w in enumerate(result.warnings) if words in w]
+        target = result.warning_targets[found[0]] if len(found) == 1 else None
+        expect(target is not None and target.fins == result.numbers and len(target.tines) == len(result.tines),
+               "tine ends %.1f mm off the face are named \"%s\", every fin and tine marked: %s"
+               % (shift, words, result.warnings))
+
+    def on_rim(shape):
+        """`shape` stood on its rim by Quick fins, and its side leaning over the bed."""
+        side = round_side_of(shape)
+        plan = geometry.quick_plan(shape, [], [(shape.Faces[side], side)], FinParams(), d.TILT_ANGLE)
+        stood = moved(shape, plan.change)
+        return stood, stood.Faces[plan.number]
+
+    import Mesh
+    from freecad.finsnap import mesh_input
+    meshed = mesh_input.solid_from_mesh(Mesh.Mesh(cube.tessellate(TINE_END_MESH_DEFLECTION)))
+    tube = Part.makeCylinder(ROD_RADIUS, ROD_HEIGHT).cut(Part.makeCylinder(BORE_RADIUS, ROD_HEIGHT))
+    split = orient.joined(split_cylinder(ROD_RADIUS, ROD_HEIGHT, BORE_RADIUS))
+    for name, part, under, params in (
+            ("the reference cube", cube, face, FinParams()),
+            ("the reference cube with a tine clearance", cube, face, FinParams(tine_clearance=clearance)),
+            ("a solid converted from a mesh", meshed, lower_left_face(meshed), FinParams()),
+            ("the side of a tube on its rim", *on_rim(tube), FinParams()),
+            ("the side of a split tube on its rim", *on_rim(split), FinParams())):
+        result = geometry.build(part, under, params)
+        expect(result.tines and not said(result), "every tine of %s ends on the face: %s" % (name, said(result)))
+
+
 def check_tine_clearance(cube, face):
     """Tines end the clearance short of the face; the fin moves out as far, so
     the tines keep their length and the slicer still prints them."""
@@ -962,14 +1042,47 @@ def check_quick_fins():
            "a chosen face is turned to lean 45 degrees over the bed, standing on its longest edge")
     expect(abs(resting_height(leant)) < d.TOLERANCE, "the part turned for that face rests on the bed")
 
-    disc = Part.makeCylinder(10, 5)
-    top = [i for i, f in enumerate(disc.Faces) if f.findPlane() is not None and f.BoundBox.ZMin > 5 - d.TOLERANCE][0]
+    # A round flat face, sharp or with a fillet round it bulging past its rim:
+    # leaned 45 degrees, the part resting on its lowest point, the face at the
+    # bed with a sharp rim and just above it with the fillet.
+    plain = Part.makeCylinder(LEAN_DISC_RADIUS, LEAN_DISC_HEIGHT)
+    rounded = plain.makeFillet(LEAN_DISC_FILLET,
+                               [e for e in plain.Edges if e.BoundBox.ZMin > LEAN_DISC_HEIGHT - d.TOLERANCE])
+    for name, disc, above in (("sharp", plain, False), ("filleted", rounded, True)):
+        top = [i for i, f in enumerate(disc.Faces)
+               if f.findPlane() is not None and f.BoundBox.ZMin > LEAN_DISC_HEIGHT - d.TOLERANCE][0]
+        change, edge = geometry.stand_for_face(disc, top, p, d.TILT_ANGLE)
+        leant = moved(disc, change)
+        gap = leant.Faces[top].BoundBox.ZMin - leant.BoundBox.ZMin
+        expect(edge is None and abs(leant.Faces[top].normalAt(0, 0).z + math.sqrt(0.5)) < 1e-6
+               and abs(resting_height(leant)) < d.TOLERANCE and (gap > d.TOLERANCE) == above,
+               "a round face of a %s disc leans 45 degrees, the part resting on its lowest point, the face %.2f mm "
+               "above the bed" % (name, gap))
+    # The side view looks along the line the face was leaned about, the disc
+    # lying flat or turned first: the 45 degrees in profile.
+    # Turning a shape keeps the order of its faces.
+    top = [i for i, f in enumerate(plain.Faces)
+           if f.findPlane() is not None and f.BoundBox.ZMin > LEAN_DISC_HEIGHT - d.TOLERANCE][0]
+    for name, turn in (("lying", 0.0), ("turned", LEAN_DISC_TURN)):
+        disc = plain.copy()
+        disc.rotate(V(0, 0, 0), LEAN_DISC_TURN_AXIS, turn)
+        plan = geometry.quick_plan(disc, [], [(disc.Faces[top], top)], p, d.TILT_ANGLE)
+        seen = orient.side_direction(plan.change, plan.edge, plan.beside, plan.line)
+        # Seen along that line, the face leans across the view, in profile.
+        normal = moved(disc, plan.change).Faces[top].normalAt(0, 0)
+        expect(seen is not None and abs(abs(seen.dot(orient.LEAN_LINE)) - 1) < d.TOLERANCE
+               and abs(normal.dot(seen)) < d.TOLERANCE,
+               "the side view of a %s disc leaned on a round face looks along the line it leans about: %s"
+               % (name, seen))
+    tiny = Part.makeCylinder(TINY_LEAN_DISC_RADIUS, LEAN_DISC_HEIGHT)
+    top = [i for i, f in enumerate(tiny.Faces)
+           if f.findPlane() is not None and f.BoundBox.ZMin > LEAN_DISC_HEIGHT - d.TOLERANCE][0]
     try:
-        geometry.stand_for_face(disc, top, p, d.TILT_ANGLE)
+        geometry.stand_for_face(tiny, top, p, d.TILT_ANGLE)
     except geometry.FinError as error:
-        expect("cannot stand" in str(error), "a face without a straight edge is refused: %s" % error)
+        expect("cannot stand" in str(error), "a round face too small for fins is refused: %s" % error)
     else:
-        raise AssertionError("a round face was stood on an edge")
+        raise AssertionError("fins were planned under a round face too small for them")
 
 
 def check_quick_plan():
@@ -1152,6 +1265,38 @@ def check_printable_plans():
         overhang.islands = real
 
 
+def cut_centre(shape, height):
+    """The centre of mass of `shape` below `height`, cut out by the kernel."""
+    box = shape.BoundBox
+    margin = CENTRE_CUT_MARGIN
+    below = shape.common(Part.makeBox(box.XLength + 2 * margin, box.YLength + 2 * margin, height - box.ZMin + margin,
+                                      V(box.XMin - margin, box.YMin - margin, box.ZMin - margin))).Solids
+    volume = sum(solid.Volume for solid in below)
+    moment = V()
+    for solid in below:
+        moment += solid.CenterOfMass * solid.Volume
+    return moment * (1 / volume)
+
+
+def check_centres():
+    """The centres of mass the stability check works out on a mesh of the
+    part lie where a cut by the kernel puts them."""
+    for name, shape, tolerance in (("tilted cube", tilted_cube(), CENTRE_FLAT_TOLERANCE),
+                                   ("slot on its end", slot_on_end(), CENTRE_CURVED_TOLERANCE)):
+        below = stability._Below(shape)
+        box = shape.BoundBox
+        for share in CENTRE_SHARES:
+            height = box.ZMin + share * box.ZLength
+            off = (below.centre(height) - cut_centre(shape, height)).Length
+            expect(off < tolerance, "%s: the centre of mass below %.0f %% of its height lies %.2g mm off the cut one"
+                   % (name, 100 * share, off))
+        above = box.ZMax + CENTRE_CUT_MARGIN
+        whole = (below.centre(above) - cut_centre(shape, above)).Length
+        expect(whole < tolerance, "%s: above it, the centre of the whole part, %.2g mm off" % (name, whole))
+        expect(below.centre(box.ZMin - CENTRE_CUT_MARGIN) is None, "%s: below it, no centre" % name)
+    expect(stability._Below(Part.Shape()).centre(1.0) is None, "an empty part has no centre")
+
+
 def check_stability():
     """Whether a part stays standing while it is printed, layer by layer."""
     first, layer = d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT
@@ -1206,6 +1351,13 @@ def check_stability():
     expect(cut is not None and abs(cut.BoundBox.ZMin - tipped.height) < d.TOLERANCE
            and cut.Area > STABLE_BASE * STABLE_BASE,
            "the critical layer is cut out of the part at its height, the arm in it")
+    # Cut exactly at the underside of a slab across two piers: the layer
+    # below it, the tops of both piers.
+    width, depth, height = PIER
+    tops = stability.section(piers(GAP_CRITICAL), height)
+    expect(tops is not None and len(tops.Faces) == 2 and abs(tops.Area - 2 * width * depth) < d.TOLERANCE,
+           "a layer cut on the underside of a slab across two piers holds the tops of both: %.1f mm2"
+           % (tops.Area if tops else 0.0))
     expect(stability.check(Part.Shape(), [], first, layer, {}) is None, "an empty part has no result")
 
 
@@ -1772,6 +1924,7 @@ def main():
     check_tight_bounds()
     check_thickness()
     check_one_corner(cube, face)
+    check_tine_ends(cube, face)
     check_tine_clearance(cube, face)
     check_shortened(cube, face)
     check_restart(cube, face)
@@ -1788,6 +1941,7 @@ def main():
     check_bridges()
     check_no_fragile_calls()
     check_printable_plans()
+    check_centres()
     check_stability()
     check_round_side()
     check_part_of_side()
