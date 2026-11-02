@@ -72,6 +72,10 @@ STABLE_BASE = 10.0     # side of a column on the bed, and of the arm out of its 
 STABLE_HEIGHT = 20.0   # height of that column
 STABLE_REACH = 30.0    # how far its arm reaches out, carrying the centre of mass past the column
 STABLE_BRIM = 20.0     # a brim wide enough to hold a slab standing on its edge
+CENTRE_SHARES = (0.1, 0.37, 0.5, 0.83)  # heights the centres of mass are compared at, as shares of the part's
+CENTRE_FLAT_TOLERANCE = 1e-6    # how far a centre from the mesh may lie off the cut one, flat faces only, in mm
+CENTRE_CURVED_TOLERANCE = 0.05  # the same with curved faces, which the mesh only follows, in mm
+CENTRE_CUT_MARGIN = 1.0         # how far the box cutting out the part below a height reaches past it, in mm
 FILLET_RADIUS = 3.0    # a fillet along the edge a part rests on, its leaning face starting above it
 WIDE_FIN = 3.0         # a fin thick enough for a hole under its flank, clear of its tine, in mm
 FLANK_HOLE_RADIUS = 0.5  # that hole, across the side of the fin, in mm
@@ -1152,6 +1156,38 @@ def check_printable_plans():
         overhang.islands = real
 
 
+def cut_centre(shape, height):
+    """The centre of mass of `shape` below `height`, cut out by the kernel."""
+    box = shape.BoundBox
+    margin = CENTRE_CUT_MARGIN
+    below = shape.common(Part.makeBox(box.XLength + 2 * margin, box.YLength + 2 * margin, height - box.ZMin + margin,
+                                      V(box.XMin - margin, box.YMin - margin, box.ZMin - margin))).Solids
+    volume = sum(solid.Volume for solid in below)
+    moment = V()
+    for solid in below:
+        moment += solid.CenterOfMass * solid.Volume
+    return moment * (1 / volume)
+
+
+def check_centres():
+    """The centres of mass the stability check works out on a mesh of the
+    part lie where a cut by the kernel puts them."""
+    for name, shape, tolerance in (("tilted cube", tilted_cube(), CENTRE_FLAT_TOLERANCE),
+                                   ("slot on its end", slot_on_end(), CENTRE_CURVED_TOLERANCE)):
+        below = stability._Below(shape)
+        box = shape.BoundBox
+        for share in CENTRE_SHARES:
+            height = box.ZMin + share * box.ZLength
+            off = (below.centre(height) - cut_centre(shape, height)).Length
+            expect(off < tolerance, "%s: the centre of mass below %.0f %% of its height lies %.2g mm off the cut one"
+                   % (name, 100 * share, off))
+        above = box.ZMax + CENTRE_CUT_MARGIN
+        whole = (below.centre(above) - cut_centre(shape, above)).Length
+        expect(whole < tolerance, "%s: above it, the centre of the whole part, %.2g mm off" % (name, whole))
+        expect(below.centre(box.ZMin - CENTRE_CUT_MARGIN) is None, "%s: below it, no centre" % name)
+    expect(stability._Below(Part.Shape()).centre(1.0) is None, "an empty part has no centre")
+
+
 def check_stability():
     """Whether a part stays standing while it is printed, layer by layer."""
     first, layer = d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT
@@ -1788,6 +1824,7 @@ def main():
     check_bridges()
     check_no_fragile_calls()
     check_printable_plans()
+    check_centres()
     check_stability()
     check_round_side()
     check_part_of_side()

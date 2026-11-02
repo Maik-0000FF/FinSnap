@@ -4,7 +4,7 @@
 """Time the checks of a part: overhangs, islands, bridges and stability.
 
 Run in FreeCAD without its window:
-    freecadcmd freecad/finsnap/tools/time_checks.py
+    freecad --console freecad/finsnap/tools/time_checks.py
 Parts measured: the test parts of the tests, and the solids of the FreeCAD
 documents in TIME_CHECKS_FILES, paths split as the PATH is (":" on Linux),
 opened hidden and never saved. A document's parts are named by number only,
@@ -22,6 +22,8 @@ INPUTS this has to withstand:
   a document without solids             ->  nothing measured of it
   a part a check fails on               ->  the error in its column, the rest
                                             measured
+  TIME_CHECKS_TOP not a whole number    ->  TOP_CALLS
+  TIME_CHECKS_TOP below 1               ->  no calls listed
 """
 
 import cProfile
@@ -105,7 +107,10 @@ def main():
         measure(name, shape, profile)
     for name, shape in document_parts(paths):
         measure(name, shape, profile)
-    top = int(os.environ.get(TOP, TOP_CALLS))
+    try:
+        top = int(os.environ.get(TOP, TOP_CALLS))
+    except ValueError:
+        top = TOP_CALLS
     if top > 0:
         pstats.Stats(profile, stream=OUT).sort_stats("tottime").print_stats(top)
     OUT.flush()

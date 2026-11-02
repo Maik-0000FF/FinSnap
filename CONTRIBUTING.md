@@ -37,7 +37,7 @@ Icons, logo and the drawings of the task panel are written by `python3 -m freeca
 
 The demo GIF of the README, `docs/assets/demo.gif`, is rendered by `freecad/finsnap/tools/make_demo.sh <document.FCStd> <part name> <FaceN>` from a part of your own, with Quick fins standing it on face FaceN. It needs FreeCAD, `xvfb-run` and `ffmpeg`; FreeCAD runs on a virtual screen with a home of its own for its settings and addons, so nothing shows and your settings are neither read nor changed, and the document is not saved.
 
-How long the checks take is measured by `freecadcmd freecad/finsnap/tools/time_checks.py`, on the test parts and on the FreeCAD documents listed in `TIME_CHECKS_FILES` (split like `PATH`). It prints the seconds of each check per part, the parts of the documents named by number only, and the calls that cost most.
+How long the checks take is measured by `freecad --console freecad/finsnap/tools/time_checks.py`, on the test parts and on the FreeCAD documents listed in `TIME_CHECKS_FILES` (split like `PATH`). It prints the seconds of each check per part, the parts of the documents named by number only, and the calls that cost most.
 
 ## Versioning
 
