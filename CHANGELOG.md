@@ -11,6 +11,8 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.12.0] - 2026-11-02
+
 ### Added
 
 - `tools/time_checks.py` times each check, overhangs, islands, bridges and stability, on the test parts and on given documents, and lists the calls that cost most (#114)
@@ -269,7 +271,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.11.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.12.0...HEAD
+[0.12.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.12.0
 [0.11.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.11.0
 [0.10.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.10.0
 [0.9.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.9.0
