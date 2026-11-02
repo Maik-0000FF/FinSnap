@@ -929,16 +929,27 @@ def contact_share(frame, face, t, p, z):
     return min(1.0, probe.common(face).Area / end.Area)
 
 
-def tine_end_points(p, frame, t0, thickness, z):
-    """The corners and the middle of the end of the tine of the fin starting
-    at t0 at height z over the bed, where one_fin() ends it."""
+def tine_end(p, frame, z):
+    """Where the tine at height z over the bed ends, as one_fin() builds it
+    and tine_end_points() measures it: the heights of its bottom and top, and
+    how far out its end lies at each (s of the frame). It ends parallel to
+    the face, following its slope, on it or the tine clearance short of it,
+    so every tine is equally long, also where the part behind the face ends
+    early."""
     bottom = frame.bed_z + z
     top = bottom + p.tine_height
+    return bottom, top, frame.s_flank(bottom, p.clearance), frame.s_flank(top, p.clearance)
+
+
+def tine_end_points(p, frame, t0, thickness, z):
+    """The corners and the middle of the end of the tine of the fin starting
+    at t0 at height z over the bed, see tine_end()."""
+    bottom, top, s_bottom, s_top = tine_end(p, frame, z)
     t_tine = tine_start(p, t0, thickness)
-    corners = [frame.point(t, frame.s_flank(height, p.clearance), height)
-               for t in (t_tine, t_tine + p.tine_width) for height in (bottom, top)]
-    middle = frame.point(t_tine + p.tine_width / 2, frame.s_flank((bottom + top) / 2, p.clearance),
-                         (bottom + top) / 2)
+    corners = [frame.point(t, s, height)
+               for t in (t_tine, t_tine + p.tine_width) for s, height in ((s_bottom, bottom), (s_top, top))]
+    # The end runs straight from bottom to top: its middle lies halfway.
+    middle = frame.point(t_tine + p.tine_width / 2, (s_bottom + s_top) / 2, (bottom + top) / 2)
     return corners + [middle]
 
 
@@ -1012,8 +1023,7 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
     tines = []
     t_tine = tine_start(p, t0, thickness)
     for z in tine_z:
-        bottom = zb + z
-        top = bottom + p.tine_height
+        bottom, top, s_end_bottom, s_end_top = tine_end(p, frame, z)
         # The fin edge furthest out along the tine: the flank at its top, or the
         # vertical inner end of the foot for a tine below the top of the foot.
         # Measured from there, a tine always reaches into the fin.
@@ -1021,11 +1031,6 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
         if p.foot_height > 0 and bottom < zb + p.foot_height:
             edge = max(edge, foot_span(p, frame, height)[0])
         s_into_fin = edge + d.TINE_INTO_FIN
-        # The tine ends parallel to the face, following its slope, on it or the
-        # tine clearance short of it, so every tine is equally long, also where
-        # the part behind the face ends early.
-        s_end_bottom = frame.s_flank(bottom, p.clearance)
-        s_end_top = frame.s_flank(top, p.clearance)
         tines.append(frame.section(t_tine, [(s_end_bottom, bottom), (s_into_fin, bottom),
                                             (s_into_fin, top), (s_end_top, top)], p.tine_width))
     return body, tines, outer_middle

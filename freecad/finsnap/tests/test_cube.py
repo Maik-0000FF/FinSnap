@@ -79,6 +79,7 @@ TINY_LEAN_DISC_RADIUS = 0.5     # a disc whose round face takes no fin
 LEAN_DISC_TURN = 30.0           # how far the disc is turned before Quick fins, in degrees
 LEAN_DISC_TURN_AXIS = V(1, 1, 0)  # about an axis neither along X nor Y
 TINE_END_MESH_DEFLECTION = 0.1  # how closely the mesh of the reference cube, made a solid again, follows it, in mm
+TINE_END_SHIFT = 0.5  # how far tine ends are measured off the face to be named, in mm
 CENTRE_SHARES = (0.1, 0.37, 0.5, 0.83)  # heights the centres of mass are compared at, as shares of the part's
 CENTRE_FLAT_TOLERANCE = 1e-6    # how far a centre from the mesh may lie off the cut one, flat faces only, in mm
 CENTRE_CURVED_TOLERANCE = 0.05  # the same with curved faces, which the mesh only follows, in mm
@@ -685,6 +686,22 @@ def check_tine_ends(cube, face):
 
     def said(result):
         return [w for w in result.warnings if "miss the face" in w or "into the part" in w]
+
+    # The ends measured as if every tine stopped short of the face or reached
+    # into the part: the build names them and marks every fin and tine.
+    real = geometry.tine_end_points
+    for shift, words in ((TINE_END_SHIFT, "miss the face"), (-TINE_END_SHIFT, "into the part")):
+        geometry.tine_end_points = lambda p, frame, *args, by=shift: [
+            point + frame.normal() * by for point in real(p, frame, *args)]
+        try:
+            result = geometry.build(cube, face, FinParams())
+        finally:
+            geometry.tine_end_points = real
+        found = [i for i, w in enumerate(result.warnings) if words in w]
+        target = result.warning_targets[found[0]] if len(found) == 1 else None
+        expect(target is not None and target.fins == result.numbers and len(target.tines) == len(result.tines),
+               "tine ends %.1f mm off the face are named \"%s\", every fin and tine marked: %s"
+               % (shift, words, result.warnings))
 
     def on_rim(shape):
         """`shape` stood on its rim by Quick fins, and its side leaning over the bed."""
