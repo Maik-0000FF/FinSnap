@@ -15,6 +15,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 - `tools/time_checks.py` times each check, overhangs, islands, bridges and stability, on the test parts and on given documents, and lists the calls that cost most (#114)
 - The table of ways Quick fins found shows again when its fins are opened later with a double click, folded away so the panel opens at once, worked out anew once unfolded from where the part stood before, the way it stands in marked, as long as it still stands one of them; Cancel after choosing another puts the part back as it stood when the ways were unfolded
+- The end of every tine is measured on the face of the part itself, not on the plane it was planned on: a tine whose end misses the face, or reaches into the part, by more than 0.05 mm beyond the tine clearance is named in the warnings and marked, on a round side, a face a STEP file brings in halves and a solid converted from a mesh alike (#108)
 
 ### Changed
 

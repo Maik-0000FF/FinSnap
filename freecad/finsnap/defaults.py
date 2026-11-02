@@ -185,6 +185,10 @@ TINE_MIN_CONTACT = 1.0
 # side falls away behind the plane; a tine still ends on it where it lies no
 # further behind than this (mm), a fifth of the gap.
 ROUND_SIDE_MAX_DROP = 0.05
+# The end of a tine counts as on the face, or the tine clearance short of it,
+# within this (mm): as far as a round side may fall away behind the plane its
+# tines end on. Further off, the tine misses the face or reaches into the part.
+TINE_END_TOLERANCE = ROUND_SIDE_MAX_DROP
 
 # --- Checks -------------------------------------------------------------------
 TOLERANCE = 1e-4

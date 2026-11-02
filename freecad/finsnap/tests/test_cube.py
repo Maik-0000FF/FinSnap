@@ -78,6 +78,7 @@ LEAN_DISC_FILLET = 4.0          # a fillet round its top, bulging past the rim o
 TINY_LEAN_DISC_RADIUS = 0.5     # a disc whose round face takes no fin
 LEAN_DISC_TURN = 30.0           # how far the disc is turned before Quick fins, in degrees
 LEAN_DISC_TURN_AXIS = V(1, 1, 0)  # about an axis neither along X nor Y
+TINE_END_MESH_DEFLECTION = 0.1  # how closely the mesh of the reference cube, made a solid again, follows it, in mm
 CENTRE_SHARES = (0.1, 0.37, 0.5, 0.83)  # heights the centres of mass are compared at, as shares of the part's
 CENTRE_FLAT_TOLERANCE = 1e-6    # how far a centre from the mesh may lie off the cut one, flat faces only, in mm
 CENTRE_CURVED_TOLERANCE = 0.05  # the same with curved faces, which the mesh only follows, in mm
@@ -653,6 +654,58 @@ def check_one_corner(cube, face):
         flush = min(ts) if placement == d.PLACEMENT_CORNER_LEFT else max(ts)
         expect(len(result.fins.Solids) == 1 and abs(flush - end) < d.TOLERANCE,
                "%s gives one fin, its tine flush with that end of the face" % placement)
+
+
+def check_tine_ends(cube, face):
+    """The end of every tine is measured on the part itself: on the face, or
+    the tine clearance short of it, within the tolerance; one that misses the
+    face or reaches into the part is said so."""
+    box = Part.makeBox(BOX_SIDE, BOX_SIDE, BOX_SIDE)
+    bottom = [f for f in box.Faces if f.BoundBox.ZMax < d.TOLERANCE][0]
+    middle = BOX_SIDE / 2
+    clearance = d.GAP / 2
+    far = 2 * d.TINE_END_TOLERANCE
+
+    def at(*depths):
+        """Points under the middle of the bottom face, `depths` below it (mm,
+        negative inside the box)."""
+        return [V(middle + k, middle, -depth) for k, depth in enumerate(depths)]
+
+    for points, gap, wanted, what in (
+            (at(0, 0), 0.0, None, "on the face, no clearance"),
+            (at(clearance, clearance), clearance, None, "the clearance short of it"),
+            (at(clearance + d.TINE_END_TOLERANCE / 2), clearance, None, "within the tolerance"),
+            (at(clearance, clearance + far), clearance, geometry.TINE_MISSES, "further off"),
+            (at(clearance - far, clearance + far), clearance, geometry.TINE_CUTS_IN,
+             "into the part, another further off"),
+            ([V(BOX_SIDE + clearance + far, middle, -clearance)], clearance, geometry.TINE_MISSES,
+             "past the end of the face")):
+        found = geometry.tine_end_fault(bottom, points, gap)
+        expect(found == wanted, "a tine end %s: %s" % (what, found))
+
+    def said(result):
+        return [w for w in result.warnings if "miss the face" in w or "into the part" in w]
+
+    def on_rim(shape):
+        """`shape` stood on its rim by Quick fins, and its side leaning over the bed."""
+        side = round_side_of(shape)
+        plan = geometry.quick_plan(shape, [], [(shape.Faces[side], side)], FinParams(), d.TILT_ANGLE)
+        stood = moved(shape, plan.change)
+        return stood, stood.Faces[plan.number]
+
+    import Mesh
+    from freecad.finsnap import mesh_input
+    meshed = mesh_input.solid_from_mesh(Mesh.Mesh(cube.tessellate(TINE_END_MESH_DEFLECTION)))
+    tube = Part.makeCylinder(ROD_RADIUS, ROD_HEIGHT).cut(Part.makeCylinder(BORE_RADIUS, ROD_HEIGHT))
+    split = orient.joined(split_cylinder(ROD_RADIUS, ROD_HEIGHT, BORE_RADIUS))
+    for name, part, under, params in (
+            ("the reference cube", cube, face, FinParams()),
+            ("the reference cube with a tine clearance", cube, face, FinParams(tine_clearance=clearance)),
+            ("a solid converted from a mesh", meshed, lower_left_face(meshed), FinParams()),
+            ("the side of a tube on its rim", *on_rim(tube), FinParams()),
+            ("the side of a split tube on its rim", *on_rim(split), FinParams())):
+        result = geometry.build(part, under, params)
+        expect(result.tines and not said(result), "every tine of %s ends on the face: %s" % (name, said(result)))
 
 
 def check_tine_clearance(cube, face):
@@ -1854,6 +1907,7 @@ def main():
     check_tight_bounds()
     check_thickness()
     check_one_corner(cube, face)
+    check_tine_ends(cube, face)
     check_tine_clearance(cube, face)
     check_shortened(cube, face)
     check_restart(cube, face)
