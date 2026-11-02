@@ -223,22 +223,32 @@ def _lowest_points(shape):
             if all(points[other].z >= point.z for other in neighbours[corner])]
 
 
-def sections(shape, z, reach):
-    """Where the plane at height `z` cuts `shape`, one slab SECTION_SLAB thick
-    for each face of the cut, around the plane of the bed, z 0, so sections of
-    different layers can be overlapped, each with its bounding box grown by
-    `reach` (mm) and the face of the cut where it lies; None where the kernel
-    cannot make them. The faces are the top of a thin cut-out of `shape`
-    ending at the plane, see SECTION_CUT_HEIGHT."""
+def layer_faces(shape, z):
+    """The faces where the plane at height `z` cuts `shape`, holes and all:
+    the top of a thin cut-out of it ending at the plane, see
+    SECTION_CUT_HEIGHT. A face of the part lying in the plane is cut whole.
+    None where the kernel cannot make them."""
     box = bounds(shape)
     try:
         cutter = Part.makeBox(box.XLength + 2 * SECTION_CUT_MARGIN, box.YLength + 2 * SECTION_CUT_MARGIN,
                               SECTION_CUT_HEIGHT, App.Vector(box.XMin - SECTION_CUT_MARGIN,
                                                              box.YMin - SECTION_CUT_MARGIN, z - SECTION_CUT_HEIGHT))
-        faces = [face for face in shape.common(cutter).Faces
-                 if abs(face.BoundBox.ZMin - z) < d.TOLERANCE and face.BoundBox.ZLength < d.TOLERANCE]
-        if not faces:
-            return []
+        return [face for face in shape.common(cutter).Faces
+                if abs(face.BoundBox.ZMin - z) < d.TOLERANCE and face.BoundBox.ZLength < d.TOLERANCE]
+    except Part.OCCError:
+        return None
+
+
+def sections(shape, z, reach):
+    """Where the plane at height `z` cuts `shape` (layer_faces()), one slab
+    SECTION_SLAB thick for each face of the cut, around the plane of the bed,
+    z 0, so sections of different layers can be overlapped, each with its
+    bounding box grown by `reach` (mm) and the face of the cut where it lies;
+    None where the kernel cannot make them."""
+    faces = layer_faces(shape, z)
+    if not faces:
+        return faces
+    try:
         bottom = App.Vector(0, 0, -z - SECTION_SLAB / 2)
         slabs = [face.translated(bottom).extrude(App.Vector(0, 0, SECTION_SLAB)) for face in faces]
     except Part.OCCError:

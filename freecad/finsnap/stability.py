@@ -53,6 +53,7 @@ import FreeCAD as App
 import Part
 
 from . import defaults as d
+from . import overhang
 from .shapes import bounds
 
 # How often the part is checked before it is checked layer by layer (mm).
@@ -61,8 +62,6 @@ SAMPLE_STEP = 1.0
 FOOTPRINT_DEFLECTION = 0.1
 # Points round each corner of a footprint grown by a brim, for its outline.
 BRIM_CORNER_POINTS = 16
-# Turns the wires of a cut into faces, holes inside their outlines.
-FACE_MAKER = "Part::FaceMakerBullseye"
 
 # The result of check(): whether the part tips; the layer (from 0, the first)
 # it tips at or, if it stands, has its smallest tipping angle at, and the height of
@@ -165,12 +164,9 @@ def _with_profile(result, seen):
 def section(part, z):
     """Where the plane at height `z` cuts `part`, as a shape of faces, to show
     a layer in the part; None where nothing is there or the kernel cannot
-    make it."""
-    try:
-        wires = part.slice(App.Vector(0, 0, 1), z)
-        return Part.makeFace(wires, FACE_MAKER) if wires else None
-    except Part.OCCError:
-        return None
+    make it. Cut as islands and bridges cut their layers (overhang.layer_faces())."""
+    faces = overhang.layer_faces(part, z)
+    return Part.makeCompound(faces) if faces else None
 
 
 class _Below:

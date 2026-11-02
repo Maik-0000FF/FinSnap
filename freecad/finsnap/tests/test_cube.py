@@ -1242,6 +1242,13 @@ def check_stability():
     expect(cut is not None and abs(cut.BoundBox.ZMin - tipped.height) < d.TOLERANCE
            and cut.Area > STABLE_BASE * STABLE_BASE,
            "the critical layer is cut out of the part at its height, the arm in it")
+    # Cut exactly at the underside of a slab across two piers: the layer
+    # below it, the tops of both piers.
+    width, depth, height = PIER
+    tops = stability.section(piers(GAP_CRITICAL), height)
+    expect(tops is not None and len(tops.Faces) == 2 and abs(tops.Area - 2 * width * depth) < d.TOLERANCE,
+           "a layer cut on the underside of a slab across two piers holds the tops of both: %.1f mm2"
+           % (tops.Area if tops else 0.0))
     expect(stability.check(Part.Shape(), [], first, layer, {}) is None, "an empty part has no result")
 
 
