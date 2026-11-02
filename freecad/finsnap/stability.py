@@ -45,9 +45,10 @@ INPUTS this has to withstand (check()):
   a part the kernel cannot mesh         ->  None
 """
 
-import bisect
 import math
 from collections import namedtuple
+
+import numpy
 
 import FreeCAD as App
 import Part
@@ -62,6 +63,9 @@ SAMPLE_STEP = 1.0
 FOOTPRINT_DEFLECTION = 0.1
 # Points round each corner of a footprint grown by a brim, for its outline.
 BRIM_CORNER_POINTS = 16
+# What each triangle of the mesh adds to the centres of mass, see _Below: its
+# volume and its moments along x, y and z.
+INTEGRALS = 4
 
 # The result of check(): whether the part tips; the layer (from 0, the first)
 # it tips at or, if it stands, has its smallest tipping angle at, and the height of
@@ -181,10 +185,13 @@ class _Below:
     Each is of the second degree over a triangle and so summed exactly from
     the middles of its edges. Triangles lying wholly below a height are summed
     once, in the order of their tops; those crossing it are clipped at it.
+    The mesh is held in numpy arrays: a fine one has hundreds of thousands of
+    triangles, and summing them one by one in Python took most of the check.
 
     INPUTS this has to withstand (centre()):
       a height above the part              ->  the centre of the whole part
       a height through a triangle          ->  that triangle clipped at it
+      a height at the top of a triangle    ->  summed whole, not clipped
       a height below the part              ->  None
       a part the kernel cannot mesh        ->  None for every height
     """
@@ -194,59 +201,56 @@ class _Below:
             points, triangles = part.tessellate(d.CENTRE_MESH_DEFLECTION)
         except Part.OCCError:
             points, triangles = [], []
-        corners = [(point.x, point.y, point.z) for point in points]
-        self.triangles = sorted((tuple(corners[i] for i in triangle) for triangle in triangles),
-                                key=lambda triangle: max(c[2] for c in triangle))
-        self.tops = [max(c[2] for c in triangle) for triangle in self.triangles]
-        self.bottoms = [min(c[2] for c in triangle) for triangle in self.triangles]
+        corners = numpy.array([(point.x, point.y, point.z) for point in points], dtype=float).reshape(-1, 3)
+        # Each triangle as its three corners, in the order of their tops.
+        triangles = corners[numpy.array(triangles, dtype=int).reshape(-1, 3)]
+        tops = triangles[:, :, 2].max(axis=1)
+        order = numpy.argsort(tops, kind="stable")
+        self.triangles, self.tops = triangles[order], tops[order]
+        self.bottoms = self.triangles[:, :, 2].min(axis=1)
         # The sums of the triangles up to each, in the order of their tops.
-        self.summed = [(0.0, 0.0, 0.0, 0.0)]
-        for triangle in self.triangles:
-            self.summed.append(tuple(a + b for a, b in zip(self.summed[-1], _integrals(triangle))))
+        self.summed = numpy.vstack([numpy.zeros(INTEGRALS), numpy.cumsum(_integrals(self.triangles), axis=0)])
 
     def centre(self, height):
         """The centre of mass of the part below `height`, as an App.Vector;
         None where nothing of it lies below."""
-        whole = bisect.bisect_right(self.tops, height)
-        sums = list(self.summed[whole])
-        for number in range(whole, len(self.triangles)):
-            if self.bottoms[number] < height:
-                for piece in _clipped(self.triangles[number], height):
-                    sums = [a + b for a, b in zip(sums, _integrals(piece))]
+        whole = int(numpy.searchsorted(self.tops, height, side="right"))
+        sums = self.summed[whole].copy()
+        # Of the triangles not summed whole, those reaching below the height.
+        crossing = whole + numpy.flatnonzero(self.bottoms[whole:] < height)
+        pieces = [piece for number in crossing for piece in _clipped(self.triangles[number].tolist(), height)]
+        if pieces:
+            sums += _integrals(numpy.array(pieces)).sum(axis=0)
         volume = sums[0]
         if volume <= 0:
             return None
-        return App.Vector(sums[1], sums[2], sums[3]) * (1 / volume)
+        return App.Vector(*(float(value) for value in sums[1:] / volume))
 
 
-def _integrals(triangle):
-    """The volume and the moments along x, y and z the triangle `triangle`,
-    three (x, y, z) corners counterclockwise seen from outside, adds, see
-    _Below."""
-    (ax, ay, az), (bx, by, bz), (cx, cy, cz) = triangle
-    # Twice the area of the triangle times the x part of its normal.
-    normal_x = (by - ay) * (cz - az) - (bz - az) * (cy - ay)
-    sums = [0.0, 0.0, 0.0, 0.0]
-    for x, y, z in (((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2),
-                    ((bx + cx) / 2, (by + cy) / 2, (bz + cz) / 2),
-                    ((cx + ax) / 2, (cy + ay) / 2, (cz + az) / 2)):
-        sums[0] += x
-        sums[1] += x * x / 2
-        sums[2] += x * y
-        sums[3] += x * z
+def _integrals(triangles):
+    """The volume and the moments along x, y and z each of `triangles`, an
+    array of triangles of three (x, y, z) corners counterclockwise seen from
+    outside, adds, see _Below: one row of INTEGRALS for each."""
+    a, b, c = triangles[:, 0], triangles[:, 1], triangles[:, 2]
+    # Twice the area of each triangle times the x part of its normal.
+    normal_x = (b[:, 1] - a[:, 1]) * (c[:, 2] - a[:, 2]) - (b[:, 2] - a[:, 2]) * (c[:, 1] - a[:, 1])
+    middles = ((a + b) / 2, (b + c) / 2, (c + a) / 2)
+    sums = numpy.stack([sum(m[:, 0] for m in middles), sum(m[:, 0] * m[:, 0] / 2 for m in middles),
+                        sum(m[:, 0] * m[:, 1] for m in middles), sum(m[:, 0] * m[:, 2] for m in middles)], axis=1)
     # The area times the mean of the three middles.
-    return tuple(value * normal_x / 6 for value in sums)
+    return sums * (normal_x / 6)[:, None]
 
 
 def _clipped(triangle, height):
-    """The part of `triangle` below `height`, as triangles, turning as it does."""
+    """The part of `triangle`, three (x, y, z) corners, below `height`, as
+    triangles, turning as it does."""
     outline = []
     for start, end in zip(triangle, triangle[1:] + triangle[:1]):
         if start[2] <= height:
             outline.append(start)
         if (start[2] <= height) != (end[2] <= height):
             share = (height - start[2]) / (end[2] - start[2])
-            outline.append(tuple(s + share * (e - s) for s, e in zip(start, end)))
+            outline.append([s + share * (e - s) for s, e in zip(start, end)])
     return [(outline[0], outline[k], outline[k + 1]) for k in range(1, len(outline) - 1)]
 
 
