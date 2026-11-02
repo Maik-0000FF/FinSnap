@@ -486,6 +486,52 @@ def chosen_stands(doc, quick, facing, messages):
     fins.ViewObject.Proxy.panel.reject()
 
 
+def stands_reopened(doc, quick, facing):
+    """Fins Quick fins made on a face of the box `quick` lying flat, accepted
+    and opened again by a double click: the table lists the ways again, the
+    one the part stands in marked; Cancel after choosing another puts the
+    part back as it stood at the opening. Moved by hand, or fins Quick fins
+    did not make, show no table."""
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import commands, feature, orient
+    lying = orient.snapshot(quick)
+    select(quick, "Face%d" % facing)
+    Gui.runCommand("FinSnap_QuickFins")
+    fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is quick][0]
+    fins.ViewObject.Proxy.panel.stand_list.setCurrentCell(1, 0)
+    fins.ViewObject.Proxy.panel.accept()
+    accepted, face = App.Placement(quick.Placement), fins.Base[1][0]
+    ways = len(quick.Shape.Faces[facing - 1].Edges)
+
+    def reopened():
+        Gui.ActiveDocument.setEdit(fins)
+        return fins.ViewObject.Proxy.panel
+
+    panel = reopened()
+    table = panel.stand_list if panel.stands is not None else None
+    expect(table is not None and table.rowCount() == ways and table.currentRow() == 1 and panel.stands.current == 1
+           and quick.Placement.isSame(accepted, d.TOLERANCE),
+           "opened again, the fins of Quick fins list its ways again, the one the part stands in marked")
+    table.setCurrentCell(2, 0)
+    moved_away = not quick.Placement.isSame(accepted, d.TOLERANCE)
+    panel.reject()
+    expect(moved_away and quick.Placement.isSame(accepted, d.TOLERANCE) and fins.Base[1][0] == face
+           and fins.isValid() and fins.Shape.Solids,
+           "Cancel after choosing another way stands the part as at the opening, the fins under their face")
+
+    quick.Placement = App.Placement(App.Vector(1, 0, 0), App.Rotation()).multiply(quick.Placement)
+    doc.recompute()
+    panel = reopened()
+    expect(panel.stands is None, "a part moved by hand since stands no way of the table: none shown")
+    panel.reject()
+    other = feature.create(quick, face_name(quick, quick.Shape.Faces[facing - 1]))
+    expect(commands.stands_again(other) is None, "fins not made by Quick fins show no table")
+    for made in (fins, other):
+        doc.removeObject(made.Name)
+    orient.put_back(quick, lying)
+    doc.recompute()
+
+
 def saved_while_editing():
     """Fins saved with their task panel open are saved as they looked before
     editing, not see-through green; after, they look as while editing again."""
@@ -1401,6 +1447,7 @@ def main():
         quick.Placement = App.Placement()
         doc.recompute()
     chosen_stands(doc, quick, facing, messages)
+    stands_reopened(doc, quick, facing)
     quick_on_pad(doc)
     checked_on_switch(doc)
     island_marks(doc)

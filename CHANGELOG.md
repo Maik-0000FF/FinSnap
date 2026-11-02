@@ -14,6 +14,7 @@ All notable changes to FinSnap are listed here. The format follows
 ### Added
 
 - `tools/time_checks.py` times each check, overhangs, islands, bridges and stability, on the test parts and on given documents, and lists the calls that cost most (#114)
+- The table of ways Quick fins found shows again when its fins are opened later with a double click, worked out anew from where the part stood before, the way it stands in marked, as long as it still stands one of them; Cancel after choosing another puts the part back as it stood at the opening
 
 ### Changed
 

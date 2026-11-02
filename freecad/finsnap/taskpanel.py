@@ -1962,11 +1962,17 @@ class FinSnapTaskPanel:
           fins edited, the part not turned      ->  values back, placement untouched
           fins edited, the face of the main fin
             no round side any more              ->  values back, no turn
+          fins edited, another way of Quick
+            fins chosen in the table            ->  part, other fins and the face of
+                                                    these as at the opening, then
+                                                    values back
         """
         self.close()
         if self.created:
             discard_created(self.obj, self.on_cancel)
             return True
+        if self.stands is not None:
+            self.stands.back(self.obj)
         # How far the part is turned now, read before the changes by hand,
         # which hold it, are put back.
         turned = feature.round_shift(self.obj)

@@ -1442,9 +1442,9 @@ def stands_for_face(shape, number, p, angle_deg):
 
 
 # How Quick fins stands a part: the placement change, the face (number from 0)
-# the fins go under, and the edge or the two faces the part stands on, for the
-# side view.
-QuickPlan = namedtuple("QuickPlan", "change number edge beside")
+# the fins go under, the edge or the two faces the part stands on, and the line
+# it was leaned about where it stands on neither (orient.lean()), for the side view.
+QuickPlan = namedtuple("QuickPlan", "change number edge beside line", defaults=(None,))
 
 
 def quick_plan(shape, edges, faces, p, angle_deg):
@@ -1527,7 +1527,8 @@ def quick_plans(shape, edges, faces, p, angle_deg):
             yield from _under_each_face(shape, orient.lay_flat(shape, face), None, (), p)
             return
         for change, edge in _or_refused(stands_for_face(shape, number, p, angle_deg), NO_STAND_FOR_FACE):
-            yield QuickPlan(change, number, edge, ())
+            # Without an edge, the face was leaned about LEAN_LINE.
+            yield QuickPlan(change, number, edge, (), orient.LEAN_LINE if edge is None else None)
         return
     if len(edges) == 1 and len(faces) == 1:
         (edge, _), (face, number) = edges[0], faces[0]
