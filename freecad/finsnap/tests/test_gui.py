@@ -507,11 +507,20 @@ def stands_reopened(doc, quick, facing):
         Gui.ActiveDocument.setEdit(fins)
         return fins.ViewObject.Proxy.panel
 
-    panel = reopened()
+    found = []
+    real = commands.stands_again
+    commands.stands_again = lambda *args: found.append(args) or real(*args)
+    try:
+        panel = reopened()
+        folded = not found and panel.stands is None and not panel.stand_section.header.isChecked()
+        panel.stand_section.header.setChecked(True)
+    finally:
+        commands.stands_again = real
+    expect(folded, "opened again, the ways of Quick fins stay folded away, not worked out")
     table = panel.stand_list if panel.stands is not None else None
-    expect(table is not None and table.rowCount() == ways and table.currentRow() == 1 and panel.stands.current == 1
-           and quick.Placement.isSame(accepted, d.TOLERANCE),
-           "opened again, the fins of Quick fins list its ways again, the one the part stands in marked")
+    expect(len(found) == 1 and table is not None and table.rowCount() == ways and table.currentRow() == 1
+           and panel.stands.current == 1 and quick.Placement.isSame(accepted, d.TOLERANCE),
+           "unfolded, they are worked out once and listed, the one the part stands in marked")
     table.setCurrentCell(2, 0)
     moved_away = not quick.Placement.isSame(accepted, d.TOLERANCE)
     panel.reject()
@@ -522,10 +531,15 @@ def stands_reopened(doc, quick, facing):
     quick.Placement = App.Placement(App.Vector(1, 0, 0), App.Rotation()).multiply(quick.Placement)
     doc.recompute()
     panel = reopened()
-    expect(panel.stands is None, "a part moved by hand since stands no way of the table: none shown")
+    panel.stand_section.header.setChecked(True)
+    expect(panel.stands is None, "a part moved by hand since stands no way of the table: unfolded, none shown")
     panel.reject()
     other = feature.create(quick, face_name(quick, quick.Shape.Faces[facing - 1]))
-    expect(commands.stands_again(other) is None, "fins not made by Quick fins show no table")
+    commands.ViewProviderFinSnap(other.ViewObject)
+    Gui.ActiveDocument.setEdit(other)
+    expect(commands.stands_again(other) is None and not hasattr(other.ViewObject.Proxy.panel, "stand_section"),
+           "fins not made by Quick fins show no section of ways")
+    other.ViewObject.Proxy.panel.reject()
     for made in (fins, other):
         doc.removeObject(made.Name)
     orient.put_back(quick, lying)

@@ -195,11 +195,12 @@ class ViewProviderFinSnap:
         created, self.created = getattr(self, "created", False), False
         on_cancel, self.on_cancel = getattr(self, "on_cancel", None), None
         stands, self.stands = getattr(self, "stands", None), None
-        # Fins opened again: the ways Quick fins found, worked out anew.
-        if stands is None and not created:
-            stands = stands_again(vobj.Object)
+        # Fins opened again: the ways Quick fins found, worked out anew only
+        # once their folded section is opened, as that takes a while.
+        later = (functools.partial(stands_again, vobj.Object)
+                 if stands is None and not created and feature.quick_start(vobj.Object) is not None else None)
         try:
-            panel = FinSnapTaskPanel(vobj.Object, created=created, on_cancel=on_cancel, stands=stands)
+            panel = FinSnapTaskPanel(vobj.Object, created=created, on_cancel=on_cancel, stands=stands, later=later)
         except handles.NoView as error:
             _message(str(error))
             return False
