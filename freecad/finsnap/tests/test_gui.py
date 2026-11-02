@@ -285,6 +285,8 @@ def turned_tube(doc):
            and abs(angle() - TUBE_ANGLE) < d.TOLERANCE,
            "an angle typed for the fin turns the tube that far round its axis, the fin stays")
     arc._held(handles.ALONG, None)
+    # The mouse past the drag distance of Qt: a drag, which the fin follows.
+    arc.dragging = True
     arc._moved(handles.ALONG, None)
     # A copy: the field gives its own vector, which follows it.
     unturned = coin.SbVec3f(arc.value_at.translation.getValue())
@@ -633,7 +635,7 @@ def arrow_field(panel, fins):
                                                                      round(y * viewport.height())))
 
     doubles, done = [], []
-    real = (arrows.on_start, arrows.on_done, arrows.on_double, QtGui.QCursor.pos)
+    real = (arrows.on_start, arrows.on_done, arrows.on_double, QtGui.QCursor.pos, arrows.on_move)
     arrows.on_start, arrows.on_done = (lambda kind: None), (lambda kind, mm: done.append(mm))
     arrows.on_double = lambda kind, end: doubles.append((kind, end))
     # No click of a test before counts.
@@ -665,9 +667,26 @@ def arrow_field(panel, fins):
                 click(kind, at=middle)
                 click(kind, at=middle)
         halves = list(doubles)
+        # Moved within the drag distance the fin does not follow, or it would
+        # jump back on letting go; once past it, it follows, also back near
+        # where it was grabbed, and letting go there is no click.
+        moves = []
+        arrows.on_move = lambda kind, mm: moves.append(mm)
+        QtGui.QCursor.pos = staticmethod(lambda: QtCore.QPoint(0, 0))
+        arrows._held(handles.UP, None)
+        followed = []
+        for to in (shake, shake + 1, 0):
+            QtGui.QCursor.pos = staticmethod(lambda to=to: QtCore.QPoint(to, 0))
+            arrows._moved(handles.UP, None)
+            followed.append(len(moves))
+        arrows._let_go(handles.UP, None)
+        clicked_after = arrows.clicked
     finally:
-        arrows.on_start, arrows.on_done, arrows.on_double, QtGui.QCursor.pos = real
+        arrows.on_start, arrows.on_done, arrows.on_double, QtGui.QCursor.pos, arrows.on_move = real
         arrows.clicked = None
+    expect(followed == [0, 1, 2] and clicked_after is None,
+           "moved within the drag distance the fin stays, past it it follows, and let go then it was no click: "
+           "%s" % followed)
     expect(twice == [handles.UP] and kinds == [handles.UP] and set(done[:3]) == {0.0},
            "two clicks on one arrow are a double click, the mouse shaking within Qt's drag distance, a third is "
            "not, nor a click on each arrow, nor a click after a drag; a click moves nothing: %s" % kinds)

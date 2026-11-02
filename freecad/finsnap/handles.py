@@ -548,8 +548,10 @@ class Handles:
         self.on_double = on_double
         # The last click on an arrow, as (kind, when: time.monotonic()), for a double click.
         self.clicked = None
-        # Where the mouse grabbed the arrow held, to tell a click from a drag.
+        # Where the mouse grabbed the arrow held, to tell a click from a drag,
+        # and whether it has left the drag distance of Qt since: a drag.
         self.pressed_at = None
+        self.dragging = False
         # How the object looked before, put back by remove() and while its
         # document is saved (saving()); the look while editing, kept then.
         self.look = (vobj.ShapeAppearance, vobj.Transparency)
@@ -812,8 +814,10 @@ class Handles:
         # drag before have been let go by _dragged().
         self._tint_held(kind, HELD_COLOR)
         self.turned, self.last_turn = 0.0, self._turn()
-        # Where the mouse was, to tell a click from a drag when let go.
+        # Where the mouse was, to tell a click from a drag; a drag starts once
+        # the mouse leaves Qt's drag distance of it.
         self.pressed_at = QtGui.QCursor.pos()
+        self.dragging = False
         self.on_start(kind)
 
     def _dragged(self, kind, dragger):
@@ -862,7 +866,20 @@ class Handles:
             turn = self._turn()
             self.turned += math.remainder(turn - self.last_turn, 2 * math.pi)
             self.last_turn = turn
+        # Within the drag distance of where it was grabbed, the arrow is still
+        # being clicked: the fin does not follow it, or it would jump back on
+        # letting go, a click moving nothing.
+        if not self.dragging and self._near_press():
+            return
+        self.dragging = True
         self.on_move(kind, self._mm(kind))
+
+    def _near_press(self):
+        """Whether the mouse is within the drag distance of Qt of where it
+        grabbed the arrow held; so it is where that was not noted."""
+        if self.pressed_at is None:
+            return True
+        return (QtGui.QCursor.pos() - self.pressed_at).manhattanLength() <= QtWidgets.QApplication.startDragDistance()
 
     def _let_go(self, kind, _dragger):
         self.held = False
@@ -874,13 +891,12 @@ class Handles:
 
     def _was_click(self):
         """Whether the arrow let go now was clicked rather than dragged: the
-        mouse moved, from where it grabbed the arrow, no further than Qt lets
-        it move before a drag starts. Grabbed without the mouse noted, as by a
-        lost release let go in _dragged(), it was."""
-        pressed, self.pressed_at = self.pressed_at, None
-        if pressed is None:
-            return True
-        return (QtGui.QCursor.pos() - pressed).manhattanLength() <= QtWidgets.QApplication.startDragDistance()
+        mouse never left the drag distance of Qt of where it grabbed the
+        arrow, see _moved(). Grabbed without the mouse noted, as by a lost
+        release let go in _dragged(), it was."""
+        clicked = not self.dragging and self._near_press()
+        self.pressed_at, self.dragging = None, False
+        return clicked
 
     def _clicked(self, kind, clicked, pressed):
         """Note the arrow of `kind` let go, `clicked` or dragged, grabbed with the
