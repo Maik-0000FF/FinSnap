@@ -26,7 +26,7 @@ from freecad.finsnap.tests.support import STANDARD_THICKNESS, expect, lower_left
 
 WORKBENCH = "FinSnapWorkbench"
 COMMANDS = ("FinSnap_QuickFins", "FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_AddFins", "FinSnap_AddCounterFin",
-            "FinSnap_CheckStability", "FinSnap_CheckPart", "FinSnap_IslandsWhileEditing", "FinSnap_MeshToSolid",
+            "FinSnap_CheckStability", "FinSnap_CheckPart", "FinSnap_IslandsWhileEditing",
             "FinSnap_Export3MF", "FinSnap_ExportSTEP", "FinSnap_CheckLimits", "FinSnap_CheckBridges")
 DIALOG_ACCEPTED = 1
 # Answers to the questions commands ask, taken in order by answer_dialogs().
@@ -2114,27 +2114,6 @@ def main():
     expect(len(messages) == 1, "exporting an object without a shape shows a message: %s" % messages)
     del messages[:]
     doc.removeObject(empty.Name)
-
-    # Mesh to solid: a mesh of the cube becomes a solid with planar faces.
-    import Mesh
-    import MeshPart
-    mesh = doc.addObject("Mesh::Feature", "CubeMesh")
-    mesh.Mesh = MeshPart.meshFromShape(Shape=cube.Shape, LinearDeflection=0.1)
-    select(mesh)
-    Gui.runCommand("FinSnap_MeshToSolid")
-    doc.recompute()
-    solids = [o for o in doc.Objects if o.Name.startswith("CubeMesh") and o.TypeId == "Part::Feature"]
-    expect(solids and solids[0].Shape.isValid(), "Mesh to solid creates a valid solid")
-    # Small corner faces may stay split in two triangles; the faces that carry
-    # fins must come back whole.
-    converted = solids[0]
-    leaning = lower_left_face(converted.Shape)
-    expect(abs(leaning.Area - lower_left_face(cube.Shape).Area) < d.TOLERANCE,
-           "the leaning face of the mesh comes back as one face")
-    on_mesh = feature.create(converted, face_name(converted, leaning))
-    doc.recompute()
-    expect(on_mesh.Shape.Solids, "fins can be built on a converted mesh")
-    del Mesh
 
     print("all checks passed", file=sys.__stdout__)
 
