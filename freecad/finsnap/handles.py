@@ -26,11 +26,11 @@ one way of putting faces into the scene.
 """
 
 import functools
-import time
 import math
+import time
 
 from pivy import coin
-from PySide import QtCore, QtWidgets
+from PySide import QtCore, QtGui, QtWidgets
 
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -104,11 +104,10 @@ HELD_COLOR = (1.0, 1.0, 0.0)
 VALUE_FONT_SIZE = 16
 VALUE_GAP = 0.3
 VALUE_ON_LIGHT = (0.1, 0.1, 0.1)
-# An arrow clicked, grabbed and let go where it was, twice within the double
-# click time of Qt counts as a double click on it; Qt gives that time in ms.
-# Let go no further than this (mm) from where it was grabbed, it was not moved.
+# An arrow grabbed and let go with the mouse moved no further than Qt lets it
+# move before a drag starts was clicked: the fin stays. Clicked twice within
+# the double click time of Qt, it was double clicked; Qt gives that time in ms.
 MS_PER_SECOND = 1000.0
-CLICK_TOLERANCE = 1e-9
 # The plumb line of a stability check: this many pixels wide, dashed, a ball
 # of this size, in the units of the arrows, at either end, and the footprint
 # under it this see-through.
@@ -528,8 +527,9 @@ class Handles:
 
     on_start(kind) is called when an arrow is grabbed, on_move(kind, mm) while
     it is dragged, on_done(kind, mm) when it is let go; kind is ALONG or UP, mm
-    how far from where it was grabbed. on_double(kind), if given, is called
-    once an arrow is double clicked, after it is let go.
+    how far from where it was grabbed. on_double(kind, end), if given, is
+    called once an arrow is double clicked, after it is let go, with the half
+    of it, BACK or FORTH, clicked on.
     """
 
     def __init__(self, vobj, on_start, on_move, on_done, on_double=None):
@@ -548,6 +548,8 @@ class Handles:
         self.on_double = on_double
         # The last click on an arrow, as (kind, when: time.monotonic()), for a double click.
         self.clicked = None
+        # Where the mouse grabbed the arrow held, to tell a click from a drag.
+        self.pressed_at = None
         # How the object looked before, put back by remove() and while its
         # document is saved (saving()); the look while editing, kept then.
         self.look = (vobj.ShapeAppearance, vobj.Transparency)
@@ -810,6 +812,8 @@ class Handles:
         # drag before have been let go by _dragged().
         self._tint_held(kind, HELD_COLOR)
         self.turned, self.last_turn = 0.0, self._turn()
+        # Where the mouse was, to tell a click from a drag when let go.
+        self.pressed_at = QtGui.QCursor.pos()
         self.on_start(kind)
 
     def _dragged(self, kind, dragger):
@@ -862,32 +866,47 @@ class Handles:
 
     def _let_go(self, kind, _dragger):
         self.held = False
-        mm = self._mm(kind)
-        self.on_done(kind, mm)
-        self._clicked(kind, mm)
+        pressed = self.pressed_at
+        clicked = self._was_click()
+        # A click moves nothing, however the arrow shook under it.
+        self.on_done(kind, 0.0 if clicked else self._mm(kind))
+        self._clicked(kind, clicked, pressed)
 
-    def _clicked(self, kind, mm):
-        """Note the arrow of `kind` let go `mm` from where it was grabbed: let
-        go where it was, it was clicked, and a second click on it within the
-        double click time of Qt is a double click, passed to on_double().
+    def _was_click(self):
+        """Whether the arrow let go now was clicked rather than dragged: the
+        mouse moved, from where it grabbed the arrow, no further than Qt lets
+        it move before a drag starts. Grabbed without the mouse noted, as by a
+        lost release let go in _dragged(), it was."""
+        pressed, self.pressed_at = self.pressed_at, None
+        if pressed is None:
+            return True
+        return (QtGui.QCursor.pos() - pressed).manhattanLength() <= QtWidgets.QApplication.startDragDistance()
+
+    def _clicked(self, kind, clicked, pressed):
+        """Note the arrow of `kind` let go, `clicked` or dragged, grabbed with the
+        mouse at `pressed` (on the screen, None if not noted): a second click
+        on it within the double click time of Qt is a double click, passed to
+        on_double() with the half of the arrow clicked (_end_at()).
 
         INPUTS this has to withstand:
           two clicks on one arrow in time       ->  on_double(kind), once
+          the mouse shaking a few pixels in a
+            click, within Qt's drag distance    ->  still a click
           a third click right after             ->  a first click again, no second
                                                     double click
           a click on each arrow                 ->  no double click
           the second click too late             ->  a first click again
-          a drag between, or the second moved   ->  no double click
+          a drag between, or the second dragged ->  no double click
           no on_double                          ->  nothing passed on
         """
         last, self.clicked = self.clicked, None
-        if abs(mm) > CLICK_TOLERANCE:
+        if not clicked:
             return
         now = time.monotonic()
         within = QtWidgets.QApplication.doubleClickInterval() / MS_PER_SECOND
         if last is not None and last[0] == kind and now - last[1] <= within:
             if self.on_double is not None:
-                self.on_double(kind)
+                self.on_double(kind, self._end_at(kind, pressed))
             return
         self.clicked = (kind, now)
 
@@ -936,16 +955,70 @@ class Handles:
         self.value_label.string.setValue(text)
         self.value.whichChild.setValue(coin.SO_SWITCH_ALL)
 
-    def value_point(self, kind):
-        """Where the value of the arrow of `kind` stands in the 3D view, see
-        show_value(): as shares of its width and height from its top left
-        corner, for a field to be laid over it there."""
-        translation, rotation, past = self._value_place(kind)
-        world = translation + rotation.multVec(past * self.unit_mm())
+    def _half(self, kind, end):
+        """Where the half `end`, BACK or FORTH, of the arrow of `kind` starts
+        and where its tip is, in the world of the 3D view: of the arc, where it
+        stands in for the arrow along the face, round the axis of the side."""
+        if kind == ALONG and self.turning():
+            turn = self.turner.rotation.getValue()
+            place = self.turn_place
+            return [place.translation.getValue() + place.rotation.getValue().multVec(turn.multVec(
+                arc_point(self.arc_radius, self.arc_unit, self._arc_sense(end), length * self.arc_unit)))
+                for length in (0, 1)]
+        place = self.places[kind]
+        rotation = place.rotation.getValue()
+        at = place.translation.getValue() + rotation.multVec(self.draggers[kind].translation.getValue())
+        unit = self.unit_mm()
+        return [at + rotation.multVec((self.offsets[kind].translation.getValue() + coin.SbVec3f(end * length, 0, 0))
+                                      * unit)
+                for length in (0, 1)]
+
+    def _shown_end(self, kind):
+        """The half of the arrow of `kind` to go by where none was clicked: FORTH,
+        which the value stands past while dragging; where it is left out, as
+        the arrow up of a fin as high as it can be, BACK."""
+        return FORTH if FORTH in self.ends[kind] or BACK not in self.ends[kind] else BACK
+
+    def _end_at(self, kind, pressed):
+        """The half of the arrow of `kind`, BACK or FORTH, shown and nearest to
+        `pressed`, where the mouse was on the screen (global, as QCursor gives
+        it): the one clicked. Without `pressed`, or without a view to measure
+        on, the half _shown_end() gives.
+
+        INPUTS this has to withstand:
+          clicked on the half BACK or FORTH     ->  that half
+          clicked at the middle of the arrow    ->  the nearer half, FORTH where even
+          only one half shown                   ->  that half
+          no mouse noted, or no view widget     ->  _shown_end()
+        """
+        shown = [end for end in (FORTH, BACK) if end in self.ends[kind]]
+        widget = self.view.graphicsView() if hasattr(self.view, "graphicsView") else None
+        if pressed is None or widget is None or len(shown) < 2:
+            return shown[0] if len(shown) == 1 else self._shown_end(kind)
+        viewport = widget.viewport()
+        at = viewport.mapFromGlobal(pressed)
+
+        def away(end):
+            (x0, y0), (x1, y1) = self.tip_points(kind, end)
+            # From the middle of the half, in pixels.
+            return math.hypot((x0 + x1) / 2 * viewport.width() - at.x(), (y0 + y1) / 2 * viewport.height() - at.y())
+        return min(shown, key=away)
+
+    def tip_points(self, kind, end=None):
+        """Where the half `end` (BACK or FORTH) of the arrow of `kind` starts and
+        where its tip is in the 3D view: each as shares of its width and
+        height from its top left corner, for a field to be laid over the view
+        past the tip. Without `end`, the half _shown_end() gives."""
+        if end is None:
+            end = self._shown_end(kind)
         aspect = self.viewer.getSoRenderManager().getViewportRegion().getViewportAspectRatio()
-        x, y, _ = self.view.getCameraNode().getViewVolume(aspect).projectToScreen(world).getValue()
-        # Coin counts from the bottom of the view, Qt from its top.
-        return x, 1 - y
+        volume = self.view.getCameraNode().getViewVolume(aspect)
+        points = []
+        for world in self._half(kind, end):
+            x, y, _ = volume.projectToScreen(world).getValue()
+            # Coin counts from the bottom of the view, Qt from its top.
+            points.append((x, 1 - y))
+        return points
 
     def hide_value(self):
         self.value.whichChild.setValue(coin.SO_SWITCH_NONE)

@@ -13,7 +13,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Added
 
-- A double click on an arrow in the 3D view lays a field over the view where its value stands past its tip, with the value, unit and limits of its field in the task panel: Enter takes what is typed as that field does, Escape or a click elsewhere drops it; the field stays at the arrow while the view turns or zooms (#88)
+- A double click on an arrow in the 3D view lays a field over the view just past the tip of the half clicked (a click with the mouse shaking within the drag distance of Qt still counts), with the value, unit and limits of its field in the task panel: Enter takes what is typed as that field does, Escape or a click elsewhere drops it; the field stays at the arrow while the view turns or zooms (#88)
 
 ### Removed
 
