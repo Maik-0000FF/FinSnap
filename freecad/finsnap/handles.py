@@ -12,7 +12,8 @@ part about its axis, the arrow along the face is an arc round that axis
 through the same place instead. An end of an arrow is left out where the fin
 cannot go. While an arrow is
 dragged the task panel builds the fins along, and shows the fin red where it
-cannot stand.
+cannot stand. A double click on an arrow asks the task panel for a field
+at it to type the value into (on_double).
 
 The two arrows are made once and kept until the panel closes; they are only
 moved from fin to fin. Coin still holds an arrow let go for a moment, and an
@@ -25,6 +26,7 @@ one way of putting faces into the scene.
 """
 
 import functools
+import time
 import math
 
 from pivy import coin
@@ -102,6 +104,11 @@ HELD_COLOR = (1.0, 1.0, 0.0)
 VALUE_FONT_SIZE = 16
 VALUE_GAP = 0.3
 VALUE_ON_LIGHT = (0.1, 0.1, 0.1)
+# An arrow clicked, grabbed and let go where it was, twice within the double
+# click time of Qt counts as a double click on it; Qt gives that time in ms.
+# Let go no further than this (mm) from where it was grabbed, it was not moved.
+MS_PER_SECOND = 1000.0
+CLICK_TOLERANCE = 1e-9
 # The plumb line of a stability check: this many pixels wide, dashed, a ball
 # of this size, in the units of the arrows, at either end, and the footprint
 # under it this see-through.
@@ -521,10 +528,11 @@ class Handles:
 
     on_start(kind) is called when an arrow is grabbed, on_move(kind, mm) while
     it is dragged, on_done(kind, mm) when it is let go; kind is ALONG or UP, mm
-    how far from where it was grabbed.
+    how far from where it was grabbed. on_double(kind), if given, is called
+    once an arrow is double clicked, after it is let go.
     """
 
-    def __init__(self, vobj, on_start, on_move, on_done):
+    def __init__(self, vobj, on_start, on_move, on_done, on_double=None):
         # The 3D view of the document; the active view may be a drawing page
         # or a spreadsheet. Found first, so nothing is changed without one.
         gui_doc = Gui.getDocument(vobj.Object.Document)
@@ -537,6 +545,9 @@ class Handles:
             view = views[0]
         self.vobj = vobj
         self.on_start, self.on_move, self.on_done = on_start, on_move, on_done
+        self.on_double = on_double
+        # The last click on an arrow, as (kind, when: time.monotonic()), for a double click.
+        self.clicked = None
         # How the object looked before, put back by remove() and while its
         # document is saved (saving()); the look while editing, kept then.
         self.look = (vobj.ShapeAppearance, vobj.Transparency)
@@ -851,7 +862,34 @@ class Handles:
 
     def _let_go(self, kind, _dragger):
         self.held = False
-        self.on_done(kind, self._mm(kind))
+        mm = self._mm(kind)
+        self.on_done(kind, mm)
+        self._clicked(kind, mm)
+
+    def _clicked(self, kind, mm):
+        """Note the arrow of `kind` let go `mm` from where it was grabbed: let
+        go where it was, it was clicked, and a second click on it within the
+        double click time of Qt is a double click, passed to on_double().
+
+        INPUTS this has to withstand:
+          two clicks on one arrow in time       ->  on_double(kind), once
+          a third click right after             ->  a first click again, no second
+                                                    double click
+          a click on each arrow                 ->  no double click
+          the second click too late             ->  a first click again
+          a drag between, or the second moved   ->  no double click
+          no on_double                          ->  nothing passed on
+        """
+        last, self.clicked = self.clicked, None
+        if abs(mm) > CLICK_TOLERANCE:
+            return
+        now = time.monotonic()
+        within = QtWidgets.QApplication.doubleClickInterval() / MS_PER_SECOND
+        if last is not None and last[0] == kind and now - last[1] <= within:
+            if self.on_double is not None:
+                self.on_double(kind)
+            return
+        self.clicked = (kind, now)
 
     def _value_group(self):
         """The nodes of the value shown past the tip of a dragged arrow, made
@@ -871,28 +909,43 @@ class Handles:
             group.addChild(node)
         return group
 
+    def _value_place(self, kind):
+        """Where the value of the arrow of `kind` stands, see show_value(): the
+        place it is drawn from, as a translation and a rotation, and how far
+        past that, in units of the arrow."""
+        if kind == ALONG and self.turning():
+            past = arc_point(self.arc_radius, self.arc_unit, self._arc_sense(FORTH),
+                             (1 + VALUE_GAP) * self.arc_unit)
+            turned = self.turner.rotation.getValue().multVec(past)
+            return (self.turn_place.translation.getValue() + self.turn_place.rotation.getValue().multVec(turned),
+                    coin.SbRotation(), coin.SbVec3f(0, 0, 0))
+        place = self.places[kind]
+        moved = place.rotation.getValue().multVec(self.draggers[kind].translation.getValue())
+        return (place.translation.getValue() + moved, place.rotation.getValue(),
+                self.offsets[kind].translation.getValue() + coin.SbVec3f(1 + VALUE_GAP, 0, 0))
+
     def show_value(self, kind, text):
         """Show `text`, the value of the arrow of `kind` as the task panel
         shows it, past the tip of that arrow where it is dragged to: of the
         arc, where it stands in for the arrow along the face, past the tip of
         its end FORTH, turning with it."""
-        if kind == ALONG and self.turning():
-            past = arc_point(self.arc_radius, self.arc_unit, self._arc_sense(FORTH),
-                             (1 + VALUE_GAP) * self.arc_unit)
-            turned = self.turner.rotation.getValue().multVec(past)
-            self.value_at.translation.setValue(self.turn_place.translation.getValue()
-                                               + self.turn_place.rotation.getValue().multVec(turned))
-            self.value_at.rotation.setValue(coin.SbRotation())
-            self.value_past_tip.translation.setValue(0, 0, 0)
-        else:
-            place = self.places[kind]
-            moved = place.rotation.getValue().multVec(self.draggers[kind].translation.getValue())
-            self.value_at.translation.setValue(place.translation.getValue() + moved)
-            self.value_at.rotation.setValue(place.rotation.getValue())
-            self.value_past_tip.translation.setValue(self.offsets[kind].translation.getValue()
-                                                     + coin.SbVec3f(1 + VALUE_GAP, 0, 0))
+        translation, rotation, past = self._value_place(kind)
+        self.value_at.translation.setValue(translation)
+        self.value_at.rotation.setValue(rotation)
+        self.value_past_tip.translation.setValue(past)
         self.value_label.string.setValue(text)
         self.value.whichChild.setValue(coin.SO_SWITCH_ALL)
+
+    def value_point(self, kind):
+        """Where the value of the arrow of `kind` stands in the 3D view, see
+        show_value(): as shares of its width and height from its top left
+        corner, for a field to be laid over it there."""
+        translation, rotation, past = self._value_place(kind)
+        world = translation + rotation.multVec(past * self.unit_mm())
+        aspect = self.viewer.getSoRenderManager().getViewportRegion().getViewportAspectRatio()
+        x, y, _ = self.view.getCameraNode().getViewVolume(aspect).projectToScreen(world).getValue()
+        # Coin counts from the bottom of the view, Qt from its top.
+        return x, 1 - y
 
     def hide_value(self):
         self.value.whichChild.setValue(coin.SO_SWITCH_NONE)

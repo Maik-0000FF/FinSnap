@@ -613,6 +613,61 @@ def released_without_button(arrows, name):
         arrows.on_start, arrows.on_done = real_start, real_done
 
 
+def arrow_field(panel, fins):
+    """A double click on an arrow lays a field over the 3D view at it, with
+    the value of its field in the panel: Escape drops it, Enter takes what is
+    typed as the field in the panel takes it. Two clicks count as a double
+    click only on one arrow, in time, without a drag between."""
+    from PySide import QtCore, QtGui
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, handles
+    arrows = panel.handles
+    doubles, real = [], (arrows.on_start, arrows.on_done, arrows.on_double)
+    arrows.on_start, arrows.on_done, arrows.on_double = (lambda kind: None), (lambda kind, mm: None), doubles.append
+    # No click of a test before counts.
+    arrows.clicked = None
+    try:
+        def click(kind):
+            arrows._held(kind, None)
+            arrows._let_go(kind, None)
+        click(handles.UP)
+        click(handles.UP)
+        click(handles.UP)
+        twice = list(doubles)
+        click(handles.ALONG)
+        click(handles.UP)
+    finally:
+        arrows.on_start, arrows.on_done, arrows.on_double = real
+        arrows.clicked = None
+    expect(twice == [handles.UP] and doubles == [handles.UP],
+           "two clicks on one arrow are a double click, a third is not, nor a click on each arrow: %s" % doubles)
+
+    def key(field, pressed):
+        QtWidgets.QApplication.sendEvent(field, QtGui.QKeyEvent(QtCore.QEvent.KeyPress, pressed,
+                                                                QtCore.Qt.NoModifier))
+
+    box = panel.fin_fields[handles.ALONG]
+    place, shifts = box.value(), dict(feature.edits(fins, feature.MAIN)[1])
+    panel.edit_at_arrow(handles.ALONG)
+    field = panel.arrow_field[1] if panel.arrow_field else None
+    x, y = panel.handles.value_point(handles.ALONG)
+    expect(field is not None and field.isVisible() and abs(field.value() - place) < d.TOLERANCE
+           and field.suffix() == box.suffix() and field.parentWidget() is panel.handles.view.graphicsView()
+           and math.isfinite(x) and math.isfinite(y),
+           "a double click opens a field at the arrow over the 3D view, with the value and unit of its field")
+    field.setValue(place - FIN_SHIFT)
+    key(field, QtCore.Qt.Key_Escape)
+    expect(panel.arrow_field is None and abs(box.value() - place) < d.TOLERANCE
+           and feature.edits(fins, feature.MAIN)[1] == shifts, "Escape closes the field, the fin stays")
+    for moved_to in (place - FIN_SHIFT, place):
+        panel.edit_at_arrow(handles.ALONG)
+        panel.arrow_field[1].setValue(moved_to)
+        key(panel.arrow_field[1], QtCore.Qt.Key_Return)
+        expect(panel.arrow_field is None and abs(box.value() - moved_to) < d.TOLERANCE,
+               "Enter takes the value typed at the arrow as the field in the panel takes it: %.2f" % box.value())
+    expect(feature.edits(fins, feature.MAIN)[1] == shifts, "typed back, the fin stands where it stood")
+
+
 def value_colors():
     """The value of a dragged arrow is written yellow over a dark background
     of the 3D view, nearly black over a light one, a gradient by the mean of
@@ -1775,6 +1830,7 @@ def main():
     expect(all(moving.handles.draggers[kind] is held[kind] for kind in held),
            "the arrows stay the same after a move; Coin may still hold the one let go")
     released_without_button(moving.handles, "a box")
+    arrow_field(moving, lined)
     expect(all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(handles.axis_color("z"), AXIS_Z_RGB)),
            "the arrow up has the colour of the z axis: %s" % (handles.axis_color("z"),))
     result = lined.Proxy.results[feature.MAIN]

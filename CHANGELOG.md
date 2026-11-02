@@ -11,6 +11,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A double click on an arrow in the 3D view lays a field over the view where its value stands past its tip, with the value, unit and limits of its field in the task panel: Enter takes what is typed as that field does, Escape or a click elsewhere drops it; the field stays at the arrow while the view turns or zooms (#88)
+
 ### Removed
 
 - The Mesh to solid command: it ran the three commands of the Part workbench that do the same, Shape From Mesh, Convert to Solid and Refine Shape, and stalled FreeCAD on a large STL; the README says how to turn an STL into a solid with them

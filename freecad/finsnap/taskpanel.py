@@ -53,6 +53,9 @@ DEGREE_SUFFIX = " \N{DEGREE SIGN}"
 PREVIEW_DELAY_MS = 400
 # The keys that end typing in a field.
 ENTER_KEYS = (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter)
+# The field a double click on an arrow lays over the 3D view, where its value
+# stands past its tip: Escape, or a click elsewhere, closes it untaken.
+CANCEL_KEYS = (QtCore.Qt.Key_Escape,)
 # Pause after the last repeat of an arrow key held before the fin is built
 # for all of them at once: repeats come faster than the fins are built.
 KEY_REPEAT_PAUSE_MS = 150
@@ -535,6 +538,34 @@ class EnterTakes(QtCore.QObject):
         return False
 
 
+class ArrowFieldKeys(QtCore.QObject):
+    """Ends typing in the field at an arrow: Enter calls `take`, Escape and
+    the field losing the focus call `cancel`. Enter and Escape are kept from
+    the task dialog, which would close the panel on them.
+
+    INPUTS this has to withstand:
+      Enter or Return                       ->  take(), the key kept
+      Escape                                ->  cancel(), the key kept
+      the focus gone, a click elsewhere     ->  cancel()
+      any other key, digits, a sign         ->  passed on to the field
+    """
+
+    def __init__(self, take, cancel, parent):
+        super().__init__(parent)
+        self.take, self.cancel = take, cancel
+
+    def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
+        if event.type() == QtCore.QEvent.KeyPress and event.key() in ENTER_KEYS:
+            self.take()
+            return True
+        if event.type() == QtCore.QEvent.KeyPress and event.key() in CANCEL_KEYS:
+            self.cancel()
+            return True
+        if event.type() == QtCore.QEvent.FocusOut:
+            self.cancel()
+        return False
+
+
 class FinKeys(QtCore.QObject):
     """Moves the fin with the arrows by the keys of ALONG_KEYS and, with Shift,
     HEIGHT_KEYS, pressed in the 3D view: `pressed` is called with ALONG or UP,
@@ -727,6 +758,12 @@ class FinSnapTaskPanel:
         self.field_timer.setInterval(PREVIEW_DELAY_MS)
         self.field_timer.timeout.connect(lambda: self.field_entered(self.typed_field, paused=True))
         self.typed_field = None
+        # The field at an arrow a double click opened, as (kind, field), and
+        # the timer that keeps it at the arrow while the view turns or zooms.
+        self.arrow_field = None
+        self.arrow_field_timer = QtCore.QTimer(self.form)
+        self.arrow_field_timer.setInterval(handles.ZOOM_POLL_MS)
+        self.arrow_field_timer.timeout.connect(self.place_arrow_field)
         # The field of the fin being typed into while its value is taken after
         # a pause: the panel leaves it as typed.
         self.typing = None
@@ -744,7 +781,8 @@ class FinSnapTaskPanel:
         self.released = False
         # True while the panel fills the fields of the fin, not the user.
         self.filling_fields = False
-        self.handles = handles.Handles(obj.ViewObject, self.handle_started, self.handle_moved, self.handle_done)
+        self.handles = handles.Handles(obj.ViewObject, self.handle_started, self.handle_moved, self.handle_done,
+                                       self.arrow_double_clicked)
         # The arrow keys in the 3D view move the fin with the arrows; the
         # widget that has the focus there is the view or its viewport.
         self.key_widgets = []
@@ -1650,6 +1688,8 @@ class FinSnapTaskPanel:
         """An arrow grabbed: note where the fin stands and what it has by hand;
         the drag starts from there."""
         self.ends_timer.stop()
+        # A field at an arrow is dropped, as a click elsewhere drops it.
+        self.close_arrow_field()
         # A value typed just before is built first, or the drag would keep the
         # parameters from before it, or the value would come in the middle of it.
         if self.timer.isActive():
@@ -1890,11 +1930,92 @@ class FinSnapTaskPanel:
         finally:
             self.typing = None
 
+    def arrow_double_clicked(self, kind):
+        """An arrow of `kind` double clicked: a field at it, once the click
+        and the arrow let go are through, as they put the keyboard on the
+        field of the panel."""
+        QtCore.QTimer.singleShot(0, functools.partial(self.edit_at_arrow, kind))
+
+    def edit_at_arrow(self, kind):
+        """Lay a field over the 3D view where the value of the arrow of `kind`
+        stands past its tip, holding the value of its field in the panel, with
+        the same unit, steps and limits; Enter takes what is typed as that
+        field does (field_entered()), Escape or a click elsewhere drops it.
+
+        INPUTS this has to withstand:
+          the arrow up or along the face        ->  a field at it with its value
+          the arc under a round side            ->  a field at it with the angle
+          along a fin that stays where it is    ->  nothing: its field is disabled too
+          a field open already                  ->  closed, the new one opened
+          no fin with the arrows, or the panel
+            closed meanwhile                    ->  nothing
+          no view widget to lay it over         ->  nothing
+        """
+        self.close_arrow_field()
+        box = self.fin_fields[kind]
+        widget = self.handles.view.graphicsView() if hasattr(self.handles.view, "graphicsView") else None
+        if self.released or self.handled_result() is None or not box.isEnabled() or widget is None:
+            return
+        field = QtWidgets.QDoubleSpinBox(widget)
+        field.setDecimals(box.decimals())
+        field.setRange(box.minimum(), box.maximum())
+        field.setSingleStep(box.singleStep())
+        field.setWrapping(box.wrapping())
+        field.setSuffix(box.suffix())
+        field.setValue(box.value())
+        field.setToolTip(box.toolTip())
+        field.installEventFilter(ArrowFieldKeys(self.take_arrow_field, self.close_arrow_field, field))
+        self.arrow_field = (kind, field)
+        self.place_arrow_field()
+        field.show()
+        field.setFocus()
+        field.selectAll()
+        self.arrow_field_timer.start()
+
+    def place_arrow_field(self):
+        """Keep the field at its arrow, where the value stands past its tip,
+        its left end there and its middle on the line of the value."""
+        if self.arrow_field is None:
+            return
+        kind, field = self.arrow_field
+        x, y = self.handles.value_point(kind)
+        viewport = field.parentWidget().viewport()
+        at = viewport.mapTo(field.parentWidget(), QtCore.QPoint(round(x * viewport.width()),
+                                                                 round(y * viewport.height())))
+        field.move(at.x(), at.y() - field.height() // 2)
+
+    def take_arrow_field(self):
+        """Take the value typed at the arrow as if typed into its field in the
+        panel and Enter pressed there, then close the field."""
+        if self.arrow_field is None:
+            return
+        kind, field = self.arrow_field
+        field.interpretText()
+        value = field.value()
+        self.close_arrow_field()
+        self.fin_fields[kind].setValue(value)
+        self.field_entered(kind)
+
+    def close_arrow_field(self):
+        """Close the field at an arrow, if one is open, leaving its value untaken."""
+        self.arrow_field_timer.stop()
+        if self.arrow_field is None:
+            return
+        _, field = self.arrow_field
+        # Gone first: closing it takes the focus away, which would close it again.
+        self.arrow_field = None
+        field.hide()
+        field.deleteLater()
+
     def release_handles(self):
         """Take the arrows away and stop listening, once, whichever way the panel closes."""
         if self.released:
             return
         self.released = True
+        try:
+            self.close_arrow_field()
+        except RuntimeError:
+            pass
         # Closed by FreeCAD first, the panel's form and its timers are gone already.
         for timer in (self.timer, self.drag_timer, self.ends_timer, self.field_timer, self.key_timer):
             try:
