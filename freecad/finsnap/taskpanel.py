@@ -780,8 +780,6 @@ class FinSnapTaskPanel:
         # arrow being dragged with how far, as (kind, mm); and the shift and
         # height of the fin, and the values in its fields, when it was grabbed.
         self.handled = None
-        # The fin the ends of the arrows were last tried on.
-        self.ends_of = None
         # The arrow ends found, by what they depend on (ends_key).
         self.known_ends = {}
         self.dragged = None
@@ -1424,10 +1422,11 @@ class FinSnapTaskPanel:
         if not self.handles.held:
             self.handles.show(result.edges[number], result.along, result.out,
                               self.turn_of_handles() if turning else None, fixed)
-            # On another fin, both ends until tried, rather than those of the fin before.
-            if self.handled != self.ends_of:
-                for kind in handles.KINDS:
-                    self.handles.show_ends(kind, (handles.BACK, handles.FORTH))
+            # Until tried, the ends found for the fin as it stands, else every
+            # end there is a step to, never those of the fin before: shown
+            # first and taken away after would flash.
+            for kind in handles.KINDS:
+                self.handles.show_ends(kind, self.untried_ends(kind))
             self.ends_timer.start()
         self.show_fin_values(self.fin_values())
         self.fin_label.setText(self.fin_name(self.handled))
@@ -1675,13 +1674,30 @@ class FinSnapTaskPanel:
                 feature.edits_key(*feature.edits(self.obj, which)), tuple(faces),
                 part.Shape.hashCode(), str(part.getGlobalPlacement()))
 
+    def untried_ends(self, kind):
+        """The ends of the arrow of `kind` shown until update_ends() has tried
+        where the handled fin can go: those found before for it as it stands
+        now, else every end there is a step to (next_values()), which needs
+        no build. A fin at its highest tine has no step up, so the arrow up
+        shows no upper end even before it is tried.
+
+        INPUTS this has to withstand:
+          the fin as it stood when last tried   ->  the ends found then, at once
+          a fin at its highest tine, untried    ->  no end up
+          a fin at its lowest tine, untried     ->  no end down
+          along the face, untried               ->  both ends, until tried
+        """
+        known = self.known_ends.get(self.ends_key())
+        if known is not None:
+            return known[kind]
+        return tuple(end for end, _ in self.next_values(kind, self.built_value(kind)))
+
     def update_ends(self):
         """Leave out each end of an arrow where the handled fin cannot go.
         Tried once for each fin as it stands: a rebuild that changed nothing
         it depends on takes the ends found before."""
         if self.handles.held or self.handled_result() is None:
             return
-        self.ends_of = self.handled
         key = self.ends_key()
         if key not in self.known_ends:
             while len(self.known_ends) >= ENDS_KEPT:

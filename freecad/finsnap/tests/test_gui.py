@@ -657,10 +657,10 @@ def arrow_field(panel, fins):
         click(handles.UP, shake + 1)
         click(handles.UP)
         kinds = [kind for kind, _ in doubles]
-        # A double click on each half of each arrow names that half.
+        # A double click on each half shown of each arrow names that half.
         del doubles[:]
         for kind in handles.KINDS:
-            for end in (handles.BACK, handles.FORTH):
+            for end in arrows.ends[kind]:
                 middle = viewport.parentWidget().mapToGlobal(on_view(kind, end, 0.5))
                 click(kind, at=middle)
                 click(kind, at=middle)
@@ -671,7 +671,7 @@ def arrow_field(panel, fins):
     expect(twice == [handles.UP] and kinds == [handles.UP] and set(done[:3]) == {0.0},
            "two clicks on one arrow are a double click, the mouse shaking within Qt's drag distance, a third is "
            "not, nor a click on each arrow, nor a click after a drag; a click moves nothing: %s" % kinds)
-    expect(halves == [(kind, end) for kind in handles.KINDS for end in (handles.BACK, handles.FORTH)],
+    expect(halves == [(kind, end) for kind in handles.KINDS for end in arrows.ends[kind]] and len(halves) > 2,
            "a double click names the half of the arrow clicked on: %s" % halves)
 
     def key(field, pressed):
@@ -1962,6 +1962,8 @@ def main():
     tallest = moving.built_value(handles.UP)
     expect(abs(tallest - tops[-1]) < d.TOLERANCE and len(lined.ViewObject.ShapeAppearance) == 1,
            "let go far above the face, the fin ends with its highest tine, green: %.3f mm" % tallest)
+    expect(moving.handles.ends[handles.UP] == (handles.BACK,),
+           "at its highest tine, the arrow up shows no end up even before the ends are tried, so none flashes")
     moving.update_ends()
     expect(moving.handles.ends[handles.UP] == (handles.BACK,), "at its highest tine, the arrow up shows no end up")
     moving.handle_started(handles.UP)

@@ -349,7 +349,7 @@
     </message>
     <message>
         <location filename="../commands.py" line="898"/>
-        <location filename="../taskpanel.py" line="877"/>
+        <location filename="../taskpanel.py" line="875"/>
         <source>Add counter fin</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1245,12 +1245,12 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="807"/>
+        <location filename="../taskpanel.py" line="805"/>
         <source>FinSnap parameters</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="818"/>
+        <location filename="../taskpanel.py" line="816"/>
         <source>Hover over a field for an explanation. Letters in brackets point to the drawings below. Every change is shown in the 3D view right away. Greyed-out fields have no effect with the current choices; their tooltip says why.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1285,27 +1285,27 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="865"/>
+        <location filename="../taskpanel.py" line="863"/>
         <source>To remove one fin, click it in the 3D view and press Remove selected fin, or the Delete key. The counter fin goes under the face leaning the other way, or under a face of the part you select. Drag the two arrows on a fin to move it along the face or to change its height, or type the values below; click another fin, or pick it in the list of fins, to put the arrows there. In the 3D view, the left and right arrow keys move that fin along the face, and Shift with the up or down arrow key steps its height to the next tine. Reset fins undoes every change by hand.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="875"/>
+        <location filename="../taskpanel.py" line="873"/>
         <source>Remove selected fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="876"/>
+        <location filename="../taskpanel.py" line="874"/>
         <source>Reset fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="878"/>
+        <location filename="../taskpanel.py" line="876"/>
         <source>Remove counter fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="886"/>
+        <location filename="../taskpanel.py" line="884"/>
         <source>The fins, the main fins from the left, then the counter fins. Pick one to put the arrows on it and select it.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1390,95 +1390,95 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="914"/>
+        <location filename="../taskpanel.py" line="912"/>
         <source>Save as standard</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="915"/>
+        <location filename="../taskpanel.py" line="913"/>
         <source>New fins start with these values. Fields that differ from the standard are marked, and their button puts the standard back.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="919"/>
-        <location filename="../taskpanel.py" line="1120"/>
+        <location filename="../taskpanel.py" line="917"/>
+        <location filename="../taskpanel.py" line="1118"/>
         <source>Factory settings</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="920"/>
+        <location filename="../taskpanel.py" line="918"/>
         <source>Forget the saved standard and set every field to the built-in value.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="940"/>
+        <location filename="../taskpanel.py" line="938"/>
         <source>Check stability</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1031"/>
+        <location filename="../taskpanel.py" line="1029"/>
         <source>Stand another way</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1100"/>
+        <location filename="../taskpanel.py" line="1098"/>
         <source>Back to the standard: %s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1121"/>
+        <location filename="../taskpanel.py" line="1119"/>
         <source>Forget the saved standard and set every field to the built-in value?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1149"/>
-        <location filename="../taskpanel.py" line="1153"/>
+        <location filename="../taskpanel.py" line="1147"/>
+        <location filename="../taskpanel.py" line="1151"/>
         <source>Nothing removed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1160"/>
+        <location filename="../taskpanel.py" line="1158"/>
         <source>Delete the fins?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1161"/>
+        <location filename="../taskpanel.py" line="1159"/>
         <source>These are the last fins. Delete the fins object? A part stood on an edge for these fins alone is laid flat again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1177"/>
+        <location filename="../taskpanel.py" line="1175"/>
         <source>Delete fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1196"/>
-        <location filename="../taskpanel.py" line="1200"/>
+        <location filename="../taskpanel.py" line="1194"/>
+        <location filename="../taskpanel.py" line="1198"/>
         <source>No counter fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1326"/>
+        <location filename="../taskpanel.py" line="1324"/>
         <source>%s %d</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1621"/>
+        <location filename="../taskpanel.py" line="1620"/>
         <source>no tine of the fin finds the face there</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="2080"/>
+        <location filename="../taskpanel.py" line="2096"/>
         <source>Not possible</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="2119"/>
+        <location filename="../taskpanel.py" line="2135"/>
         <source>%d fin(s), %.2f mm high, %.2f mm thick</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="2126"/>
+        <location filename="../taskpanel.py" line="2142"/>
         <source>Notes</source>
         <translation type="unfinished"></translation>
     </message>
