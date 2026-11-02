@@ -1993,8 +1993,8 @@ class FinSnapTaskPanel:
             no round side any more              ->  values back, no turn
           fins edited, another way of Quick
             fins chosen in the table            ->  part, other fins and the face of
-                                                    these as at the opening, then
-                                                    values back
+                                                    these as when the ways were
+                                                    unfolded, then values back
         """
         self.close()
         if self.created:

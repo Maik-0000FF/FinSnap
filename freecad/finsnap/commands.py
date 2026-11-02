@@ -684,7 +684,8 @@ class QuickStands:
     def __init__(self, obj, owner, before, plans, current=0):
         self.obj, self.owner, self.before, self.plans = obj, owner, before, plans
         self.current = current
-        # Fins opened again later: how part and fins stood then, for back().
+        # Fins opened again later: how part and fins stood when the ways were
+        # unfolded, for back().
         self.opened = None
         # Under one face throughout, on edges, the plans differ by the edge.
         self.by_edge = (len({way.plan.number for way in plans}) == 1
@@ -731,16 +732,16 @@ class QuickStands:
         _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside, plan.line))
 
     def keep_opened(self, fins):
-        """Note how the part and `fins` stand as their panel opens on them
-        again, for back()."""
+        """Note how the part and `fins` stand when the ways are unfolded in
+        their panel opened again, for back()."""
         doc = self.owner.Document
         self.opened = (self.current, orient.snapshot(self.owner), feature.laid_flat_marks(self.owner, doc),
                        feature.round_turns(self.owner, doc), (fins.Base[0], list(fins.Base[1])))
 
     def back(self, fins):
         """Cancel on fins opened again: where another way was chosen, the part
-        and its other fins stand as they did at the opening, `fins` under
-        their face of then. Fins just made are deleted instead, see
+        and its other fins stand as they did when the ways were unfolded,
+        `fins` under their face of then. Fins just made are deleted instead, see
         discard_created()."""
         if self.opened is None or self.current == self.opened[0]:
             return

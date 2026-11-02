@@ -490,8 +490,8 @@ def stands_reopened(doc, quick, facing):
     """Fins Quick fins made on a face of the box `quick` lying flat, accepted
     and opened again by a double click: the table lists the ways again, the
     one the part stands in marked; Cancel after choosing another puts the
-    part back as it stood at the opening. Moved by hand, or fins Quick fins
-    did not make, show no table."""
+    part back as it stood when the ways were unfolded. Moved by hand, or fins
+    Quick fins did not make, show no table."""
     from freecad.finsnap import defaults as d
     from freecad.finsnap import commands, feature, orient
     lying = orient.snapshot(quick)
@@ -526,7 +526,8 @@ def stands_reopened(doc, quick, facing):
     panel.reject()
     expect(moved_away and quick.Placement.isSame(accepted, d.TOLERANCE) and fins.Base[1][0] == face
            and fins.isValid() and fins.Shape.Solids,
-           "Cancel after choosing another way stands the part as at the opening, the fins under their face")
+           "Cancel after choosing another way stands the part as when the ways were unfolded, the fins under "
+           "their face")
 
     quick.Placement = App.Placement(App.Vector(1, 0, 0), App.Rotation()).multiply(quick.Placement)
     doc.recompute()
