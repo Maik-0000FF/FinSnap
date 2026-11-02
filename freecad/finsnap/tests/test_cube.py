@@ -80,6 +80,7 @@ LEAN_DISC_TURN = 30.0           # how far the disc is turned before Quick fins, 
 LEAN_DISC_TURN_AXIS = V(1, 1, 0)  # about an axis neither along X nor Y
 TINE_END_MESH_DEFLECTION = 0.1  # how closely the mesh of the reference cube, made a solid again, follows it, in mm
 TINE_END_SHIFT = 0.5  # how far tine ends are measured off the face to be named, in mm
+TINE_END_SEW_TOLERANCE = 0.01  # how far apart points of that mesh are sewn into one, in mm
 CENTRE_SHARES = (0.1, 0.37, 0.5, 0.83)  # heights the centres of mass are compared at, as shares of the part's
 CENTRE_FLAT_TOLERANCE = 1e-6    # how far a centre from the mesh may lie off the cut one, flat faces only, in mm
 CENTRE_CURVED_TOLERANCE = 0.05  # the same with curved faces, which the mesh only follows, in mm
@@ -710,9 +711,12 @@ def check_tine_ends(cube, face):
         stood = moved(shape, plan.change)
         return stood, stood.Faces[plan.number]
 
+    # A solid from a mesh as the Part workbench makes it: Shape from Mesh,
+    # Convert to Solid, Refine Shape.
     import Mesh
-    from freecad.finsnap import mesh_input
-    meshed = mesh_input.solid_from_mesh(Mesh.Mesh(cube.tessellate(TINE_END_MESH_DEFLECTION)))
+    sewn = Part.Shape()
+    sewn.makeShapeFromMesh(Mesh.Mesh(cube.tessellate(TINE_END_MESH_DEFLECTION)).Topology, TINE_END_SEW_TOLERANCE)
+    meshed = Part.makeSolid(Part.makeShell(sewn.Faces)).removeSplitter()
     tube = Part.makeCylinder(ROD_RADIUS, ROD_HEIGHT).cut(Part.makeCylinder(BORE_RADIUS, ROD_HEIGHT))
     split = orient.joined(split_cylinder(ROD_RADIUS, ROD_HEIGHT, BORE_RADIUS))
     for name, part, under, params in (

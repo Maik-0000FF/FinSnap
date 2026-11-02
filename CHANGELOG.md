@@ -11,6 +11,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Removed
+
+- The Mesh to solid command: it ran the three commands of the Part workbench that do the same, Shape From Mesh, Convert to Solid and Refine Shape, and stalled FreeCAD on a large STL; the README says how to turn an STL into a solid with them
+
 ## [0.12.0] - 2026-11-02
 
 ### Added
