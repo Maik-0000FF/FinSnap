@@ -21,7 +21,8 @@ margin than a flat one for the same angle.
 Every layer is too many to work out at once on a large part: the part is
 checked every SAMPLE_STEP mm and wherever a fin starts to hold it, and
 layer by layer only between the checks around where it tips or where its
-tipping angle is smallest. The centres of mass found are kept in a dict the caller
+tipping angle is smallest. The centres of mass are worked out on one mesh of
+the part (_Below), not cut out for each layer, and kept in a dict the caller
 holds for the part as it stands, so a check after the fins changed only
 measures the footprints anew.
 
@@ -41,9 +42,10 @@ INPUTS this has to withstand (check()):
   a brim                                ->  the footprint grown by its width all round
   an empty part, or one with nothing on
     the bed                             ->  None
-  a layer the kernel cannot cut out     ->  passed over
+  a part the kernel cannot mesh         ->  None
 """
 
+import bisect
 import math
 from collections import namedtuple
 
@@ -51,19 +53,15 @@ import FreeCAD as App
 import Part
 
 from . import defaults as d
+from . import overhang
 from .shapes import bounds
 
 # How often the part is checked before it is checked layer by layer (mm).
 SAMPLE_STEP = 1.0
-# How far round and below the part the cut-out reaches (mm), so it holds the
-# whole part up to the layer, whatever its size.
-CUT_MARGIN = 1.0
 # How closely curved edges of a footprint are followed (mm).
 FOOTPRINT_DEFLECTION = 0.1
 # Points round each corner of a footprint grown by a brim, for its outline.
 BRIM_CORNER_POINTS = 16
-# Turns the wires of a cut into faces, holes inside their outlines.
-FACE_MAKER = "Part::FaceMakerBullseye"
 
 # The result of check(): whether the part tips; the layer (from 0, the first)
 # it tips at or, if it stands, has its smallest tipping angle at, and the height of
@@ -100,13 +98,17 @@ def check(part, supports, first_layer, layer, centres, brim=0.0):
     if not own:
         return None
     feet = [(_foot_points(shape, foot_z), height) for shape, height in supports]
+    # The mesh the centres are worked out on, made once the first is asked.
+    below = None
 
     def measure(number):
         """The margin at layer `number`, and what goes with it; None where
-        the kernel cannot cut the part out up to it."""
-        centre = centres.get(number)
+        nothing of the part lies below its top."""
+        nonlocal below
         if number not in centres:
-            centre = centres[number] = _centre_below(part, box, top(number))
+            below = below or _Below(part)
+            centres[number] = below.centre(top(number))
+        centre = centres[number]
         if centre is None:
             return None
         points = own + [point for points, height in feet if height <= top(number) for point in points]
@@ -162,31 +164,90 @@ def _with_profile(result, seen):
 def section(part, z):
     """Where the plane at height `z` cuts `part`, as a shape of faces, to show
     a layer in the part; None where nothing is there or the kernel cannot
-    make it."""
-    try:
-        wires = part.slice(App.Vector(0, 0, 1), z)
-        return Part.makeFace(wires, FACE_MAKER) if wires else None
-    except Part.OCCError:
-        return None
+    make it. Cut as islands and bridges cut their layers (overhang.layer_faces())."""
+    faces = overhang.layer_faces(part, z)
+    return Part.makeCompound(faces) if faces else None
 
 
-def _centre_below(part, box, height):
-    """The centre of mass of `part` below `height`; None where the kernel
-    cannot cut it out."""
-    size = max(box.XLength, box.YLength) + 2 * CUT_MARGIN
-    below = Part.makeBox(size, size, height - box.ZMin + CUT_MARGIN,
-                         App.Vector(box.Center.x - size / 2, box.Center.y - size / 2, box.ZMin - CUT_MARGIN))
-    try:
-        solids = part.common(below).Solids
-    except Part.OCCError:
-        return None
-    volume = sum(solid.Volume for solid in solids)
-    if volume <= 0:
-        return None
-    moment = App.Vector()
-    for solid in solids:
-        moment += solid.CenterOfMass * solid.Volume
-    return moment * (1 / volume)
+class _Below:
+    """The volume and centre of mass of a part below any height, worked out
+    on one mesh of its surface instead of a boolean cut for each height.
+
+    By the divergence theorem, the volume and moments of the part below a
+    plane are integrals over its surface below the plane, of fields with no
+    z part, so the open cut at the plane adds nothing:
+        volume  x nx    moment along x  x²/2 nx
+        along y  xy nx  along z         xz nx
+    Each is of the second degree over a triangle and so summed exactly from
+    the middles of its edges. Triangles lying wholly below a height are summed
+    once, in the order of their tops; those crossing it are clipped at it.
+
+    INPUTS this has to withstand (centre()):
+      a height above the part              ->  the centre of the whole part
+      a height through a triangle          ->  that triangle clipped at it
+      a height below the part              ->  None
+      a part the kernel cannot mesh        ->  None for every height
+    """
+
+    def __init__(self, part):
+        try:
+            points, triangles = part.tessellate(d.CENTRE_MESH_DEFLECTION)
+        except Part.OCCError:
+            points, triangles = [], []
+        corners = [(point.x, point.y, point.z) for point in points]
+        self.triangles = sorted((tuple(corners[i] for i in triangle) for triangle in triangles),
+                                key=lambda triangle: max(c[2] for c in triangle))
+        self.tops = [max(c[2] for c in triangle) for triangle in self.triangles]
+        self.bottoms = [min(c[2] for c in triangle) for triangle in self.triangles]
+        # The sums of the triangles up to each, in the order of their tops.
+        self.summed = [(0.0, 0.0, 0.0, 0.0)]
+        for triangle in self.triangles:
+            self.summed.append(tuple(a + b for a, b in zip(self.summed[-1], _integrals(triangle))))
+
+    def centre(self, height):
+        """The centre of mass of the part below `height`, as an App.Vector;
+        None where nothing of it lies below."""
+        whole = bisect.bisect_right(self.tops, height)
+        sums = list(self.summed[whole])
+        for number in range(whole, len(self.triangles)):
+            if self.bottoms[number] < height:
+                for piece in _clipped(self.triangles[number], height):
+                    sums = [a + b for a, b in zip(sums, _integrals(piece))]
+        volume = sums[0]
+        if volume <= 0:
+            return None
+        return App.Vector(sums[1], sums[2], sums[3]) * (1 / volume)
+
+
+def _integrals(triangle):
+    """The volume and the moments along x, y and z the triangle `triangle`,
+    three (x, y, z) corners counterclockwise seen from outside, adds, see
+    _Below."""
+    (ax, ay, az), (bx, by, bz), (cx, cy, cz) = triangle
+    # Twice the area of the triangle times the x part of its normal.
+    normal_x = (by - ay) * (cz - az) - (bz - az) * (cy - ay)
+    sums = [0.0, 0.0, 0.0, 0.0]
+    for x, y, z in (((ax + bx) / 2, (ay + by) / 2, (az + bz) / 2),
+                    ((bx + cx) / 2, (by + cy) / 2, (bz + cz) / 2),
+                    ((cx + ax) / 2, (cy + ay) / 2, (cz + az) / 2)):
+        sums[0] += x
+        sums[1] += x * x / 2
+        sums[2] += x * y
+        sums[3] += x * z
+    # The area times the mean of the three middles.
+    return tuple(value * normal_x / 6 for value in sums)
+
+
+def _clipped(triangle, height):
+    """The part of `triangle` below `height`, as triangles, turning as it does."""
+    outline = []
+    for start, end in zip(triangle, triangle[1:] + triangle[:1]):
+        if start[2] <= height:
+            outline.append(start)
+        if (start[2] <= height) != (end[2] <= height):
+            share = (height - start[2]) / (end[2] - start[2])
+            outline.append(tuple(s + share * (e - s) for s, e in zip(start, end)))
+    return [(outline[0], outline[k], outline[k + 1]) for k in range(1, len(outline) - 1)]
 
 
 def _foot_points(shape, z):

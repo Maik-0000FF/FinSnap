@@ -11,6 +11,15 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- `tools/time_checks.py` times each check, overhangs, islands, bridges and stability, on the test parts and on given documents, and lists the calls that cost most (#114)
+
+### Changed
+
+- The stability check works out the centres of mass of the part from one mesh of it instead of a cut for every millimetre of height, up to eight times faster on a large part (#114)
+- Islands and bridges cut each layer they look at with one thin boolean cut instead of a slice, up to twice as fast on a part of many faces, finding the same (#114)
+
 ## [0.11.0] - 2026-10-31
 
 ### Added
