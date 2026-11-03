@@ -1316,12 +1316,29 @@ def counter_kept_in_panel():
     kept = not fins.CounterFace and fins.Name in [o.Name for o in doc.Objects]
     panel.release_handles()
     Gui.Control.closeDialog()
+    # The same with the Delete key, no panel open: the object stays and a
+    # message says so.
+    keyed = feature.create(cube, face_name(cube, lower_left_face(cube.Shape)))
+    commands.ViewProviderFinSnap(keyed.ViewObject)
+    feature.add_counter(keyed)
+    doc.recompute()
+    main_faces = ["Face%d" % next(i for i, f in enumerate(keyed.Shape.Faces, 1) if f.isSame(solid.Faces[0]))
+                  for solid, tag in zip(keyed.Shape.Solids, keyed.FinTags) if feature.tag_fin(tag)[0] == feature.MAIN]
+    told, real_message = [], commands._message
+    commands._message = told.append
+    try:
+        deleted = keyed.ViewObject.Proxy.onDelete(keyed.ViewObject, main_faces)
+    finally:
+        commands._message = real_message
+    by_key = deleted is False and not keyed.CounterFace and keyed.Name in [o.Name for o in doc.Objects]
     App.closeDocument(doc.Name)
     # In the language FreeCAD runs in.
     from freecad.finsnap.i18n import translate
     said = translate("FinSnap", feature.NOTE_COUNTER_PROMOTED)
     expect(kept and said in shown and taskpanel.INFO_SIGN in shown and taskpanel.INFO_COLOR in styled,
            "the last main fins removed in the panel: the counter fin is the main fin, said as information")
+    expect(by_key and told == [said],
+           "the Delete key on the last main fins: the counter fin is the main fin, a message says so: %s" % told)
 
 
 def gap_limited():
@@ -1343,7 +1360,6 @@ def main():
     expect(all(c in registered for c in COMMANDS), "all commands are registered")
     islands_shaded()
     gap_limited()
-    counter_kept_in_panel()
 
     from freecad.finsnap import defaults as d
     from freecad.finsnap import feature
@@ -2321,6 +2337,9 @@ def main():
     expect(len(messages) == 1, "exporting an object without a shape shows a message: %s" % messages)
     del messages[:]
     doc.removeObject(empty.Name)
+    # Last: it closes a document of its own, whose 3D view a later panel
+    # would otherwise still find.
+    counter_kept_in_panel()
 
     print("all checks passed", file=sys.__stdout__)
 
