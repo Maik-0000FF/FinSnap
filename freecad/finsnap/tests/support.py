@@ -69,8 +69,8 @@ def grooved(cube, face, t):
     """`cube` with a groove running up its face `face` at `t` along it, from
     below the bed to GROOVE_TOP_GAP short of the top, so the face stays one
     piece and a fin there finds no face for any tine."""
-    from freecad.finsnap import geometry
-    frame = geometry.frame_of(cube, face)
+    from freecad.finsnap import face_frame
+    frame = face_frame.frame_of(cube, face)
     normal = face.normalAt(0, 0)
     uphill = (V(0, 0, 1) - normal * normal.z).normalize()
     start = frame.point(t, frame.s_face(frame.bed_z), frame.bed_z) - uphill * RECESS_RADIUS

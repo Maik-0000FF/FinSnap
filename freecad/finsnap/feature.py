@@ -17,7 +17,7 @@ import Part
 from . import analysis
 from . import check
 from . import defaults as d
-from . import geometry
+from . import face_frame, geometry
 from . import limits
 from . import orient
 from . import presets
@@ -480,7 +480,7 @@ def _face(link, plane=()):
     """
     part, subs = link
     if not subs:
-        raise geometry.FinError(translate("FinSnap", "no face selected on %s") % part.Label)
+        raise face_frame.FinError(translate("FinSnap", "no face selected on %s") % part.Label)
     name = subs[0]
     if plane:
         name = _named_in_plane(part, name, plane)
@@ -502,7 +502,7 @@ def _named_in_plane(part, name, plane):
         pass
     found = face_in_plane(shape, point, normal)
     if found is None:
-        raise geometry.FinError(translate("FinSnap", NOTE_FACE_GONE) % part.Label)
+        raise face_frame.FinError(translate("FinSnap", NOTE_FACE_GONE) % part.Label)
     return found
 
 
@@ -547,7 +547,7 @@ def on_part(obj, name):
     found = face_like(global_shape(part), global_shape(obj).getElement(name))
     if found is None:
         # Its name on the Body would be another face, with features after it.
-        raise geometry.FinError(translate("FinSnap", NOTE_FACE_GONE) % part.Label)
+        raise face_frame.FinError(translate("FinSnap", NOTE_FACE_GONE) % part.Label)
     return part, found
 
 
@@ -602,7 +602,7 @@ def _join_elements(obj, names):
       a face of the joined shape named back ->  the name of its first piece on `obj`:
                                                 a side for the whole side again, a flat
                                                 face for itself with the faces in its
-                                                plane (geometry.support_of())
+                                                plane (face_frame.support_of())
       half a flat face of a split part (the
         end face of a cylinder)             ->  the joined shape, the whole face
       a fillet or an arc of a slot          ->  as no split side or rim: as it is
@@ -626,13 +626,13 @@ def _join_elements(obj, names):
         if own is None:
             own = orient.counterpart(element, whole.Faces if isinstance(element, Part.Face) else whole.Edges)
         if own is None:
-            raise geometry.FinError(translate("FinSnap", NOTE_LOST_IN_JOINING) % name)
+            raise face_frame.FinError(translate("FinSnap", NOTE_LOST_IN_JOINING) % name)
         kept.append(own)
 
     def name_of(number):
         pieces_named = names_on(shape, [whole.Faces[number]])
         if not pieces_named:
-            raise geometry.FinError(translate("FinSnap", NOTE_NO_PIECE) % face_name(number + 1))
+            raise face_frame.FinError(translate("FinSnap", NOTE_NO_PIECE) % face_name(number + 1))
         return pieces_named[0]
     return whole, kept, name_of
 
@@ -786,13 +786,13 @@ def supports_of(part_obj, document):
             part, build = found
             try:
                 result = build(*edits(fins, which))
-            except (geometry.FinError, Part.OCCError):
+            except (face_frame.FinError, Part.OCCError):
                 continue
             if not result.tine_z:
                 continue
             # The tines are measured from the bed, the bottom of the part.
             supports.append((result.fins, bounds(part).ZMin + min(result.tine_z)))
-            out = geometry.frame_of(part, _face(side_link(fins, which), plane_kept(fins, which))[1]).out
+            out = face_frame.frame_of(part, _face(side_link(fins, which), plane_kept(fins, which))[1]).out
             sides.append(App.Vector(out.x, out.y, 0))
     return supports, sides
 
@@ -1018,7 +1018,7 @@ class FinSnapFeature:
                 try:
                     part, name = on_part(link[0], link[1][0])
                     setattr(obj, SIDE_LINK[which], (part, [name]))
-                except (ValueError, IndexError, Part.OCCError, geometry.FinError):
+                except (ValueError, IndexError, Part.OCCError, face_frame.FinError):
                     # The face is gone already; the build says so.
                     pass
             if PLANE_OF[which] not in obj.PropertiesList:
@@ -1055,7 +1055,7 @@ def check_counter_face(shape, face, p):
       a part of a curved side leaning over
         the bed, the round end of a slot    ->  passes: its fin stays under its lowest line
       a face lying flat, facing up or
-        sideways, or not planar             ->  FinError from geometry.frame_of()
+        sideways, or not planar             ->  FinError from face_frame.frame_of()
       a face too narrow for the fin, or one
         it runs into the part under         ->  FinError from the build tried
       the kernel fails building there       ->  FinError saying so
@@ -1063,13 +1063,13 @@ def check_counter_face(shape, face, p):
     # Said before the face is asked to take fins, which a bore or a cut side
     # would refuse for a reason of its own.
     if orient.is_round_side(face):
-        raise geometry.FinError(translate("FinSnap", COUNTER_ROUND_SIDE))
-    geometry.frame_of(shape, face)
+        raise face_frame.FinError(translate("FinSnap", COUNTER_ROUND_SIDE))
+    face_frame.frame_of(shape, face)
     try:
         geometry.build(shape, face, p, tine_count=p.counter_tine_count or None)
     except Part.OCCError as error:
         # A fault in the kernel: said as why, as for a face without room.
-        raise geometry.FinError(str(error)) from error
+        raise face_frame.FinError(str(error)) from error
 
 
 def _opposite_taking_fins(obj, base, p):
@@ -1088,7 +1088,7 @@ def _opposite_taking_fins(obj, base, p):
             continue
         try:
             check_counter_face(*_face((base, named[:1])), p)
-        except geometry.FinError:
+        except face_frame.FinError:
             continue
         return named[0]
     return None
@@ -1344,7 +1344,7 @@ def build_keeping_edits(obj, which, build_fn, notes):
     try:
         result = build_fn(left, shifts, heights)
         planned = result.planned
-    except geometry.FinError as error:
+    except face_frame.FinError as error:
         failure, planned = error, getattr(error, "planned", None)
     stale = changed and made_for is not None and planned is not None and planned != made_for
     if not stale:
@@ -1493,11 +1493,11 @@ def set_fin_height(obj, which, number, mm):
 def turn_part(obj, mm):
     """Turn the part of `obj` about the axis of the round side its main fin
     stands under, so the fin comes to stand `mm` further along the side; see
-    geometry.turn_of(). Inside a Body, the whole Body is turned. No turn
+    face_frame.turn_of(). Inside a Body, the whole Body is turned. No turn
     leaves the placement as it is, so nothing is recomputed for it."""
     if abs(mm) < d.TOLERANCE:
         return
-    change = geometry.turn_of(round_side(obj), mm)
+    change = face_frame.turn_of(round_side(obj), mm)
     owner = outermost(obj.Base[0])
     owner.Placement = change.multiply(owner.Placement)
 
@@ -1506,7 +1506,7 @@ def on_round_side(obj):
     """Whether the main fin of `obj` stands under the round side of a cylinder or tube."""
     try:
         return orient.is_round_side(round_side(obj))
-    except (geometry.FinError, ValueError, Part.OCCError):
+    except (face_frame.FinError, ValueError, Part.OCCError):
         return False
 
 
