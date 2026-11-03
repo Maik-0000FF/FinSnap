@@ -218,9 +218,11 @@ CONTOUR_MITRE_LIMIT = 2.0
 CONTOUR_SAME_LINE = 0.05
 # How far a curve of the contour may lie off the straight pieces it is cut
 # into (mm), and how much closer than its gap the fin may come along the
-# contour: between two samples, at a curve, and between two cuts, as at the
-# edge of a hole. Within it the flank stays as the samples give it, so it
-# keeps straight; past it, the samples beside a corner are raised.
+# contour: between two samples and at a curve. Within it the flank stays as
+# the samples give it, so it keeps straight; past it, the samples beside a
+# corner are raised. Between two cuts, as at the edge of a hole narrower
+# than the fin, nothing bounds it beforehand, by decision: geometry.check()
+# measures the fin against the part itself and refuses one that comes closer.
 CONTOUR_DEFLECTION = 0.001
 CONTOUR_TOLERANCE = 0.005
 # Of that, what a run between two samples may come closer before they are
