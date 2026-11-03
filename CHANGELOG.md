@@ -14,6 +14,12 @@ All notable changes to FinSnap are listed here. The format follows
 ### Added
 
 - The fin under the round side of a part standing on its rim follows the contour of the part up to its top, over steps, cones, fillets and curves (**Follow the contour**, on for new fins): its tines rest only where the part faces down, start anew at the bottom of each such stretch, and its inner edge runs inward no steeper than 45 degrees; recesses lower than **Bridge recesses up to** (3 mm) are spanned, and so is a pocket in one face that no tine rests in, and over faces looking up it keeps **Gap without tines** (1 mm) from the part
+- In the table of ways of Quick fins, a cell with islands is shaded red, as an unprintable overhang is, its tooltip saying how many
+
+### Changed
+
+- The fin stays at the gap from the face, whatever the tine clearance: the tines are as much shorter, a clearance as large as the gap is refused, and the warning about short tines counts the clearance. Fins saved with a tine clearance keep their values and stand as much closer to the part
+- Built-in gap 0.3 mm and tine clearance 0.05 mm, from a test print (were 0.25 mm and 0): tines 0.25 mm long, ending short of the part, so the slicer prints tine and part as separate beads
 
 ### Fixed
 

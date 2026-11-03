@@ -36,12 +36,14 @@ CONNECTION = CONNECTION_SEPARATE
 # bead wide and one layer high came off cleanest, leaving only faint contact points.
 #
 # Clearance between fin and supported face, measured along the face normal.
-GAP = 0.25
-# Clearance between the end of a tine and the face, along the face normal.
-# 0: the tine touches the face. A test print with touching tines left visible
-# marks; a clearance reduces them, but a bead swells a few hundredths of a
-# millimetre, so too much and the tine no longer holds. Find it by a test print.
-TINE_CLEARANCE = 0.0
+GAP = 0.3
+# Clearance between the end of a tine and the face, along the face normal; the
+# tines are as much shorter than the gap. 0: the tine touches the face, and the
+# slicer joins tine and part into one bead. A test print held with 0.25 mm
+# tines and this clearance, the tine and the part printed as separate beads;
+# a bead swells a few hundredths of a millimetre, so too much and the tine no
+# longer holds. Find it by a test print.
+TINE_CLEARANCE = 0.05
 
 # --- Tines --------------------------------------------------------------------
 # Tines are horizontal, so each one is printed within its own layers.

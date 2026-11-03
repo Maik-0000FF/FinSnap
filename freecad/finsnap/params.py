@@ -8,6 +8,8 @@ INPUTS this has to withstand (validate()):
   any length <= 0 where a size is meant ->  ParamError naming the field
   gap <= 0                              ->  ParamError: fin and part would fuse
   tine_clearance < 0                    ->  ParamError; 0 means touching
+  tine_clearance >= gap, separate fins  ->  ParamError: no tine would be left; merged
+                                            fins apply none
   tine_clearance > 0, merged fins       ->  valid; not applied (clearance is 0), merged
                                             fins need their tines on the face
   bead_width < nozzle_diameter / 2      ->  ParamError: not a printable bead
@@ -104,6 +106,8 @@ class FinParams:
 
         if self.tine_clearance < 0:
             raise ParamError(translate("FinSnap", "tine_clearance must be 0 (touching) or greater"))
+        if self.clearance >= self.gap:
+            raise ParamError(translate("FinSnap", "tine_clearance must be smaller than the gap"))
         if self.foot_overhang < 0:
             raise ParamError(translate("FinSnap", "foot_overhang must be 0 or greater"))
         if self.brim_width < 0:
@@ -145,10 +149,10 @@ class FinParams:
         return 0.0 if self.connection == d.CONNECTION_MERGED else self.tine_clearance
 
     @property
-    def fin_offset(self):
-        """Distance of the fin from the face: the gap the tines bridge, and the
-        tine clearance on top, so the tines keep their length."""
-        return self.gap + self.clearance
+    def tine_length(self):
+        """How far a tine reaches across, along the face normal: the gap, the
+        tine clearance short of it."""
+        return self.gap - self.clearance
 
     @property
     def tine_width(self):

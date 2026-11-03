@@ -6,8 +6,9 @@
 The part stands tilted on the bed. A planar face of it leans outward over the
 bed (its normal points down and to the side). Fins stand under that face: each
 fin is a vertical wall whose inner edge, the flank, runs parallel to the face at
-the gap distance, plus the tine clearance. Horizontal tines reach across the gap
-and end on the face, or the tine clearance short of it. A thin foot on the bed holds the fin down.
+the gap distance. Horizontal tines reach across the gap and end on the face, or
+the tine clearance short of it, as much shorter. A thin foot on the bed holds
+the fin down.
 
 LOCAL FRAME of a face: `out` is the horizontal direction the face leans
 towards, `along` runs horizontally along the face, z is up. A point is
@@ -16,8 +17,7 @@ n = n_out * out + n_z * Z, so at height z it lies at
     s_face(z) = (c - n_z * z) / n_out
 and a plane offset by a distance along n at
     s_flank(z, offset) = (c + offset - n_z * z) / n_out:
-the flank at the gap plus the tine clearance, the end of a tine at the
-tine clearance alone.
+the flank at the gap, the end of a tine at the tine clearance.
 The fin occupies s >= s_flank(z); the part lies at smaller s.
 
 ROUND SIDE: a cylinder or tube standing on its rim leans its curved side over
@@ -68,8 +68,8 @@ INPUTS this has to withstand (build()):
   left or right corner, face narrower
     than a tine                         ->  FinError
   tine_clearance > 0                    ->  tines end that far short of the face,
-                                            measured along its normal; the fin
-                                            moves out as far, so they keep their length
+                                            measured along its normal; the fin stays
+                                            at the gap, the tines as much shorter
   tine_clearance > 0, merged fins       ->  tines on the face, as with 0
   no tine fits below the top of the face ->  FinError
   hand-set first tine half a layer off
@@ -729,7 +729,7 @@ def flank_at(p, frame, z):
     distance off the face, or along the contour the frame follows."""
     if frame.contour is not None:
         return frame.contour.flank(z - frame.bed_z)
-    return frame.s_flank(z, p.fin_offset)
+    return frame.s_flank(z, p.gap)
 
 
 def flank_outline(p, frame, low, high):
@@ -1112,10 +1112,10 @@ def check(p, part, fins, bodies, slack=0.0):
 
     for body in bodies:
         distance = body.distToShape(part)[0]
-        if distance < p.fin_offset - slack - d.TOLERANCE:
+        if distance < p.gap - slack - d.TOLERANCE:
             raise FinError(translate("FinSnap", "a fin comes within %.3f mm of the part, closer than the %.3f mm it "
                                                   "keeps from the face")
-                           % (distance, p.fin_offset))
+                           % (distance, p.gap))
 
 
 def build(part, face, p, tine_count=None, left_out=(), shifts=None, heights=None):
@@ -1430,7 +1430,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         warnings.append(translate("FinSnap", "the face is inclined %.0f degrees to the bed, outside "
                                   "%.0f to %.0f") % (angle, d.FACE_ANGLE_MIN, d.FACE_ANGLE_MAX))
         targets.append(WarningTarget([], [], True))
-    tine_length = p.gap / frame.n_out
+    tine_length = p.tine_length / frame.n_out
     if tine_length < d.TINE_MIN_LENGTH_BEADS * p.bead_width:
         warnings.append(translate("FinSnap", "tines are %.2f mm long, shorter than %.2f bead widths; the slicer "
                                   "may not print them to the face") % (tine_length, d.TINE_MIN_LENGTH_BEADS))

@@ -253,14 +253,15 @@ PROPERTIES = (
     Prop("Gap", LENGTH, GROUP_CONNECTION,
          QT_TRANSLATE_NOOP("FinSnap", "Gap"),
          QT_TRANSLATE_NOOP("App::Property", "Gap between fin and face that the tines reach across, along the face "
-                           "normal; a tine clearance adds to it"),
+                           "normal; a tine clearance makes the tines as much shorter"),
          "gap", None, STEP_PROFILE),
     Prop("TineClearance", LENGTH, GROUP_CONNECTION,
          QT_TRANSLATE_NOOP("FinSnap", "Tine clearance"),
          QT_TRANSLATE_NOOP("App::Property",
-                           "Distance between the end of a tine and the face, along the face normal; 0 = the "
-                           "tine touches the face. More leaves fainter marks, too much and the tine does not "
-                           "hold: find the value by a test print."),
+                           "Distance between the end of a tine and the face, along the face normal; the tines "
+                           "are as much shorter than the gap, the fin stays where it is. 0 = the tine touches "
+                           "the face. More leaves fainter marks and separate beads in the slicer, too much and "
+                           "the tine does not hold: find the value by a test print."),
          "tine_clearance", None, STEP_CLEARANCE),
     Prop("TineSpacing", LENGTH, GROUP_TINES,
          QT_TRANSLATE_NOOP("FinSnap", "Tine spacing"),

@@ -439,6 +439,17 @@ def _rated_cell(levels, shown, tip):
     return cell
 
 
+def _islands_cell(islands):
+    """A cell of the table of ways showing how many `islands` the part has
+    standing so, blank for None; shaded as unprintable where there is one,
+    the worse fault to print than an overhang, its tooltip saying so."""
+    cell = QtWidgets.QTableWidgetItem("" if islands is None else str(islands))
+    if islands:
+        cell.setBackground(QtGui.QColor(STAND_LEVEL_COLORS[limits.UNPRINTABLE]))
+        cell.setToolTip(translate("FinSnap", analysis.NOTE_ISLANDS_FOUND) % islands)
+    return cell
+
+
 def _angle_at(profile, z):
     """The tipping angle at height `z`, between those of `profile`, (height,
     margin, angle) from the bed up; that of the nearest end beyond them."""
@@ -996,7 +1007,7 @@ class FinSnapTaskPanel:
             # Ways not checked, with the checks while editing off, are left blank.
             cells = [QtWidgets.QTableWidgetItem(name or STAND_ROW % (row + 1)),
                      QtWidgets.QTableWidgetItem("%.1f%s" % (size, suffix)),
-                     QtWidgets.QTableWidgetItem("" if islands is None else str(islands)),
+                     _islands_cell(islands),
                      _rated_cell(overhangs, None if overhangs is None else len(overhangs), STAND_OVERHANGS_TIP),
                      _rated_cell([found.level for found in spans] if spans is not None else None,
                                  _longest_span(spans), STAND_BRIDGES_TIP)]
