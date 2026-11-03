@@ -1295,6 +1295,35 @@ def islands_shaded():
            "islands are shaded as unprintable in the table of ways, none left plain, unchecked blank")
 
 
+def counter_kept_in_panel():
+    """Removing the last main fins in the task panel with a counter fin left:
+    the counter fin is the main fin, and the panel says so as information,
+    not as a warning."""
+    from freecad.finsnap import commands, feature, taskpanel
+    from freecad.finsnap.taskpanel import FinSnapTaskPanel
+    doc = App.newDocument("CounterKept")
+    cube = doc.addObject("Part::Feature", "Cube")
+    cube.Shape = tilted_cube()
+    fins = feature.create(cube, face_name(cube, lower_left_face(cube.Shape)))
+    commands.ViewProviderFinSnap(fins.ViewObject)
+    feature.add_counter(fins)
+    doc.recompute()
+    panel = FinSnapTaskPanel(fins)
+    mains = [feature.tag_fin(tag) for tag in fins.FinTags if feature.tag_fin(tag)[0] == feature.MAIN]
+    panel.remove_fins(mains)
+    shown = panel.notes.text()
+    styled = panel.notes.styleSheet()
+    kept = not fins.CounterFace and fins.Name in [o.Name for o in doc.Objects]
+    panel.release_handles()
+    Gui.Control.closeDialog()
+    App.closeDocument(doc.Name)
+    # In the language FreeCAD runs in.
+    from freecad.finsnap.i18n import translate
+    said = translate("FinSnap", feature.NOTE_COUNTER_PROMOTED)
+    expect(kept and said in shown and taskpanel.INFO_SIGN in shown and taskpanel.INFO_COLOR in styled,
+           "the last main fins removed in the panel: the counter fin is the main fin, said as information")
+
+
 def gap_limited():
     """The gap field stops at the largest gap, its tooltip names the range;
     a field without a limit of its own names none."""
@@ -1314,6 +1343,7 @@ def main():
     expect(all(c in registered for c in COMMANDS), "all commands are registered")
     islands_shaded()
     gap_limited()
+    counter_kept_in_panel()
 
     from freecad.finsnap import defaults as d
     from freecad.finsnap import feature

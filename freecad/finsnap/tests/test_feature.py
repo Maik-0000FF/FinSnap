@@ -419,6 +419,25 @@ def warnings_and_old_files(doc):
     fins.Base = main_link
     feature.reset_fins(fins)
     doc.recompute()
+    # Every main fin and one of two counter fins: the other one is left, as
+    # the main fin, and what Quick fins started from is forgotten.
+    placement = fins.FinPlacement
+    fins.FinPlacement = d.PLACEMENT_ENDS
+    feature.add_counter(fins)
+    doc.recompute()
+    feature.keep_quick_start(fins, cube, orient.snapshot(cube), [], list(main_link[1]))
+    counters = [tag for tag in fins.FinTags if feature.tag_fin(tag)[0] == feature.COUNTER]
+    ends = [(feature.MAIN, feature.tag_fin(tag)[1]) for tag in fins.FinTags
+            if feature.tag_fin(tag)[0] == feature.MAIN]
+    done = feature.remove_fins(fins, ends + [(feature.COUNTER, 1)])
+    doc.recompute()
+    expect(len(counters) == 2 and done == feature.COUNTER_PROMOTED and len(fins.Shape.Solids) == 1
+           and feature.removed(fins, feature.MAIN) == [1] and feature.quick_start(fins) is None,
+           "every main fin and counter fin 1 removed: counter fin 2 is left as the main fin, Quick fins forgotten")
+    fins.Base = main_link
+    fins.FinPlacement = placement
+    feature.reset_fins(fins)
+    doc.recompute()
     # Saved before the count was kept: changes stay, and a failing build says why.
     feature.remove_fin(fins, feature.MAIN, 2)
     fins.removeProperty(feature.EDITED_OF[feature.MAIN])
