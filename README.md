@@ -132,7 +132,7 @@ The task panel opens with **Add fins**, **Quick fins** or a double-click on the 
 
 | Button | What it does |
 |---|---|
-| ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/remove_fin.svg)<br>**Remove selected fin** | Removes the fin clicked in the 3D view, as the Delete key does. Removing the last fins deletes the fins object. |
+| ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/remove_fin.svg)<br>**Remove selected fin** | Removes the fin clicked in the 3D view, as the Delete key does. Removing the last main fins makes the counter fin, if there is one, the main fin; removing the last fins of all deletes the fins object. |
 | ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/reset_fins.svg)<br>**Reset fins** | Undoes every change by hand: removed fins come back, moved fins and fin heights of their own are undone. |
 | ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/counter_fin.svg)<br>**Add counter fin** | Adds the counter fin on the face leaning the other way, or on a face of the part selected. The counter fin goes under a flat face or under part of a curved side, such as the half round end of a slot, not under the whole side of a cylinder or tube. |
 | ![](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/freecad/finsnap/icons/remove_counter.svg)<br>**Remove counter fin** | Removes the counter fin. |

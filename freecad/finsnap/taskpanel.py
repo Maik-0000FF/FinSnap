@@ -121,15 +121,18 @@ SIDES = {feature.MAIN: QT_TRANSLATE_NOOP("FinSnap", "Main fin"),
          feature.COUNTER: QT_TRANSLATE_NOOP("FinSnap", "Counter fin")}
 # FinParams field of the layer height, the step of the fields on the layer grid.
 LAYER_FIELD = "layer_height"
-# Notes below the result: warnings in amber, a refusal in red, each in a framed
-# box with a sign, so they stand out from the result line above.
+# Notes below the result: warnings in amber, a refusal in red, what was done
+# without a fault in blue, each in a framed box with a sign, so they stand out
+# from the result line above.
 WARNING_COLOR = "#e0a000"
 ERROR_COLOR = "#d03030"
+INFO_COLOR = "#3a7bd5"
 # A stability check that finds the part standing, and one out of date.
 STANDS_COLOR = "#30a050"
 OUTDATED_COLOR = "#808080"
 NOTE_STYLE = "QLabel { border: 2px solid %s; border-radius: 4px; padding: 6px; }"
 WARNING_SIGN = "⚠"
+INFO_SIGN = "\N{INFORMATION SOURCE}"
 # A field whose value differs from the standard for new fins: its label in
 # this colour, and a button beside it that puts the standard value back.
 MODIFIED_COLOR = "#e07000"
@@ -1164,8 +1167,9 @@ class FinSnapTaskPanel:
 
     def remove_fins(self, fins):
         """Remove the fins in `fins`, as (MAIN or COUNTER, number), from the
-        button or the Delete key. The last main fins take the whole object
-        with them, once the user agrees."""
+        button or the Delete key. With the last main fins the counter fin
+        becomes the main fin; the last fins of all take the whole object with
+        them, once the user agrees."""
         if self.obj.Connection == d.CONNECTION_MERGED:
             self.show_notes(translate("FinSnap", "Nothing removed"),
                             [translate("FinSnap", feature.NOTE_MERGED_SINGLE)], WARNING_COLOR)
@@ -1174,8 +1178,12 @@ class FinSnapTaskPanel:
             self.show_notes(translate("FinSnap", "Nothing removed"),
                             [translate("FinSnap", NOTE_CLICK_FIN)], WARNING_COLOR)
             return
-        if not feature.remove_fins(self.obj, fins):
+        done = feature.remove_fins(self.obj, fins)
+        if done != feature.FINS_ALL_GONE:
             self.edited()
+            if done == feature.COUNTER_PROMOTED:
+                self.show_notes(translate("FinSnap", "Counter fin kept"),
+                                [translate("FinSnap", feature.NOTE_COUNTER_PROMOTED)], INFO_COLOR, sign=INFO_SIGN)
             return
         answer = QtWidgets.QMessageBox.question(
             self.form, translate("FinSnap", "Delete the fins?"),
@@ -1241,9 +1249,10 @@ class FinSnapTaskPanel:
         if not self.obj.recompute():
             raise ValueError(self.obj.getStatusString())
 
-    def show_notes(self, title, lines, color, linked=()):
-        """A framed box with a sign and a title, one line per note; hidden without
-        notes. The notes whose index is in `linked` are links to show_note()."""
+    def show_notes(self, title, lines, color, linked=(), sign=WARNING_SIGN):
+        """A framed box with `sign` and a title, one line per note; hidden
+        without notes. The notes whose index is in `linked` are links to
+        show_note()."""
         if not lines:
             self.notes.hide()
             return
@@ -1252,7 +1261,7 @@ class FinSnapTaskPanel:
             text = html.escape(line)
             return "<li><a href='%d'>%s</a></li>" % (index, text) if index in linked else "<li>%s</li>" % text
         items = "".join(item(index, line) for index, line in enumerate(lines))
-        self.notes.setText("<b>%s %s</b><ul style='margin: 0'>%s</ul>" % (WARNING_SIGN, html.escape(title), items))
+        self.notes.setText("<b>%s %s</b><ul style='margin: 0'>%s</ul>" % (sign, html.escape(title), items))
         self.notes.setStyleSheet(NOTE_STYLE % color)
         self.notes.show()
 

@@ -1295,6 +1295,52 @@ def islands_shaded():
            "islands are shaded as unprintable in the table of ways, none left plain, unchecked blank")
 
 
+def counter_kept_in_panel():
+    """Removing the last main fins in the task panel with a counter fin left:
+    the counter fin is the main fin, and the panel says so as information,
+    not as a warning."""
+    from freecad.finsnap import commands, feature, taskpanel
+    from freecad.finsnap.taskpanel import FinSnapTaskPanel
+    doc = App.newDocument("CounterKept")
+    cube = doc.addObject("Part::Feature", "Cube")
+    cube.Shape = tilted_cube()
+    fins = feature.create(cube, face_name(cube, lower_left_face(cube.Shape)))
+    commands.ViewProviderFinSnap(fins.ViewObject)
+    feature.add_counter(fins)
+    doc.recompute()
+    panel = FinSnapTaskPanel(fins)
+    mains = [feature.tag_fin(tag) for tag in fins.FinTags if feature.tag_fin(tag)[0] == feature.MAIN]
+    panel.remove_fins(mains)
+    shown = panel.notes.text()
+    styled = panel.notes.styleSheet()
+    kept = not fins.CounterFace and fins.Name in [o.Name for o in doc.Objects]
+    panel.release_handles()
+    Gui.Control.closeDialog()
+    # The same with the Delete key, no panel open: the object stays and a
+    # message says so.
+    keyed = feature.create(cube, face_name(cube, lower_left_face(cube.Shape)))
+    commands.ViewProviderFinSnap(keyed.ViewObject)
+    feature.add_counter(keyed)
+    doc.recompute()
+    main_faces = ["Face%d" % next(i for i, f in enumerate(keyed.Shape.Faces, 1) if f.isSame(solid.Faces[0]))
+                  for solid, tag in zip(keyed.Shape.Solids, keyed.FinTags) if feature.tag_fin(tag)[0] == feature.MAIN]
+    told, real_message = [], commands._message
+    commands._message = told.append
+    try:
+        deleted = keyed.ViewObject.Proxy.onDelete(keyed.ViewObject, main_faces)
+    finally:
+        commands._message = real_message
+    by_key = deleted is False and not keyed.CounterFace and keyed.Name in [o.Name for o in doc.Objects]
+    App.closeDocument(doc.Name)
+    # In the language FreeCAD runs in.
+    from freecad.finsnap.i18n import translate
+    said = translate("FinSnap", feature.NOTE_COUNTER_PROMOTED)
+    expect(kept and said in shown and taskpanel.INFO_SIGN in shown and taskpanel.INFO_COLOR in styled,
+           "the last main fins removed in the panel: the counter fin is the main fin, said as information")
+    expect(by_key and told == [said],
+           "the Delete key on the last main fins: the counter fin is the main fin, a message says so: %s" % told)
+
+
 def gap_limited():
     """The gap field stops at the largest gap, its tooltip names the range;
     a field without a limit of its own names none."""
@@ -2291,6 +2337,9 @@ def main():
     expect(len(messages) == 1, "exporting an object without a shape shows a message: %s" % messages)
     del messages[:]
     doc.removeObject(empty.Name)
+    # Last: it closes a document of its own, whose 3D view a later panel
+    # would otherwise still find.
+    counter_kept_in_panel()
 
     print("all checks passed", file=sys.__stdout__)
 

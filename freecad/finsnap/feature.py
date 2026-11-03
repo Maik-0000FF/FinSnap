@@ -1585,19 +1585,37 @@ def changed_by_hand(obj):
     return bool(obj.CounterFace) or any(any(edits(obj, which)) for which in (MAIN, COUNTER))
 
 
+# What remove_fins() did: left fins out, made the counter fin the main fin as
+# the last main fins went, or nothing, the last fins of all picked, for the
+# caller to delete the fins object.
+FINS_LEFT_OUT, COUNTER_PROMOTED, FINS_ALL_GONE = "left out", "counter promoted", "all gone"
+# Said when the counter fin became the main fin.
+NOTE_COUNTER_PROMOTED = QT_TRANSLATE_NOOP("FinSnap", "The main fins are removed; the counter fin is the main fin "
+                                                     "now, with its changes by hand.")
+
+
 def remove_fins(obj, fins):
-    """Leave out the fins in `fins`, as (MAIN or COUNTER, number). True when
-    that would leave no main fin: then nothing is changed, and the caller
+    """Leave out the fins in `fins`, as (MAIN or COUNTER, number), and say
+    what was done: FINS_LEFT_OUT; COUNTER_PROMOTED where the last main fins
+    go and a counter fin is left, which becomes the main fin; FINS_ALL_GONE
+    where no fin would be left: then nothing is changed, and the caller
     deletes the fins object instead.
 
-    INPUTS this has to withstand (fins built: main 1, 2, 3 and counter 1):
-      main 2                                ->  main 2 left out, False
-      main 1, 2, 3                          ->  nothing changed, True
-      main 1, 2, 3 and counter 1            ->  nothing changed, True
-      counter 1, the only counter fin       ->  counter fin dropped, False
-      main 2 and counter 1                  ->  main 2 left out, counter fin dropped, False
+    INPUTS this has to withstand (fins built: main 1, 2, 3 and counter 1, 2):
+      main 2                                ->  main 2 left out, FINS_LEFT_OUT
+      main 1, 2, 3                          ->  the counter fin the main fin, its
+                                                fins 1 and 2 as they were,
+                                                COUNTER_PROMOTED
+      main 1, 2, 3 and counter 1            ->  the counter fin the main fin, its
+                                                fin 1 left out, COUNTER_PROMOTED
+      main 1, 2, 3 and counter 1, 2         ->  nothing changed, FINS_ALL_GONE
+      main 1, 2, 3, no counter fin, or one
+        not built (under a round side)      ->  nothing changed, FINS_ALL_GONE
+      counter 1, 2, every counter fin       ->  counter fin dropped, FINS_LEFT_OUT
+      main 2 and counter 1, 2               ->  main 2 left out, counter fin dropped,
+                                                FINS_LEFT_OUT
       a fin twice                           ->  as once
-      empty                                 ->  nothing changed, False
+      empty                                 ->  nothing changed, FINS_LEFT_OUT
     """
     picked = set(fins)
     built = {MAIN: set(), COUNTER: set()}
@@ -1605,15 +1623,47 @@ def remove_fins(obj, fins):
         which, number = tag_fin(tag)
         built[which].add(number)
     gone = {which: {n for w, n in picked if w == which} for which in built}
-    if built[MAIN] and built[MAIN] <= gone[MAIN]:
-        return True
-    if built[COUNTER] and built[COUNTER] <= gone[COUNTER]:
+    main_gone = bool(built[MAIN]) and built[MAIN] <= gone[MAIN]
+    counter_gone = not built[COUNTER] or built[COUNTER] <= gone[COUNTER]
+    if main_gone and counter_gone:
+        return FINS_ALL_GONE
+    if main_gone:
+        promote_counter(obj)
+        for number in sorted(gone[COUNTER]):
+            remove_fin(obj, MAIN, number)
+        return COUNTER_PROMOTED
+    if built[COUNTER] and counter_gone:
         remove_counter(obj)
         gone[COUNTER] = set()
     for which, numbers in gone.items():
         for number in sorted(numbers):
             remove_fin(obj, which, number)
-    return False
+    return FINS_LEFT_OUT
+
+
+def promote_counter(obj):
+    """Make the counter fin of `obj` its main fin: the face it stands under,
+    the plane it is found by, its changes by hand and its tine count; the
+    counter fin is then none. The part stays as it stands. What Quick fins
+    started from is forgotten, its ways were those of the main fin gone."""
+    counter = obj.CounterFace
+    # Moved over before the links change, which note the planes anew.
+    for names in (PLANE_OF, REMOVED, SHIFTS, HEIGHTS, EDITED_OF, HEIGHTS_GRID, PLANNED):
+        if names[COUNTER] in obj.PropertiesList:
+            kind = obj.getTypeIdOfProperty(names[COUNTER])
+            hidden_property(obj, names[MAIN], kind)
+            setattr(obj, names[MAIN], getattr(obj, names[COUNTER]))
+            obj.removeProperty(names[COUNTER])
+        elif names[MAIN] in obj.PropertiesList:
+            obj.removeProperty(names[MAIN])
+    obj.Base = counter
+    obj.CounterFace = None
+    if obj.CounterTineCount:
+        obj.TineCount = obj.CounterTineCount
+        obj.CounterTineCount = d.COUNTER_TINE_COUNT_AUTO
+    for name in (QUICK_PART, QUICK_FROM, QUICK_TILTED, QUICK_EDGES, QUICK_FACES):
+        if name in obj.PropertiesList:
+            obj.removeProperty(name)
 
 
 def prepare_delete(obj):
