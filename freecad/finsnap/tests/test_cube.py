@@ -1517,15 +1517,16 @@ def check_round_side():
                    "a rim with a flatter chamfer cannot carry the part: %s" % error)
         else:
             expect(steep and leans_by(stood, side, d.TILT_ANGLE),
-                   "a rim with a steeper chamfer carries the part, its side leaning 45 degrees")
+                   "a rim with a steeper chamfer carries the part, its side leaning %g degrees" % d.TILT_ANGLE)
     # A knob on the end face: the poles of its sphere are degenerated edges,
     # whose curve FreeCAD cannot give; the rims are looked for past them.
     knob = Part.makeSphere(EDGE_ROUND, V(ROD_RADIUS / 2, 0, ROD_HEIGHT))
     knobbed = rod.fuse(knob)
     side = round_side_of(knobbed)
+    edge = geometry.quick_plan(knobbed, [], [(knobbed.Faces[side], side)], p, d.TILT_ANGLE).edge
     expect(any(e.Degenerated for e in knobbed.Edges)
-           and geometry.quick_plan(knobbed, [], [(knobbed.Faces[side], side)], p, d.TILT_ANGLE).edge is not None,
-           "a cylinder with a knob on its end, its side chosen: it stands on a rim, past the poles of the knob")
+           and edge is not None and abs(edge.Curve.Radius - ROD_RADIUS) < d.TOLERANCE,
+           "a cylinder with a knob on its end, its side chosen: it stands on its rim, past the poles of the knob")
     # A step whose angles count from elsewhere than those of the shaft.
     step = Part.makeCylinder(BORE_RADIUS, ROD_HEIGHT, V(0, 0, ROD_HEIGHT))
     step.rotate(V(0, 0, 0), UP, ODD_TURNS[0])
