@@ -489,10 +489,10 @@ class Contour:
         step = p.layer_height / d.CONTOUR_SAMPLES_PER_LAYER
         self.step = step
         self.heights = [k * step for k in range(int(math.ceil(self.top / step)) + 1)]
-        distance = p.fin_offset
+        distance = p.gap
         # Over a face looking up the fin keeps the larger gap, so it cannot
         # stick to the part there; never less than where the tines rest.
-        apart = max(p.contour_gap, p.fin_offset)
+        apart = max(p.contour_gap, p.gap)
         width = int(round(p.contour_bridge / step))
 
         def envelope(pieces, gap, lifted=True):
@@ -631,7 +631,7 @@ def of(part, frame, p, width):
     middle of the side, where its one fin stands, at most `width` thick;
     kept for the same part, plane and parameters, worked out once."""
     key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.along_min, frame.along_max, frame.bed_z,
-           width, p.layer_height, p.fin_offset, p.clearance, p.contour_bridge, p.contour_gap)
+           width, p.layer_height, p.gap, p.clearance, p.contour_bridge, p.contour_gap)
     return keep(_kept, key, lambda: _worked_out(part, frame, p, width))
 
 

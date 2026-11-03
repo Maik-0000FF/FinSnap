@@ -1281,10 +1281,39 @@ def check_sections(panel):
            "the header of a section is marked while a field in it differs from the standard")
 
 
+def islands_shaded():
+    """In the table of ways a cell with islands is shaded as unprintable,
+    its tooltip saying how many; one without islands is left plain, one not
+    checked blank."""
+    from PySide import QtCore, QtGui
+    from freecad.finsnap import limits, taskpanel
+    two, none, unchecked = taskpanel._islands_cell(2), taskpanel._islands_cell(0), taskpanel._islands_cell(None)
+    unprintable = QtGui.QColor(taskpanel.STAND_LEVEL_COLORS[limits.UNPRINTABLE])
+    expect(two.background().color() == unprintable and "2" in two.toolTip()
+           and none.background().style() == QtCore.Qt.NoBrush and not none.toolTip()
+           and unchecked.text() == "",
+           "islands are shaded as unprintable in the table of ways, none left plain, unchecked blank")
+
+
+def gap_limited():
+    """The gap field stops at the largest gap, its tooltip names the range;
+    a field without a limit of its own names none."""
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, taskpanel
+    gap = next(prop for prop in feature.PROPERTIES if prop.name == "Gap")
+    spacing = next(prop for prop in feature.PROPERTIES if prop.name == "TineSpacing")
+    box = taskpanel._widget(gap, d.GAP)
+    expect(abs(box.maximum() - d.GAP_MAX) < d.TOLERANCE and ("%g" % d.GAP_MAX) in taskpanel._field_tip(gap)
+           and ("%g" % d.GAP_MAX) not in taskpanel._field_tip(spacing),
+           "the gap field stops at %g mm and its tooltip says so" % d.GAP_MAX)
+
+
 def main():
     commands = load_workbench()
     registered = Gui.listCommands()
     expect(all(c in registered for c in COMMANDS), "all commands are registered")
+    islands_shaded()
+    gap_limited()
 
     from freecad.finsnap import defaults as d
     from freecad.finsnap import feature
@@ -1525,7 +1554,9 @@ def main():
            and marked.Overhangs == [] and marks.getNumChildren() == 0
            and translate("FinSnap", feature.NOTE_LAID_FLAT) in marked.Warnings,
            "No lays the part flat and keeps its fins, marked as laid flat, without overhang marks")
-    expect(marked.Shape.distToShape(box.Shape)[0] < d.TOLERANCE, "the kept fins moved along with the part")
+    # The tines end the tine clearance short of the part, wherever it lies.
+    expect(abs(marked.Shape.distToShape(box.Shape)[0] - feature.params_of(marked).clearance) < d.TOLERANCE,
+           "the kept fins moved along with the part")
     select(marked)
     Gui.runCommand("FinSnap_Export3MF")
     expect(len(messages) == 1 and not os.path.exists(target + ".3mf"),

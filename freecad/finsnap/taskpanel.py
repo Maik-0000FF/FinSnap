@@ -47,6 +47,8 @@ LENGTH_SUFFIX = " mm"
 # A checkbox shown in a tooltip, as for the standard it goes back to.
 SHOWN_ON = QT_TRANSLATE_NOOP("FinSnap", "on")
 SHOWN_OFF = QT_TRANSLATE_NOOP("FinSnap", "off")
+# Said in the tooltip of a field with a limit of its own.
+FIELD_RANGE = QT_TRANSLATE_NOOP("FinSnap", "From %s up to %s.")
 DEGREE_SUFFIX = " \N{DEGREE SIGN}"
 # Pause after the last change before the preview is rebuilt, so typing a
 # number does not rebuild the fins at every keystroke.
@@ -439,6 +441,17 @@ def _rated_cell(levels, shown, tip):
     return cell
 
 
+def _islands_cell(islands):
+    """A cell of the table of ways showing how many `islands` the part has
+    standing so, blank for None; shaded as unprintable where there is one,
+    the worse fault to print than an overhang, its tooltip saying so."""
+    cell = QtWidgets.QTableWidgetItem("" if islands is None else str(islands))
+    if islands:
+        cell.setBackground(QtGui.QColor(STAND_LEVEL_COLORS[limits.UNPRINTABLE]))
+        cell.setToolTip(translate("FinSnap", analysis.NOTE_ISLANDS_FOUND) % islands)
+    return cell
+
+
 def _angle_at(profile, z):
     """The tipping angle at height `z`, between those of `profile`, (height,
     margin, angle) from the bed up; that of the nearest end beyond them."""
@@ -649,7 +662,7 @@ def _widget(prop, value):
     else:
         box = QtWidgets.QDoubleSpinBox()
         if prop.kind == feature.LENGTH:
-            box.setRange(0, MAX_LENGTH)
+            box.setRange(0, MAX_LENGTH if prop.most is None else prop.most)
             box.setDecimals(LENGTH_DECIMALS)
             box.setSuffix(LENGTH_SUFFIX)
         else:
@@ -659,6 +672,17 @@ def _widget(prop, value):
             box.setSingleStep(prop.step)
     _write(prop, box, value)
     return box
+
+
+def _field_tip(prop, notes=()):
+    """The tooltip of the field of `prop`: what it is, the range it takes
+    where it has a limit of its own, and `notes` on why it is unused."""
+    paragraphs = [translate("App::Property", prop.tip)]
+    if prop.most is not None:
+        paragraphs.append(translate("FinSnap", FIELD_RANGE) % (_shown(prop, 0.0), _shown(prop, prop.most)))
+    if notes:
+        paragraphs.append(" ".join(translate("FinSnap", note) for note in notes))
+    return _wrapped(*paragraphs)
 
 
 def _write(prop, widget, value):
@@ -842,7 +866,7 @@ class FinSnapTaskPanel:
                 info.setWordWrap(True)
                 groups[prop.group].addRow(info)
             widget = _widget(prop, feature.value_of(obj, prop.name))
-            widget.setToolTip(_wrapped(translate("App::Property", prop.tip)))
+            widget.setToolTip(_field_tip(prop))
             label = translate("FinSnap", prop.label)
             if prop.name in feature.MARKS:
                 label = "%s (%s)" % (label, feature.MARKS[prop.name])
@@ -996,7 +1020,7 @@ class FinSnapTaskPanel:
             # Ways not checked, with the checks while editing off, are left blank.
             cells = [QtWidgets.QTableWidgetItem(name or STAND_ROW % (row + 1)),
                      QtWidgets.QTableWidgetItem("%.1f%s" % (size, suffix)),
-                     QtWidgets.QTableWidgetItem("" if islands is None else str(islands)),
+                     _islands_cell(islands),
                      _rated_cell(overhangs, None if overhangs is None else len(overhangs), STAND_OVERHANGS_TIP),
                      _rated_cell([found.level for found in spans] if spans is not None else None,
                                  _longest_span(spans), STAND_BRIDGES_TIP)]
@@ -1072,11 +1096,8 @@ class FinSnapTaskPanel:
     def update_enabled(self):
         for prop in feature.PROPERTIES:
             notes = feature.unused_notes(prop.name, self.current)
-            paragraphs = [translate("App::Property", prop.tip)]
-            if notes:
-                paragraphs.append(" ".join(translate("FinSnap", note) for note in notes))
             self.widgets[prop.name].setEnabled(not notes)
-            self.widgets[prop.name].setToolTip(_wrapped(*paragraphs))
+            self.widgets[prop.name].setToolTip(_field_tip(prop, notes))
             self.labels[prop.name].setEnabled(not notes)
 
     def add_section(self, layout, key, caption):

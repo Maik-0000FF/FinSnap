@@ -436,7 +436,7 @@ def warnings_and_old_files(doc):
     fins.removeProperty("TineClearance")
     fins.Proxy.onDocumentRestored(fins)
     expect("TineClearance" in fins.PropertiesList and fins.TineClearance.Value == d.TINE_CLEARANCE,
-           "fins saved before the tine clearance existed get it, touching as before")
+           "fins saved before the tine clearance existed get the built-in one")
     fins.removeProperty("TineRestart")
     fins.Proxy.onDocumentRestored(fins)
     expect("TineRestart" in fins.PropertiesList and fins.TineRestart is False and FinParams().tine_restart,

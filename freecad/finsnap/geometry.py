@@ -6,8 +6,9 @@
 The part stands tilted on the bed. A planar face of it leans outward over the
 bed (its normal points down and to the side). Fins stand under that face: each
 fin is a vertical wall whose inner edge, the flank, runs parallel to the face at
-the gap distance, plus the tine clearance. Horizontal tines reach across the gap
-and end on the face, or the tine clearance short of it. A thin foot on the bed holds the fin down.
+the gap distance. Horizontal tines reach across the gap and end on the face, or
+the tine clearance short of it, as much shorter. A thin foot on the bed holds
+the fin down.
 
 LOCAL FRAME of a face: `out` is the horizontal direction the face leans
 towards, `along` runs horizontally along the face, z is up. A point is
@@ -16,8 +17,7 @@ n = n_out * out + n_z * Z, so at height z it lies at
     s_face(z) = (c - n_z * z) / n_out
 and a plane offset by a distance along n at
     s_flank(z, offset) = (c + offset - n_z * z) / n_out:
-the flank at the gap plus the tine clearance, the end of a tine at the
-tine clearance alone.
+the flank at the gap, the end of a tine at the tine clearance.
 The fin occupies s >= s_flank(z); the part lies at smaller s.
 
 ROUND SIDE: a cylinder or tube standing on its rim leans its curved side over
@@ -68,8 +68,8 @@ INPUTS this has to withstand (build()):
   left or right corner, face narrower
     than a tine                         ->  FinError
   tine_clearance > 0                    ->  tines end that far short of the face,
-                                            measured along its normal; the fin
-                                            moves out as far, so they keep their length
+                                            measured along its normal; the fin stays
+                                            at the gap, the tines as much shorter
   tine_clearance > 0, merged fins       ->  tines on the face, as with 0
   no tine fits below the top of the face ->  FinError
   hand-set first tine half a layer off
@@ -163,6 +163,12 @@ NOTE_TINES_MISS = QT_TRANSLATE_NOOP("FinSnap", "tines at %s mm above the bed mis
                                                "than %.2f mm")
 NOTE_TINES_CUT_IN = QT_TRANSLATE_NOOP("FinSnap", "tines at %s mm above the bed reach more than %.2f mm into the "
                                                  "part")
+NOTE_TINES_SHORT = QT_TRANSLATE_NOOP("FinSnap", "tines are %.2f mm long, shorter than %.2f bead widths; the slicer "
+                                               "may not print them to the face. A gap of %.2f mm makes them long "
+                                               "enough")
+NOTE_TINES_TOO_SHORT = QT_TRANSLATE_NOOP("FinSnap", "tines are %.2f mm long, shorter than %.2f bead widths; the "
+                                                    "slicer may not print them to the face. No gap up to %.1f mm "
+                                                    "makes them long enough: set a narrower bead")
 NOTE_CONTOUR_RECEDES = QT_TRANSLATE_NOOP("FinSnap", "tines at %s mm above the bed left out: the contour falls back "
                                                     "further than the fin can follow without overhanging itself")
 # Said where the face is narrower than a fin, or its tine, at every tine height.
@@ -729,7 +735,7 @@ def flank_at(p, frame, z):
     distance off the face, or along the contour the frame follows."""
     if frame.contour is not None:
         return frame.contour.flank(z - frame.bed_z)
-    return frame.s_flank(z, p.fin_offset)
+    return frame.s_flank(z, p.gap)
 
 
 def flank_outline(p, frame, low, high):
@@ -1112,10 +1118,10 @@ def check(p, part, fins, bodies, slack=0.0):
 
     for body in bodies:
         distance = body.distToShape(part)[0]
-        if distance < p.fin_offset - slack - d.TOLERANCE:
+        if distance < p.gap - slack - d.TOLERANCE:
             raise FinError(translate("FinSnap", "a fin comes within %.3f mm of the part, closer than the %.3f mm it "
                                                   "keeps from the face")
-                           % (distance, p.fin_offset))
+                           % (distance, p.gap))
 
 
 def build(part, face, p, tine_count=None, left_out=(), shifts=None, heights=None):
@@ -1430,10 +1436,18 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         warnings.append(translate("FinSnap", "the face is inclined %.0f degrees to the bed, outside "
                                   "%.0f to %.0f") % (angle, d.FACE_ANGLE_MIN, d.FACE_ANGLE_MAX))
         targets.append(WarningTarget([], [], True))
-    tine_length = p.gap / frame.n_out
-    if tine_length < d.TINE_MIN_LENGTH_BEADS * p.bead_width:
-        warnings.append(translate("FinSnap", "tines are %.2f mm long, shorter than %.2f bead widths; the slicer "
-                                  "may not print them to the face") % (tine_length, d.TINE_MIN_LENGTH_BEADS))
+    tine_length = p.tine_length / frame.n_out
+    shortest = d.TINE_MIN_LENGTH_BEADS * p.bead_width
+    if tine_length < shortest:
+        # The gap that makes them as long, along the face normal, the
+        # clearance on top; rounded up to GAP_HINT_STEP.
+        enough = math.ceil((shortest * frame.n_out + p.clearance) / d.GAP_HINT_STEP - d.TOLERANCE) * d.GAP_HINT_STEP
+        if enough <= d.GAP_MAX + d.TOLERANCE:
+            warnings.append(translate("FinSnap", NOTE_TINES_SHORT) % (tine_length, d.TINE_MIN_LENGTH_BEADS, enough))
+        else:
+            # No gap taken makes them long enough: the bead is too wide.
+            warnings.append(translate("FinSnap", NOTE_TINES_TOO_SHORT)
+                            % (tine_length, d.TINE_MIN_LENGTH_BEADS, d.GAP_MAX))
         targets.append(WarningTarget([fin.number for fin in plan.fins], [], False))
     if frame.whole_side:
         warnings.append(translate("FinSnap", "the part stands on one point of its rim: a chamfer on the rim and "
