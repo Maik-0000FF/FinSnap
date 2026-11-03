@@ -230,7 +230,9 @@ class ViewProviderFinSnap:
 
         SITUATIONS this has to withstand:
           face or edge of one fin selected      ->  that fin left out, object kept
-          the last main fins selected           ->  the object deleted, as from the tree
+          the last main fins selected, a counter
+            fin left                            ->  the counter fin the main fin, said so
+          the last fins of all selected         ->  the object deleted, as from the tree
           fins selected, task panel open        ->  the panel removes them; FreeCAD
                                                     deletes nothing in edit mode
           sub-elements of merged fins           ->  message, nothing deleted
@@ -255,11 +257,14 @@ class ViewProviderFinSnap:
                 QtCore.QTimer.singleShot(0, functools.partial(panel.remove_fins, fins))
                 return False
             obj.Document.openTransaction(translate("FinSnap", "Remove fin"))
-            if not feature.remove_fins(obj, fins):
+            done = feature.remove_fins(obj, fins)
+            if done != feature.FINS_ALL_GONE:
                 obj.Document.commitTransaction()
                 obj.Document.recompute()
+                if done == feature.COUNTER_PROMOTED:
+                    _message(translate("FinSnap", feature.NOTE_COUNTER_PROMOTED))
                 return False
-            # The last main fins: nothing was changed, the object goes as a whole.
+            # The last fins of all: nothing was changed, the object goes as a whole.
             obj.Document.abortTransaction()
         self.close_panel()
         feature.prepare_delete(obj)

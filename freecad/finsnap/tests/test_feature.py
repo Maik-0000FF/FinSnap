@@ -387,14 +387,36 @@ def warnings_and_old_files(doc):
     feature.add_counter(fins)
     doc.recompute()
     every_main = [(feature.MAIN, n) for n in (1, 2, 3)]
-    expect(feature.remove_fins(fins, every_main + [(feature.COUNTER, 1)]) is True
+    expect(feature.remove_fins(fins, every_main + [(feature.COUNTER, 1)]) == feature.FINS_ALL_GONE
            and feature.edits(fins, feature.MAIN) == ([], {}, {}) and fins.CounterFace,
-           "removing every main fin changes nothing and asks for the object to be deleted")
-    expect(feature.remove_fins(fins, [(feature.MAIN, 2), (feature.MAIN, 2), (feature.COUNTER, 1)]) is False
-           and feature.removed(fins, feature.MAIN) == [2] and not fins.CounterFace,
+           "removing every fin changes nothing and asks for the object to be deleted")
+    expect(feature.remove_fins(fins, [(feature.MAIN, 2), (feature.MAIN, 2), (feature.COUNTER, 1)])
+           == feature.FINS_LEFT_OUT and feature.removed(fins, feature.MAIN) == [2] and not fins.CounterFace,
            "one main fin and the only counter fin: that fin left out, the counter fin dropped")
-    expect(feature.remove_fins(fins, []) is False and feature.removed(fins, feature.MAIN) == [2],
+    expect(feature.remove_fins(fins, []) == feature.FINS_LEFT_OUT and feature.removed(fins, feature.MAIN) == [2],
            "nothing picked changes nothing")
+    feature.reset_fins(fins)
+    doc.recompute()
+    # The last main fins removed, the counter fin left: it becomes the main
+    # fin, as high as it was, and the object stays.
+    feature.add_counter(fins)
+    doc.recompute()
+    counter_link = (fins.CounterFace[0], list(fins.CounterFace[1]))
+    main_link = (fins.Base[0], list(fins.Base[1]))
+    counter_solids = [solid for solid, tag in zip(fins.Shape.Solids, fins.FinTags)
+                      if feature.tag_fin(tag)[0] == feature.COUNTER]
+    feature.set_fin_height(fins, feature.COUNTER, 1, counter_solids[0].BoundBox.ZLength / 2)
+    doc.recompute()
+    lowered = [solid for solid, tag in zip(fins.Shape.Solids, fins.FinTags)
+               if feature.tag_fin(tag)[0] == feature.COUNTER][0]
+    done = feature.remove_fins(fins, every_main)
+    doc.recompute()
+    expect(done == feature.COUNTER_PROMOTED and not fins.CounterFace
+           and (fins.Base[0], list(fins.Base[1])) == counter_link and fins.isValid()
+           and len(fins.Shape.Solids) == 1 and abs(fins.Shape.Volume - lowered.Volume) < d.TOLERANCE
+           and feature.edits(fins, feature.MAIN)[2],
+           "the last main fins removed: the counter fin is the main fin, with its height of its own")
+    fins.Base = main_link
     feature.reset_fins(fins)
     doc.recompute()
     # Saved before the count was kept: changes stay, and a failing build says why.

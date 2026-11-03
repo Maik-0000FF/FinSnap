@@ -1164,8 +1164,9 @@ class FinSnapTaskPanel:
 
     def remove_fins(self, fins):
         """Remove the fins in `fins`, as (MAIN or COUNTER, number), from the
-        button or the Delete key. The last main fins take the whole object
-        with them, once the user agrees."""
+        button or the Delete key. With the last main fins the counter fin
+        becomes the main fin; the last fins of all take the whole object with
+        them, once the user agrees."""
         if self.obj.Connection == d.CONNECTION_MERGED:
             self.show_notes(translate("FinSnap", "Nothing removed"),
                             [translate("FinSnap", feature.NOTE_MERGED_SINGLE)], WARNING_COLOR)
@@ -1174,8 +1175,12 @@ class FinSnapTaskPanel:
             self.show_notes(translate("FinSnap", "Nothing removed"),
                             [translate("FinSnap", NOTE_CLICK_FIN)], WARNING_COLOR)
             return
-        if not feature.remove_fins(self.obj, fins):
+        done = feature.remove_fins(self.obj, fins)
+        if done != feature.FINS_ALL_GONE:
             self.edited()
+            if done == feature.COUNTER_PROMOTED:
+                self.show_notes(translate("FinSnap", "Counter fin kept"),
+                                [translate("FinSnap", feature.NOTE_COUNTER_PROMOTED)], WARNING_COLOR)
             return
         answer = QtWidgets.QMessageBox.question(
             self.form, translate("FinSnap", "Delete the fins?"),
