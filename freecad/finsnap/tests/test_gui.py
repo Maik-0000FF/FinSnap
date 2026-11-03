@@ -753,6 +753,13 @@ def arrow_field(panel, fins):
         key(panel.arrow_field[2], QtCore.Qt.Key_Return)
         expect(panel.arrow_field is None and abs(box.value() - moved_to) < d.TOLERANCE,
                "Enter takes the value typed at the arrow as the field in the panel takes it: %.2f" % box.value())
+    # A click elsewhere takes the focus from the field: taken too.
+    for moved_to in (place - FIN_SHIFT, place):
+        panel.edit_at_arrow(handles.ALONG)
+        panel.arrow_field[2].setValue(moved_to)
+        QtWidgets.QApplication.sendEvent(panel.arrow_field[2], QtGui.QFocusEvent(QtCore.QEvent.FocusOut))
+        expect(panel.arrow_field is None and abs(box.value() - moved_to) < d.TOLERANCE,
+               "a click elsewhere takes the value typed at the arrow: %.2f" % box.value())
     expect(feature.edits(fins, feature.MAIN)[1] == shifts, "typed back, the fin stands where it stood")
 
 

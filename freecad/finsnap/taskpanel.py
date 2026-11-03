@@ -56,7 +56,7 @@ PREVIEW_DELAY_MS = 400
 # The keys that end typing in a field.
 ENTER_KEYS = (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter)
 # The field a double click on an arrow lays over the 3D view past its tip:
-# Escape, or a click elsewhere, closes it untaken.
+# Escape closes it untaken; Enter or a click elsewhere takes it.
 CANCEL_KEYS = (QtCore.Qt.Key_Escape,)
 # It stands this many pixels past the tip of its arrow.
 ARROW_FIELD_GAP = 4
@@ -557,8 +557,9 @@ class EnterTakes(QtCore.QObject):
 
 
 class ArrowFieldKeys(QtCore.QObject):
-    """Ends typing in the field at an arrow: Enter calls `take`, Escape and
-    the field losing the focus call `cancel`. Enter and Escape are kept from
+    """Ends typing in the field at an arrow: Enter and the field losing the
+    focus call `take`, as a field of the panel takes its value then; Escape
+    calls `cancel`. Enter and Escape are kept from
     FreeCAD whole, pressed and let go: the field lies in the 3D view, which
     leaves edit mode on Escape let go, closing the task panel, and a shortcut
     on them is claimed for the field before FreeCAD takes it. The field acts
@@ -570,7 +571,7 @@ class ArrowFieldKeys(QtCore.QObject):
                                                 the task panel left open
       a key held, repeating                 ->  the repeats kept, acted on once let go
       a shortcut on Enter or Escape         ->  claimed for the field
-      the focus gone, a click elsewhere     ->  cancel()
+      the focus gone, a click elsewhere     ->  take()
       any other key, digits, a sign         ->  passed on to the field
     """
 
@@ -581,7 +582,7 @@ class ArrowFieldKeys(QtCore.QObject):
     def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
         kind = event.type()
         if kind == QtCore.QEvent.FocusOut:
-            self.cancel()
+            self.take()
             return False
         if kind not in (QtCore.QEvent.ShortcutOverride, QtCore.QEvent.KeyPress, QtCore.QEvent.KeyRelease) \
                 or event.key() not in ENTER_KEYS + CANCEL_KEYS:
@@ -1257,7 +1258,6 @@ class FinSnapTaskPanel:
         return any(not _same(prop, _read(prop, self.widgets[prop.name]), feature.value_of(self.obj, prop.name))
                    for prop in feature.PROPERTIES)
 
-
     def apply(self):
         for prop in feature.PROPERTIES:
             setattr(self.obj, prop.name, _read(prop, self.widgets[prop.name]))
@@ -1762,8 +1762,8 @@ class FinSnapTaskPanel:
         """An arrow grabbed: note where the fin stands and what it has by hand;
         the drag starts from there."""
         self.ends_timer.stop()
-        # A field at an arrow is dropped, as a click elsewhere drops it.
-        self.close_arrow_field()
+        # A field at an arrow is taken, as a click elsewhere takes it.
+        self.take_arrow_field()
         # A value typed just before is built first, taken or not, as grabbing
         # an arrow leaves its field; or the drag would keep the parameters from
         # before it, or the value would come in the middle of it.
@@ -1999,8 +1999,8 @@ class FinSnapTaskPanel:
         arrow of `kind`, the one clicked; without `end`, of the half
         handles.tip_points() takes. It holds the value of the field of that
         arrow in the panel, with the same unit, steps and limits; Enter takes
-        what is typed as that field does (field_entered()), Escape or a click
-        elsewhere drops it.
+        what is typed as that field does (field_entered()), and so does a
+        click elsewhere; Escape drops it.
 
         INPUTS this has to withstand:
           the arrow up or along the face        ->  a field at it with its value
