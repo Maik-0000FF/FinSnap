@@ -19,7 +19,7 @@ from . import defaults as d
 from . import export_3mf
 from . import export_step
 from . import feature
-from . import geometry
+from . import face_frame, quick_stands
 from . import handles
 from . import limits
 from . import orient
@@ -230,7 +230,9 @@ class ViewProviderFinSnap:
 
         SITUATIONS this has to withstand:
           face or edge of one fin selected      ->  that fin left out, object kept
-          the last main fins selected           ->  the object deleted, as from the tree
+          the last main fins selected, a counter
+            fin left                            ->  the counter fin the main fin, said so
+          the last fins of all selected         ->  the object deleted, as from the tree
           fins selected, task panel open        ->  the panel removes them; FreeCAD
                                                     deletes nothing in edit mode
           sub-elements of merged fins           ->  message, nothing deleted
@@ -255,11 +257,14 @@ class ViewProviderFinSnap:
                 QtCore.QTimer.singleShot(0, functools.partial(panel.remove_fins, fins))
                 return False
             obj.Document.openTransaction(translate("FinSnap", "Remove fin"))
-            if not feature.remove_fins(obj, fins):
+            done = feature.remove_fins(obj, fins)
+            if done != feature.FINS_ALL_GONE:
                 obj.Document.commitTransaction()
                 obj.Document.recompute()
+                if done == feature.COUNTER_PROMOTED:
+                    _message(translate("FinSnap", feature.NOTE_COUNTER_PROMOTED))
                 return False
-            # The last main fins: nothing was changed, the object goes as a whole.
+            # The last fins of all: nothing was changed, the object goes as a whole.
             obj.Document.abortTransaction()
         self.close_panel()
         feature.prepare_delete(obj)
@@ -364,7 +369,7 @@ class TiltOntoEdge:
                     change = orient.stand(shape, edge, angle, face)
             else:
                 change = orient.lay_flat(shape, face)
-        except (orient.OrientError, geometry.FinError) as error:
+        except (orient.OrientError, face_frame.FinError) as error:
             _message(str(error))
             return
         doc = App.ActiveDocument
@@ -512,7 +517,7 @@ def _ask_delete_fins():
 class QuickFins:
     """Stand a part up and add its fins in one step.
 
-    The selections it takes are those of geometry.quick_plan(); faces count in
+    The selections it takes are those of quick_stands.quick_plan(); faces count in
     the order selected.
 
     SELECTIONS this has to withstand:
@@ -554,7 +559,7 @@ class QuickFins:
         QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
         try:
             plans, refused = quick_plans(obj, [n for _, n in edges], [n for _, n in faces]), None
-        except (orient.OrientError, geometry.FinError) as error:
+        except (orient.OrientError, face_frame.FinError) as error:
             plans, refused = None, error
         finally:
             QtWidgets.QApplication.restoreOverrideCursor()
@@ -603,7 +608,7 @@ def quick_plan(obj, edge_names, face_names):
 
 def quick_plans(obj, edge_names, face_names, change=None):
     """Every way Quick fins can stand `obj` for its edges and faces named that
-    prints without islands, as QuickWays, in the order geometry.quick_plans()
+    prints without islands, as QuickWays, in the order quick_stands.quick_plans()
     finds them, for the task panel to step through;
     where every way has islands, all of them, the fewest first, see
     analysis.printable_plans(). OrientError or FinError where there is none.
@@ -620,7 +625,7 @@ def quick_plans(obj, edge_names, face_names, change=None):
         shape = moved(shape, change)
     edges = [(shape.Edges[number], None) for number in numbers[:len(edge_names)]]
     faces = [(shape.Faces[number], number) for number in numbers[len(edge_names):]]
-    found = geometry.quick_plans(shape, edges, faces, quick_params(), d.TILT_ANGLE)
+    found = quick_stands.quick_plans(shape, edges, faces, quick_params(), d.TILT_ANGLE)
     plans = [next(found)]
     try:
         plans.extend(found)
@@ -776,7 +781,7 @@ def stands_again(fins):
     QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
     try:
         plans = quick_plans(part, edge_names, face_names, placement.multiply(now.inverse()))
-    except (orient.OrientError, geometry.FinError, Part.OCCError):
+    except (orient.OrientError, face_frame.FinError, Part.OCCError):
         return None
     finally:
         QtWidgets.QApplication.restoreOverrideCursor()
@@ -901,7 +906,7 @@ class AddCounterFin:
                 found = feature.add_counter(fins[0], faces[0][0], faces[0][1])
             else:
                 found = feature.add_counter(fins[0])
-        except geometry.FinError as error:
+        except face_frame.FinError as error:
             doc.abortTransaction()
             _message(translate("FinSnap", feature.NOTE_NO_COUNTER_ON_FACE) % error)
             return

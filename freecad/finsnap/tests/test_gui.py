@@ -127,12 +127,12 @@ def moved_beside_groove(doc):
     """A fin planned over a groove stands beside it; typed into its field or
     dragged, it moves on from where it stands, not from where it was planned."""
     from freecad.finsnap import defaults as d
-    from freecad.finsnap import feature, geometry, handles
+    from freecad.finsnap import face_frame, feature, handles
     from freecad.finsnap.taskpanel import FinSnapTaskPanel
     from freecad.finsnap.tests.support import grooved
     cube = tilted_cube()
     face = lower_left_face(cube)
-    frame = geometry.frame_of(cube, face)
+    frame = face_frame.frame_of(cube, face)
     part = doc.addObject("Part::Feature", "Grooved")
     part.Shape = grooved(cube, face, (frame.along_min + frame.along_max) / 2)
     fins = feature.create(part, face_name(part, lower_left_face(part.Shape)))
@@ -189,14 +189,14 @@ def added_on_tube(doc):
     """Add fins under the side of a tube already standing on its rim, turned
     in the panel: Cancel deletes the fins and turns the tube back."""
     from freecad.finsnap import defaults as d
-    from freecad.finsnap import feature, geometry, handles
+    from freecad.finsnap import feature, handles, quick_stands
     from freecad.finsnap.params import FinParams
     shape = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
     side = [i for i, f in enumerate(shape.Faces) if isinstance(f.Surface, Part.Cylinder)
             and abs(f.Surface.Radius - TUBE_RADIUS) < d.TOLERANCE][0]
     tube = doc.addObject("Part::Feature", "AddedTube")
     tube.Shape = shape
-    tube.Placement = geometry.quick_plan(shape, [], [(shape.Faces[side], side)], FinParams(), d.TILT_ANGLE).change
+    tube.Placement = quick_stands.quick_plan(shape, [], [(shape.Faces[side], side)], FinParams(), d.TILT_ANGLE).change
     doc.recompute()
     standing = App.Placement(tube.Placement)
     select(tube, "Face%d" % (side + 1))
@@ -226,7 +226,7 @@ def turned_tube(doc):
     turns the tube about its axis, the fin stays under the lowest line; Reset
     fins and Cancel turn it back."""
     from freecad.finsnap import defaults as d
-    from freecad.finsnap import feature, geometry, handles, taskpanel
+    from freecad.finsnap import face_frame, feature, handles, taskpanel
     tube = doc.addObject("Part::Feature", "Tube")
     tube.Shape = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
     side = [i for i, f in enumerate(tube.Shape.Faces, 1) if isinstance(f.Surface, Part.Cylinder)
@@ -241,7 +241,7 @@ def turned_tube(doc):
     def turned():
         """How far the tube is turned from where it was stood, the shorter way round, in degrees."""
         degrees = math.degrees(tube.Placement.multiply(standing.inverse()).Rotation.Angle)
-        return min(degrees, geometry.FULL_CIRCLE - degrees)
+        return min(degrees, face_frame.FULL_CIRCLE - degrees)
 
     def angle():
         return panel.fin_values()[handles.ALONG]
@@ -302,10 +302,10 @@ def turned_tube(doc):
     expect(abs(turned() - 2 * TUBE_ANGLE) < d.TOLERANCE and abs(angle() - 2 * TUBE_ANGLE) < d.TOLERANCE,
            "dragging the arc turns the tube further, as near as Coin reads its turn")
     released_without_button(arc, "a tube")
-    panel.fin_fields[handles.ALONG].setValue(geometry.FULL_CIRCLE - TUBE_ANGLE)
+    panel.fin_fields[handles.ALONG].setValue(face_frame.FULL_CIRCLE - TUBE_ANGLE)
     panel.field_entered(handles.ALONG)
     expect(abs(turned() - TUBE_ANGLE) < d.TOLERANCE
-           and abs(angle() - (geometry.FULL_CIRCLE - TUBE_ANGLE)) < d.TOLERANCE,
+           and abs(angle() - (face_frame.FULL_CIRCLE - TUBE_ANGLE)) < d.TOLERANCE,
            "an angle typed past 0 turns the tube the shorter way round")
     # A build that fails once the tube is turned, which leaves no build behind:
     # the turn is taken back all the same.
@@ -753,6 +753,13 @@ def arrow_field(panel, fins):
         key(panel.arrow_field[2], QtCore.Qt.Key_Return)
         expect(panel.arrow_field is None and abs(box.value() - moved_to) < d.TOLERANCE,
                "Enter takes the value typed at the arrow as the field in the panel takes it: %.2f" % box.value())
+    # A click elsewhere takes the focus from the field: taken too.
+    for moved_to in (place - FIN_SHIFT, place):
+        panel.edit_at_arrow(handles.ALONG)
+        panel.arrow_field[2].setValue(moved_to)
+        QtWidgets.QApplication.sendEvent(panel.arrow_field[2], QtGui.QFocusEvent(QtCore.QEvent.FocusOut))
+        expect(panel.arrow_field is None and abs(box.value() - moved_to) < d.TOLERANCE,
+               "a click elsewhere takes the value typed at the arrow: %.2f" % box.value())
     expect(feature.edits(fins, feature.MAIN)[1] == shifts, "typed back, the fin stands where it stood")
 
 
@@ -1142,20 +1149,20 @@ def lower_left_face_of(shape):
 
 
 def check_typed_fields(panel, fins, place):
-    """A value typed into a field of the fin with the arrows is taken once
-    typing pauses, where the fin can stand, and the field is left as typed;
-    Enter takes it at once and leaves the panel open."""
+    """A value typed into a field of the fin with the arrows, or stepped, is
+    taken on Enter or on leaving the field, where the fin can stand, not at
+    every step; Enter leaves the panel open."""
     from PySide import QtCore, QtGui
     from freecad.finsnap import defaults as d
     from freecad.finsnap import feature, handles
     box = panel.fin_fields[handles.ALONG]
     box.setValue(place + FIN_SHIFT)
-    expect(panel.field_timer.isActive() and panel.typed_field == handles.ALONG
-           and not feature.edits(fins, feature.MAIN)[1], "a place typed waits for typing to pause")
-    # What the timer does once typing pauses.
+    expect(panel.typed_field == handles.ALONG and not feature.edits(fins, feature.MAIN)[1],
+           "a place typed or stepped waits to be taken, the fin stays")
+    # Left, the field gives its value: what editingFinished does.
     panel.field_entered(panel.typed_field)
-    expect(feature.edits(fins, feature.MAIN)[1] and not panel.field_timer.isActive(),
-           "once typing pauses, the place typed moves the fin")
+    expect(feature.edits(fins, feature.MAIN)[1] and panel.typed_field is None,
+           "taken on leaving the field, the place moves the fin")
     box.setValue(place)
     # The panel is built here without a task dialog; that Enter reaches none
     # shows in the event being taken.
@@ -1164,21 +1171,18 @@ def check_typed_fields(panel, fins, place):
         event = QtGui.QKeyEvent(QtCore.QEvent.KeyPress, key, QtCore.Qt.NoModifier)
         QtWidgets.QApplication.sendEvent(box, event)
         taken.append(event.isAccepted())
-    expect(not feature.edits(fins, feature.MAIN)[1] and not panel.field_timer.isActive() and all(taken),
+    expect(not feature.edits(fins, feature.MAIN)[1] and panel.typed_field is None and all(taken),
            "Enter takes the place typed at once and is not passed on to close the panel")
     nowhere = place + TOO_HIGH
     box.setValue(nowhere)
-    panel.field_entered(panel.typed_field, paused=True)
-    expect(not feature.edits(fins, feature.MAIN)[1] and abs(box.value() - nowhere) < d.TOLERANCE
-           and not panel.notes.isHidden(),
-           "typing paused where the fin cannot stand: nothing moves, the reason shows, the field keeps what is typed")
     panel.field_entered(handles.ALONG)
-    expect(abs(box.value() - place) < d.TOLERANCE,
-           "left where the fin cannot stand, the field shows where it stands again")
+    expect(not feature.edits(fins, feature.MAIN)[1] and abs(box.value() - place) < d.TOLERANCE
+           and not panel.notes.isHidden(),
+           "taken where the fin cannot stand: nothing moves, the reason shows, the field shows where it stands")
     box.setValue(place + FIN_SHIFT)
     panel.handle_started(handles.ALONG)
-    expect(feature.edits(fins, feature.MAIN)[1] and not panel.field_timer.isActive(),
-           "a place still waiting for typing to pause is taken before an arrow is grabbed")
+    expect(feature.edits(fins, feature.MAIN)[1] and panel.typed_field is None,
+           "a place not taken yet is taken before an arrow is grabbed")
     panel.finish_drag(handles.ALONG, 0.0)
     box.setValue(place)
     panel.field_entered(handles.ALONG)
@@ -1281,10 +1285,118 @@ def check_sections(panel):
            "the header of a section is marked while a field in it differs from the standard")
 
 
+def islands_shaded():
+    """In the table of ways a cell with islands is shaded as unprintable,
+    its tooltip saying how many; one without islands is left plain, one not
+    checked blank."""
+    from PySide import QtCore, QtGui
+    from freecad.finsnap import limits, taskpanel
+    two, none, unchecked = taskpanel._islands_cell(2), taskpanel._islands_cell(0), taskpanel._islands_cell(None)
+    unprintable = QtGui.QColor(taskpanel.STAND_LEVEL_COLORS[limits.UNPRINTABLE])
+    expect(two.background().color() == unprintable and "2" in two.toolTip()
+           and none.background().style() == QtCore.Qt.NoBrush and not none.toolTip()
+           and unchecked.text() == "",
+           "islands are shaded as unprintable in the table of ways, none left plain, unchecked blank")
+
+
+def counter_kept_in_panel():
+    """Removing the last main fins in the task panel with a counter fin left:
+    the counter fin is the main fin, and the panel says so as information,
+    not as a warning."""
+    from freecad.finsnap import commands, feature, taskpanel
+    from freecad.finsnap.taskpanel import FinSnapTaskPanel
+    doc = App.newDocument("CounterKept")
+    cube = doc.addObject("Part::Feature", "Cube")
+    cube.Shape = tilted_cube()
+    fins = feature.create(cube, face_name(cube, lower_left_face(cube.Shape)))
+    commands.ViewProviderFinSnap(fins.ViewObject)
+    feature.add_counter(fins)
+    doc.recompute()
+    panel = FinSnapTaskPanel(fins)
+    mains = [feature.tag_fin(tag) for tag in fins.FinTags if feature.tag_fin(tag)[0] == feature.MAIN]
+    panel.remove_fins(mains)
+    shown = panel.notes.text()
+    styled = panel.notes.styleSheet()
+    kept = not fins.CounterFace and fins.Name in [o.Name for o in doc.Objects]
+    panel.release_handles()
+    Gui.Control.closeDialog()
+    # The same with the Delete key, no panel open: the object stays and a
+    # message says so.
+    keyed = feature.create(cube, face_name(cube, lower_left_face(cube.Shape)))
+    commands.ViewProviderFinSnap(keyed.ViewObject)
+    feature.add_counter(keyed)
+    doc.recompute()
+    main_faces = ["Face%d" % next(i for i, f in enumerate(keyed.Shape.Faces, 1) if f.isSame(solid.Faces[0]))
+                  for solid, tag in zip(keyed.Shape.Solids, keyed.FinTags) if feature.tag_fin(tag)[0] == feature.MAIN]
+    told, real_message = [], commands._message
+    commands._message = told.append
+    try:
+        deleted = keyed.ViewObject.Proxy.onDelete(keyed.ViewObject, main_faces)
+    finally:
+        commands._message = real_message
+    by_key = deleted is False and not keyed.CounterFace and keyed.Name in [o.Name for o in doc.Objects]
+    App.closeDocument(doc.Name)
+    # In the language FreeCAD runs in.
+    from freecad.finsnap.i18n import translate
+    said = translate("FinSnap", feature.NOTE_COUNTER_PROMOTED)
+    expect(kept and said in shown and taskpanel.INFO_SIGN in shown and taskpanel.INFO_COLOR in styled,
+           "the last main fins removed in the panel: the counter fin is the main fin, said as information")
+    expect(by_key and told == [said],
+           "the Delete key on the last main fins: the counter fin is the main fin, a message says so: %s" % told)
+
+
+def panel_outlives_document():
+    """A panel closed and kept on after its document closed holds no widget
+    of its 3D view, nor do its arrows: a panel opened in a new document then
+    finds its own view, not a dead one where the old lay. An arrow let go just
+    before the panel closed is let go of without the view."""
+    from freecad.finsnap import commands, feature, handles
+    from freecad.finsnap.taskpanel import FinSnapTaskPanel
+    kept = []
+    for name in ("FirstView", "SecondView"):
+        doc = App.newDocument(name)
+        cube = doc.addObject("Part::Feature", "Cube")
+        cube.Shape = tilted_cube()
+        fins = feature.create(cube, face_name(cube, lower_left_face(cube.Shape)))
+        commands.ViewProviderFinSnap(fins.ViewObject)
+        doc.recompute()
+        panel = FinSnapTaskPanel(fins)
+        # An arrow grabbed, the panel closed, then what letting go of the
+        # arrow calls after the next pass of the event loop.
+        panel.pick_fin(0)
+        panel.handle_started(handles.ALONG)
+        panel.release_handles()
+        Gui.Control.closeDialog()
+        panel.finish_drag(handles.ALONG, 0.0)
+        kept.append(panel)
+        App.closeDocument(doc.Name)
+    expect(all(not panel.key_widgets and panel.fin_keys is None and panel.handles.view is None
+               and panel.handles.viewer is None for panel in kept),
+           "a panel released holds no widget of its 3D view, nor its arrows, also kept on after its document closed; "
+           "an arrow let go after it closed does nothing")
+
+
+def gap_limited():
+    """The gap field stops at the largest gap, its tooltip names the range;
+    a field without a limit of its own names none."""
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, taskpanel
+    gap = next(prop for prop in feature.PROPERTIES if prop.name == "Gap")
+    spacing = next(prop for prop in feature.PROPERTIES if prop.name == "TineSpacing")
+    box = taskpanel._widget(gap, d.GAP)
+    expect(abs(box.maximum() - d.GAP_MAX) < d.TOLERANCE and ("%g" % d.GAP_MAX) in taskpanel._field_tip(gap)
+           and ("%g" % d.GAP_MAX) not in taskpanel._field_tip(spacing),
+           "the gap field stops at %g mm and its tooltip says so" % d.GAP_MAX)
+
+
 def main():
     commands = load_workbench()
     registered = Gui.listCommands()
     expect(all(c in registered for c in COMMANDS), "all commands are registered")
+    islands_shaded()
+    gap_limited()
+    panel_outlives_document()
+    counter_kept_in_panel()
 
     from freecad.finsnap import defaults as d
     from freecad.finsnap import feature
@@ -1525,7 +1637,9 @@ def main():
            and marked.Overhangs == [] and marks.getNumChildren() == 0
            and translate("FinSnap", feature.NOTE_LAID_FLAT) in marked.Warnings,
            "No lays the part flat and keeps its fins, marked as laid flat, without overhang marks")
-    expect(marked.Shape.distToShape(box.Shape)[0] < d.TOLERANCE, "the kept fins moved along with the part")
+    # The tines end the tine clearance short of the part, wherever it lies.
+    expect(abs(marked.Shape.distToShape(box.Shape)[0] - feature.params_of(marked).clearance) < d.TOLERANCE,
+           "the kept fins moved along with the part")
     select(marked)
     Gui.runCommand("FinSnap_Export3MF")
     expect(len(messages) == 1 and not os.path.exists(target + ".3mf"),
@@ -1742,6 +1856,23 @@ def main():
     expect(fins.FinPlacement == d.PLACEMENT_DISTRIBUTED and not panel.timer.isActive(),
            "the automatic preview applies the change")
     expect(panel.timer.parent() is panel.form, "the preview timer goes with the panel")
+    from PySide import QtCore, QtGui
+    # A number stepped, as with the wheel, is taken on leaving the field or on
+    # Enter, not at every step; left untouched, nothing is built.
+    spacing = panel.widgets["TineSpacing"]
+    spacing.setValue(spacing.value() + 2 * spacing.singleStep())
+    stepped = panel.timer.isActive()
+    spacing.editingFinished.emit()
+    left = panel.timer.isActive()
+    panel.timer.timeout.emit()
+    spacing.setValue(spacing.value() - 2 * spacing.singleStep())
+    enter = QtGui.QKeyEvent(QtCore.QEvent.KeyPress, QtCore.Qt.Key_Return, QtCore.Qt.NoModifier)
+    QtWidgets.QApplication.sendEvent(spacing, enter)
+    entered = panel.timer.isActive() and enter.isAccepted()
+    panel.timer.timeout.emit()
+    spacing.editingFinished.emit()
+    expect(not stepped and left and entered and not panel.timer.isActive(),
+           "a number stepped is built on leaving the field or on Enter, not at every step, untouched not at all")
     expect(panel.notes.isHidden() == (not fins.Warnings), "the notes box shows only when there are warnings")
     foot = panel.widgets["FootShape"]
     foot.setCurrentIndex(foot.findData(d.FOOT_NONE))
@@ -2038,7 +2169,7 @@ def main():
     # A drag builds each place once: the trial of a step serves its real
     # build, and nothing is built twice. Afterwards every build is new, and
     # the arrow ends are tried once for each place of the fin.
-    from freecad.finsnap import geometry
+    from freecad.finsnap import face_frame, geometry
     real_build = geometry.build
     builds = []
 
@@ -2210,7 +2341,7 @@ def main():
     upward = [i for i, f in enumerate(cube.Shape.Faces, 1) if f.normalAt(0, 0).z > 1 - d.TOLERANCE][0]
     wrong = feature.create(cube, "Face%d" % upward)
     wrong_panel = FinSnapTaskPanel(wrong, created=True)
-    reason = App.Qt.translate("FinSnap", geometry.NOT_OVERHANGING)
+    reason = App.Qt.translate("FinSnap", face_frame.NOT_OVERHANGING)
     expect(reason in wrong_panel.notes.text() and not wrong_panel.notes.isHidden()
            and taskpanel.ERROR_COLOR in wrong_panel.notes.styleSheet(),
            "the panel shows in a red box why no fins can be built: %s" % wrong_panel.notes.text())

@@ -20,11 +20,12 @@ import Part
 from freecad.finsnap.tests.support import (STANDARD_THICKNESS, expect, lower_left_face, run, slot_on_end,
                                            split_cylinder, tilted_cube)
 from freecad.finsnap import defaults as d
-from freecad.finsnap import analysis, check, export_3mf, export_step, feature, geometry, orient, overhang, stability
+from freecad.finsnap import (analysis, check, export_3mf, export_step, face_frame, feature, geometry, orient, overhang,
+                             quick_stands, stability, tine_rows)
 from freecad.finsnap import limits, presets
 from freecad.finsnap.params import FinParams, ParamError
 from freecad.finsnap.paths import PACKAGE_XML
-from freecad.finsnap.shapes import bounds, global_shape, moved, outermost
+from freecad.finsnap.shapes import KEPT, bounds, global_shape, moved, outermost
 
 V = App.Vector
 # The version as package.xml states it, read independently of the workbench.
@@ -198,15 +199,15 @@ def tapered_pad(doc):
                     continue
                 try:
                     result = geometry.build(stood, leaning, FinParams())
-                except geometry.FinError as error:
+                except face_frame.FinError as error:
                     failures.append(str(error))
                 else:
                     narrow = any("narrower" in w for w in result.warnings)
                     left_out += narrow
                     if narrow and not fixed_checked:
                         # The same face with every tine asked for by number: still built, with the warning.
-                        frame = geometry.frame_of(stood, leaning)
-                        asked = len(geometry.tine_heights(FinParams(), frame, 0)[0])
+                        frame = face_frame.frame_of(stood, leaning)
+                        asked = len(tine_rows.tine_heights(FinParams(), frame, 0)[0])
                         fixed = geometry.build(stood, leaning, FinParams(tine_count=asked))
                         fixed_checked = any("narrower" in w for w in fixed.warnings)
     expect(not failures, "a tapered Pad takes fins under every leaning face, on any edge: %s" % failures[:3])
@@ -387,14 +388,55 @@ def warnings_and_old_files(doc):
     feature.add_counter(fins)
     doc.recompute()
     every_main = [(feature.MAIN, n) for n in (1, 2, 3)]
-    expect(feature.remove_fins(fins, every_main + [(feature.COUNTER, 1)]) is True
+    expect(feature.remove_fins(fins, every_main + [(feature.COUNTER, 1)]) == feature.FINS_ALL_GONE
            and feature.edits(fins, feature.MAIN) == ([], {}, {}) and fins.CounterFace,
-           "removing every main fin changes nothing and asks for the object to be deleted")
-    expect(feature.remove_fins(fins, [(feature.MAIN, 2), (feature.MAIN, 2), (feature.COUNTER, 1)]) is False
-           and feature.removed(fins, feature.MAIN) == [2] and not fins.CounterFace,
+           "removing every fin changes nothing and asks for the object to be deleted")
+    expect(feature.remove_fins(fins, [(feature.MAIN, 2), (feature.MAIN, 2), (feature.COUNTER, 1)])
+           == feature.FINS_LEFT_OUT and feature.removed(fins, feature.MAIN) == [2] and not fins.CounterFace,
            "one main fin and the only counter fin: that fin left out, the counter fin dropped")
-    expect(feature.remove_fins(fins, []) is False and feature.removed(fins, feature.MAIN) == [2],
+    expect(feature.remove_fins(fins, []) == feature.FINS_LEFT_OUT and feature.removed(fins, feature.MAIN) == [2],
            "nothing picked changes nothing")
+    feature.reset_fins(fins)
+    doc.recompute()
+    # The last main fins removed, the counter fin left: it becomes the main
+    # fin, as high as it was, and the object stays.
+    feature.add_counter(fins)
+    doc.recompute()
+    counter_link = (fins.CounterFace[0], list(fins.CounterFace[1]))
+    main_link = (fins.Base[0], list(fins.Base[1]))
+    counter_solids = [solid for solid, tag in zip(fins.Shape.Solids, fins.FinTags)
+                      if feature.tag_fin(tag)[0] == feature.COUNTER]
+    feature.set_fin_height(fins, feature.COUNTER, 1, counter_solids[0].BoundBox.ZLength / 2)
+    doc.recompute()
+    lowered = [solid for solid, tag in zip(fins.Shape.Solids, fins.FinTags)
+               if feature.tag_fin(tag)[0] == feature.COUNTER][0]
+    done = feature.remove_fins(fins, every_main)
+    doc.recompute()
+    expect(done == feature.COUNTER_PROMOTED and not fins.CounterFace
+           and (fins.Base[0], list(fins.Base[1])) == counter_link and fins.isValid()
+           and len(fins.Shape.Solids) == 1 and abs(fins.Shape.Volume - lowered.Volume) < d.TOLERANCE
+           and feature.edits(fins, feature.MAIN)[2],
+           "the last main fins removed: the counter fin is the main fin, with its height of its own")
+    fins.Base = main_link
+    feature.reset_fins(fins)
+    doc.recompute()
+    # Every main fin and one of two counter fins: the other one is left, as
+    # the main fin, and what Quick fins started from is forgotten.
+    placement = fins.FinPlacement
+    fins.FinPlacement = d.PLACEMENT_ENDS
+    feature.add_counter(fins)
+    doc.recompute()
+    feature.keep_quick_start(fins, cube, orient.snapshot(cube), [], list(main_link[1]))
+    counters = [tag for tag in fins.FinTags if feature.tag_fin(tag)[0] == feature.COUNTER]
+    ends = [(feature.MAIN, feature.tag_fin(tag)[1]) for tag in fins.FinTags
+            if feature.tag_fin(tag)[0] == feature.MAIN]
+    done = feature.remove_fins(fins, ends + [(feature.COUNTER, 1)])
+    doc.recompute()
+    expect(len(counters) == 2 and done == feature.COUNTER_PROMOTED and len(fins.Shape.Solids) == 1
+           and feature.removed(fins, feature.MAIN) == [1] and feature.quick_start(fins) is None,
+           "every main fin and counter fin 1 removed: counter fin 2 is left as the main fin, Quick fins forgotten")
+    fins.Base = main_link
+    fins.FinPlacement = placement
     feature.reset_fins(fins)
     doc.recompute()
     # Saved before the count was kept: changes stay, and a failing build says why.
@@ -436,11 +478,18 @@ def warnings_and_old_files(doc):
     fins.removeProperty("TineClearance")
     fins.Proxy.onDocumentRestored(fins)
     expect("TineClearance" in fins.PropertiesList and fins.TineClearance.Value == d.TINE_CLEARANCE,
-           "fins saved before the tine clearance existed get it, touching as before")
+           "fins saved before the tine clearance existed get the built-in one")
     fins.removeProperty("TineRestart")
     fins.Proxy.onDocumentRestored(fins)
     expect("TineRestart" in fins.PropertiesList and fins.TineRestart is False and FinParams().tine_restart,
            "fins saved before the tine restart existed get it off, built as before; new fins get it on")
+    fins.removeProperty("FollowContour")
+    fins.removeProperty("ContourBridge")
+    fins.removeProperty("ContourGap")
+    fins.Proxy.onDocumentRestored(fins)
+    expect(fins.FollowContour is False and FinParams().follow_contour
+           and fins.ContourBridge.Value == d.CONTOUR_BRIDGE and fins.ContourGap.Value == d.CONTOUR_GAP,
+           "fins saved before the contour existed get it off, built as before; new fins follow it")
     feature.set_fin_height(fins, feature.MAIN, 1, fins.ResultHeight.Value / 2)
     fins.removeProperty(feature.HEIGHTS_GRID[feature.MAIN])
     fins.Proxy.onDocumentRestored(fins)
@@ -483,7 +532,7 @@ def counter_bridges_bore(doc):
     rim = next(i for i, e in enumerate(shape.Edges, 1) if isinstance(e.Curve, Part.Circle)
                and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE)
     joined, (edge,), name_of = feature.whole_elements(tube, ["Edge%d" % rim])
-    plan = geometry.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
+    plan = quick_stands.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
     tube.Placement = plan.change
     fins = feature.create(tube, name_of(plan.number))
     doc.recompute()
@@ -513,7 +562,7 @@ def counter_beside_bore(doc):
     rim = next(i for i, e in enumerate(shape.Edges, 1) if isinstance(e.Curve, Part.Circle)
                and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE)
     joined, (edge,), name_of = feature.whole_elements(tube, ["Edge%d" % rim])
-    plan = geometry.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
+    plan = quick_stands.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
     tube.Placement = plan.change
     fins = feature.create(tube, name_of(plan.number))
     # With one grid for every fin, as the restart below the bore would bridge it.
@@ -560,7 +609,7 @@ def counter_on_thin_tube(doc):
     rim = next(i for i, e in enumerate(shape.Edges, 1) if isinstance(e.Curve, Part.Circle)
                and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE)
     joined, (edge,), name_of = feature.whole_elements(tube, ["Edge%d" % rim])
-    plan = geometry.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
+    plan = quick_stands.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
     tube.Placement = plan.change
     fins = feature.create(tube, name_of(plan.number))
     doc.recompute()
@@ -571,7 +620,7 @@ def counter_on_thin_tube(doc):
     ring = feature.names_on(global_shape(tube), geometry.opposite_faces(stood, side)[:1])[0]
     try:
         feature.add_counter(fins, tube, ring)
-    except geometry.FinError as error:
+    except face_frame.FinError as error:
         expect(not fins.CounterFace and fins.isValid(),
                "a face too narrow for a counter fin chosen by hand is refused, nothing changed: %s" % error)
     else:
@@ -609,7 +658,7 @@ def counter_under_disc(doc):
         rod.Shape = shape
         rim = next(i for i, e in enumerate(shape.Edges, 1) if isinstance(e.Curve, Part.Circle))
         joined, (edge,), name_of = feature.whole_elements(rod, ["Edge%d" % rim])
-        plan = geometry.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
+        plan = quick_stands.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
         rod.Placement = plan.change
         fins = feature.create(rod, name_of(plan.number))
         doc.recompute()
@@ -622,7 +671,7 @@ def counter_under_disc(doc):
         sides = feature.names_on(global_shape(rod), [feature.round_side(fins)])
         ends = [n for n in fins.CarriedFaces if n not in sides]
         part, end = feature._face(fins.CounterFace)
-        middle = geometry.frame_of(part, end)
+        middle = face_frame.frame_of(part, end)
         centre = (middle.along_min + middle.along_max) / 2
         built = geometry.build(part, end, feature.params_of(fins))
         expect(len(ends) == (2 if name == "split" else 1)
@@ -652,7 +701,7 @@ def split_tube(doc):
     expect(again is joined and moved_on is not joined
            and abs(moved_on.BoundBox.XMin - joined.BoundBox.XMin - 1) < d.TOLERANCE,
            "a split part is joined once while it stays, anew once it moves")
-    plan = geometry.quick_plan(joined, [(rim, None)], [], FinParams(), d.TILT_ANGLE)
+    plan = quick_stands.quick_plan(joined, [(rim, None)], [], FinParams(), d.TILT_ANGLE)
     tube.Placement = plan.change
     fins = feature.create(tube, name_of(plan.number))
     doc.recompute()
@@ -677,7 +726,7 @@ def split_tube(doc):
                 and not any(orient.lies_on(e, f) for f in pieces if f.findPlane() is not None))
     try:
         feature.whole_elements(tube, ["Edge%d" % arc, "Edge%d" % seam])
-    except geometry.FinError as error:
+    except face_frame.FinError as error:
         expect("seam" in str(error), "the seam between the halves named is refused with a reason: %s" % error)
     else:
         raise AssertionError("the seam between the halves of a split tube was taken")
@@ -708,7 +757,7 @@ def turned_tube(doc):
     tube = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
     side = [i for i, f in enumerate(tube.Faces)
             if orient.is_round_side(f) and abs(f.Surface.Radius - TUBE_RADIUS) < d.TOLERANCE][0]
-    plan = geometry.quick_plan(tube, [], [(tube.Faces[side], side)], FinParams(), d.TILT_ANGLE)
+    plan = quick_stands.quick_plan(tube, [], [(tube.Faces[side], side)], FinParams(), d.TILT_ANGLE)
     part = doc.addObject("Part::Feature", "Tube")
     part.Shape = tube
     part.Placement = plan.change
@@ -753,7 +802,7 @@ def turned_tube(doc):
     side_name = "Face%d" % (side + 1)
     try:
         feature.add_counter(fins, part, side_name)
-    except geometry.FinError as error:
+    except face_frame.FinError as error:
         expect("counter fin goes under a flat face" in str(error) and not fins.CounterFace,
                "a counter fin chosen under the side of a tube is refused, nothing changed: %s" % error)
     else:
@@ -761,7 +810,7 @@ def turned_tube(doc):
     count = len(doc.Objects)
     try:
         feature.create(part, side_name, (part, side_name))
-    except geometry.FinError as error:
+    except face_frame.FinError as error:
         expect("counter fin goes under a flat face" in str(error) and len(doc.Objects) == count,
                "fins made with a counter fin under the side of a tube are refused, nothing made: %s" % error)
     else:
@@ -771,7 +820,7 @@ def turned_tube(doc):
              key=lambda i: stood.Faces[i].CenterOfMass.z)
     try:
         feature.create(part, side_name, (part, "Face%d" % (up + 1)))
-    except geometry.FinError as error:
+    except face_frame.FinError as error:
         expect(len(doc.Objects) == count,
                "fins made with a counter face facing up are refused, nothing made: %s" % error)
     else:
@@ -869,7 +918,7 @@ def kept_islands(doc):
     joined, (face,), _ = feature.whole_elements(tube, ["Face%d" % side])
     number = next(i for i, f in enumerate(joined.Faces) if f.isSame(face))
     p = FinParams()
-    for plan in geometry.quick_plans(joined, [], [(face, number)], p, d.TILT_ANGLE):
+    for plan in quick_stands.quick_plans(joined, [], [(face, number)], p, d.TILT_ANGLE):
         tube.Placement = plan.change
         on_joined = overhang.islands(moved(joined, plan.change), p.first_layer_height, p.layer_height)
         on_tube = overhang.islands(global_shape(tube), p.first_layer_height, p.layer_height)
@@ -961,11 +1010,11 @@ def bridges_apart(doc):
     expect(covered and covered <= plain, "without bridges looked for, a face a bridge covers is rated as an overhang")
     # The bridges kept for one part as it stands stay bounded, however many
     # beads are tried.
-    for step in range(analysis.KEPT + BEADS_PAST_KEPT):
+    for step in range(KEPT + BEADS_PAST_KEPT):
         feature.bridges_of(spanned, doc, FinParams(bead_width=FinParams().bead_width + step * BEAD_STEP))
     kept = analysis._analysis(spanned, FinParams())[analysis.BRIDGES]
-    expect(len(kept) == analysis.KEPT, "at most %d bridges are kept for a part as it stands: %d"
-           % (analysis.KEPT, len(kept)))
+    expect(len(kept) == KEPT, "at most %d bridges are kept for a part as it stands: %d"
+           % (KEPT, len(kept)))
     doc.removeObject(reaching.Name)
     doc.removeObject(spanned.Name)
 

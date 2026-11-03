@@ -40,7 +40,7 @@ DIMENSION_WIDTH = 1.6
 OUTSIDE_ARROW_REACH = 11.0  # length of the leader for arrows pointing in from outside
 # Heights in the side view, between two tines, where the gap A and the tine
 # clearance K are dimensioned, clear of the tines.
-GAP_AT = 138.0
+GAP_AT = 150.0
 CLEARANCE_AT = 163.0
 # Both drawings are shown this much larger than drawn, the same for each.
 SCALE = 1.5
@@ -106,17 +106,17 @@ def svg(width, height, comment, body):
 def side_view():
     """The tilted part on the right, the fin on the left, the bed below."""
     bed = 200.0
-    # The face runs at 45 degrees: x = y in drawing coordinates. The tines end
-    # CLEAR_X short of it, the flank of the fin runs GAP_X further out still;
-    # both measured across, as horizontal offsets.
-    gap_x = 17.0
+    # The face runs at 45 degrees: x = y in drawing coordinates. The flank of
+    # the fin runs GAP_X out from it, the tines end CLEAR_X short of it, as
+    # much shorter; both measured across, as horizontal offsets.
+    gap_x = 27.0
     clear_x = 10.0
     fin_out, fin_top, foot_top = 83.0, 124.0, 188.0
     tines = (178.0, 148.0, 124.0)  # top edge of each tine
     tine_h = 5.0
 
     def flank(y):
-        return y - clear_x - gap_x
+        return y - gap_x
 
     def tine_end(y):
         return y - clear_x
@@ -155,9 +155,9 @@ def side_view():
     body += dimension_outside((76, foot_top), (76, bed))                         # G
     body += dimension_outside((141, tines[2]), (141, tines[2] + tine_h))         # D
     # Across the face, each in a free space between two tines: the gap A from
-    # the plane of the tine ends to the flank, and below it the tine clearance
-    # K from the face to that plane.
-    a_from = (tine_end(GAP_AT), GAP_AT)
+    # the face to the flank, and below it the tine clearance K from the face
+    # to the plane of the tine ends.
+    a_from = (GAP_AT, GAP_AT)
     a_to = (a_from[0] - gap_x / 2, a_from[1] + gap_x / 2)
     k_from = (CLEARANCE_AT, CLEARANCE_AT)
     k_to = (k_from[0] - clear_x / 2, k_from[1] + clear_x / 2)
@@ -166,7 +166,7 @@ def side_view():
     body += dimension_outside(k_from, k_to)                                     # K
     body += [letter("E", (26, 166)), letter("B", (48, 172)), letter("C", (48, 196)),
              letter("F", (90, 98)), letter("G", (82, 222)), letter("D", (147, 122)),
-             letter("A", (103, 162)), letter("K", (174, 152))]
+             letter("A", (110, 179)), letter("K", (174, 152))]
     return svg(320, 230, "Side view: part, fin with tines and foot, bed.", body)
 
 

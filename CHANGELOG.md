@@ -11,6 +11,28 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-03
+
+### Added
+
+- The fin under the round side of a part standing on its rim follows the contour of the part up to its top, over steps, cones, fillets and curves (**Follow the contour**, on for new fins): its tines rest only where the part faces down, start anew at the bottom of each such stretch, and its inner edge runs inward no steeper than 45 degrees; recesses lower than **Bridge recesses up to** (3 mm) are spanned, and so is a pocket in one face that no tine rests in, and over faces looking up it keeps **Gap without tines** (1 mm) from the part
+- In the table of ways of Quick fins, a cell with islands is shaded red, as an unprintable overhang is, its tooltip saying how many
+- Removing the last main fins while a counter fin is left keeps the fins object: the counter fin becomes the main fin, with its changes by hand, and the part stays as it stands (#142)
+
+### Changed
+
+- The fin stays at the gap from the face, whatever the tine clearance: the tines are as much shorter, a clearance as large as the gap is refused, and the warning about short tines counts the clearance and names the gap that makes them long enough, or asks for a narrower bead where no gap up to 2 mm does. Fins saved with a tine clearance keep their values and stand as much closer to the part; fins saved with a clearance as large as the gap or larger no longer build until it is set smaller; fins saved before the tine clearance existed get the built-in 0.05 mm
+- The gap is at most 2 mm, its field in the panel stops there and its tooltip names the range; longer tines do not print straight. Fins saved with a larger gap no longer build until it is set smaller, and their panel shows 2 mm, taken as such once it is applied
+- Built-in gap 0.3 mm and tine clearance 0.05 mm, from a test print (were 0.25 mm and 0): tines 0.25 mm long, ending short of the part, so the slicer prints tine and part as separate beads
+- A number typed into a field of the task panel, or stepped with the mouse wheel or the arrow keys, is taken on Enter or on leaving the field, not once typing pauses or at every step: clearing "20" to type "5" no longer rebuilds the fins on the way (#140)
+- The field a double click on an arrow opens takes its value on a click elsewhere too, as the fields of the panel do; Escape alone drops it
+
+### Fixed
+
+- A task panel closed lets go of its 3D view, so a panel opened after its document was closed can no longer find that view, already deleted, in place of its own (#146)
+- A cylinder with a fillet round its rim stands on that rim; Quick fins no longer falls back to a smaller rim on its axis
+- Quick fins on the side of a part with rounded corners no longer stops with "undefined curve type"
+
 ## [0.13.0] - 2026-11-02
 
 ### Added
@@ -285,7 +307,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.14.0
 [0.13.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.13.0
 [0.12.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.12.0
 [0.11.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.11.0

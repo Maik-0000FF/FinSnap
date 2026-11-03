@@ -22,7 +22,7 @@ from . import analysis
 from . import check
 from . import defaults as d
 from . import feature
-from . import geometry
+from . import face_frame, geometry
 from . import handles
 from . import limits
 from . import overhang
@@ -47,14 +47,16 @@ LENGTH_SUFFIX = " mm"
 # A checkbox shown in a tooltip, as for the standard it goes back to.
 SHOWN_ON = QT_TRANSLATE_NOOP("FinSnap", "on")
 SHOWN_OFF = QT_TRANSLATE_NOOP("FinSnap", "off")
+# Said in the tooltip of a field with a limit of its own.
+FIELD_RANGE = QT_TRANSLATE_NOOP("FinSnap", "From %s up to %s.")
 DEGREE_SUFFIX = " \N{DEGREE SIGN}"
-# Pause after the last change before the preview is rebuilt, so typing a
-# number does not rebuild the fins at every keystroke.
+# Pause after a change is taken before the preview is rebuilt, so several
+# taken together build once.
 PREVIEW_DELAY_MS = 400
 # The keys that end typing in a field.
 ENTER_KEYS = (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter)
 # The field a double click on an arrow lays over the 3D view past its tip:
-# Escape, or a click elsewhere, closes it untaken.
+# Escape closes it untaken; Enter or a click elsewhere takes it.
 CANCEL_KEYS = (QtCore.Qt.Key_Escape,)
 # It stands this many pixels past the tip of its arrow.
 ARROW_FIELD_GAP = 4
@@ -108,7 +110,7 @@ FIN_FIELD_ANGLE = (QT_TRANSLATE_NOOP("FinSnap", "Angle on the part"),
                    QT_TRANSLATE_NOOP("FinSnap", "Position of the fin around the cylinder or tube, measured at the "
                                      "middle of its tines, in degrees from 0°, where it is first placed. Type a "
                                      "value to turn the part to it; the fin keeps its place."),
-                   DEGREE_SUFFIX, ANGLE_DECIMALS, 0.0, geometry.FULL_CIRCLE, True, ANGLE_STEP)
+                   DEGREE_SUFFIX, ANGLE_DECIMALS, 0.0, face_frame.FULL_CIRCLE, True, ANGLE_STEP)
 FIN_FIELD_HEIGHT = (QT_TRANSLATE_NOOP("FinSnap", "Height"),
                     QT_TRANSLATE_NOOP("FinSnap", "Height of this fin alone. Type a value to set it; Reset fins "
                                       "gives it the height of the others again."),
@@ -119,15 +121,18 @@ SIDES = {feature.MAIN: QT_TRANSLATE_NOOP("FinSnap", "Main fin"),
          feature.COUNTER: QT_TRANSLATE_NOOP("FinSnap", "Counter fin")}
 # FinParams field of the layer height, the step of the fields on the layer grid.
 LAYER_FIELD = "layer_height"
-# Notes below the result: warnings in amber, a refusal in red, each in a framed
-# box with a sign, so they stand out from the result line above.
+# Notes below the result: warnings in amber, a refusal in red, what was done
+# without a fault in blue, each in a framed box with a sign, so they stand out
+# from the result line above.
 WARNING_COLOR = "#e0a000"
 ERROR_COLOR = "#d03030"
+INFO_COLOR = "#3a7bd5"
 # A stability check that finds the part standing, and one out of date.
 STANDS_COLOR = "#30a050"
 OUTDATED_COLOR = "#808080"
 NOTE_STYLE = "QLabel { border: 2px solid %s; border-radius: 4px; padding: 6px; }"
 WARNING_SIGN = "⚠"
+INFO_SIGN = "\N{INFORMATION SOURCE}"
 # A field whose value differs from the standard for new fins: its label in
 # this colour, and a button beside it that puts the standard value back.
 MODIFIED_COLOR = "#e07000"
@@ -439,6 +444,17 @@ def _rated_cell(levels, shown, tip):
     return cell
 
 
+def _islands_cell(islands):
+    """A cell of the table of ways showing how many `islands` the part has
+    standing so, blank for None; shaded as unprintable where there is one,
+    the worse fault to print than an overhang, its tooltip saying so."""
+    cell = QtWidgets.QTableWidgetItem("" if islands is None else str(islands))
+    if islands:
+        cell.setBackground(QtGui.QColor(STAND_LEVEL_COLORS[limits.UNPRINTABLE]))
+        cell.setToolTip(translate("FinSnap", analysis.NOTE_ISLANDS_FOUND) % islands)
+    return cell
+
+
 def _angle_at(profile, z):
     """The tipping angle at height `z`, between those of `profile`, (height,
     margin, angle) from the bed up; that of the nearest end beyond them."""
@@ -541,12 +557,13 @@ class EnterTakes(QtCore.QObject):
 
 
 class ArrowFieldKeys(QtCore.QObject):
-    """Ends typing in the field at an arrow: Enter calls `take`, Escape and
-    the field losing the focus call `cancel`. Enter and Escape are kept from
-    FreeCAD whole, pressed and let go: the field lies in the 3D view, which
-    leaves edit mode on Escape let go, closing the task panel, and a shortcut
-    on them is claimed for the field before FreeCAD takes it. The field acts
-    when the key is let go, so it still holds the focus and takes that too.
+    """Ends typing in the field at an arrow: Enter and the field losing the
+    focus call `take`, as a field of the panel takes its value then; Escape
+    calls `cancel`. Enter and Escape are kept from FreeCAD whole, pressed and
+    let go: the field lies in the 3D view, which leaves edit mode on Escape
+    let go, closing the task panel, and a shortcut on them is claimed for the
+    field before FreeCAD takes it. The field acts when the key is let go, so
+    it still holds the focus and takes that too.
 
     INPUTS this has to withstand:
       Enter or Return let go                ->  take(), press and release kept
@@ -554,7 +571,7 @@ class ArrowFieldKeys(QtCore.QObject):
                                                 the task panel left open
       a key held, repeating                 ->  the repeats kept, acted on once let go
       a shortcut on Enter or Escape         ->  claimed for the field
-      the focus gone, a click elsewhere     ->  cancel()
+      the focus gone, a click elsewhere     ->  take()
       any other key, digits, a sign         ->  passed on to the field
     """
 
@@ -565,7 +582,7 @@ class ArrowFieldKeys(QtCore.QObject):
     def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
         kind = event.type()
         if kind == QtCore.QEvent.FocusOut:
-            self.cancel()
+            self.take()
             return False
         if kind not in (QtCore.QEvent.ShortcutOverride, QtCore.QEvent.KeyPress, QtCore.QEvent.KeyRelease) \
                 or event.key() not in ENTER_KEYS + CANCEL_KEYS:
@@ -649,7 +666,7 @@ def _widget(prop, value):
     else:
         box = QtWidgets.QDoubleSpinBox()
         if prop.kind == feature.LENGTH:
-            box.setRange(0, MAX_LENGTH)
+            box.setRange(0, MAX_LENGTH if prop.most is None else prop.most)
             box.setDecimals(LENGTH_DECIMALS)
             box.setSuffix(LENGTH_SUFFIX)
         else:
@@ -659,6 +676,17 @@ def _widget(prop, value):
             box.setSingleStep(prop.step)
     _write(prop, box, value)
     return box
+
+
+def _field_tip(prop, notes=()):
+    """The tooltip of the field of `prop`: what it is, the range it takes
+    where it has a limit of its own, and `notes` on why it is unused."""
+    paragraphs = [translate("App::Property", prop.tip)]
+    if prop.most is not None:
+        paragraphs.append(translate("FinSnap", FIELD_RANGE) % (_shown(prop, 0.0), _shown(prop, prop.most)))
+    if notes:
+        paragraphs.append(" ".join(translate("FinSnap", note) for note in notes))
+    return _wrapped(*paragraphs)
 
 
 def _write(prop, widget, value):
@@ -761,12 +789,10 @@ class FinSnapTaskPanel:
         self.ends_timer.setSingleShot(True)
         self.ends_timer.setInterval(ENDS_DELAY_MS)
         self.ends_timer.timeout.connect(self.update_ends)
-        # Takes a value typed into a field of the fin with the handles once
-        # typing pauses, as the other fields do; the field typed into last.
-        self.field_timer = QtCore.QTimer(self.form)
-        self.field_timer.setSingleShot(True)
-        self.field_timer.setInterval(PREVIEW_DELAY_MS)
-        self.field_timer.timeout.connect(lambda: self.field_entered(self.typed_field, paused=True))
+        # The field of the fin with the handles changed, typed into or stepped,
+        # and not taken yet: taken on Enter, on leaving it, or before the
+        # arrows are grabbed or go to another fin; until then the panel leaves
+        # it as changed.
         self.typed_field = None
         # The field at an arrow a double click opened, as (kind, end, field):
         # past the tip of its half end, BACK or FORTH; and the timer that keeps
@@ -775,9 +801,6 @@ class FinSnapTaskPanel:
         self.arrow_field_timer = QtCore.QTimer(self.form)
         self.arrow_field_timer.setInterval(handles.ZOOM_POLL_MS)
         self.arrow_field_timer.timeout.connect(self.place_arrow_field)
-        # The field of the fin being typed into while its value is taken after
-        # a pause: the panel leaves it as typed.
-        self.typing = None
         # The fin with the handles on it, as (MAIN or COUNTER, number); the
         # arrow being dragged with how far, as (kind, mm); and the shift and
         # height of the fin, and the values in its fields, when it was grabbed.
@@ -817,8 +840,9 @@ class FinSnapTaskPanel:
             layout.addWidget(self.stand_section)
         intro = QtWidgets.QLabel(translate(
             "FinSnap", "Hover over a field for an explanation. Letters in brackets point to the drawings "
-            "below. Every change is shown in the 3D view right away. Greyed-out fields have no effect "
-            "with the current choices; their tooltip says why."))
+            "below. A number typed or stepped is taken on Enter or when you leave the field, and then shown "
+            "in the 3D view. Greyed-out fields have no effect with the current choices; their tooltip says "
+            "why."))
         intro.setWordWrap(True)
         layout.addWidget(intro)
         # The drawings always show, as the letters in the fields point to them.
@@ -842,7 +866,7 @@ class FinSnapTaskPanel:
                 info.setWordWrap(True)
                 groups[prop.group].addRow(info)
             widget = _widget(prop, feature.value_of(obj, prop.name))
-            widget.setToolTip(_wrapped(translate("App::Property", prop.tip)))
+            widget.setToolTip(_field_tip(prop))
             label = translate("FinSnap", prop.label)
             if prop.name in feature.MARKS:
                 label = "%s (%s)" % (label, feature.MARKS[prop.name])
@@ -858,7 +882,14 @@ class FinSnapTaskPanel:
             groups[prop.group].addRow(self.labels[prop.name], row)
             self.widgets[prop.name] = widget
             self.resets[prop.name] = reset
-            _changed_signal(widget).connect(self.changed)
+            if isinstance(widget, QtWidgets.QAbstractSpinBox):
+                # A number typed or stepped with the wheel or the arrows is
+                # taken on Enter or on leaving the field, not at every step.
+                widget.valueChanged.connect(self.adjusted)
+                widget.editingFinished.connect(self.changed)
+                widget.installEventFilter(EnterTakes(self.changed, widget))
+            else:
+                _changed_signal(widget).connect(self.changed)
 
         edit = self.add_section(layout, EDIT_SECTION, translate("FinSnap", EDIT_SECTION)).content
         edit_layout = QtWidgets.QGridLayout(edit)
@@ -895,7 +926,7 @@ class FinSnapTaskPanel:
         self.fin_label.setWordWrap(True)
         edit_layout.addWidget(self.fin_label, 4, 0, 1, 2)
         # Where the fin with the arrows stands, to read or to type in: taken
-        # once typing pauses, at once with Enter or on leaving the field.
+        # on Enter or on leaving the field.
         self.fin_fields, self.fin_field_labels = {}, {}
         for row, kind in ((5, handles.ALONG), (6, handles.UP)):
             label = QtWidgets.QLabel()
@@ -996,7 +1027,7 @@ class FinSnapTaskPanel:
             # Ways not checked, with the checks while editing off, are left blank.
             cells = [QtWidgets.QTableWidgetItem(name or STAND_ROW % (row + 1)),
                      QtWidgets.QTableWidgetItem("%.1f%s" % (size, suffix)),
-                     QtWidgets.QTableWidgetItem("" if islands is None else str(islands)),
+                     _islands_cell(islands),
                      _rated_cell(overhangs, None if overhangs is None else len(overhangs), STAND_OVERHANGS_TIP),
                      _rated_cell([found.level for found in spans] if spans is not None else None,
                                  _longest_span(spans), STAND_BRIDGES_TIP)]
@@ -1072,11 +1103,8 @@ class FinSnapTaskPanel:
     def update_enabled(self):
         for prop in feature.PROPERTIES:
             notes = feature.unused_notes(prop.name, self.current)
-            paragraphs = [translate("App::Property", prop.tip)]
-            if notes:
-                paragraphs.append(" ".join(translate("FinSnap", note) for note in notes))
             self.widgets[prop.name].setEnabled(not notes)
-            self.widgets[prop.name].setToolTip(_wrapped(*paragraphs))
+            self.widgets[prop.name].setToolTip(_field_tip(prop, notes))
             self.labels[prop.name].setEnabled(not notes)
 
     def add_section(self, layout, key, caption):
@@ -1104,6 +1132,7 @@ class FinSnapTaskPanel:
 
     def back_to_standard(self, prop):
         _write(prop, self.widgets[prop.name], getattr(self.standard, prop.field))
+        self.changed()
 
     def save_standard(self):
         values = {prop.field: _read(prop, self.widgets[prop.name]) for prop in feature.PROPERTIES}
@@ -1143,8 +1172,9 @@ class FinSnapTaskPanel:
 
     def remove_fins(self, fins):
         """Remove the fins in `fins`, as (MAIN or COUNTER, number), from the
-        button or the Delete key. The last main fins take the whole object
-        with them, once the user agrees."""
+        button or the Delete key. With the last main fins the counter fin
+        becomes the main fin; the last fins of all take the whole object with
+        them, once the user agrees."""
         if self.obj.Connection == d.CONNECTION_MERGED:
             self.show_notes(translate("FinSnap", "Nothing removed"),
                             [translate("FinSnap", feature.NOTE_MERGED_SINGLE)], WARNING_COLOR)
@@ -1153,8 +1183,12 @@ class FinSnapTaskPanel:
             self.show_notes(translate("FinSnap", "Nothing removed"),
                             [translate("FinSnap", NOTE_CLICK_FIN)], WARNING_COLOR)
             return
-        if not feature.remove_fins(self.obj, fins):
+        done = feature.remove_fins(self.obj, fins)
+        if done != feature.FINS_ALL_GONE:
             self.edited()
+            if done == feature.COUNTER_PROMOTED:
+                self.show_notes(translate("FinSnap", "Counter fin kept"),
+                                [translate("FinSnap", feature.NOTE_COUNTER_PROMOTED)], INFO_COLOR, sign=INFO_SIGN)
             return
         answer = QtWidgets.QMessageBox.question(
             self.form, translate("FinSnap", "Delete the fins?"),
@@ -1192,7 +1226,7 @@ class FinSnapTaskPanel:
                  for name in sel.SubElementNames if name.startswith(FACE_PREFIX)]
         try:
             found = feature.add_counter(self.obj, part, faces[0]) if faces else feature.add_counter(self.obj)
-        except geometry.FinError as error:
+        except face_frame.FinError as error:
             self.show_notes(translate("FinSnap", "No counter fin"),
                             [translate("FinSnap", feature.NOTE_NO_COUNTER_ON_FACE) % error], WARNING_COLOR)
             return
@@ -1206,11 +1240,23 @@ class FinSnapTaskPanel:
         feature.remove_counter(self.obj)
         self.edited()
 
-    def changed(self):
+    def adjusted(self):
+        """A field changed, not taken yet: what depends on its value follows."""
         self.update_enabled()
         self.update_steps()
         self.update_marks()
-        self.timer.start()
+
+    def changed(self):
+        """A value taken: rebuilt after PREVIEW_DELAY_MS, unless the fields
+        hold what the fins are built with, as on leaving a field untouched."""
+        self.adjusted()
+        if self.differs():
+            self.timer.start()
+
+    def differs(self):
+        """Whether a field holds another value than the fins are built with."""
+        return any(not _same(prop, _read(prop, self.widgets[prop.name]), feature.value_of(self.obj, prop.name))
+                   for prop in feature.PROPERTIES)
 
     def apply(self):
         for prop in feature.PROPERTIES:
@@ -1220,9 +1266,10 @@ class FinSnapTaskPanel:
         if not self.obj.recompute():
             raise ValueError(self.obj.getStatusString())
 
-    def show_notes(self, title, lines, color, linked=()):
-        """A framed box with a sign and a title, one line per note; hidden without
-        notes. The notes whose index is in `linked` are links to show_note()."""
+    def show_notes(self, title, lines, color, linked=(), sign=WARNING_SIGN):
+        """A framed box with `sign` and a title, one line per note; hidden
+        without notes. The notes whose index is in `linked` are links to
+        show_note()."""
         if not lines:
             self.notes.hide()
             return
@@ -1231,7 +1278,7 @@ class FinSnapTaskPanel:
             text = html.escape(line)
             return "<li><a href='%d'>%s</a></li>" % (index, text) if index in linked else "<li>%s</li>" % text
         items = "".join(item(index, line) for index, line in enumerate(lines))
-        self.notes.setText("<b>%s %s</b><ul style='margin: 0'>%s</ul>" % (WARNING_SIGN, html.escape(title), items))
+        self.notes.setText("<b>%s %s</b><ul style='margin: 0'>%s</ul>" % (sign, html.escape(title), items))
         self.notes.setStyleSheet(NOTE_STYLE % color)
         self.notes.show()
 
@@ -1387,7 +1434,7 @@ class FinSnapTaskPanel:
         result = self.handled_result()[0]
         number = self.handled[1]
         # The angle rounded as the field shows it: just below 360 is 0.
-        along = (geometry.round_angle(geometry.side_angle(feature.round_side(self.obj)), ANGLE_TOLERANCE)
+        along = (face_frame.round_angle(face_frame.side_angle(feature.round_side(self.obj)), ANGLE_TOLERANCE)
                  if self.turns_part()
                  else result.starts[number] + result.thickness / 2 - result.face_start)
         return {handles.ALONG: along, handles.UP: result.heights[number]}
@@ -1398,7 +1445,7 @@ class FinSnapTaskPanel:
         for every degree the part turns about it, for handles.Handles.show()."""
         face = feature.round_side(self.obj)
         surface = face.Surface
-        return App.Vector(surface.Center), App.Vector(surface.Axis).normalize(), geometry.turn_mm(face, 1.0)
+        return App.Vector(surface.Center), App.Vector(surface.Axis).normalize(), face_frame.turn_mm(face, 1.0)
 
     def place_handles(self):
         if self.handled_result() is None:
@@ -1437,8 +1484,8 @@ class FinSnapTaskPanel:
         """Show `values` in the fields of the handled fin, without taking them as typed."""
         self.filling_fields = True
         for kind, value in values.items():
-            # A field still being typed into keeps what is typed.
-            if kind != self.typing:
+            # A field changed and not taken yet keeps what it holds.
+            if kind != self.typed_field:
                 self.fin_fields[kind].setValue(value)
         self.filling_fields = False
 
@@ -1541,7 +1588,7 @@ class FinSnapTaskPanel:
         the part turns."""
         result = self.handled_result()[0]
         step = self.fin_fields[handles.ALONG].singleStep()
-        mm = abs(geometry.turn_mm(feature.round_side(self.obj), step)) if self.turns_part() else step
+        mm = abs(face_frame.turn_mm(feature.round_side(self.obj), step)) if self.turns_part() else step
         last = self.built_value(handles.ALONG)
         target = last + self.along_on_screen(result.along) * count * mm
         if not self.set_fin(handles.ALONG, target) and self.handled_result() is not None:
@@ -1619,7 +1666,7 @@ class FinSnapTaskPanel:
           the build fails in OpenCASCADE              ->  that error
           its side has no fins (counter fin removed)  ->  error: no tine finds the face there
         """
-        nowhere = geometry.FinError(translate("FinSnap", "no tine of the fin finds the face there"))
+        nowhere = face_frame.FinError(translate("FinSnap", "no tine of the fin finds the face there"))
         # Moving the fin on a round side turns the part, which stands on its rim at
         # any turn; a turn that fails is taken back by set_fin().
         if kind == handles.ALONG and self.turns_part():
@@ -1715,11 +1762,12 @@ class FinSnapTaskPanel:
         """An arrow grabbed: note where the fin stands and what it has by hand;
         the drag starts from there."""
         self.ends_timer.stop()
-        # A field at an arrow is dropped, as a click elsewhere drops it.
-        self.close_arrow_field()
-        # A value typed just before is built first, or the drag would keep the
-        # parameters from before it, or the value would come in the middle of it.
-        if self.timer.isActive():
+        # A field at an arrow is taken, as a click elsewhere takes it.
+        self.take_arrow_field()
+        # A value typed just before is built first, taken or not, as grabbing
+        # an arrow leaves its field; or the drag would keep the parameters from
+        # before it, or the value would come in the middle of it.
+        if self.timer.isActive() or self.differs():
             self.preview()
         self.take_typed()
         # While the drag lasts, builds with the same changes by hand are made once;
@@ -1790,7 +1838,7 @@ class FinSnapTaskPanel:
         self.dragged = (kind, mm)
         if kind == handles.ALONG and self.drag_mm_per_degree:
             # The angle of the fin on the part goes the other way round than the part turns.
-            shown = geometry.round_angle(self.drag_values[kind] - mm / self.drag_mm_per_degree, ANGLE_TOLERANCE)
+            shown = face_frame.round_angle(self.drag_values[kind] - mm / self.drag_mm_per_degree, ANGLE_TOLERANCE)
         else:
             shown = self.drag_values[kind] + mm
         self.show_fin_values({kind: shown})
@@ -1866,7 +1914,11 @@ class FinSnapTaskPanel:
     def finish_drag(self, kind, mm):
         """An arrow let go: the fin goes where it is, or, where it cannot stand
         there, as far towards it as it can; the arrows return onto it, and its
-        field takes the keyboard, so a value can be typed right away."""
+        field takes the keyboard, so a value can be typed right away. Called
+        once the arrow is let go: a panel closed meanwhile has let go of the
+        3D view, and nothing is done."""
+        if self.released:
+            return
         try:
             if self.handled_result() is None or kind not in self.drag_base:
                 self.place_handles()
@@ -1894,39 +1946,31 @@ class FinSnapTaskPanel:
         box.selectAll()
 
     def field_typed(self, kind, _value):
-        """A field of the handled fin changed while typing: its value is taken
-        once typing pauses; a value the panel fills in is not."""
+        """A field of the handled fin changed, typed into or stepped: noted, and
+        taken on Enter or on leaving it; a value the panel fills in is not."""
         if self.filling_fields:
             return
         self.typed_field = kind
-        self.field_timer.start()
 
     def take_typed(self):
-        """Take a value still waiting for typing to pause, before the handles
-        go to another fin or an arrow is grabbed, so it is neither lost nor
-        taken in the middle of a drag."""
-        if self.field_timer.isActive():
+        """Take a value changed and not taken yet, before the handles go to
+        another fin or an arrow is grabbed, so it is neither lost nor taken in
+        the middle of a drag."""
+        if self.typed_field is not None:
             self.field_entered(self.typed_field)
 
-    def field_entered(self, kind, paused=False):
-        """A value typed into a field of the handled fin: where it stands along
-        the face (ALONG) or how high it is (UP). With `paused`, typing has only
-        paused: the field may still be typed into, so it is left as typed.
+    def field_entered(self, kind):
+        """A value taken from a field of the handled fin, on Enter or on leaving
+        it: where the fin stands along the face (ALONG) or how high it is (UP).
 
         INPUTS this has to withstand:
-          paused, the fin stands there          ->  built there, the field left as typed
-          paused, the fin cannot stand there    ->  nothing built, the reason shown, the
-                                                    field left as typed
-          paused, the build fails all the same  ->  taken back, the reason shown, the
-                                                    field left as typed
-          Enter or the field left, the fin
-            stands there                        ->  built there, the field shows it
-          Enter or the field left, it cannot    ->  the reason shown, the field shows
+          the fin stands there                  ->  built there, the field shows it
+          it cannot stand there                 ->  the reason shown, the field shows
                                                     where the fin stands
           the value as shown, untouched         ->  nothing
           no fin with the handles               ->  nothing
         """
-        self.field_timer.stop()
+        self.typed_field = None
         if self.filling_fields or self.handled_result() is None:
             return
         value = self.fin_fields[kind].value()
@@ -1934,28 +1978,19 @@ class FinSnapTaskPanel:
         if kind == handles.ALONG and self.turns_part():
             # The part turns the other way round than the angle of the fin on
             # it goes, the shorter way.
-            turn = math.remainder(current - value, geometry.FULL_CIRCLE)
+            turn = math.remainder(current - value, face_frame.FULL_CIRCLE)
             # The field shows the angle rounded; leaving it untouched changes nothing.
             if abs(turn) < ANGLE_TOLERANCE:
                 return
-            value = (self.own_value(kind) or 0.0) + geometry.turn_mm(feature.round_side(self.obj), turn)
+            value = (self.own_value(kind) or 0.0) + face_frame.turn_mm(feature.round_side(self.obj), turn)
         else:
             # The field shows the value rounded; leaving it untouched changes nothing.
             if abs(value - current) < FIELD_TOLERANCE:
                 return
             if kind == handles.ALONG:
                 value = self.built_value(kind) + value - current
-        if not paused:
-            if not self.set_fin(kind, value):
-                self.place_handles()
-            return
-        # set_fin() tries the value first and shows why where the fin cannot
-        # stand; the field it leaves as typed meanwhile.
-        self.typing = kind
-        try:
-            self.set_fin(kind, value)
-        finally:
-            self.typing = None
+        if not self.set_fin(kind, value):
+            self.place_handles()
 
     def arrow_double_clicked(self, kind, end):
         """The half `end` of the arrow of `kind` double clicked: a field past its
@@ -1968,8 +2003,8 @@ class FinSnapTaskPanel:
         arrow of `kind`, the one clicked; without `end`, of the half
         handles.tip_points() takes. It holds the value of the field of that
         arrow in the panel, with the same unit, steps and limits; Enter takes
-        what is typed as that field does (field_entered()), Escape or a click
-        elsewhere drops it.
+        what is typed as that field does (field_entered()), and so does a
+        click elsewhere; Escape drops it.
 
         INPUTS this has to withstand:
           the arrow up or along the face        ->  a field at it with its value
@@ -2071,7 +2106,7 @@ class FinSnapTaskPanel:
         except RuntimeError:
             pass
         # Closed by FreeCAD first, the panel's form and its timers are gone already.
-        for timer in (self.timer, self.drag_timer, self.ends_timer, self.field_timer, self.key_timer):
+        for timer in (self.timer, self.drag_timer, self.ends_timer, self.key_timer):
             try:
                 timer.stop()
             except RuntimeError:
@@ -2082,6 +2117,10 @@ class FinSnapTaskPanel:
                 widget.removeEventFilter(self.fin_keys)
             except RuntimeError:
                 pass
+        # Let go of the widgets of the 3D view, as the arrows let go of the
+        # view itself: a panel kept on after its document closed would hold
+        # wrappers PySide could hand out again for a new view.
+        self.key_widgets, self.fin_keys = [], None
         self.handles.remove()
         self.obj.Proxy.editing = False
         self.obj.Proxy.reuse = None
@@ -2100,7 +2139,7 @@ class FinSnapTaskPanel:
     def check_stability(self):
         """Check whether the part stays standing while it is printed with these
         fins as they are built now, and say so below the button."""
-        if self.timer.isActive():
+        if self.timer.isActive() or self.differs():
             self.preview()
         level, note = check_stability(self.obj.Base[0], feature.params_of(self.obj))
         self.stability.setText(note)

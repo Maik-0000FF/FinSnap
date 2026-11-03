@@ -17,7 +17,7 @@ import Part
 from . import analysis
 from . import check
 from . import defaults as d
-from . import geometry
+from . import face_frame, geometry
 from . import limits
 from . import orient
 from . import presets
@@ -149,13 +149,14 @@ CHOICE = "App::PropertyEnumeration"
 BOOL = "App::PropertyBool"
 # Parameters that a file saved before them gets as off, not as their built-in
 # value: on, they would change fins saved without them.
-RESTORED_AS = {"TineRestart": False}
+RESTORED_AS = {"TineRestart": False, "FollowContour": False}
 # Editor mode that hides a property in the property view.
 EDITOR_HIDDEN = 2
 
 # step: how far one turn of the mouse wheel or an arrow press changes the field;
 # None keeps the default of the field, one unit.
-Prop = namedtuple("Prop", "name kind group label tip field choices step", defaults=(None,))
+# most: the largest value the field takes, None for no limit of its own.
+Prop = namedtuple("Prop", "name kind group label tip field choices step most", defaults=(None, None))
 
 # Steps of the fields, each sized to what the value is: hundredths for the
 # print profile and the gap, whole millimetres only for the fin height.
@@ -253,15 +254,16 @@ PROPERTIES = (
     Prop("Gap", LENGTH, GROUP_CONNECTION,
          QT_TRANSLATE_NOOP("FinSnap", "Gap"),
          QT_TRANSLATE_NOOP("App::Property", "Gap between fin and face that the tines reach across, along the face "
-                           "normal; a tine clearance adds to it"),
-         "gap", None, STEP_PROFILE),
+                           "normal; a tine clearance makes the tines as much shorter"),
+         "gap", None, STEP_PROFILE, d.GAP_MAX),
     Prop("TineClearance", LENGTH, GROUP_CONNECTION,
          QT_TRANSLATE_NOOP("FinSnap", "Tine clearance"),
          QT_TRANSLATE_NOOP("App::Property",
-                           "Distance between the end of a tine and the face, along the face normal; 0 = the "
-                           "tine touches the face. More leaves fainter marks, too much and the tine does not "
-                           "hold: find the value by a test print."),
-         "tine_clearance", None, STEP_CLEARANCE),
+                           "Distance between the end of a tine and the face, along the face normal, smaller "
+                           "than the gap; the tines are as much shorter, the fin stays where it is. 0 = the tine "
+                           "touches the face. More leaves fainter marks and separate beads in the slicer, too much and "
+                           "the tine does not hold: find the value by a test print."),
+         "tine_clearance", None, STEP_CLEARANCE, d.GAP_MAX),
     Prop("TineSpacing", LENGTH, GROUP_TINES,
          QT_TRANSLATE_NOOP("FinSnap", "Tine spacing"),
          QT_TRANSLATE_NOOP("App::Property",
@@ -300,6 +302,28 @@ PROPERTIES = (
                            "Height of the fins, 0 = top of the highest tine. A lower value leaves out the "
                            "tines above it; the fins reach at most to just below the top of the face."),
          "fin_height", None, STEP_HEIGHT),
+    Prop("FollowContour", BOOL, GROUP_FIN,
+         QT_TRANSLATE_NOOP("FinSnap", "Follow the contour"),
+         QT_TRANSLATE_NOOP("App::Property",
+                           "Under the round side of a part standing on its rim: the fin follows the contour of "
+                           "the part up to its top, over steps, cones, fillets and curves, keeping the gap; off, "
+                           "it stands under the round side alone"),
+         "follow_contour", None),
+    Prop("ContourBridge", LENGTH, GROUP_FIN,
+         QT_TRANSLATE_NOOP("FinSnap", "Bridge recesses up to"),
+         QT_TRANSLATE_NOOP("App::Property",
+                           "When the fin follows the contour: recesses in it lower than this, such as small "
+                           "chamfers, fillets, holes and grooves, the fin spans straight instead of following "
+                           "them, and leaves out its tines there; a pocket in one face that no tine rests in, "
+                           "whatever its size, as well. 0 = follow every recess."),
+         "contour_bridge", None, STEP_HALF),
+    Prop("ContourGap", LENGTH, GROUP_FIN,
+         QT_TRANSLATE_NOOP("FinSnap", "Gap without tines"),
+         QT_TRANSLATE_NOOP("App::Property",
+                           "When the fin follows the contour: the distance it keeps from the part over faces "
+                           "looking up, where no tine rests, so it cannot stick to the part there; never less "
+                           "than the gap, a smaller value keeps the gap"),
+         "contour_gap", None, STEP_PROFILE),
     Prop("FinPlateau", LENGTH, GROUP_FIN,
          QT_TRANSLATE_NOOP("FinSnap", "Top width"),
          QT_TRANSLATE_NOOP("App::Property", "Width of the flat top of a fin"),
@@ -456,7 +480,7 @@ def _face(link, plane=()):
     """
     part, subs = link
     if not subs:
-        raise geometry.FinError(translate("FinSnap", "no face selected on %s") % part.Label)
+        raise face_frame.FinError(translate("FinSnap", "no face selected on %s") % part.Label)
     name = subs[0]
     if plane:
         name = _named_in_plane(part, name, plane)
@@ -478,7 +502,7 @@ def _named_in_plane(part, name, plane):
         pass
     found = face_in_plane(shape, point, normal)
     if found is None:
-        raise geometry.FinError(translate("FinSnap", NOTE_FACE_GONE) % part.Label)
+        raise face_frame.FinError(translate("FinSnap", NOTE_FACE_GONE) % part.Label)
     return found
 
 
@@ -523,7 +547,7 @@ def on_part(obj, name):
     found = face_like(global_shape(part), global_shape(obj).getElement(name))
     if found is None:
         # Its name on the Body would be another face, with features after it.
-        raise geometry.FinError(translate("FinSnap", NOTE_FACE_GONE) % part.Label)
+        raise face_frame.FinError(translate("FinSnap", NOTE_FACE_GONE) % part.Label)
     return part, found
 
 
@@ -578,7 +602,7 @@ def _join_elements(obj, names):
       a face of the joined shape named back ->  the name of its first piece on `obj`:
                                                 a side for the whole side again, a flat
                                                 face for itself with the faces in its
-                                                plane (geometry.support_of())
+                                                plane (face_frame.support_of())
       half a flat face of a split part (the
         end face of a cylinder)             ->  the joined shape, the whole face
       a fillet or an arc of a slot          ->  as no split side or rim: as it is
@@ -602,13 +626,13 @@ def _join_elements(obj, names):
         if own is None:
             own = orient.counterpart(element, whole.Faces if isinstance(element, Part.Face) else whole.Edges)
         if own is None:
-            raise geometry.FinError(translate("FinSnap", NOTE_LOST_IN_JOINING) % name)
+            raise face_frame.FinError(translate("FinSnap", NOTE_LOST_IN_JOINING) % name)
         kept.append(own)
 
     def name_of(number):
         pieces_named = names_on(shape, [whole.Faces[number]])
         if not pieces_named:
-            raise geometry.FinError(translate("FinSnap", NOTE_NO_PIECE) % face_name(number + 1))
+            raise face_frame.FinError(translate("FinSnap", NOTE_NO_PIECE) % face_name(number + 1))
         return pieces_named[0]
     return whole, kept, name_of
 
@@ -762,13 +786,13 @@ def supports_of(part_obj, document):
             part, build = found
             try:
                 result = build(*edits(fins, which))
-            except (geometry.FinError, Part.OCCError):
+            except (face_frame.FinError, Part.OCCError):
                 continue
             if not result.tine_z:
                 continue
             # The tines are measured from the bed, the bottom of the part.
             supports.append((result.fins, bounds(part).ZMin + min(result.tine_z)))
-            out = geometry.frame_of(part, _face(side_link(fins, which), plane_kept(fins, which))[1]).out
+            out = face_frame.frame_of(part, _face(side_link(fins, which), plane_kept(fins, which))[1]).out
             sides.append(App.Vector(out.x, out.y, 0))
     return supports, sides
 
@@ -994,7 +1018,7 @@ class FinSnapFeature:
                 try:
                     part, name = on_part(link[0], link[1][0])
                     setattr(obj, SIDE_LINK[which], (part, [name]))
-                except (ValueError, IndexError, Part.OCCError, geometry.FinError):
+                except (ValueError, IndexError, Part.OCCError, face_frame.FinError):
                     # The face is gone already; the build says so.
                     pass
             if PLANE_OF[which] not in obj.PropertiesList:
@@ -1031,7 +1055,7 @@ def check_counter_face(shape, face, p):
       a part of a curved side leaning over
         the bed, the round end of a slot    ->  passes: its fin stays under its lowest line
       a face lying flat, facing up or
-        sideways, or not planar             ->  FinError from geometry.frame_of()
+        sideways, or not planar             ->  FinError from face_frame.frame_of()
       a face too narrow for the fin, or one
         it runs into the part under         ->  FinError from the build tried
       the kernel fails building there       ->  FinError saying so
@@ -1039,13 +1063,13 @@ def check_counter_face(shape, face, p):
     # Said before the face is asked to take fins, which a bore or a cut side
     # would refuse for a reason of its own.
     if orient.is_round_side(face):
-        raise geometry.FinError(translate("FinSnap", COUNTER_ROUND_SIDE))
-    geometry.frame_of(shape, face)
+        raise face_frame.FinError(translate("FinSnap", COUNTER_ROUND_SIDE))
+    face_frame.frame_of(shape, face)
     try:
         geometry.build(shape, face, p, tine_count=p.counter_tine_count or None)
     except Part.OCCError as error:
         # A fault in the kernel: said as why, as for a face without room.
-        raise geometry.FinError(str(error)) from error
+        raise face_frame.FinError(str(error)) from error
 
 
 def _opposite_taking_fins(obj, base, p):
@@ -1064,7 +1088,7 @@ def _opposite_taking_fins(obj, base, p):
             continue
         try:
             check_counter_face(*_face((base, named[:1])), p)
-        except geometry.FinError:
+        except face_frame.FinError:
             continue
         return named[0]
     return None
@@ -1320,7 +1344,7 @@ def build_keeping_edits(obj, which, build_fn, notes):
     try:
         result = build_fn(left, shifts, heights)
         planned = result.planned
-    except geometry.FinError as error:
+    except face_frame.FinError as error:
         failure, planned = error, getattr(error, "planned", None)
     stale = changed and made_for is not None and planned is not None and planned != made_for
     if not stale:
@@ -1469,11 +1493,11 @@ def set_fin_height(obj, which, number, mm):
 def turn_part(obj, mm):
     """Turn the part of `obj` about the axis of the round side its main fin
     stands under, so the fin comes to stand `mm` further along the side; see
-    geometry.turn_of(). Inside a Body, the whole Body is turned. No turn
+    face_frame.turn_of(). Inside a Body, the whole Body is turned. No turn
     leaves the placement as it is, so nothing is recomputed for it."""
     if abs(mm) < d.TOLERANCE:
         return
-    change = geometry.turn_of(round_side(obj), mm)
+    change = face_frame.turn_of(round_side(obj), mm)
     owner = outermost(obj.Base[0])
     owner.Placement = change.multiply(owner.Placement)
 
@@ -1482,7 +1506,7 @@ def on_round_side(obj):
     """Whether the main fin of `obj` stands under the round side of a cylinder or tube."""
     try:
         return orient.is_round_side(round_side(obj))
-    except (geometry.FinError, ValueError, Part.OCCError):
+    except (face_frame.FinError, ValueError, Part.OCCError):
         return False
 
 
@@ -1561,19 +1585,37 @@ def changed_by_hand(obj):
     return bool(obj.CounterFace) or any(any(edits(obj, which)) for which in (MAIN, COUNTER))
 
 
+# What remove_fins() did: left fins out, made the counter fin the main fin as
+# the last main fins went, or nothing, the last fins of all picked, for the
+# caller to delete the fins object.
+FINS_LEFT_OUT, COUNTER_PROMOTED, FINS_ALL_GONE = "left out", "counter promoted", "all gone"
+# Said when the counter fin became the main fin.
+NOTE_COUNTER_PROMOTED = QT_TRANSLATE_NOOP("FinSnap", "The main fins are removed; the counter fin is the main fin "
+                                                     "now, with its changes by hand.")
+
+
 def remove_fins(obj, fins):
-    """Leave out the fins in `fins`, as (MAIN or COUNTER, number). True when
-    that would leave no main fin: then nothing is changed, and the caller
+    """Leave out the fins in `fins`, as (MAIN or COUNTER, number), and say
+    what was done: FINS_LEFT_OUT; COUNTER_PROMOTED where the last main fins
+    go and a counter fin is left, which becomes the main fin; FINS_ALL_GONE
+    where no fin would be left: then nothing is changed, and the caller
     deletes the fins object instead.
 
-    INPUTS this has to withstand (fins built: main 1, 2, 3 and counter 1):
-      main 2                                ->  main 2 left out, False
-      main 1, 2, 3                          ->  nothing changed, True
-      main 1, 2, 3 and counter 1            ->  nothing changed, True
-      counter 1, the only counter fin       ->  counter fin dropped, False
-      main 2 and counter 1                  ->  main 2 left out, counter fin dropped, False
+    INPUTS this has to withstand (fins built: main 1, 2, 3 and counter 1, 2):
+      main 2                                ->  main 2 left out, FINS_LEFT_OUT
+      main 1, 2, 3                          ->  the counter fin the main fin, its
+                                                fins 1 and 2 as they were,
+                                                COUNTER_PROMOTED
+      main 1, 2, 3 and counter 1            ->  the counter fin the main fin, its
+                                                fin 1 left out, COUNTER_PROMOTED
+      main 1, 2, 3 and counter 1, 2         ->  nothing changed, FINS_ALL_GONE
+      main 1, 2, 3, no counter fin, or one
+        not built (under a round side)      ->  nothing changed, FINS_ALL_GONE
+      counter 1, 2, every counter fin       ->  counter fin dropped, FINS_LEFT_OUT
+      main 2 and counter 1, 2               ->  main 2 left out, counter fin dropped,
+                                                FINS_LEFT_OUT
       a fin twice                           ->  as once
-      empty                                 ->  nothing changed, False
+      empty                                 ->  nothing changed, FINS_LEFT_OUT
     """
     picked = set(fins)
     built = {MAIN: set(), COUNTER: set()}
@@ -1581,15 +1623,47 @@ def remove_fins(obj, fins):
         which, number = tag_fin(tag)
         built[which].add(number)
     gone = {which: {n for w, n in picked if w == which} for which in built}
-    if built[MAIN] and built[MAIN] <= gone[MAIN]:
-        return True
-    if built[COUNTER] and built[COUNTER] <= gone[COUNTER]:
+    main_gone = bool(built[MAIN]) and built[MAIN] <= gone[MAIN]
+    counter_gone = not built[COUNTER] or built[COUNTER] <= gone[COUNTER]
+    if main_gone and counter_gone:
+        return FINS_ALL_GONE
+    if main_gone:
+        promote_counter(obj)
+        for number in sorted(gone[COUNTER]):
+            remove_fin(obj, MAIN, number)
+        return COUNTER_PROMOTED
+    if built[COUNTER] and counter_gone:
         remove_counter(obj)
         gone[COUNTER] = set()
     for which, numbers in gone.items():
         for number in sorted(numbers):
             remove_fin(obj, which, number)
-    return False
+    return FINS_LEFT_OUT
+
+
+def promote_counter(obj):
+    """Make the counter fin of `obj` its main fin: the face it stands under,
+    the plane it is found by, its changes by hand and its tine count; the
+    counter fin is then none. The part stays as it stands. What Quick fins
+    started from is forgotten, its ways were those of the main fin gone."""
+    counter = obj.CounterFace
+    # Moved over before the links change, which note the planes anew.
+    for names in (PLANE_OF, REMOVED, SHIFTS, HEIGHTS, EDITED_OF, HEIGHTS_GRID, PLANNED):
+        if names[COUNTER] in obj.PropertiesList:
+            kind = obj.getTypeIdOfProperty(names[COUNTER])
+            hidden_property(obj, names[MAIN], kind)
+            setattr(obj, names[MAIN], getattr(obj, names[COUNTER]))
+            obj.removeProperty(names[COUNTER])
+        elif names[MAIN] in obj.PropertiesList:
+            obj.removeProperty(names[MAIN])
+    obj.Base = counter
+    obj.CounterFace = None
+    if obj.CounterTineCount:
+        obj.TineCount = obj.CounterTineCount
+        obj.CounterTineCount = d.COUNTER_TINE_COUNT_AUTO
+    for name in (QUICK_PART, QUICK_FROM, QUICK_TILTED, QUICK_EDGES, QUICK_FACES):
+        if name in obj.PropertiesList:
+            obj.removeProperty(name)
 
 
 def prepare_delete(obj):
