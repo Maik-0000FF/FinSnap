@@ -11,6 +11,11 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A cylinder with a fillet round its rim stands on that rim; Quick fins no longer falls back to a smaller rim on its axis
+- Quick fins on the side of a part with rounded corners no longer stops with "undefined curve type"
+
 ## [0.13.0] - 2026-11-02
 
 ### Added
