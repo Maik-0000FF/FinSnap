@@ -11,6 +11,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- The fin under the round side of a part standing on its rim follows the contour of the part up to its top, over steps, cones, fillets and curves (**Follow the contour**, on for new fins): its tines rest only where the part faces down, start anew at the bottom of each such stretch, and its inner edge runs inward no steeper than 45 degrees; recesses lower than **Bridge recesses up to** (3 mm) are spanned, and so is a pocket in one face that no tine rests in, and over faces looking up it keeps **Gap without tines** (1 mm) from the part
+
 ### Fixed
 
 - A cylinder with a fillet round its rim stands on that rim; Quick fins no longer falls back to a smaller rim on its axis

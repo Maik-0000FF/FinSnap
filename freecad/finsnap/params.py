@@ -23,6 +23,9 @@ INPUTS this has to withstand (validate()):
     < 0                                 ->  ParamError; 0 means automatic
   foot_overhang < 0                     ->  ParamError; 0 ends the foot at the fin
   brim_width < 0                        ->  ParamError; 0 means no brim
+  contour_bridge < 0                    ->  ParamError; 0 follows every recess
+  contour_gap < gap                     ->  ParamError: the fin would come closer where
+                                            no tine rests than where one does
   fin_count < 1 with "distributed"      ->  ParamError
   unknown connection / placement / foot ->  ParamError listing the choices
   tine wider than a manual fin_thickness ->  ParamError: tine would stick out
@@ -63,6 +66,9 @@ class FinParams:
     fin_plateau: float = d.FIN_PLATEAU
     fin_thickness: float = d.FIN_THICKNESS_AUTO
     fin_height: float = d.FIN_HEIGHT_AUTO
+    follow_contour: bool = d.FOLLOW_CONTOUR
+    contour_bridge: float = d.CONTOUR_BRIDGE
+    contour_gap: float = d.CONTOUR_GAP
     # Placement
     placement: str = d.PLACEMENT
     fin_count: int = d.FIN_COUNT
@@ -102,6 +108,10 @@ class FinParams:
             raise ParamError(translate("FinSnap", "foot_overhang must be 0 or greater"))
         if self.brim_width < 0:
             raise ParamError(translate("FinSnap", "brim_width must be 0 (no brim) or greater"))
+        if self.contour_bridge < 0:
+            raise ParamError(translate("FinSnap", "contour_bridge must be 0 (follow every recess) or greater"))
+        if self.contour_gap < self.gap:
+            raise ParamError(translate("FinSnap", "contour_gap must be at least the gap"))
         if self.bead_width < self.nozzle_diameter / 2:
             raise ParamError(translate("FinSnap", "bead_width is less than half the nozzle diameter"))
         if self.layer_height > self.nozzle_diameter:

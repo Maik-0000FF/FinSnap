@@ -24,7 +24,7 @@ from freecad.finsnap import analysis, check, export_3mf, export_step, feature, g
 from freecad.finsnap import limits, presets
 from freecad.finsnap.params import FinParams, ParamError
 from freecad.finsnap.paths import PACKAGE_XML
-from freecad.finsnap.shapes import bounds, global_shape, moved, outermost
+from freecad.finsnap.shapes import KEPT, bounds, global_shape, moved, outermost
 
 V = App.Vector
 # The version as package.xml states it, read independently of the workbench.
@@ -441,6 +441,13 @@ def warnings_and_old_files(doc):
     fins.Proxy.onDocumentRestored(fins)
     expect("TineRestart" in fins.PropertiesList and fins.TineRestart is False and FinParams().tine_restart,
            "fins saved before the tine restart existed get it off, built as before; new fins get it on")
+    fins.removeProperty("FollowContour")
+    fins.removeProperty("ContourBridge")
+    fins.removeProperty("ContourGap")
+    fins.Proxy.onDocumentRestored(fins)
+    expect(fins.FollowContour is False and FinParams().follow_contour
+           and fins.ContourBridge.Value == d.CONTOUR_BRIDGE and fins.ContourGap.Value == d.CONTOUR_GAP,
+           "fins saved before the contour existed get it off, built as before; new fins follow it")
     feature.set_fin_height(fins, feature.MAIN, 1, fins.ResultHeight.Value / 2)
     fins.removeProperty(feature.HEIGHTS_GRID[feature.MAIN])
     fins.Proxy.onDocumentRestored(fins)
@@ -961,11 +968,11 @@ def bridges_apart(doc):
     expect(covered and covered <= plain, "without bridges looked for, a face a bridge covers is rated as an overhang")
     # The bridges kept for one part as it stands stay bounded, however many
     # beads are tried.
-    for step in range(analysis.KEPT + BEADS_PAST_KEPT):
+    for step in range(KEPT + BEADS_PAST_KEPT):
         feature.bridges_of(spanned, doc, FinParams(bead_width=FinParams().bead_width + step * BEAD_STEP))
     kept = analysis._analysis(spanned, FinParams())[analysis.BRIDGES]
-    expect(len(kept) == analysis.KEPT, "at most %d bridges are kept for a part as it stands: %d"
-           % (analysis.KEPT, len(kept)))
+    expect(len(kept) == KEPT, "at most %d bridges are kept for a part as it stands: %d"
+           % (KEPT, len(kept)))
     doc.removeObject(reaching.Name)
     doc.removeObject(spanned.Name)
 
