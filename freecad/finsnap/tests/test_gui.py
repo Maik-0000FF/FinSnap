@@ -1345,6 +1345,30 @@ def counter_kept_in_panel():
            "the Delete key on the last main fins: the counter fin is the main fin, a message says so: %s" % told)
 
 
+def panel_outlives_document():
+    """A panel closed and kept on after its document closed holds no widget
+    of its 3D view, nor do its arrows: a panel opened in a new document then
+    finds its own view, not a dead one where the old lay."""
+    from freecad.finsnap import commands, feature
+    from freecad.finsnap.taskpanel import FinSnapTaskPanel
+    kept = []
+    for name in ("FirstView", "SecondView"):
+        doc = App.newDocument(name)
+        cube = doc.addObject("Part::Feature", "Cube")
+        cube.Shape = tilted_cube()
+        fins = feature.create(cube, face_name(cube, lower_left_face(cube.Shape)))
+        commands.ViewProviderFinSnap(fins.ViewObject)
+        doc.recompute()
+        panel = FinSnapTaskPanel(fins)
+        panel.release_handles()
+        Gui.Control.closeDialog()
+        kept.append(panel)
+        App.closeDocument(doc.Name)
+    expect(all(not panel.key_widgets and panel.fin_keys is None and panel.handles.view is None
+               and panel.handles.viewer is None for panel in kept),
+           "a panel released holds no widget of its 3D view, nor its arrows, also kept on after its document closed")
+
+
 def gap_limited():
     """The gap field stops at the largest gap, its tooltip names the range;
     a field without a limit of its own names none."""
@@ -1364,6 +1388,8 @@ def main():
     expect(all(c in registered for c in COMMANDS), "all commands are registered")
     islands_shaded()
     gap_limited()
+    panel_outlives_document()
+    counter_kept_in_panel()
 
     from freecad.finsnap import defaults as d
     from freecad.finsnap import feature
@@ -2358,9 +2384,6 @@ def main():
     expect(len(messages) == 1, "exporting an object without a shape shows a message: %s" % messages)
     del messages[:]
     doc.removeObject(empty.Name)
-    # Last: it closes a document of its own, whose 3D view a later panel
-    # would otherwise still find.
-    counter_kept_in_panel()
 
     print("all checks passed", file=sys.__stdout__)
 

@@ -27,6 +27,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Fixed
 
+- A task panel closed lets go of its 3D view, so a panel opened after its document was closed can no longer find that view, already deleted, in place of its own (#146)
 - A cylinder with a fillet round its rim stands on that rim; Quick fins no longer falls back to a smaller rim on its axis
 - Quick fins on the side of a part with rounded corners no longer stops with "undefined curve type"
 

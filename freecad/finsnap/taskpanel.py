@@ -2113,6 +2113,10 @@ class FinSnapTaskPanel:
                 widget.removeEventFilter(self.fin_keys)
             except RuntimeError:
                 pass
+        # Let go of the widgets of the 3D view, as the arrows let go of the
+        # view itself: a panel kept on after its document closed would hold
+        # wrappers PySide could hand out again for a new view.
+        self.key_widgets, self.fin_keys = [], None
         self.handles.remove()
         self.obj.Proxy.editing = False
         self.obj.Proxy.reuse = None
