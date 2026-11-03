@@ -11,6 +11,8 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.14.0] - 2026-11-03
+
 ### Added
 
 - The fin under the round side of a part standing on its rim follows the contour of the part up to its top, over steps, cones, fillets and curves (**Follow the contour**, on for new fins): its tines rest only where the part faces down, start anew at the bottom of each such stretch, and its inner edge runs inward no steeper than 45 degrees; recesses lower than **Bridge recesses up to** (3 mm) are spanned, and so is a pocket in one face that no tine rests in, and over faces looking up it keeps **Gap without tines** (1 mm) from the part
@@ -305,7 +307,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.13.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.14.0...HEAD
+[0.14.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.14.0
 [0.13.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.13.0
 [0.12.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.12.0
 [0.11.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.11.0
