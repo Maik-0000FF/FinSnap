@@ -1101,9 +1101,10 @@ def fin_at(p, result, number, height):
     return [body] + tines
 
 
-def check(p, part, fins, bodies):
-    """Fins clear of the part. That every tine reaches the face is settled when
-    the tines are chosen, by contact_share()."""
+def check(p, part, fins, bodies, slack=0.0):
+    """Fins clear of the part, no closer than their distance from the face,
+    give or take `slack`: along a contour, CONTOUR_TOLERANCE. That every tine
+    reaches the face is settled when the tines are chosen, by contact_share()."""
     if p.connection == d.CONNECTION_SEPARATE:
         overlap = fins.common(part).Volume
         if overlap > d.TOLERANCE:
@@ -1111,7 +1112,7 @@ def check(p, part, fins, bodies):
 
     for body in bodies:
         distance = body.distToShape(part)[0]
-        if distance < p.fin_offset - d.TOLERANCE:
+        if distance < p.fin_offset - slack - d.TOLERANCE:
             raise FinError(translate("FinSnap", "a fin comes within %.3f mm of the part, closer than the %.3f mm it "
                                                   "keeps from the face")
                            % (distance, p.fin_offset))
@@ -1394,7 +1395,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         pieces.append(body.multiFuse(kept).removeSplitter())
 
     fins = Part.makeCompound(pieces)
-    check(p, part, fins, bodies)
+    check(p, part, fins, bodies, 0.0 if frame.contour is None else d.CONTOUR_TOLERANCE)
 
     # Each warning with what it is about, as a WarningTarget, in the same order.
     warnings, targets = [], []

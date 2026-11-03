@@ -249,8 +249,8 @@ def _shifted(piece, radius):
     out its gap reaches, each run on at either end by its mitre to where it
     meets that of the next piece: the one out of the part, where its loop
     tells which side that is; where it does not, the one towards larger s,
-    the fin's side, both, above and below, for a piece lying level. None at
-    all for a piece without length."""
+    the fin's side, both, above and below, for a piece lying level; no lines
+    for a piece without length."""
     (s0, z0), (s1, z1), before, after, outward = piece
     length = math.hypot(s1 - s0, z1 - z0)
     if length <= 0:
@@ -347,7 +347,7 @@ def _past_chord(piece, low, high, chord, radius):
 def _lifted(values, near, heights, radius):
     """`values`, the reach of the pieces `near` each stretch within `radius`
     at `heights`, lifted where the straight run between two samples would
-    come closer to the part than CONTOUR_MARGIN covers, a corner or the
+    come closer to the part than CONTOUR_TOLERANCE allows, a corner or the
     start of a circle between them: both raised to the most the part reaches
     between them, the run then outside it. On a smooth contour nothing is
     raised."""
@@ -369,7 +369,7 @@ def _lifted(values, near, heights, radius):
             return a + (b - a) * (z - low) / (high - low)
 
         found = [r for r in (_past_chord(piece, low, high, chord, radius) for piece in pieces) if r is not None]
-        if found and max(found) > d.CONTOUR_MARGIN / 2:
+        if found and max(found) > d.CONTOUR_TOLERANCE / 2:
             most = max(r for r in (_reach_between(piece, low, high, radius) for piece in pieces) if r is not None)
             raised[k], raised[k + 1] = max(raised[k], most), max(raised[k + 1], most)
     return [value if value is None else max(value, up) for value, up in zip(result, raised)]
@@ -489,10 +489,10 @@ class Contour:
         step = p.layer_height / d.CONTOUR_SAMPLES_PER_LAYER
         self.step = step
         self.heights = [k * step for k in range(int(math.ceil(self.top / step)) + 1)]
-        distance = p.fin_offset + d.CONTOUR_MARGIN
+        distance = p.fin_offset
         # Over a face looking up the fin keeps the larger gap, so it cannot
         # stick to the part there; never less than where the tines rest.
-        apart = max(p.contour_gap, p.fin_offset) + d.CONTOUR_MARGIN
+        apart = max(p.contour_gap, p.fin_offset)
         width = int(round(p.contour_bridge / step))
 
         def envelope(pieces, gap, lifted=True):
@@ -576,7 +576,7 @@ class Contour:
         inside = [k for k, z in enumerate(self.heights) if low + d.TOLERANCE < z < high - d.TOLERANCE]
         points = [(self.flank(high), high)] + [(self.flank_at[k], self.heights[k]) for k in reversed(inside)]
         points.append((self.flank(low), low))
-        return _straightened(points, d.CONTOUR_MARGIN / 2)
+        return _straightened(points, d.CONTOUR_TOLERANCE / 2)
 
     def tine_ends(self, bottom, top):
         """How far out the end of a tine from `bottom` to `top` lies at each:

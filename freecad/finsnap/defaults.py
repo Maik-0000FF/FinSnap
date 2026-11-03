@@ -217,11 +217,12 @@ CONTOUR_MITRE_LIMIT = 2.0
 # fin then runs straight past.
 CONTOUR_SAME_LINE = 0.05
 # How far a curve of the contour may lie off the straight pieces it is cut
-# into (mm), and what the fin keeps from the part beyond its distance to
-# cover that, the straight run between two samples and the part between two
-# cuts, as the edge of a hole lies there.
+# into (mm), and how much closer than its gap the fin may come along the
+# contour: between two samples, at a curve, and between two cuts, as at the
+# edge of a hole. Within it the flank stays as the samples give it, so it
+# keeps straight; past it, the samples beside a corner are raised.
 CONTOUR_DEFLECTION = 0.001
-CONTOUR_MARGIN = 0.01
+CONTOUR_TOLERANCE = 0.005
 # The flank of the fin never runs inward up the contour more steeply than
 # this angle from the bed allows: the fin itself prints without an overhang.
 FIN_FLANK_ANGLE = OVERHANG_ANGLE
