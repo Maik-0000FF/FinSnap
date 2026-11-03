@@ -11,6 +11,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A cylinder stands on a rim with a fillet round it: the fillet, bulging past the rim once the part leans, carries it on the bed, where the rim was refused before and Quick fins fell back to a smaller rim on its axis, such as the end of a thinner step, with islands
+
 ## [0.13.0] - 2026-11-02
 
 ### Added

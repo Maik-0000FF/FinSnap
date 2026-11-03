@@ -1483,6 +1483,21 @@ def check_round_side():
         radii = [e.Curve.Radius for e in geometry.rims_on_axis(shape, shape.Faces[round_side_of(shape)])]
         expect(radii[:2] == [ROD_RADIUS, ROD_RADIUS] and radii[-1] == BORE_RADIUS,
                "%s tries the rims of its side before the smaller ones on its axis: %s" % (name, radii))
+    # The thinner step below and a fillet round the free end: the rim at the
+    # step cannot carry the part, the one of the fillet does, the fillet
+    # bulging past it on the bed, and nothing stands on the thinner step.
+    under = Part.makeCylinder(BORE_RADIUS, ROD_RADIUS, V(0, 0, -ROD_RADIUS))
+    free_end = [e for e in rod.Edges if orient.is_rim(e) and e.BoundBox.ZMin > ROD_HEIGHT - d.TOLERANCE]
+    rounded_end = rod.makeFillet(EDGE_ROUND, free_end).fuse(under).removeSplitter()
+    side = round_side_of(rounded_end)
+    plan = geometry.quick_plan(rounded_end, [], [(rounded_end.Faces[side], side)], p, d.TILT_ANGLE)
+    stood = moved(rounded_end, plan.change)
+    fillet = next(f for f in stood.Faces if isinstance(f.Surface, Part.Toroid))
+    bed = resting_height(rounded_end)
+    expect(abs(plan.edge.Curve.Radius - (ROD_RADIUS - EDGE_ROUND)) < d.TOLERANCE
+           and abs(resting_height(fillet) - bed) < d.TOLERANCE
+           and abs(resting_height(stood) - bed) < d.TOLERANCE and leans_by(stood, side, d.TILT_ANGLE),
+           "a shaft thinner below, its side chosen: it stands on the fillet of its free end")
     # A step whose angles count from elsewhere than those of the shaft.
     step = Part.makeCylinder(BORE_RADIUS, ROD_HEIGHT, V(0, 0, ROD_HEIGHT))
     step.rotate(V(0, 0, 0), UP, ODD_TURNS[0])

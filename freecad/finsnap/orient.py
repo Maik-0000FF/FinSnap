@@ -13,8 +13,9 @@ A face alone, a chamfer or a fillet, is laid onto the bed and carries the part.
 A cylinder or tube stands on its rim: the flat face of the rim is laid onto the
 bed and turned about its axis until the zero direction of its curved side
 points to -Y, then the part is turned about the line touching the rim at its
-front, so it leans to -Y and rests on one point of the rim. Its lowest line,
-under which the fin stands, is then the line at 0 degrees round the side.
+front, so it leans to -Y and rests on one point of the rim, or of a fillet or
+chamfer round it that reaches lower. Its lowest line, under which the fin
+stands, is then the line at 0 degrees round the side.
 
 The placement before the first tilt is kept on the moved object, so the part
 can be laid flat again, also after several tilts.
@@ -35,8 +36,14 @@ INPUTS this has to withstand (stand_on_rim()):
                                             the axis
   no whole curved side on the axis      ->  not turned about the axis
   rim without a flat face beside it     ->  OrientError
-  inner rim of a tube                   ->  OrientError from tilt(): the outer rim
-                                            reaches below the line
+  rim with a fillet to its side, which
+    bulges past it once the part leans  ->  rests on the fillet, lifted onto the bed
+  rim with a chamfer to its side        ->  rests on the chamfer where it reaches
+                                            below the rim, else on the rim
+  inner rim of a tube                   ->  OrientError: the outer rim reaches below
+                                            the line, not a rounding of the inner one
+  rim of a step, the thinner part of a
+    shaft reaching below it             ->  OrientError from lay_flat()
   flat face of the rim cannot lie on
     the bed (a flange reaches below it) ->  OrientError from lay_flat()
 
@@ -447,7 +454,9 @@ def stand_on_rim(shape, rim, angle_deg, side=None):
     and turned about its axis so the line of its curved side at 0 degrees
     comes to the front, where the fin stands under it. The part is then turned
     about the line touching the rim at its front, as tilt() turns it about an
-    edge, and rests on that one point of the rim.
+    edge, and rests on that one point of the rim, or on the fillet or chamfer
+    that joins the rim to its side where that reaches below it, see
+    _rest_on_rim().
     """
     flat_faces = [face for face in shape.ancestorsOfType(rim, Part.Face) if face.findPlane() is not None]
     if not flat_faces:
@@ -459,11 +468,37 @@ def stand_on_rim(shape, rim, angle_deg, side=None):
         side = side_of_rim(shape, rim)
     if side is not None:
         flat = zero_to_front(moved(side, flat)).multiply(flat)
-    laid = moved(rim, flat)
-    radius = laid.Curve.Radius
-    front = laid.CenterOfMass + RIM_LEAN * radius
-    line = Part.makeLine(front - RIM_LINE * radius, front + RIM_LINE * radius)
-    return tilt(moved(shape, flat), line, angle_deg).multiply(flat)
+    return _rest_on_rim(shape, rim, flat, angle_deg).multiply(flat)
+
+
+def _rest_on_rim(shape, rim, flat, angle_deg):
+    """The placement change that turns `shape`, laid by `flat` with its rim
+    `rim` on the bed, angle_deg about the line touching the rim at its front,
+    and lifts it back onto the bed.
+
+    The part rests on the rim, or on a rounded face beside it (a fillet or a
+    chamfer joining the rim to its side) where that reaches below the line:
+    of the two ways to turn, the one that sinks the part least into the bed.
+    OrientError where anything else reaches below the line, as the outer rim
+    does turning a tube about its inner rim.
+    """
+    _check_tilt(angle_deg)
+    laid_rim = moved(rim, flat)
+    front = laid_rim.CenterOfMass + RIM_LEAN * laid_rim.Curve.Radius
+    laid = moved(shape, flat)
+    # Faces keep their order when moved: the rounded faces of the rim are
+    # found on `shape` and taken from the part turned by their number.
+    rounded = {number for number, face in enumerate(shape.Faces)
+               if face.findPlane() is None and any(edge.isSame(rim) for edge in face.Edges)}
+    turns = [App.Placement(V(0, 0, 0), App.Rotation(RIM_LINE, sign * angle_deg), front) for sign in (1, -1)]
+    turn, turned = max(((turn, moved(laid, turn)) for turn in turns), key=lambda pair: bounds(pair[1]).ZMin)
+    lowest = bounds(turned).ZMin
+    if lowest < front.z - d.TOLERANCE:
+        resting = {number for number, face in enumerate(turned.Faces) if bounds(face).ZMin < lowest + d.TOLERANCE}
+        if not resting <= rounded:
+            raise OrientError(translate("FinSnap", "the part cannot stand on this edge"))
+    lift = App.Placement(V(0, 0, front.z - lowest), App.Rotation())
+    return lift.multiply(turn)
 
 
 def rest_between(shape, first, second):
