@@ -559,11 +559,11 @@ class EnterTakes(QtCore.QObject):
 class ArrowFieldKeys(QtCore.QObject):
     """Ends typing in the field at an arrow: Enter and the field losing the
     focus call `take`, as a field of the panel takes its value then; Escape
-    calls `cancel`. Enter and Escape are kept from
-    FreeCAD whole, pressed and let go: the field lies in the 3D view, which
-    leaves edit mode on Escape let go, closing the task panel, and a shortcut
-    on them is claimed for the field before FreeCAD takes it. The field acts
-    when the key is let go, so it still holds the focus and takes that too.
+    calls `cancel`. Enter and Escape are kept from FreeCAD whole, pressed and
+    let go: the field lies in the 3D view, which leaves edit mode on Escape
+    let go, closing the task panel, and a shortcut on them is claimed for the
+    field before FreeCAD takes it. The field acts when the key is let go, so
+    it still holds the focus and takes that too.
 
     INPUTS this has to withstand:
       Enter or Return let go                ->  take(), press and release kept
