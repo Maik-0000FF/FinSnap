@@ -1914,7 +1914,11 @@ class FinSnapTaskPanel:
     def finish_drag(self, kind, mm):
         """An arrow let go: the fin goes where it is, or, where it cannot stand
         there, as far towards it as it can; the arrows return onto it, and its
-        field takes the keyboard, so a value can be typed right away."""
+        field takes the keyboard, so a value can be typed right away. Called
+        once the arrow is let go: a panel closed meanwhile has let go of the
+        3D view, and nothing is done."""
+        if self.released:
+            return
         try:
             if self.handled_result() is None or kind not in self.drag_base:
                 self.place_handles()

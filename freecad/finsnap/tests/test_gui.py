@@ -1348,8 +1348,9 @@ def counter_kept_in_panel():
 def panel_outlives_document():
     """A panel closed and kept on after its document closed holds no widget
     of its 3D view, nor do its arrows: a panel opened in a new document then
-    finds its own view, not a dead one where the old lay."""
-    from freecad.finsnap import commands, feature
+    finds its own view, not a dead one where the old lay. An arrow let go just
+    before the panel closed is let go of without the view."""
+    from freecad.finsnap import commands, feature, handles
     from freecad.finsnap.taskpanel import FinSnapTaskPanel
     kept = []
     for name in ("FirstView", "SecondView"):
@@ -1360,13 +1361,19 @@ def panel_outlives_document():
         commands.ViewProviderFinSnap(fins.ViewObject)
         doc.recompute()
         panel = FinSnapTaskPanel(fins)
+        # An arrow grabbed, the panel closed, then what letting go of the
+        # arrow calls after the next pass of the event loop.
+        panel.pick_fin(0)
+        panel.handle_started(handles.ALONG)
         panel.release_handles()
         Gui.Control.closeDialog()
+        panel.finish_drag(handles.ALONG, 0.0)
         kept.append(panel)
         App.closeDocument(doc.Name)
     expect(all(not panel.key_widgets and panel.fin_keys is None and panel.handles.view is None
                and panel.handles.viewer is None for panel in kept),
-           "a panel released holds no widget of its 3D view, nor its arrows, also kept on after its document closed")
+           "a panel released holds no widget of its 3D view, nor its arrows, also kept on after its document closed; "
+           "an arrow let go after it closed does nothing")
 
 
 def gap_limited():
