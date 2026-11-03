@@ -37,12 +37,15 @@ CONNECTION = CONNECTION_SEPARATE
 #
 # Clearance between fin and supported face, measured along the face normal.
 GAP = 0.3
+# The largest gap taken (mm), and so the longest tines: longer, a tine hangs
+# out from the fin too far to print straight.
+GAP_MAX = 2.0
 # Clearance between the end of a tine and the face, along the face normal; the
 # tines are as much shorter than the gap. 0: the tine touches the face, and the
-# slicer joins tine and part into one bead. A test print held with 0.25 mm
-# tines and this clearance, the tine and the part printed as separate beads;
-# a bead swells a few hundredths of a millimetre, so too much and the tine no
-# longer holds. Find it by a test print.
+# slicer joins tine and part into one bead. Test prints with 0.25 mm tines
+# held with 0.04 mm and with this clearance, tine and part printed as separate
+# beads; a bead swells a few hundredths of a millimetre, so too much and the
+# tine no longer holds. Find it by a test print.
 TINE_CLEARANCE = 0.05
 
 # --- Tines --------------------------------------------------------------------

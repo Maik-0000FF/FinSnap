@@ -1295,11 +1295,25 @@ def islands_shaded():
            "islands are shaded as unprintable in the table of ways, none left plain, unchecked blank")
 
 
+def gap_limited():
+    """The gap field stops at the largest gap, its tooltip names the range;
+    a field without a limit of its own names none."""
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap import feature, taskpanel
+    gap = next(prop for prop in feature.PROPERTIES if prop.name == "Gap")
+    spacing = next(prop for prop in feature.PROPERTIES if prop.name == "TineSpacing")
+    box = taskpanel._widget(gap, d.GAP)
+    expect(abs(box.maximum() - d.GAP_MAX) < d.TOLERANCE and ("%g" % d.GAP_MAX) in taskpanel._field_tip(gap)
+           and ("%g" % d.GAP_MAX) not in taskpanel._field_tip(spacing),
+           "the gap field stops at %g mm and its tooltip says so" % d.GAP_MAX)
+
+
 def main():
     commands = load_workbench()
     registered = Gui.listCommands()
     expect(all(c in registered for c in COMMANDS), "all commands are registered")
     islands_shaded()
+    gap_limited()
 
     from freecad.finsnap import defaults as d
     from freecad.finsnap import feature

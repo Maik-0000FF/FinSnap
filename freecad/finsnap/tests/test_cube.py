@@ -766,6 +766,13 @@ def check_tine_clearance(cube, face):
             expect("tine_clearance" in str(error), "a clearance %s is refused: %s" % (why, error))
         else:
             raise AssertionError("a tine clearance %s was accepted" % why)
+    FinParams(gap=d.GAP_MAX).validate()
+    try:
+        FinParams(gap=d.GAP_MAX + d.GAP).validate()
+    except ParamError as error:
+        expect("gap" in str(error), "a gap past %.1f mm is refused, its tines too long: %s" % (d.GAP_MAX, error))
+    else:
+        raise AssertionError("a gap past the largest was accepted")
 
 
 def check_shortened(cube, face):
@@ -1798,12 +1805,12 @@ def check_contour():
            "a tube holds the fin at its front wall, up to its front top edge, not over the bore: %.1f mm, edge %.1f"
            % (front.height, edge))
 
-    try:
-        FinParams(contour_gap=FinParams().gap / 2).validate()
-    except ParamError as error:
-        expect("contour_gap" in str(error), "a gap without tines smaller than the gap is refused: %s" % error)
-    else:
-        raise AssertionError("a gap without tines smaller than the gap was accepted")
+    # A gap without tines smaller than the gap keeps the gap there.
+    stood, side = stood_on_free_rim(step)
+    smaller = geometry.build(stood, stood.Faces[side], FinParams(placement=d.PLACEMENT_CENTER, contour_gap=p.gap / 2))
+    same = geometry.build(stood, stood.Faces[side], FinParams(placement=d.PLACEMENT_CENTER, contour_gap=p.gap))
+    expect(smaller.frame.contour.flank_at == same.frame.contour.flank_at,
+           "a gap without tines smaller than the gap is taken, the gap kept over faces looking up")
     try:
         FinParams(contour_bridge=-1.0).validate()
     except ParamError as error:

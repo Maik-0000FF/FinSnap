@@ -155,7 +155,8 @@ EDITOR_HIDDEN = 2
 
 # step: how far one turn of the mouse wheel or an arrow press changes the field;
 # None keeps the default of the field, one unit.
-Prop = namedtuple("Prop", "name kind group label tip field choices step", defaults=(None,))
+# most: the largest value the field takes, None for no limit of its own.
+Prop = namedtuple("Prop", "name kind group label tip field choices step most", defaults=(None, None))
 
 # Steps of the fields, each sized to what the value is: hundredths for the
 # print profile and the gap, whole millimetres only for the fin height.
@@ -254,15 +255,15 @@ PROPERTIES = (
          QT_TRANSLATE_NOOP("FinSnap", "Gap"),
          QT_TRANSLATE_NOOP("App::Property", "Gap between fin and face that the tines reach across, along the face "
                            "normal; a tine clearance makes the tines as much shorter"),
-         "gap", None, STEP_PROFILE),
+         "gap", None, STEP_PROFILE, d.GAP_MAX),
     Prop("TineClearance", LENGTH, GROUP_CONNECTION,
          QT_TRANSLATE_NOOP("FinSnap", "Tine clearance"),
          QT_TRANSLATE_NOOP("App::Property",
-                           "Distance between the end of a tine and the face, along the face normal; the tines "
-                           "are as much shorter than the gap, the fin stays where it is. 0 = the tine touches "
-                           "the face. More leaves fainter marks and separate beads in the slicer, too much and "
+                           "Distance between the end of a tine and the face, along the face normal, smaller "
+                           "than the gap; the tines are as much shorter, the fin stays where it is. 0 = the tine "
+                           "touches the face. More leaves fainter marks and separate beads in the slicer, too much and "
                            "the tine does not hold: find the value by a test print."),
-         "tine_clearance", None, STEP_CLEARANCE),
+         "tine_clearance", None, STEP_CLEARANCE, d.GAP_MAX),
     Prop("TineSpacing", LENGTH, GROUP_TINES,
          QT_TRANSLATE_NOOP("FinSnap", "Tine spacing"),
          QT_TRANSLATE_NOOP("App::Property",
@@ -320,8 +321,8 @@ PROPERTIES = (
          QT_TRANSLATE_NOOP("FinSnap", "Gap without tines"),
          QT_TRANSLATE_NOOP("App::Property",
                            "When the fin follows the contour: the distance it keeps from the part over faces "
-                           "looking up, where no tine rests, so it cannot stick to the part there; at least the "
-                           "gap"),
+                           "looking up, where no tine rests, so it cannot stick to the part there; never less "
+                           "than the gap, a smaller value keeps the gap"),
          "contour_gap", None, STEP_PROFILE),
     Prop("FinPlateau", LENGTH, GROUP_FIN,
          QT_TRANSLATE_NOOP("FinSnap", "Top width"),

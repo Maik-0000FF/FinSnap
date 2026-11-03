@@ -10,6 +10,8 @@ INPUTS this has to withstand (validate()):
   tine_clearance < 0                    ->  ParamError; 0 means touching
   tine_clearance >= gap, separate fins  ->  ParamError: no tine would be left; merged
                                             fins apply none
+  gap > GAP_MAX                         ->  ParamError: the tines would be too long
+  contour_gap < gap                     ->  valid; the gap is kept there instead
   tine_clearance > 0, merged fins       ->  valid; not applied (clearance is 0), merged
                                             fins need their tines on the face
   bead_width < nozzle_diameter / 2      ->  ParamError: not a printable bead
@@ -26,8 +28,6 @@ INPUTS this has to withstand (validate()):
   foot_overhang < 0                     ->  ParamError; 0 ends the foot at the fin
   brim_width < 0                        ->  ParamError; 0 means no brim
   contour_bridge < 0                    ->  ParamError; 0 follows every recess
-  contour_gap < gap                     ->  ParamError: the fin would come closer where
-                                            no tine rests than where one does
   fin_count < 1 with "distributed"      ->  ParamError
   unknown connection / placement / foot ->  ParamError listing the choices
   tine wider than a manual fin_thickness ->  ParamError: tine would stick out
@@ -106,6 +106,9 @@ class FinParams:
 
         if self.tine_clearance < 0:
             raise ParamError(translate("FinSnap", "tine_clearance must be 0 (touching) or greater"))
+        if self.gap > d.GAP_MAX:
+            raise ParamError(translate("FinSnap", "gap must be at most %.1f mm, longer tines do not print straight")
+                             % d.GAP_MAX)
         if self.clearance >= self.gap:
             raise ParamError(translate("FinSnap", "tine_clearance must be smaller than the gap"))
         if self.foot_overhang < 0:
@@ -114,8 +117,6 @@ class FinParams:
             raise ParamError(translate("FinSnap", "brim_width must be 0 (no brim) or greater"))
         if self.contour_bridge < 0:
             raise ParamError(translate("FinSnap", "contour_bridge must be 0 (follow every recess) or greater"))
-        if self.contour_gap < self.gap:
-            raise ParamError(translate("FinSnap", "contour_gap must be at least the gap"))
         if self.bead_width < self.nozzle_diameter / 2:
             raise ParamError(translate("FinSnap", "bead_width is less than half the nozzle diameter"))
         if self.layer_height > self.nozzle_diameter:
