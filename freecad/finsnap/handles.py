@@ -1112,6 +1112,9 @@ class Handles:
             self.viewer.resetEditingRoot()
         # Not attached any more, also when the panel closes before it was.
         self.root = None
+        # Let go of the 3D view: kept, its wrapper could outlive the view and
+        # be handed out by PySide for a new view made where it lay.
+        self.view = self.viewer = None
         self.vobj.ShapeAppearance, self.vobj.Transparency = self.look
         if self in EDITING:
             EDITING.remove(self)
