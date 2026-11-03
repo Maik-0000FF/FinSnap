@@ -753,6 +753,13 @@ def arrow_field(panel, fins):
         key(panel.arrow_field[2], QtCore.Qt.Key_Return)
         expect(panel.arrow_field is None and abs(box.value() - moved_to) < d.TOLERANCE,
                "Enter takes the value typed at the arrow as the field in the panel takes it: %.2f" % box.value())
+    # A click elsewhere takes the focus from the field: taken too.
+    for moved_to in (place - FIN_SHIFT, place):
+        panel.edit_at_arrow(handles.ALONG)
+        panel.arrow_field[2].setValue(moved_to)
+        QtWidgets.QApplication.sendEvent(panel.arrow_field[2], QtGui.QFocusEvent(QtCore.QEvent.FocusOut))
+        expect(panel.arrow_field is None and abs(box.value() - moved_to) < d.TOLERANCE,
+               "a click elsewhere takes the value typed at the arrow: %.2f" % box.value())
     expect(feature.edits(fins, feature.MAIN)[1] == shifts, "typed back, the fin stands where it stood")
 
 
@@ -1142,20 +1149,20 @@ def lower_left_face_of(shape):
 
 
 def check_typed_fields(panel, fins, place):
-    """A value typed into a field of the fin with the arrows is taken once
-    typing pauses, where the fin can stand, and the field is left as typed;
-    Enter takes it at once and leaves the panel open."""
+    """A value typed into a field of the fin with the arrows, or stepped, is
+    taken on Enter or on leaving the field, where the fin can stand, not at
+    every step; Enter leaves the panel open."""
     from PySide import QtCore, QtGui
     from freecad.finsnap import defaults as d
     from freecad.finsnap import feature, handles
     box = panel.fin_fields[handles.ALONG]
     box.setValue(place + FIN_SHIFT)
-    expect(panel.field_timer.isActive() and panel.typed_field == handles.ALONG
-           and not feature.edits(fins, feature.MAIN)[1], "a place typed waits for typing to pause")
-    # What the timer does once typing pauses.
+    expect(panel.typed_field == handles.ALONG and not feature.edits(fins, feature.MAIN)[1],
+           "a place typed or stepped waits to be taken, the fin stays")
+    # Left, the field gives its value: what editingFinished does.
     panel.field_entered(panel.typed_field)
-    expect(feature.edits(fins, feature.MAIN)[1] and not panel.field_timer.isActive(),
-           "once typing pauses, the place typed moves the fin")
+    expect(feature.edits(fins, feature.MAIN)[1] and panel.typed_field is None,
+           "taken on leaving the field, the place moves the fin")
     box.setValue(place)
     # The panel is built here without a task dialog; that Enter reaches none
     # shows in the event being taken.
@@ -1164,21 +1171,18 @@ def check_typed_fields(panel, fins, place):
         event = QtGui.QKeyEvent(QtCore.QEvent.KeyPress, key, QtCore.Qt.NoModifier)
         QtWidgets.QApplication.sendEvent(box, event)
         taken.append(event.isAccepted())
-    expect(not feature.edits(fins, feature.MAIN)[1] and not panel.field_timer.isActive() and all(taken),
+    expect(not feature.edits(fins, feature.MAIN)[1] and panel.typed_field is None and all(taken),
            "Enter takes the place typed at once and is not passed on to close the panel")
     nowhere = place + TOO_HIGH
     box.setValue(nowhere)
-    panel.field_entered(panel.typed_field, paused=True)
-    expect(not feature.edits(fins, feature.MAIN)[1] and abs(box.value() - nowhere) < d.TOLERANCE
-           and not panel.notes.isHidden(),
-           "typing paused where the fin cannot stand: nothing moves, the reason shows, the field keeps what is typed")
     panel.field_entered(handles.ALONG)
-    expect(abs(box.value() - place) < d.TOLERANCE,
-           "left where the fin cannot stand, the field shows where it stands again")
+    expect(not feature.edits(fins, feature.MAIN)[1] and abs(box.value() - place) < d.TOLERANCE
+           and not panel.notes.isHidden(),
+           "taken where the fin cannot stand: nothing moves, the reason shows, the field shows where it stands")
     box.setValue(place + FIN_SHIFT)
     panel.handle_started(handles.ALONG)
-    expect(feature.edits(fins, feature.MAIN)[1] and not panel.field_timer.isActive(),
-           "a place still waiting for typing to pause is taken before an arrow is grabbed")
+    expect(feature.edits(fins, feature.MAIN)[1] and panel.typed_field is None,
+           "a place not taken yet is taken before an arrow is grabbed")
     panel.finish_drag(handles.ALONG, 0.0)
     box.setValue(place)
     panel.field_entered(handles.ALONG)
@@ -1819,6 +1823,23 @@ def main():
     expect(fins.FinPlacement == d.PLACEMENT_DISTRIBUTED and not panel.timer.isActive(),
            "the automatic preview applies the change")
     expect(panel.timer.parent() is panel.form, "the preview timer goes with the panel")
+    from PySide import QtCore, QtGui
+    # A number stepped, as with the wheel, is taken on leaving the field or on
+    # Enter, not at every step; left untouched, nothing is built.
+    spacing = panel.widgets["TineSpacing"]
+    spacing.setValue(spacing.value() + 2 * spacing.singleStep())
+    stepped = panel.timer.isActive()
+    spacing.editingFinished.emit()
+    left = panel.timer.isActive()
+    panel.timer.timeout.emit()
+    spacing.setValue(spacing.value() - 2 * spacing.singleStep())
+    enter = QtGui.QKeyEvent(QtCore.QEvent.KeyPress, QtCore.Qt.Key_Return, QtCore.Qt.NoModifier)
+    QtWidgets.QApplication.sendEvent(spacing, enter)
+    entered = panel.timer.isActive() and enter.isAccepted()
+    panel.timer.timeout.emit()
+    spacing.editingFinished.emit()
+    expect(not stepped and left and entered and not panel.timer.isActive(),
+           "a number stepped is built on leaving the field or on Enter, not at every step, untouched not at all")
     expect(panel.notes.isHidden() == (not fins.Warnings), "the notes box shows only when there are warnings")
     foot = panel.widgets["FootShape"]
     foot.setCurrentIndex(foot.findData(d.FOOT_NONE))
