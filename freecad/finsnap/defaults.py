@@ -223,6 +223,10 @@ CONTOUR_SAME_LINE = 0.05
 # keeps straight; past it, the samples beside a corner are raised.
 CONTOUR_DEFLECTION = 0.001
 CONTOUR_TOLERANCE = 0.005
+# Of that, what a run between two samples may come closer before they are
+# raised, and as much again what the flank may shift as it is drawn with
+# fewer points: together with the curve off its pieces, the tolerance.
+CONTOUR_SHARE = (CONTOUR_TOLERANCE - CONTOUR_DEFLECTION) / 2
 # The flank of the fin never runs inward up the contour more steeply than
 # this angle from the bed allows: the fin itself prints without an overhang.
 FIN_FLANK_ANGLE = OVERHANG_ANGLE

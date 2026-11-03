@@ -347,10 +347,10 @@ def _past_chord(piece, low, high, chord, radius):
 def _lifted(values, near, heights, radius):
     """`values`, the reach of the pieces `near` each stretch within `radius`
     at `heights`, lifted where the straight run between two samples would
-    come closer to the part than CONTOUR_TOLERANCE allows, a corner or the
-    start of a circle between them: both raised to the most the part reaches
-    between them, the run then outside it. On a smooth contour nothing is
-    raised."""
+    come closer to the part than its share of CONTOUR_TOLERANCE allows
+    (CONTOUR_SHARE), a corner or the start of a circle between them: both
+    raised to the most the part reaches between them, the run then outside
+    it. On a smooth contour nothing is raised."""
     raised = [-math.inf] * len(values)
     result = list(values)
     for k, pieces in enumerate(near):
@@ -369,7 +369,7 @@ def _lifted(values, near, heights, radius):
             return a + (b - a) * (z - low) / (high - low)
 
         found = [r for r in (_past_chord(piece, low, high, chord, radius) for piece in pieces) if r is not None]
-        if found and max(found) > d.CONTOUR_TOLERANCE / 2:
+        if found and max(found) > d.CONTOUR_SHARE:
             most = max(r for r in (_reach_between(piece, low, high, radius) for piece in pieces) if r is not None)
             raised[k], raised[k + 1] = max(raised[k], most), max(raised[k + 1], most)
     return [value if value is None else max(value, up) for value, up in zip(result, raised)]
@@ -576,7 +576,7 @@ class Contour:
         inside = [k for k, z in enumerate(self.heights) if low + d.TOLERANCE < z < high - d.TOLERANCE]
         points = [(self.flank(high), high)] + [(self.flank_at[k], self.heights[k]) for k in reversed(inside)]
         points.append((self.flank(low), low))
-        return _straightened(points, d.CONTOUR_TOLERANCE / 2)
+        return _straightened(points, d.CONTOUR_SHARE)
 
     def tine_ends(self, bottom, top):
         """How far out the end of a tine from `bottom` to `top` lies at each:
