@@ -96,6 +96,8 @@ MERGED_CLEARANCE = 0.3  # a tine clearance that merged fins must not take
 UP = V(0, 0, 1)
 BOX_SIDE = 20.0
 EDGE_ROUND = 3.0       # size of the chamfer or radius of the fillet on a box edge
+CHAMFER_LONG = 3.0     # the long leg of a chamfer of unequal widths on a rim, in mm
+CHAMFER_SHORT = 1.0    # its short leg
 FLOOR_SIZE = 1000.0    # a plane under every test part, to measure how high it rests
 FLOOR_DEPTH = 100.0
 FRUSTUM_BASE = 40.0
@@ -1498,6 +1500,32 @@ def check_round_side():
            and abs(resting_height(fillet) - bed) < d.TOLERANCE
            and abs(resting_height(stood) - bed) < d.TOLERANCE and leans_by(stood, side, d.TILT_ANGLE),
            "a shaft thinner below, its side chosen: it stands on the fillet of its free end")
+    # A chamfer on the free end, steeper or flatter than the side leans: a
+    # straight one never reaches below the rim alone. Steep, the part stands
+    # on the rim; flat, the edge to the side reaches lowest, and it cannot.
+    free_rim = [e for e in rod.Edges if orient.is_rim(e) and e.BoundBox.ZMin > ROD_HEIGHT - d.TOLERANCE]
+    for steep, axial, radial in ((True, CHAMFER_LONG, CHAMFER_SHORT), (False, CHAMFER_SHORT, CHAMFER_LONG)):
+        chamfered = rod.makeChamfer(axial, radial, free_rim)
+        cone = next(f for f in chamfered.Faces if isinstance(f.Surface, Part.Cone))
+        small = min((e for e in cone.Edges if orient.is_rim(e)), key=lambda e: e.Curve.Radius)
+        side = round_side_of(chamfered)
+        try:
+            stood = moved(chamfered, orient.stand_on_rim(chamfered, small, orient.side_tilt(d.TILT_ANGLE),
+                                                         chamfered.Faces[side]))
+        except orient.OrientError as error:
+            expect(not steep and "cannot stand" in str(error),
+                   "a rim with a flatter chamfer cannot carry the part: %s" % error)
+        else:
+            expect(steep and leans_by(stood, side, d.TILT_ANGLE),
+                   "a rim with a steeper chamfer carries the part, its side leaning 45 degrees")
+    # A knob on the end face: the poles of its sphere are degenerated edges,
+    # whose curve FreeCAD cannot give; the rims are looked for past them.
+    knob = Part.makeSphere(EDGE_ROUND, V(ROD_RADIUS / 2, 0, ROD_HEIGHT))
+    knobbed = rod.fuse(knob)
+    side = round_side_of(knobbed)
+    expect(any(e.Degenerated for e in knobbed.Edges)
+           and geometry.quick_plan(knobbed, [], [(knobbed.Faces[side], side)], p, d.TILT_ANGLE).edge is not None,
+           "a cylinder with a knob on its end, its side chosen: it stands on a rim, past the poles of the knob")
     # A step whose angles count from elsewhere than those of the shaft.
     step = Part.makeCylinder(BORE_RADIUS, ROD_HEIGHT, V(0, 0, ROD_HEIGHT))
     step.rotate(V(0, 0, 0), UP, ODD_TURNS[0])
