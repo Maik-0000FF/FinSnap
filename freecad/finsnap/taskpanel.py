@@ -22,7 +22,7 @@ from . import analysis
 from . import check
 from . import defaults as d
 from . import feature
-from . import geometry
+from . import face_frame, geometry
 from . import handles
 from . import limits
 from . import overhang
@@ -110,7 +110,7 @@ FIN_FIELD_ANGLE = (QT_TRANSLATE_NOOP("FinSnap", "Angle on the part"),
                    QT_TRANSLATE_NOOP("FinSnap", "Position of the fin around the cylinder or tube, measured at the "
                                      "middle of its tines, in degrees from 0°, where it is first placed. Type a "
                                      "value to turn the part to it; the fin keeps its place."),
-                   DEGREE_SUFFIX, ANGLE_DECIMALS, 0.0, geometry.FULL_CIRCLE, True, ANGLE_STEP)
+                   DEGREE_SUFFIX, ANGLE_DECIMALS, 0.0, face_frame.FULL_CIRCLE, True, ANGLE_STEP)
 FIN_FIELD_HEIGHT = (QT_TRANSLATE_NOOP("FinSnap", "Height"),
                     QT_TRANSLATE_NOOP("FinSnap", "Height of this fin alone. Type a value to set it; Reset fins "
                                       "gives it the height of the others again."),
@@ -1226,7 +1226,7 @@ class FinSnapTaskPanel:
                  for name in sel.SubElementNames if name.startswith(FACE_PREFIX)]
         try:
             found = feature.add_counter(self.obj, part, faces[0]) if faces else feature.add_counter(self.obj)
-        except geometry.FinError as error:
+        except face_frame.FinError as error:
             self.show_notes(translate("FinSnap", "No counter fin"),
                             [translate("FinSnap", feature.NOTE_NO_COUNTER_ON_FACE) % error], WARNING_COLOR)
             return
@@ -1434,7 +1434,7 @@ class FinSnapTaskPanel:
         result = self.handled_result()[0]
         number = self.handled[1]
         # The angle rounded as the field shows it: just below 360 is 0.
-        along = (geometry.round_angle(geometry.side_angle(feature.round_side(self.obj)), ANGLE_TOLERANCE)
+        along = (face_frame.round_angle(face_frame.side_angle(feature.round_side(self.obj)), ANGLE_TOLERANCE)
                  if self.turns_part()
                  else result.starts[number] + result.thickness / 2 - result.face_start)
         return {handles.ALONG: along, handles.UP: result.heights[number]}
@@ -1445,7 +1445,7 @@ class FinSnapTaskPanel:
         for every degree the part turns about it, for handles.Handles.show()."""
         face = feature.round_side(self.obj)
         surface = face.Surface
-        return App.Vector(surface.Center), App.Vector(surface.Axis).normalize(), geometry.turn_mm(face, 1.0)
+        return App.Vector(surface.Center), App.Vector(surface.Axis).normalize(), face_frame.turn_mm(face, 1.0)
 
     def place_handles(self):
         if self.handled_result() is None:
@@ -1588,7 +1588,7 @@ class FinSnapTaskPanel:
         the part turns."""
         result = self.handled_result()[0]
         step = self.fin_fields[handles.ALONG].singleStep()
-        mm = abs(geometry.turn_mm(feature.round_side(self.obj), step)) if self.turns_part() else step
+        mm = abs(face_frame.turn_mm(feature.round_side(self.obj), step)) if self.turns_part() else step
         last = self.built_value(handles.ALONG)
         target = last + self.along_on_screen(result.along) * count * mm
         if not self.set_fin(handles.ALONG, target) and self.handled_result() is not None:
@@ -1666,7 +1666,7 @@ class FinSnapTaskPanel:
           the build fails in OpenCASCADE              ->  that error
           its side has no fins (counter fin removed)  ->  error: no tine finds the face there
         """
-        nowhere = geometry.FinError(translate("FinSnap", "no tine of the fin finds the face there"))
+        nowhere = face_frame.FinError(translate("FinSnap", "no tine of the fin finds the face there"))
         # Moving the fin on a round side turns the part, which stands on its rim at
         # any turn; a turn that fails is taken back by set_fin().
         if kind == handles.ALONG and self.turns_part():
@@ -1838,7 +1838,7 @@ class FinSnapTaskPanel:
         self.dragged = (kind, mm)
         if kind == handles.ALONG and self.drag_mm_per_degree:
             # The angle of the fin on the part goes the other way round than the part turns.
-            shown = geometry.round_angle(self.drag_values[kind] - mm / self.drag_mm_per_degree, ANGLE_TOLERANCE)
+            shown = face_frame.round_angle(self.drag_values[kind] - mm / self.drag_mm_per_degree, ANGLE_TOLERANCE)
         else:
             shown = self.drag_values[kind] + mm
         self.show_fin_values({kind: shown})
@@ -1978,11 +1978,11 @@ class FinSnapTaskPanel:
         if kind == handles.ALONG and self.turns_part():
             # The part turns the other way round than the angle of the fin on
             # it goes, the shorter way.
-            turn = math.remainder(current - value, geometry.FULL_CIRCLE)
+            turn = math.remainder(current - value, face_frame.FULL_CIRCLE)
             # The field shows the angle rounded; leaving it untouched changes nothing.
             if abs(turn) < ANGLE_TOLERANCE:
                 return
-            value = (self.own_value(kind) or 0.0) + geometry.turn_mm(feature.round_side(self.obj), turn)
+            value = (self.own_value(kind) or 0.0) + face_frame.turn_mm(feature.round_side(self.obj), turn)
         else:
             # The field shows the value rounded; leaving it untouched changes nothing.
             if abs(value - current) < FIELD_TOLERANCE:

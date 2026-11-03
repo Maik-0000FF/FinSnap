@@ -127,12 +127,12 @@ def moved_beside_groove(doc):
     """A fin planned over a groove stands beside it; typed into its field or
     dragged, it moves on from where it stands, not from where it was planned."""
     from freecad.finsnap import defaults as d
-    from freecad.finsnap import feature, geometry, handles
+    from freecad.finsnap import face_frame, feature, handles
     from freecad.finsnap.taskpanel import FinSnapTaskPanel
     from freecad.finsnap.tests.support import grooved
     cube = tilted_cube()
     face = lower_left_face(cube)
-    frame = geometry.frame_of(cube, face)
+    frame = face_frame.frame_of(cube, face)
     part = doc.addObject("Part::Feature", "Grooved")
     part.Shape = grooved(cube, face, (frame.along_min + frame.along_max) / 2)
     fins = feature.create(part, face_name(part, lower_left_face(part.Shape)))
@@ -189,14 +189,14 @@ def added_on_tube(doc):
     """Add fins under the side of a tube already standing on its rim, turned
     in the panel: Cancel deletes the fins and turns the tube back."""
     from freecad.finsnap import defaults as d
-    from freecad.finsnap import feature, geometry, handles
+    from freecad.finsnap import feature, handles, quick_stands
     from freecad.finsnap.params import FinParams
     shape = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
     side = [i for i, f in enumerate(shape.Faces) if isinstance(f.Surface, Part.Cylinder)
             and abs(f.Surface.Radius - TUBE_RADIUS) < d.TOLERANCE][0]
     tube = doc.addObject("Part::Feature", "AddedTube")
     tube.Shape = shape
-    tube.Placement = geometry.quick_plan(shape, [], [(shape.Faces[side], side)], FinParams(), d.TILT_ANGLE).change
+    tube.Placement = quick_stands.quick_plan(shape, [], [(shape.Faces[side], side)], FinParams(), d.TILT_ANGLE).change
     doc.recompute()
     standing = App.Placement(tube.Placement)
     select(tube, "Face%d" % (side + 1))
@@ -226,7 +226,7 @@ def turned_tube(doc):
     turns the tube about its axis, the fin stays under the lowest line; Reset
     fins and Cancel turn it back."""
     from freecad.finsnap import defaults as d
-    from freecad.finsnap import feature, geometry, handles, taskpanel
+    from freecad.finsnap import face_frame, feature, handles, taskpanel
     tube = doc.addObject("Part::Feature", "Tube")
     tube.Shape = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
     side = [i for i, f in enumerate(tube.Shape.Faces, 1) if isinstance(f.Surface, Part.Cylinder)
@@ -241,7 +241,7 @@ def turned_tube(doc):
     def turned():
         """How far the tube is turned from where it was stood, the shorter way round, in degrees."""
         degrees = math.degrees(tube.Placement.multiply(standing.inverse()).Rotation.Angle)
-        return min(degrees, geometry.FULL_CIRCLE - degrees)
+        return min(degrees, face_frame.FULL_CIRCLE - degrees)
 
     def angle():
         return panel.fin_values()[handles.ALONG]
@@ -302,10 +302,10 @@ def turned_tube(doc):
     expect(abs(turned() - 2 * TUBE_ANGLE) < d.TOLERANCE and abs(angle() - 2 * TUBE_ANGLE) < d.TOLERANCE,
            "dragging the arc turns the tube further, as near as Coin reads its turn")
     released_without_button(arc, "a tube")
-    panel.fin_fields[handles.ALONG].setValue(geometry.FULL_CIRCLE - TUBE_ANGLE)
+    panel.fin_fields[handles.ALONG].setValue(face_frame.FULL_CIRCLE - TUBE_ANGLE)
     panel.field_entered(handles.ALONG)
     expect(abs(turned() - TUBE_ANGLE) < d.TOLERANCE
-           and abs(angle() - (geometry.FULL_CIRCLE - TUBE_ANGLE)) < d.TOLERANCE,
+           and abs(angle() - (face_frame.FULL_CIRCLE - TUBE_ANGLE)) < d.TOLERANCE,
            "an angle typed past 0 turns the tube the shorter way round")
     # A build that fails once the tube is turned, which leaves no build behind:
     # the turn is taken back all the same.
@@ -2169,7 +2169,7 @@ def main():
     # A drag builds each place once: the trial of a step serves its real
     # build, and nothing is built twice. Afterwards every build is new, and
     # the arrow ends are tried once for each place of the fin.
-    from freecad.finsnap import geometry
+    from freecad.finsnap import face_frame, geometry
     real_build = geometry.build
     builds = []
 
@@ -2341,7 +2341,7 @@ def main():
     upward = [i for i, f in enumerate(cube.Shape.Faces, 1) if f.normalAt(0, 0).z > 1 - d.TOLERANCE][0]
     wrong = feature.create(cube, "Face%d" % upward)
     wrong_panel = FinSnapTaskPanel(wrong, created=True)
-    reason = App.Qt.translate("FinSnap", geometry.NOT_OVERHANGING)
+    reason = App.Qt.translate("FinSnap", face_frame.NOT_OVERHANGING)
     expect(reason in wrong_panel.notes.text() and not wrong_panel.notes.isHidden()
            and taskpanel.ERROR_COLOR in wrong_panel.notes.styleSheet(),
            "the panel shows in a red box why no fins can be built: %s" % wrong_panel.notes.text())

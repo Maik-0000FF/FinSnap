@@ -20,7 +20,8 @@ import Part
 from freecad.finsnap.tests.support import (STANDARD_THICKNESS, expect, lower_left_face, run, slot_on_end,
                                            split_cylinder, tilted_cube)
 from freecad.finsnap import defaults as d
-from freecad.finsnap import analysis, check, export_3mf, export_step, feature, geometry, orient, overhang, stability
+from freecad.finsnap import (analysis, check, export_3mf, export_step, face_frame, feature, geometry, orient, overhang,
+                             quick_stands, stability, tine_rows)
 from freecad.finsnap import limits, presets
 from freecad.finsnap.params import FinParams, ParamError
 from freecad.finsnap.paths import PACKAGE_XML
@@ -198,15 +199,15 @@ def tapered_pad(doc):
                     continue
                 try:
                     result = geometry.build(stood, leaning, FinParams())
-                except geometry.FinError as error:
+                except face_frame.FinError as error:
                     failures.append(str(error))
                 else:
                     narrow = any("narrower" in w for w in result.warnings)
                     left_out += narrow
                     if narrow and not fixed_checked:
                         # The same face with every tine asked for by number: still built, with the warning.
-                        frame = geometry.frame_of(stood, leaning)
-                        asked = len(geometry.tine_heights(FinParams(), frame, 0)[0])
+                        frame = face_frame.frame_of(stood, leaning)
+                        asked = len(tine_rows.tine_heights(FinParams(), frame, 0)[0])
                         fixed = geometry.build(stood, leaning, FinParams(tine_count=asked))
                         fixed_checked = any("narrower" in w for w in fixed.warnings)
     expect(not failures, "a tapered Pad takes fins under every leaning face, on any edge: %s" % failures[:3])
@@ -531,7 +532,7 @@ def counter_bridges_bore(doc):
     rim = next(i for i, e in enumerate(shape.Edges, 1) if isinstance(e.Curve, Part.Circle)
                and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE)
     joined, (edge,), name_of = feature.whole_elements(tube, ["Edge%d" % rim])
-    plan = geometry.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
+    plan = quick_stands.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
     tube.Placement = plan.change
     fins = feature.create(tube, name_of(plan.number))
     doc.recompute()
@@ -561,7 +562,7 @@ def counter_beside_bore(doc):
     rim = next(i for i, e in enumerate(shape.Edges, 1) if isinstance(e.Curve, Part.Circle)
                and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE)
     joined, (edge,), name_of = feature.whole_elements(tube, ["Edge%d" % rim])
-    plan = geometry.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
+    plan = quick_stands.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
     tube.Placement = plan.change
     fins = feature.create(tube, name_of(plan.number))
     # With one grid for every fin, as the restart below the bore would bridge it.
@@ -608,7 +609,7 @@ def counter_on_thin_tube(doc):
     rim = next(i for i, e in enumerate(shape.Edges, 1) if isinstance(e.Curve, Part.Circle)
                and abs(e.Curve.Radius - TUBE_RADIUS) < d.TOLERANCE)
     joined, (edge,), name_of = feature.whole_elements(tube, ["Edge%d" % rim])
-    plan = geometry.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
+    plan = quick_stands.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
     tube.Placement = plan.change
     fins = feature.create(tube, name_of(plan.number))
     doc.recompute()
@@ -619,7 +620,7 @@ def counter_on_thin_tube(doc):
     ring = feature.names_on(global_shape(tube), geometry.opposite_faces(stood, side)[:1])[0]
     try:
         feature.add_counter(fins, tube, ring)
-    except geometry.FinError as error:
+    except face_frame.FinError as error:
         expect(not fins.CounterFace and fins.isValid(),
                "a face too narrow for a counter fin chosen by hand is refused, nothing changed: %s" % error)
     else:
@@ -657,7 +658,7 @@ def counter_under_disc(doc):
         rod.Shape = shape
         rim = next(i for i, e in enumerate(shape.Edges, 1) if isinstance(e.Curve, Part.Circle))
         joined, (edge,), name_of = feature.whole_elements(rod, ["Edge%d" % rim])
-        plan = geometry.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
+        plan = quick_stands.quick_plan(joined, [(edge, None)], [], FinParams(), d.TILT_ANGLE)
         rod.Placement = plan.change
         fins = feature.create(rod, name_of(plan.number))
         doc.recompute()
@@ -670,7 +671,7 @@ def counter_under_disc(doc):
         sides = feature.names_on(global_shape(rod), [feature.round_side(fins)])
         ends = [n for n in fins.CarriedFaces if n not in sides]
         part, end = feature._face(fins.CounterFace)
-        middle = geometry.frame_of(part, end)
+        middle = face_frame.frame_of(part, end)
         centre = (middle.along_min + middle.along_max) / 2
         built = geometry.build(part, end, feature.params_of(fins))
         expect(len(ends) == (2 if name == "split" else 1)
@@ -700,7 +701,7 @@ def split_tube(doc):
     expect(again is joined and moved_on is not joined
            and abs(moved_on.BoundBox.XMin - joined.BoundBox.XMin - 1) < d.TOLERANCE,
            "a split part is joined once while it stays, anew once it moves")
-    plan = geometry.quick_plan(joined, [(rim, None)], [], FinParams(), d.TILT_ANGLE)
+    plan = quick_stands.quick_plan(joined, [(rim, None)], [], FinParams(), d.TILT_ANGLE)
     tube.Placement = plan.change
     fins = feature.create(tube, name_of(plan.number))
     doc.recompute()
@@ -725,7 +726,7 @@ def split_tube(doc):
                 and not any(orient.lies_on(e, f) for f in pieces if f.findPlane() is not None))
     try:
         feature.whole_elements(tube, ["Edge%d" % arc, "Edge%d" % seam])
-    except geometry.FinError as error:
+    except face_frame.FinError as error:
         expect("seam" in str(error), "the seam between the halves named is refused with a reason: %s" % error)
     else:
         raise AssertionError("the seam between the halves of a split tube was taken")
@@ -756,7 +757,7 @@ def turned_tube(doc):
     tube = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
     side = [i for i, f in enumerate(tube.Faces)
             if orient.is_round_side(f) and abs(f.Surface.Radius - TUBE_RADIUS) < d.TOLERANCE][0]
-    plan = geometry.quick_plan(tube, [], [(tube.Faces[side], side)], FinParams(), d.TILT_ANGLE)
+    plan = quick_stands.quick_plan(tube, [], [(tube.Faces[side], side)], FinParams(), d.TILT_ANGLE)
     part = doc.addObject("Part::Feature", "Tube")
     part.Shape = tube
     part.Placement = plan.change
@@ -801,7 +802,7 @@ def turned_tube(doc):
     side_name = "Face%d" % (side + 1)
     try:
         feature.add_counter(fins, part, side_name)
-    except geometry.FinError as error:
+    except face_frame.FinError as error:
         expect("counter fin goes under a flat face" in str(error) and not fins.CounterFace,
                "a counter fin chosen under the side of a tube is refused, nothing changed: %s" % error)
     else:
@@ -809,7 +810,7 @@ def turned_tube(doc):
     count = len(doc.Objects)
     try:
         feature.create(part, side_name, (part, side_name))
-    except geometry.FinError as error:
+    except face_frame.FinError as error:
         expect("counter fin goes under a flat face" in str(error) and len(doc.Objects) == count,
                "fins made with a counter fin under the side of a tube are refused, nothing made: %s" % error)
     else:
@@ -819,7 +820,7 @@ def turned_tube(doc):
              key=lambda i: stood.Faces[i].CenterOfMass.z)
     try:
         feature.create(part, side_name, (part, "Face%d" % (up + 1)))
-    except geometry.FinError as error:
+    except face_frame.FinError as error:
         expect(len(doc.Objects) == count,
                "fins made with a counter face facing up are refused, nothing made: %s" % error)
     else:
@@ -917,7 +918,7 @@ def kept_islands(doc):
     joined, (face,), _ = feature.whole_elements(tube, ["Face%d" % side])
     number = next(i for i, f in enumerate(joined.Faces) if f.isSame(face))
     p = FinParams()
-    for plan in geometry.quick_plans(joined, [], [(face, number)], p, d.TILT_ANGLE):
+    for plan in quick_stands.quick_plans(joined, [], [(face, number)], p, d.TILT_ANGLE):
         tube.Placement = plan.change
         on_joined = overhang.islands(moved(joined, plan.change), p.first_layer_height, p.layer_height)
         on_tube = overhang.islands(global_shape(tube), p.first_layer_height, p.layer_height)

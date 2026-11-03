@@ -85,15 +85,15 @@ def frame(times=1):
         count += 1
 
 
-def look(face_frame):
-    """Look at the fin under the face of `face_frame`, from outside it and
+def look(fin_frame):
+    """Look at the fin under the face of `fin_frame`, from outside it and
     from the side. Set on the camera node, as Quick fins does:
     setViewDirection() starts an animation that does not take here."""
     from freecad.finsnap import commands
     Gui.ActiveDocument.ActiveView.setCameraType(CAMERA)
     up = App.Vector(0, 0, 1)
     slope, turn = math.radians(ELEVATION), math.radians(AZIMUTH)
-    beside = face_frame.along * math.cos(turn) + face_frame.out * math.sin(turn)
+    beside = fin_frame.along * math.cos(turn) + fin_frame.out * math.sin(turn)
     commands._show_on_bed(beside * -math.cos(slope) - up * math.sin(slope))
 
 
@@ -114,7 +114,7 @@ def drag(panel, kind, targets):
 
 
 def main():
-    from freecad.finsnap import commands, feature, geometry, handles
+    from freecad.finsnap import commands, face_frame, feature, handles
     from freecad.finsnap.shapes import global_shape, moved, outermost
 
     model, part_name, face_name = (os.environ.get(name, "") for name in ("DEMO_MODEL", "DEMO_PART", "DEMO_FACE"))
@@ -137,7 +137,7 @@ def main():
     # it, and to look at the fin from outside.
     plan, _ = commands.quick_plan(part, [], [face_name])
     standing = moved(global_shape(part), plan.change)
-    face_frame = geometry.frame_of(standing, standing.Faces[plan.number])
+    fin_frame = face_frame.frame_of(standing, standing.Faces[plan.number])
     owner = outermost(part)
     lying = App.Placement(owner.Placement)
     stood = plan.change.multiply(lying)
@@ -145,7 +145,7 @@ def main():
     # and stays, the view does not jump after.
     owner.Placement = stood
     doc.recompute()
-    look(face_frame)
+    look(fin_frame)
     owner.Placement = lying
     doc.recompute()
     frame(HOLD)
@@ -166,7 +166,7 @@ def main():
     panel = fins.ViewObject.Proxy.panel
     panels.append(panel)
     # Quick fins turns the view; the part stands as when the camera was fitted.
-    look(face_frame)
+    look(fin_frame)
     frame(HOLD)
 
     # The height, from tine to tine: down, then up to the highest tine.
@@ -179,7 +179,7 @@ def main():
     # Along the face past its corner: red there, and let go it stops at the
     # corner; then back under the middle, where it stood.
     middle = panel.built_value(handles.ALONG)
-    reach = face_frame.along_max - face_frame.along_min
+    reach = fin_frame.along_max - fin_frame.along_min
     drag(panel, handles.ALONG, steps(middle, middle - reach, ALONG_FRAMES))
     frame(SHORT_HOLD)
     drag(panel, handles.ALONG, steps(panel.built_value(handles.ALONG), middle, BACK_FRAMES))

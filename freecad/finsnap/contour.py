@@ -22,7 +22,7 @@ and they hold it; on a face looking up they would be printed onto the part,
 and an upright one, such as a chamfer the tilt stands upright, needs no hold.
 
 Heights are measured from the bed of the frame, positions outward along `out`
-of the frame, as `s` in geometry.Frame.
+of the frame, as `s` in face_frame.Frame.
 
 INPUTS this has to withstand (Contour):
   plain cylinder on its rim             ->  flank as the plane of the side gives it,
