@@ -9,6 +9,7 @@ Run in FreeCAD, with this checkout installed as an addon (see CONTRIBUTING.md):
 
 import math
 import os
+import re
 import sys
 
 import Part
@@ -755,8 +756,13 @@ def check_tine_clearance(cube, face):
            "the fin stays the gap from the face, whatever the clearance")
     expect(result.tines[0].Volume < touching.tines[0].Volume - d.TOLERANCE,
            "the tines are shorter by the clearance")
-    expect(any("tines are" in w for w in result.warnings),
-           "tines shortened below what the slicer prints are warned about: %s" % result.warnings)
+    short = [w for w in result.warnings if "tines are" in w]
+    expect(short, "tines shortened below what the slicer prints are warned about: %s" % result.warnings)
+    # The gap the warning names makes them long enough.
+    named = float(re.search(r"A gap of ([0-9.]+) mm", short[0]).group(1))
+    enough = geometry.build(cube, face, FinParams(tine_clearance=clearance, gap=named))
+    expect(not [w for w in enough.warnings if "tines are" in w],
+           "the gap of %.2f mm the warning names makes the tines long enough" % named)
     expect(not [w for w in geometry.build(cube, face, FinParams()).warnings if "tines are" in w],
            "the tines of the built-in gap and clearance are long enough")
     for wrong, why in ((-clearance, "negative"), (d.GAP, "as large as the gap")):

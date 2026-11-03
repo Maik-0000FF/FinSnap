@@ -40,6 +40,8 @@ GAP = 0.3
 # The largest gap taken (mm), and so the longest tines: longer, a tine hangs
 # out from the fin too far to print straight.
 GAP_MAX = 2.0
+# A gap a warning proposes is rounded up to this (mm).
+GAP_HINT_STEP = 0.01
 # Clearance between the end of a tine and the face, along the face normal; the
 # tines are as much shorter than the gap. 0: the tine touches the face, and the
 # slicer joins tine and part into one bead. Test prints with 0.25 mm tines

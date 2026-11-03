@@ -163,6 +163,9 @@ NOTE_TINES_MISS = QT_TRANSLATE_NOOP("FinSnap", "tines at %s mm above the bed mis
                                                "than %.2f mm")
 NOTE_TINES_CUT_IN = QT_TRANSLATE_NOOP("FinSnap", "tines at %s mm above the bed reach more than %.2f mm into the "
                                                  "part")
+NOTE_TINES_SHORT = QT_TRANSLATE_NOOP("FinSnap", "tines are %.2f mm long, shorter than %.2f bead widths; the slicer "
+                                               "may not print them to the face. A gap of %.2f mm makes them long "
+                                               "enough")
 NOTE_CONTOUR_RECEDES = QT_TRANSLATE_NOOP("FinSnap", "tines at %s mm above the bed left out: the contour falls back "
                                                     "further than the fin can follow without overhanging itself")
 # Said where the face is narrower than a fin, or its tine, at every tine height.
@@ -1431,9 +1434,12 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
                                   "%.0f to %.0f") % (angle, d.FACE_ANGLE_MIN, d.FACE_ANGLE_MAX))
         targets.append(WarningTarget([], [], True))
     tine_length = p.tine_length / frame.n_out
-    if tine_length < d.TINE_MIN_LENGTH_BEADS * p.bead_width:
-        warnings.append(translate("FinSnap", "tines are %.2f mm long, shorter than %.2f bead widths; the slicer "
-                                  "may not print them to the face") % (tine_length, d.TINE_MIN_LENGTH_BEADS))
+    shortest = d.TINE_MIN_LENGTH_BEADS * p.bead_width
+    if tine_length < shortest:
+        # The gap that makes them as long, along the face normal, the
+        # clearance on top; rounded up to GAP_HINT_STEP.
+        enough = math.ceil((shortest * frame.n_out + p.clearance) / d.GAP_HINT_STEP - d.TOLERANCE) * d.GAP_HINT_STEP
+        warnings.append(translate("FinSnap", NOTE_TINES_SHORT) % (tine_length, d.TINE_MIN_LENGTH_BEADS, enough))
         targets.append(WarningTarget([fin.number for fin in plan.fins], [], False))
     if frame.whole_side:
         warnings.append(translate("FinSnap", "the part stands on one point of its rim: a chamfer on the rim and "
