@@ -35,12 +35,9 @@ from . import overhang
 from . import stability as standing
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .presets import PREFERENCES
-from .shapes import FACE_PREFIX, face_name, global_shape, moved
+from .shapes import FACE_PREFIX, face_name, global_shape, keep, moved, shape_key
 
-# Parts as they stand, by stand_key(), kept at most this many, the oldest
-# going first; their shapes and corners compared to this many decimal places.
-KEPT = 8
-KEY_DIGITS = 6
+# Parts as they stand are kept by stand_key(), at most KEPT of them (shapes.keep()).
 # What an entry keeps: the islands, None until worked out; the bridges, by
 # the bead, the limits and the faces carried; the centres of mass of the
 # part printed up to each layer, as standing.check() works them out.
@@ -108,33 +105,16 @@ NOTE_COLOURS = QT_TRANSLATE_NOOP(
 
 
 def stand_key(part_obj, p):
-    """What the analysis of `part_obj` depends on: the part, its shape, where
-    it stands and the layers of `p`. The shape by its measures and where its
-    corners lie, not its hash: FreeCAD gives a part a new hash each time it is
-    recomputed, the same shape or not. The corners tell a shape whose measures
-    stay apart, as with a hole moved."""
-    shape = part_obj.Shape
-    corners = tuple(sorted(tuple(round(c, KEY_DIGITS) for c in vertex.Point) for vertex in shape.Vertexes))
-    measures = (round(shape.Volume, KEY_DIGITS), round(shape.Area, KEY_DIGITS),
-                len(shape.Faces), len(shape.Edges), corners)
-    return (part_obj.Document.Name, part_obj.Name, measures, tuple(part_obj.getGlobalPlacement().toMatrix().A),
-            p.first_layer_height, p.layer_height)
-
-
-def _keep(store, key, make):
-    """What `store` keeps under `key`, made by make() where it keeps nothing
-    yet; past KEPT entries the oldest goes first."""
-    if key not in store:
-        while len(store) >= KEPT:
-            store.pop(next(iter(store)))
-        store[key] = make()
-    return store[key]
+    """What the analysis of `part_obj` depends on: the part, its shape
+    (shape_key()), where it stands and the layers of `p`."""
+    return (part_obj.Document.Name, part_obj.Name, shape_key(part_obj.Shape),
+            tuple(part_obj.getGlobalPlacement().toMatrix().A), p.first_layer_height, p.layer_height)
 
 
 def _analysis(part_obj, p):
     """The entry kept for `part_obj` as it stands on the layers of `p`, made
     empty where there is none yet."""
-    return _keep(_kept, stand_key(part_obj, p), lambda: {ISLANDS: None, BRIDGES: {}, CENTRES: {}})
+    return keep(_kept, stand_key(part_obj, p), lambda: {ISLANDS: None, BRIDGES: {}, CENTRES: {}})
 
 
 def checks_while_editing():
@@ -173,7 +153,7 @@ def bridges(part_obj, shape, supported, p):
     rating = limits.current()
     carried = tuple(number for number, face in enumerate(shape.Faces, 1)
                     if any(face.isSame(other) for other in supported))
-    found = _keep(_analysis(part_obj, p)[BRIDGES], (p.bead_width, rating, carried),
+    found = keep(_analysis(part_obj, p)[BRIDGES], (p.bead_width, rating, carried),
                   lambda: bridge.bridges(shape, p.first_layer_height, p.layer_height, p.bead_width, rating, supported))
     return list(found)
 

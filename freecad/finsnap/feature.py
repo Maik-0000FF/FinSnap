@@ -149,7 +149,7 @@ CHOICE = "App::PropertyEnumeration"
 BOOL = "App::PropertyBool"
 # Parameters that a file saved before them gets as off, not as their built-in
 # value: on, they would change fins saved without them.
-RESTORED_AS = {"TineRestart": False}
+RESTORED_AS = {"TineRestart": False, "FollowContour": False}
 # Editor mode that hides a property in the property view.
 EDITOR_HIDDEN = 2
 
@@ -300,6 +300,28 @@ PROPERTIES = (
                            "Height of the fins, 0 = top of the highest tine. A lower value leaves out the "
                            "tines above it; the fins reach at most to just below the top of the face."),
          "fin_height", None, STEP_HEIGHT),
+    Prop("FollowContour", BOOL, GROUP_FIN,
+         QT_TRANSLATE_NOOP("FinSnap", "Follow the contour"),
+         QT_TRANSLATE_NOOP("App::Property",
+                           "Under the round side of a part standing on its rim: the fin follows the contour of "
+                           "the part up to its top, over steps, cones, fillets and curves, keeping the gap; off, "
+                           "it stands under the round side alone"),
+         "follow_contour", None),
+    Prop("ContourBridge", LENGTH, GROUP_FIN,
+         QT_TRANSLATE_NOOP("FinSnap", "Bridge recesses up to"),
+         QT_TRANSLATE_NOOP("App::Property",
+                           "When the fin follows the contour: recesses in it lower than this, such as small "
+                           "chamfers, fillets, holes and grooves, the fin spans straight instead of following "
+                           "them, and leaves out its tines there; a pocket in one face that no tine rests in, "
+                           "whatever its size, as well. 0 = follow every recess."),
+         "contour_bridge", None, STEP_HALF),
+    Prop("ContourGap", LENGTH, GROUP_FIN,
+         QT_TRANSLATE_NOOP("FinSnap", "Gap without tines"),
+         QT_TRANSLATE_NOOP("App::Property",
+                           "When the fin follows the contour: the distance it keeps from the part over faces "
+                           "looking up, where no tine rests, so it cannot stick to the part there; at least the "
+                           "gap"),
+         "contour_gap", None, STEP_PROFILE),
     Prop("FinPlateau", LENGTH, GROUP_FIN,
          QT_TRANSLATE_NOOP("FinSnap", "Top width"),
          QT_TRANSLATE_NOOP("App::Property", "Width of the flat top of a fin"),

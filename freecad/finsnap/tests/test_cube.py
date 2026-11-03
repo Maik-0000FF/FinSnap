@@ -114,6 +114,16 @@ SLOT_ASIDE = 7.0       # how far a fin is moved along the end face of a slot, to
 ODD_TURNS = (77.0, 200.0)  # turns of a part about its axis before it is stood, in degrees
 ABOVE_FACE = 30.0      # how far above its own height a fin is drawn, beyond the face, in mm
 NORMAL_DECIMALS = 6    # places to which the directions of faces are compared
+# A shaft for the fin along the contour: the cylinder of ROD_RADIUS and
+# ROD_HEIGHT, and on it a thinner one, or a body of revolution whose outline
+# runs through SPLINE_RADII, as far up again.
+STEP_RADIUS = 6.0
+SPLINE_RADII = (ROD_RADIUS, 9.5, 8.5, 8.0)
+GROOVE_DEPTH = 1.0     # a groove round the shaft, as deep and,
+GROOVE_LENGTH = 2.0    # along the axis, as long, lower than the bridge
+# A pocket under the lowest line, longer than the bridge and narrower than
+# the fin, so no tine rests in it: as long, as wide and as deep, in mm.
+POCKET_SIZE = (12.0, 0.6, 1.5)
 
 # Thin horizontal slices through the fin, to measure it layer by layer.
 SLICE_SIZE = 1000.0
@@ -1588,16 +1598,31 @@ def check_round_side():
     plan = geometry.quick_plan(rod, [], [(rod.Faces[side], side)], p, d.TILT_ANGLE)
     stood = moved(rod, plan.change)
     frame = geometry.frame_of(stood, stood.Faces[side])
-    whole = geometry.build(stood, stood.Faces[side], p)
+    # Under the side alone, as before the fin followed the contour.
+    alone = FinParams(placement=d.PLACEMENT_CENTER, follow_contour=False)
+    whole = geometry.build(stood, stood.Faces[side], alone)
     middle_z = whole.tine_z[len(whole.tine_z) // 2]
     middle_tine = frame.bed_z + middle_z + p.tine_height / 2
     middle = (frame.along_min + frame.along_max) / 2
     on_side = frame.point(middle, frame.s_face(middle_tine), middle_tine)
     normal = frame.normal()
     bored = stood.cut(Part.makeCylinder(RECESS_RADIUS, 2 * RECESS_RADIUS, on_side - normal * RECESS_RADIUS, normal))
-    pitted = geometry.build(bored, bored.Faces[round_side_of(bored)], p)
-    expect(len(pitted.tines) == len(whole.tines) - 1 and any("%.1f mm" % middle_z in w for w in pitted.warnings),
-           "the tine over a hole in the side is left out, with a warning: %s" % pitted.warnings)
+    pitted = geometry.build(bored, bored.Faces[round_side_of(bored)], alone)
+    expect(len(pitted.tines) == len(whole.tines) - 1
+           and any("%.1f mm" % middle_z in w for w in pitted.warnings),
+           "under the side alone, the tine over a hole in the side is left out, with a warning: %s"
+           % pitted.warnings)
+    # Along the contour the hole, lower than the bridge, is bridged: no tine
+    # over it and nothing said, the tines start anew right above it.
+    spanned = geometry.build(bored, bored.Faces[round_side_of(bored)], p)
+    hole_low, hole_high = middle_tine - RECESS_RADIUS, middle_tine + RECESS_RADIUS
+    over = [t for t in spanned.tines if t.BoundBox.ZMax > hole_low and t.BoundBox.ZMin < hole_high
+            and t.distToShape(bored)[0] > d.TINE_END_TOLERANCE]
+    above = min(z for z in spanned.tine_z if frame.bed_z + z > hole_high - RECESS_RADIUS)
+    expect(not over and not any("hole" in w for w in spanned.warnings)
+           and frame.bed_z + above < hole_high + p.tine_spacing / 2,
+           "along the contour, a hole in the side is bridged without a word, the next tine right above it: %s"
+           % spanned.warnings)
 
     # Moved by hand, the fin stays under the lowest line and the part turns
     # under it: the hole goes the other way round, away from the fin.
@@ -1606,13 +1631,175 @@ def check_round_side():
     turned_hole = [f for f in turned.Faces if isinstance(f.Surface, Part.Cylinder)
                    and f.Surface.Radius == RECESS_RADIUS][0]
     went = (turned_hole.CenterOfMass - hole.CenterOfMass).dot(frame.along)
-    shifted = geometry.build(turned, turned.Faces[round_side_of(turned)], p, shifts={1: ROUND_TURN})
+    shifted = geometry.build(turned, turned.Faces[round_side_of(turned)], alone, shifts={1: ROUND_TURN})
     expect(went < -ROUND_TURN / 2 and len(shifted.tines) == len(whole.tines),
            "the part turns under the fin moved %.0f mm, the hole goes %.1f mm the other way" % (ROUND_TURN, went))
     shown = shifted.starts[1] + shifted.thickness / 2 - shifted.face_start
     expect(abs(shown - ROUND_TURN) < d.TOLERANCE and abs(shifted.radius - ROD_RADIUS) < d.TOLERANCE
            and shifted.fins.BoundBox.isInside(whole.fins.BoundBox.Center),
            "the fin stays under the lowest line, its place on the face shows the turn")
+
+
+def stood_on_free_rim(shape):
+    """`shape` stood by Quick fins for the side of ROD_RADIUS, and the number
+    of that side."""
+    side = round_side_of(shape)
+    plan = geometry.quick_plan(shape, [], [(shape.Faces[side], side)], FinParams(), d.TILT_ANGLE)
+    return moved(shape, plan.change), side
+
+
+def flank_slopes(result, p):
+    """How far the flank of `result` runs inward per mm up, its steepest."""
+    outline = result.frame.contour.outline(p.foot_height, result.height)
+    return max((s_low - s_high) / (z_high - z_low)
+               for (s_high, z_high), (s_low, z_low) in zip(outline, outline[1:]) if z_high > z_low)
+
+
+def check_contour():
+    """Under a whole round side the fin follows the contour of the part up to
+    its top: over a step to a thinner part, a groove and a curved outline;
+    tines rest only where the part faces down; a tube holds it
+    at its front wall."""
+    p = FinParams(placement=d.PLACEMENT_CENTER)
+    alone = FinParams(placement=d.PLACEMENT_CENTER, follow_contour=False)
+    inward = 1 / math.tan(math.radians(d.FIN_FLANK_ANGLE))
+    rod = Part.makeCylinder(ROD_RADIUS, ROD_HEIGHT)
+    step = rod.fuse(Part.makeCylinder(STEP_RADIUS, ROD_HEIGHT, V(0, 0, ROD_HEIGHT))).removeSplitter()
+    stood, side = stood_on_free_rim(step)
+    short = geometry.build(stood, stood.Faces[side], alone)
+    tall = geometry.build(stood, stood.Faces[side], p)
+    # The stretch on the thinner part: the first above the top of the side
+    # with room for a tine.
+    side_top = short.frame.face_top_z - short.frame.bed_z
+    thinner = min(low for low, high in tall.frame.contour.bands()
+                  if low > side_top and high - low >= p.tine_height)
+    upper = [z for z in tall.tine_z if z >= thinner - d.TOLERANCE]
+    expect(tall.height > short.height + ROD_HEIGHT / 2 and upper
+           and upper[0] < thinner + p.layer_height + d.TOLERANCE,
+           "along the contour the fin reaches up the thinner part, its tines starting anew at its bottom: "
+           "%.1f mm high, %.1f under the side alone" % (tall.height, short.height))
+    again = geometry.build(stood, stood.Faces[side], FinParams(placement=d.PLACEMENT_CENTER, fin_height=short.height))
+    other = geometry.build(stood, stood.Faces[side], FinParams(placement=d.PLACEMENT_CENTER, contour_bridge=1.0))
+    expect(again.frame.contour is tall.frame.contour and other.frame.contour is not tall.frame.contour,
+           "the contour is worked out once for the part as it stands, again for another bridge")
+    expect(flank_slopes(tall, p) <= inward + d.TOLERANCE,
+           "the flank follows the step, inward no steeper than %g degrees allow" % d.FIN_FLANK_ANGLE)
+    expect(all(tine.distToShape(stood)[0] < d.TINE_END_TOLERANCE for tine in tall.tines) and not [
+        w for w in tall.warnings if "rim" not in w],
+           "every tine rests on the part, none on the end face of the step looking up: %s" % tall.warnings)
+    # The end face of the step, looking up: the larger gap kept from its
+    # middle, under the fin.
+    end_face = next(f for f in stood.Faces if f.findPlane() is not None and f.normalAt(0, 0).z > d.TOLERANCE
+                    and abs(f.Area - math.pi * (ROD_RADIUS ** 2 - STEP_RADIUS ** 2)) < d.TOLERANCE)
+    normal = end_face.normalAt(0, 0)
+    towards = tall.frame.out - normal * tall.frame.out.dot(normal)
+    towards.normalize()
+    middle_of_end = end_face.CenterOfMass + towards * (ROD_RADIUS + STEP_RADIUS) / 2
+    expect(min(body.distToShape(Part.Vertex(middle_of_end))[0] for body in tall.bodies)
+           >= p.contour_gap - d.TOLERANCE,
+           "over the end face of the step, looking up, the fin keeps %.2f mm from it" % p.contour_gap)
+    # A chamfer on the edge of the step stands upright once the side leans:
+    # no tine on it, and the gap where the tines rest, not the larger one.
+    edge = [e for e in step.Edges if orient.is_rim(e) and abs(e.Curve.Radius - ROD_RADIUS) < d.TOLERANCE
+            and e.BoundBox.ZMin > ROD_HEIGHT - d.TOLERANCE]
+    stood, side = stood_on_free_rim(step.makeChamfer(CHAMFER_SHORT, edge))
+    edged = geometry.build(stood, stood.Faces[side], p)
+    cone = next(f for f in stood.Faces if isinstance(f.Surface, Part.Cone))
+    expect(min(body.distToShape(cone)[0] for body in edged.bodies) < p.contour_gap - d.TOLERANCE,
+           "along an upright chamfer on the edge of the step the fin keeps the gap, not %.2f mm" % p.contour_gap)
+
+    # A groove round the middle of the shaft, lower than the bridge: spanned,
+    # unless the bridge is 0.
+    middle = ROD_HEIGHT / 2
+    ring = Part.makeCylinder(ROD_RADIUS, GROOVE_LENGTH, V(0, 0, middle)).cut(
+        Part.makeCylinder(ROD_RADIUS - GROOVE_DEPTH, GROOVE_LENGTH, V(0, 0, middle)))
+    grooved_rod = rod.cut(ring)
+    stood, side = stood_on_free_rim(grooved_rod)
+    bridged = geometry.build(stood, stood.Faces[side], p)
+    # The gap kept as small over the lower wall of the groove, which looks up.
+    followed = geometry.build(stood, stood.Faces[side], FinParams(placement=d.PLACEMENT_CENTER, contour_bridge=0.0,
+                                                                  contour_gap=FinParams().gap))
+    into = max(spanned - inside for spanned, inside
+               in zip(bridged.frame.contour.flank_at, followed.frame.contour.flank_at))
+    expect(not [w for w in bridged.warnings if "rim" not in w] and into > GROOVE_DEPTH / 2
+           and flank_slopes(followed, p) <= inward + d.TOLERANCE,
+           "a groove lower than the bridge is spanned without a word; with the bridge 0 the flank goes into it")
+
+    # A pocket in the side, longer than the bridge, that no tine rests in:
+    # the flank runs straight past it on the side, the tines go on above.
+    stood, side = stood_on_free_rim(rod)
+    frame = geometry.frame_of(stood, stood.Faces[side])
+    normal, along = frame.normal(), frame.along
+    up_side = normal.cross(along)
+    length, width, depth = POCKET_SIZE
+    middle_z = frame.bed_z + ROD_HEIGHT / 2
+    centre = frame.point((frame.along_min + frame.along_max) / 2, frame.s_face(middle_z), middle_z)
+    corner = centre - along * (width / 2) - up_side * (length / 2) - normal * depth
+    pocket = Part.makeBox(width, length, 2 * depth)
+    pocket.Placement = App.Placement(App.Matrix(along.x, up_side.x, normal.x, corner.x,
+                                                along.y, up_side.y, normal.y, corner.y,
+                                                along.z, up_side.z, normal.z, corner.z, 0, 0, 0, 1))
+    pocketed = stood.cut(pocket)
+    past = geometry.build(pocketed, pocketed.Faces[round_side_of(pocketed)], p)
+    plain = geometry.build(stood, stood.Faces[side], p)
+    # Neither in nor out, also at the edges of the pocket: no wedge there.
+    off = [a - b for a, b in zip(past.frame.contour.flank_at, plain.frame.contour.flank_at)]
+    expect(min(off) > -d.TOLERANCE and max(off) < d.TOLERANCE and not [w for w in past.warnings if "rim" not in w]
+           and len(past.tines) < len(plain.tines),
+           "a pocket longer than the bridge with no tine in it is spanned: the flank as without it, %.3f to %.3f "
+           "mm off, and nothing said" % (min(off), max(off)))
+
+    # A curved outline on top of the cylinder, narrowing slower than the side
+    # leans: the fin follows it, its tines on it.
+    profile = Part.BSplineCurve()
+    profile.interpolate([V(radius, 0, ROD_HEIGHT * (1 + k / (len(SPLINE_RADII) - 1)))
+                         for k, radius in enumerate(SPLINE_RADII)])
+    top = profile.EndPoint
+    outline = Part.Wire([Part.LineSegment(V(0, 0, ROD_HEIGHT), profile.StartPoint).toShape(), profile.toShape(),
+                         Part.LineSegment(top, V(0, 0, top.z)).toShape(),
+                         Part.LineSegment(V(0, 0, top.z), V(0, 0, ROD_HEIGHT)).toShape()])
+    vase = Part.Face(outline).revolve(V(0, 0, 0), UP, geometry.FULL_CIRCLE)
+    curved = rod.fuse(Part.Solid(Part.Shell(vase.Faces)) if not vase.Solids else vase).removeSplitter()
+    stood, side = stood_on_free_rim(curved)
+    along = geometry.build(stood, stood.Faces[side], p)
+    rim_top = geometry.build(stood, stood.Faces[side], alone).height
+    expect(along.height > rim_top + ROD_HEIGHT / 2
+           and not [w for w in along.warnings if "rim" not in w],
+           "along a curved outline the fin goes on up, every tine resting on it: %.1f mm over %.1f"
+           % (along.height, rim_top))
+
+    # A chamfer on both rims: the part stands on one, the other on top stands
+    # upright once the side leans 45 degrees and needs no tine.
+    chamfered = rod.makeChamfer(CHAMFER_SHORT, [e for e in rod.Edges if orient.is_rim(e)])
+    stood, side = stood_on_free_rim(chamfered)
+    upright = geometry.build(stood, stood.Faces[side], p)
+    side_top = geometry.build(stood, stood.Faces[side], alone).frame.face_top_z - upright.frame.bed_z
+    expect(max(upright.tine_z) + p.tine_height <= side_top + d.TOLERANCE
+           and max(z for z in upright.touching_z[1]) + p.tine_height <= side_top + d.TOLERANCE,
+           "no tine on the chamfer on top, which stands upright: tines up to %.1f mm, side up to %.1f"
+           % (max(upright.touching_z[1]) + p.tine_height, side_top))
+
+    # A tube: its front wall alone, the fin ends at its front top edge.
+    tube = rod.cut(Part.makeCylinder(BORE_RADIUS, ROD_HEIGHT))
+    stood, side = stood_on_free_rim(tube)
+    front = geometry.build(stood, stood.Faces[side], p)
+    edge = geometry.build(stood, stood.Faces[side], alone).frame.face_top_z - front.frame.bed_z
+    expect(front.height <= edge + p.tine_height,
+           "a tube holds the fin at its front wall, up to its front top edge, not over the bore: %.1f mm, edge %.1f"
+           % (front.height, edge))
+
+    try:
+        FinParams(contour_gap=FinParams().gap / 2).validate()
+    except ParamError as error:
+        expect("contour_gap" in str(error), "a gap without tines smaller than the gap is refused: %s" % error)
+    else:
+        raise AssertionError("a gap without tines smaller than the gap was accepted")
+    try:
+        FinParams(contour_bridge=-1.0).validate()
+    except ParamError as error:
+        expect("contour_bridge" in str(error), "a negative bridge is refused: %s" % error)
+    else:
+        raise AssertionError("a negative contour bridge was accepted")
 
 
 def check_part_of_side():
@@ -1992,6 +2179,7 @@ def main():
     check_centres()
     check_stability()
     check_round_side()
+    check_contour()
     check_part_of_side()
     check_split_side()
     check_left_out(cube, face)

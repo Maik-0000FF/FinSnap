@@ -39,6 +39,7 @@ How much each effect matters depends on the material, the printer and the part.
   - **merged**: fins and part become one body, the tines are printed as one path with the part
 - Tine height and width in layers and beads, so the design follows the print profile
 - Fin height set by the highest tine that finds the face, 1 mm thick up to 100 mm of height and thicker above
+- Under the round side of a part standing on its rim, the fin follows the contour of the part up to its top, over steps, fillets and curves; small recesses are bridged
 - Adjustable tine clearance, so the tines end short of the face and leave fainter marks
 - A face split by a groove across it is supported as one: the fin reaches over the groove to the piece beyond it
 - One fin centred, two at the ends, two on the corners, one on the left or right corner, or several distributed along the face

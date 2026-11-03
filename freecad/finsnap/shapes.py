@@ -49,6 +49,10 @@ BODY_TYPE = "PartDesign::Body"
 # exactly where it was.
 SAME_PLACE = 1e-3
 SAME_DIRECTION = 1.0 - 1e-6
+# Places to which shape_key() rounds the measures and corners of a shape.
+KEY_DIGITS = 6
+# What keep() holds in one store at most, the oldest going first.
+KEPT = 8
 
 
 def face_name(number):
@@ -72,6 +76,26 @@ def bounds(shape):
     of curved faces, so after a turn it can stand millimetres off a fillet: a
     part would then float above the bed, and fins reach below it."""
     return shape.optimalBoundingBox(USE_TRIANGULATION)
+
+
+def shape_key(shape):
+    """What tells a shape as it stands from another: its measures and where
+    its corners lie, not its hash. FreeCAD gives a part a new hash each time
+    it is recomputed, the same shape or not; the corners tell a shape whose
+    measures stay apart, as with a hole moved."""
+    corners = tuple(sorted(tuple(round(c, KEY_DIGITS) for c in vertex.Point) for vertex in shape.Vertexes))
+    return (round(shape.Volume, KEY_DIGITS), round(shape.Area, KEY_DIGITS), len(shape.Faces), len(shape.Edges),
+            corners)
+
+
+def keep(store, key, make):
+    """What the dict `store` keeps under `key`, made by make() where it keeps
+    nothing yet; past KEPT entries the oldest goes first."""
+    if key not in store:
+        while len(store) >= KEPT:
+            store.pop(next(iter(store)))
+        store[key] = make()
+    return store[key]
 
 
 def moved(shape, change):

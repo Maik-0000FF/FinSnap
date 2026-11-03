@@ -190,6 +190,42 @@ ROUND_SIDE_MAX_DROP = 0.05
 # tines end on. Further off, the tine misses the face or reaches into the part.
 TINE_END_TOLERANCE = ROUND_SIDE_MAX_DROP
 
+# --- Contour ------------------------------------------------------------------
+# The fin under a whole round side follows the contour of the part up to its
+# top, as a cut through the lowest line shows it: steps, cones, fillets and
+# curves alike. Off, it stands under the round side alone.
+FOLLOW_CONTOUR = True
+# Recesses in the contour lower than this (mm), small chamfers, fillets, holes
+# and grooves, the fin bridges straight; its tines there are left out.
+CONTOUR_BRIDGE = 3.0
+# Over a face of the contour looking up, where no tine rests, the fin keeps
+# this gap from the part (mm), larger than GAP, so it cannot stick to it there.
+CONTOUR_GAP = 1.0
+# Heights at which the contour is sampled, per layer: finer than a layer, so
+# the fin keeps its distance also across a fillet between two samples.
+CONTOUR_SAMPLES_PER_LAYER = 4
+# Cuts across the thickness of the fin, its middle and both faces among them,
+# the gap kept from each: a hole narrower than the fin is open in the middle
+# cut alone, and its edges lie beside it.
+CONTOUR_CUTS = 5
+# At a corner of the part the fin keeps its gap with a sharp corner too, its
+# flank on along each face to where the two meet; at a corner sharper than
+# about 127 degrees of turn, as far as this many gaps past it, then rounded.
+CONTOUR_MITRE_LIMIT = 2.0
+# The contour goes on on the same face past a stretch without tines, a pocket
+# in it, where it comes back within this (mm) of where it would have run; the
+# fin then runs straight past.
+CONTOUR_SAME_LINE = 0.05
+# How far a curve of the contour may lie off the straight pieces it is cut
+# into (mm), and what the fin keeps from the part beyond its distance to
+# cover that, the straight run between two samples and the part between two
+# cuts, as the edge of a hole lies there.
+CONTOUR_DEFLECTION = 0.001
+CONTOUR_MARGIN = 0.01
+# The flank of the fin never runs inward up the contour more steeply than
+# this angle from the bed allows: the fin itself prints without an overhang.
+FIN_FLANK_ANGLE = OVERHANG_ANGLE
+
 # --- Checks -------------------------------------------------------------------
 TOLERANCE = 1e-4
 # Layer positions are rounded to this many decimals, so that 5 x 1.2 is 6.0.

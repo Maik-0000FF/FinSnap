@@ -28,7 +28,8 @@ where its lowest line lies on it; that fin stays where it is, as turning the
 part about the axis would carry its lowest line off the face. Across a
 tine the side falls away behind the plane by a few thousandths of a millimetre,
 so a tine ends on it wherever the side lies within ROUND_SIDE_MAX_DROP of the
-plane.
+plane. Under a whole side the fin can follow the contour of the part beyond
+it instead, up to its top (contour.py).
 
 INPUTS this has to withstand (orient.is_round_side()):
   curved side of a cylinder or tube     ->  True
@@ -128,6 +129,7 @@ from functools import partial
 import FreeCAD as App
 import Part
 
+from . import contour as contours
 from . import defaults as d
 from . import orient
 from .i18n import QT_TRANSLATE_NOOP, translate
@@ -161,6 +163,8 @@ NOTE_TINES_MISS = QT_TRANSLATE_NOOP("FinSnap", "tines at %s mm above the bed mis
                                                "than %.2f mm")
 NOTE_TINES_CUT_IN = QT_TRANSLATE_NOOP("FinSnap", "tines at %s mm above the bed reach more than %.2f mm into the "
                                                  "part")
+NOTE_CONTOUR_RECEDES = QT_TRANSLATE_NOOP("FinSnap", "tines at %s mm above the bed left out: the contour falls back "
+                                                    "further than the fin can follow without overhanging itself")
 # Said where the face is narrower than a fin, or its tine, at every tine height.
 NARROW_AT_EVERY_TINE = QT_TRANSLATE_NOOP("FinSnap", "the face is narrower than the %.2f mm a fin needs at every tine")
 # Said where a part of a curved side, a fillet or the round end of a slot,
@@ -198,6 +202,9 @@ class Frame:
     # Whether that curved side goes all the way round, so the part stands on
     # one point of its rim and turns about its axis to move the fin.
     whole_side: bool = False
+    # The contour of the part the fin under that side follows
+    # (contour.Contour), None where it stands under the side alone.
+    contour: object = None
 
     @property
     def round_side(self):
@@ -717,6 +724,29 @@ def foot_half_width_for(p, half_length, thickness, positions):
     return max(wanted, thickness / 2)
 
 
+def flank_at(p, frame, z):
+    """Where the flank of a fin stands at height z (absolute): the fin
+    distance off the face, or along the contour the frame follows."""
+    if frame.contour is not None:
+        return frame.contour.flank(z - frame.bed_z)
+    return frame.s_flank(z, p.fin_offset)
+
+
+def flank_outline(p, frame, low, high):
+    """The flank of a fin from height `high` down to `low` (absolute), as
+    (s, z) points: its two ends under a face, every bend along a contour."""
+    if frame.contour is not None:
+        return [(s, z + frame.bed_z) for s, z in frame.contour.outline(low - frame.bed_z, high - frame.bed_z)]
+    return [(flank_at(p, frame, high), high), (flank_at(p, frame, low), low)]
+
+
+def fin_out(p, frame, height):
+    """Where the upright outer edge of a fin `height` high stands: the top
+    width past the furthest out its flank reaches above the foot."""
+    zb = frame.bed_z
+    return max(s for s, _ in flank_outline(p, frame, zb + p.foot_height, zb + height)) + p.fin_plateau
+
+
 def foot_span(p, frame, height):
     """Where the foot starts and ends, measured outward.
 
@@ -724,10 +754,8 @@ def foot_span(p, frame, height):
     edge, so it keeps the gap to the part along its whole height; lower down
     the flank lies further in and the clearance only grows.
     """
-    top = frame.bed_z + p.foot_height
-    s_from = frame.s_flank(top, p.fin_offset)
-    s_to = frame.s_flank(frame.bed_z + height, p.fin_offset) + p.fin_plateau + p.foot_overhang
-    return s_from, s_to
+    s_from = flank_at(p, frame, frame.bed_z + p.foot_height)
+    return s_from, fin_out(p, frame, height) + p.foot_overhang
 
 
 def foot(p, frame, t0, thickness, s_from, s_to, half_width):
@@ -815,6 +843,9 @@ def face_tines(p, frame, tine_count, restart):
     face that starts above the bed gets them spread over it from its lower
     edge, as a fin on it would, and as many of a fixed count as fit there:
     where the one grid happens to lie on such a face is no reason to refuse it.
+    Along a contour, with the tine restart on, they are spread over each
+    stretch the tines rest on, from its lower edge, so the thinner part above
+    a step is held from its bottom on.
 
     INPUTS this has to withstand:
       without restart                       ->  tine_heights(), its errors as they are
@@ -824,13 +855,19 @@ def face_tines(p, frame, tine_count, restart):
       restart, fewer than a fixed count fit ->  those that fit, no error
       restart, no tine fits at all          ->  the error of tine_heights()
       restart, a fin height above the face  ->  the error of tine_heights()
+      contour, tine restart on              ->  spread over each stretch it holds the
+                                                tines on, lowest first
+      contour, tine restart off             ->  tine_heights(): the one grid
     """
-    floor = frame.face_bottom_z - frame.bed_z
-    if not restart or floor <= d.TOLERANCE:
-        return tine_heights(p, frame, tine_count)
     room = frame.face_top_z - frame.bed_z - d.FACE_TOP_MARGIN
     limit = p.fin_height if p.fin_height > 0 else room
-    zs = _spread(p, [(floor, frame.face_top_z - frame.bed_z)], limit, tine_count) if limit <= room else []
+    if frame.contour is not None:
+        zs = _spread(p, frame.contour.bands(), limit, tine_count) if p.tine_restart and limit <= room else []
+    else:
+        floor = frame.face_bottom_z - frame.bed_z
+        if not restart or floor <= d.TOLERANCE:
+            return tine_heights(p, frame, tine_count)
+        zs = _spread(p, [(floor, frame.face_top_z - frame.bed_z)], limit, tine_count) if limit <= room else []
     if not zs:
         # The face has no room for a tine, or the fin is set above it: as the one grid says.
         return tine_heights(p, frame, tine_count)
@@ -874,7 +911,10 @@ def restarted_tines(p, frame, face, t0, thickness, limit, count):
 
 def touching_at(frame, face, p, tine_z, t0, thickness):
     """The heights in `tine_z` at which the tine of the fin starting at t0
-    lies on `face`, as contact_share() finds it."""
+    lies on `face`, as contact_share() finds it; along a contour, where the
+    flank keeps its distance from the part (contour.Contour.rests())."""
+    if frame.contour is not None:
+        return {z for z in tine_z if frame.contour.rests(z, z + p.tine_height)}
     start = tine_start(p, t0, thickness)
     return {z for z in tine_z if contact_share(frame, face, start, p, z) >= d.TINE_MIN_CONTACT - d.TOLERANCE}
 
@@ -935,9 +975,11 @@ def tine_end(p, frame, z):
     how far out its end lies at each (s of the frame). It ends parallel to
     the face, following its slope, on it or the tine clearance short of it,
     so every tine is equally long, also where the part behind the face ends
-    early."""
+    early. Along a contour it ends on the contour, or the clearance off it."""
     bottom = frame.bed_z + z
     top = bottom + p.tine_height
+    if frame.contour is not None:
+        return (bottom, top, *frame.contour.tine_ends(z, z + p.tine_height))
     return bottom, top, frame.s_flank(bottom, p.clearance), frame.s_flank(top, p.clearance)
 
 
@@ -1002,37 +1044,34 @@ def tine_end_fault(surface, points, clearance):
 def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
     """A fin without tines, its tines, which end on the face, and the middle
     of the upright outer edge of its blade, where the handles go."""
-    zb = frame.bed_z
-    s_bottom = frame.s_flank(zb, p.fin_offset)
-    s_top = frame.s_flank(zb + height, p.fin_offset)
-    s_out = s_top + p.fin_plateau
+    zb, top = frame.bed_z, frame.bed_z + height
+    s_out = fin_out(p, frame, height)
 
     if p.foot_shape == d.FOOT_NONE:
-        body = frame.section(t0, [(s_bottom, zb), (s_out, zb), (s_out, zb + height),
-                                  (s_top, zb + height)], thickness)
+        body = frame.section(t0, [(s_out, zb), (s_out, top)] + flank_outline(p, frame, zb, top), thickness)
     else:
         # Below the top of the foot the slanted flank would only add a thin tip
         # under the part; the blade ends vertically there and the foot carries it.
         s_from, s_to = foot_span(p, frame, height)
         foot_top = zb + p.foot_height
-        body = frame.section(t0, [(s_from, zb), (s_out, zb), (s_out, zb + height),
-                                  (s_top, zb + height), (s_from, foot_top)], thickness)
+        body = frame.section(t0, [(s_from, zb), (s_out, zb), (s_out, top)]
+                             + flank_outline(p, frame, foot_top, top), thickness)
         body = body.fuse(foot(p, frame, t0, thickness, s_from, s_to, half_foot))
     outer_middle = frame.point(t0 + thickness / 2, s_out, zb + height / 2)
 
     tines = []
     t_tine = tine_start(p, t0, thickness)
     for z in tine_z:
-        bottom, top, s_end_bottom, s_end_top = tine_end(p, frame, z)
-        # The fin edge furthest out along the tine: the flank at its top, or the
-        # vertical inner end of the foot for a tine below the top of the foot.
-        # Measured from there, a tine always reaches into the fin.
-        edge = frame.s_flank(top, p.fin_offset)
+        bottom, tine_top, s_end_bottom, s_end_top = tine_end(p, frame, z)
+        # The fin edge furthest out along the tine: the flank at its ends, or
+        # the vertical inner end of the foot for a tine below the top of the
+        # foot. Measured from there, a tine always reaches into the fin.
+        edge = max(flank_at(p, frame, bottom), flank_at(p, frame, tine_top))
         if p.foot_height > 0 and bottom < zb + p.foot_height:
             edge = max(edge, foot_span(p, frame, height)[0])
         s_into_fin = edge + d.TINE_INTO_FIN
         tines.append(frame.section(t_tine, [(s_end_bottom, bottom), (s_into_fin, bottom),
-                                            (s_into_fin, top), (s_end_top, top)], p.tine_width))
+                                            (s_into_fin, tine_top), (s_end_top, tine_top)], p.tine_width))
     return body, tines, outer_middle
 
 
@@ -1276,6 +1315,17 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
 
 def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     frame = frame_of(part, face, support)
+    # The one fin under a whole round side follows the contour of the part up
+    # to its top; the tine ends are measured on the part then, not the side.
+    surface = support
+    if frame.whole_side and p.follow_contour:
+        try:
+            # As thick as a fin as high as the part, which no fin is thicker than.
+            line = contours.of(part, frame, p, thickness_for(p, bounds(part).ZLength))
+        except contours.ContourError as error:
+            raise FinError(str(error))
+        frame = replace(frame, contour=line, face_top_z=frame.bed_z + line.top)
+        surface = Part.makeCompound(part.Faces)
     # The slices of the face at the height of a tine, kept for every plan of this build.
     slices = {}
     count = p.tine_count if tine_count is None else tine_count
@@ -1305,23 +1355,34 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     pieces = []
     # Tines over the gap between two faces in one plane are named as over a recess.
     gap_heights = set(plan.gap_z)
+    # Along a contour: tines left out where it falls back further than the
+    # flank can follow, and the fins they belong to. Those in a recess the
+    # fin bridges are left out as asked, without a word.
+    receded_heights, receded_fins, receded_tines = set(), [], []
     edges = []
     # Tines whose end misses the face or reaches into the part, by fault, as
     # (fin number, height, tine).
     off_ends = {TINE_MISSES: [], TINE_CUTS_IN: []}
     for fin in plan.fins:
-        gap_heights.update(z for z, whole in zip(fin.candidate_z, fin.on_face) if not whole)
         body, tines, edge = one_fin(p, frame, fin.t0, fin.height, thickness, plan.half_foot, fin.candidate_z)
         kept = [tine for tine, whole in zip(tines, fin.on_face) if whole]
-        dropped += [tine for tine, whole in zip(tines, fin.on_face) if not whole]
-        if not all(fin.on_face):
+        left = [(z, tine) for z, tine, whole in zip(fin.candidate_z, tines, fin.on_face) if not whole]
+        dropped += [tine for _, tine in left]
+        if frame.contour is not None:
+            receded = [(z, tine) for z, tine in left if frame.contour.receded(z, z + p.tine_height)]
+            receded_heights.update(z for z, _ in receded)
+            receded_tines += [tine for _, tine in receded]
+            if receded:
+                receded_fins.append(fin.number)
+        elif left:
+            gap_heights.update(z for z, _ in left)
             gapped.append(fin.number)
         edges.append(edge)
         bodies.append(body)
         all_tines.extend(kept)
         # Each tine kept, its end measured against the part itself.
         for z, tine in zip([z for z, whole in zip(fin.candidate_z, fin.on_face) if whole], kept):
-            fault = tine_end_fault(support, tine_end_points(p, frame, fin.t0, thickness, z), p.clearance)
+            fault = tine_end_fault(surface, tine_end_points(p, frame, fin.t0, thickness, z), p.clearance)
             if fault is not None:
                 off_ends[fault].append((fin.number, z, tine))
         # One general fuse instead of one tine after the other: the lowest tine
@@ -1338,6 +1399,9 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         warnings.append(translate("FinSnap", "tines at %s mm above the bed left out: a recess or hole in the "
                                   "face lies under them") % _mm_list(gap_heights))
         targets.append(WarningTarget(gapped, dropped, False))
+    if receded_heights:
+        warnings.append(translate("FinSnap", NOTE_CONTOUR_RECEDES) % _mm_list(receded_heights))
+        targets.append(WarningTarget(receded_fins, receded_tines, False))
     for fault, note in ((TINE_MISSES, NOTE_TINES_MISS), (TINE_CUTS_IN, NOTE_TINES_CUT_IN)):
         found = off_ends[fault]
         if found:
