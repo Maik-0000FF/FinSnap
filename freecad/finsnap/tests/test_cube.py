@@ -94,6 +94,10 @@ GROOVE_FROM = 8.0
 WIDE_BOX = 60.0          # long enough for a U profile with legs of a third each
 SHIFT = 1.5           # how far a fin is moved along the face by hand, in mm
 MERGED_CLEARANCE = 0.3  # a tine clearance that merged fins must not take
+# A nozzle and bead so wide that no gap up to GAP_MAX makes the tines long
+# enough, and a layer it prints, in mm.
+WIDE_NOZZLE = 4.0
+WIDE_LAYER = 1.0
 UP = V(0, 0, 1)
 BOX_SIDE = 20.0
 EDGE_ROUND = 3.0       # size of the chamfer or radius of the fillet on a box edge
@@ -763,6 +767,12 @@ def check_tine_clearance(cube, face):
     enough = geometry.build(cube, face, FinParams(tine_clearance=clearance, gap=named))
     expect(not [w for w in enough.warnings if "tines are" in w],
            "the gap of %.2f mm the warning names makes the tines long enough" % named)
+    # A bead so wide that no gap taken makes them long enough: no gap named.
+    wide = FinParams(nozzle_diameter=WIDE_NOZZLE, bead_width=WIDE_NOZZLE, layer_height=WIDE_LAYER,
+                     first_layer_height=WIDE_LAYER)
+    beyond = [w for w in geometry.build(cube, face, wide).warnings if "tines are" in w]
+    expect(beyond and "narrower bead" in beyond[0] and "A gap of" not in beyond[0],
+           "with a bead too wide for any gap taken, the warning asks for a narrower bead: %s" % beyond)
     expect(not [w for w in geometry.build(cube, face, FinParams()).warnings if "tines are" in w],
            "the tines of the built-in gap and clearance are long enough")
     for wrong, why in ((-clearance, "negative"), (d.GAP, "as large as the gap")):

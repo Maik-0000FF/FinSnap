@@ -166,6 +166,9 @@ NOTE_TINES_CUT_IN = QT_TRANSLATE_NOOP("FinSnap", "tines at %s mm above the bed r
 NOTE_TINES_SHORT = QT_TRANSLATE_NOOP("FinSnap", "tines are %.2f mm long, shorter than %.2f bead widths; the slicer "
                                                "may not print them to the face. A gap of %.2f mm makes them long "
                                                "enough")
+NOTE_TINES_TOO_SHORT = QT_TRANSLATE_NOOP("FinSnap", "tines are %.2f mm long, shorter than %.2f bead widths; the "
+                                                    "slicer may not print them to the face. No gap up to %.1f mm "
+                                                    "makes them long enough: set a narrower bead")
 NOTE_CONTOUR_RECEDES = QT_TRANSLATE_NOOP("FinSnap", "tines at %s mm above the bed left out: the contour falls back "
                                                     "further than the fin can follow without overhanging itself")
 # Said where the face is narrower than a fin, or its tine, at every tine height.
@@ -1439,7 +1442,12 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         # The gap that makes them as long, along the face normal, the
         # clearance on top; rounded up to GAP_HINT_STEP.
         enough = math.ceil((shortest * frame.n_out + p.clearance) / d.GAP_HINT_STEP - d.TOLERANCE) * d.GAP_HINT_STEP
-        warnings.append(translate("FinSnap", NOTE_TINES_SHORT) % (tine_length, d.TINE_MIN_LENGTH_BEADS, enough))
+        if enough <= d.GAP_MAX + d.TOLERANCE:
+            warnings.append(translate("FinSnap", NOTE_TINES_SHORT) % (tine_length, d.TINE_MIN_LENGTH_BEADS, enough))
+        else:
+            # No gap taken makes them long enough: the bead is too wide.
+            warnings.append(translate("FinSnap", NOTE_TINES_TOO_SHORT)
+                            % (tine_length, d.TINE_MIN_LENGTH_BEADS, d.GAP_MAX))
         targets.append(WarningTarget([fin.number for fin in plan.fins], [], False))
     if frame.whole_side:
         warnings.append(translate("FinSnap", "the part stands on one point of its rim: a chamfer on the rim and "

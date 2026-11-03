@@ -18,7 +18,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Changed
 
-- The fin stays at the gap from the face, whatever the tine clearance: the tines are as much shorter, a clearance as large as the gap is refused, and the warning about short tines counts the clearance and names the gap that makes them long enough. Fins saved with a tine clearance keep their values and stand as much closer to the part; fins saved with a clearance as large as the gap or larger no longer build until it is set smaller; fins saved before the tine clearance existed get the built-in 0.05 mm
+- The fin stays at the gap from the face, whatever the tine clearance: the tines are as much shorter, a clearance as large as the gap is refused, and the warning about short tines counts the clearance and names the gap that makes them long enough, or asks for a narrower bead where no gap up to 2 mm does. Fins saved with a tine clearance keep their values and stand as much closer to the part; fins saved with a clearance as large as the gap or larger no longer build until it is set smaller; fins saved before the tine clearance existed get the built-in 0.05 mm
 - The gap is at most 2 mm, its field in the panel stops there and its tooltip names the range; longer tines do not print straight. Fins saved with a larger gap no longer build until it is set smaller, and their panel shows 2 mm, taken as such once it is applied
 - Built-in gap 0.3 mm and tine clearance 0.05 mm, from a test print (were 0.25 mm and 0): tines 0.25 mm long, ending short of the part, so the slicer prints tine and part as separate beads
 
