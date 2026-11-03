@@ -50,8 +50,8 @@ SHOWN_OFF = QT_TRANSLATE_NOOP("FinSnap", "off")
 # Said in the tooltip of a field with a limit of its own.
 FIELD_RANGE = QT_TRANSLATE_NOOP("FinSnap", "From %s up to %s.")
 DEGREE_SUFFIX = " \N{DEGREE SIGN}"
-# Pause after the last change before the preview is rebuilt, so typing a
-# number does not rebuild the fins at every keystroke.
+# Pause after a change is taken before the preview is rebuilt, so several
+# taken together build once.
 PREVIEW_DELAY_MS = 400
 # The keys that end typing in a field.
 ENTER_KEYS = (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter)
@@ -788,12 +788,10 @@ class FinSnapTaskPanel:
         self.ends_timer.setSingleShot(True)
         self.ends_timer.setInterval(ENDS_DELAY_MS)
         self.ends_timer.timeout.connect(self.update_ends)
-        # Takes a value typed into a field of the fin with the handles once
-        # typing pauses, as the other fields do; the field typed into last.
-        self.field_timer = QtCore.QTimer(self.form)
-        self.field_timer.setSingleShot(True)
-        self.field_timer.setInterval(PREVIEW_DELAY_MS)
-        self.field_timer.timeout.connect(lambda: self.field_entered(self.typed_field, paused=True))
+        # The field of the fin with the handles changed, typed into or stepped,
+        # and not taken yet: taken on Enter, on leaving it, or before the
+        # arrows are grabbed or go to another fin; until then the panel leaves
+        # it as changed.
         self.typed_field = None
         # The field at an arrow a double click opened, as (kind, end, field):
         # past the tip of its half end, BACK or FORTH; and the timer that keeps
@@ -802,9 +800,6 @@ class FinSnapTaskPanel:
         self.arrow_field_timer = QtCore.QTimer(self.form)
         self.arrow_field_timer.setInterval(handles.ZOOM_POLL_MS)
         self.arrow_field_timer.timeout.connect(self.place_arrow_field)
-        # The field of the fin being typed into while its value is taken after
-        # a pause: the panel leaves it as typed.
-        self.typing = None
         # The fin with the handles on it, as (MAIN or COUNTER, number); the
         # arrow being dragged with how far, as (kind, mm); and the shift and
         # height of the fin, and the values in its fields, when it was grabbed.
@@ -844,8 +839,9 @@ class FinSnapTaskPanel:
             layout.addWidget(self.stand_section)
         intro = QtWidgets.QLabel(translate(
             "FinSnap", "Hover over a field for an explanation. Letters in brackets point to the drawings "
-            "below. Every change is shown in the 3D view right away. Greyed-out fields have no effect "
-            "with the current choices; their tooltip says why."))
+            "below. A number typed or stepped is taken on Enter or when you leave the field, and then shown "
+            "in the 3D view. Greyed-out fields have no effect with the current choices; their tooltip says "
+            "why."))
         intro.setWordWrap(True)
         layout.addWidget(intro)
         # The drawings always show, as the letters in the fields point to them.
@@ -885,7 +881,14 @@ class FinSnapTaskPanel:
             groups[prop.group].addRow(self.labels[prop.name], row)
             self.widgets[prop.name] = widget
             self.resets[prop.name] = reset
-            _changed_signal(widget).connect(self.changed)
+            if isinstance(widget, QtWidgets.QAbstractSpinBox):
+                # A number typed or stepped with the wheel or the arrows is
+                # taken on Enter or on leaving the field, not at every step.
+                widget.valueChanged.connect(self.adjusted)
+                widget.editingFinished.connect(self.changed)
+                widget.installEventFilter(EnterTakes(self.changed, widget))
+            else:
+                _changed_signal(widget).connect(self.changed)
 
         edit = self.add_section(layout, EDIT_SECTION, translate("FinSnap", EDIT_SECTION)).content
         edit_layout = QtWidgets.QGridLayout(edit)
@@ -922,7 +925,7 @@ class FinSnapTaskPanel:
         self.fin_label.setWordWrap(True)
         edit_layout.addWidget(self.fin_label, 4, 0, 1, 2)
         # Where the fin with the arrows stands, to read or to type in: taken
-        # once typing pauses, at once with Enter or on leaving the field.
+        # on Enter or on leaving the field.
         self.fin_fields, self.fin_field_labels = {}, {}
         for row, kind in ((5, handles.ALONG), (6, handles.UP)):
             label = QtWidgets.QLabel()
@@ -1128,6 +1131,7 @@ class FinSnapTaskPanel:
 
     def back_to_standard(self, prop):
         _write(prop, self.widgets[prop.name], getattr(self.standard, prop.field))
+        self.changed()
 
     def save_standard(self):
         values = {prop.field: _read(prop, self.widgets[prop.name]) for prop in feature.PROPERTIES}
@@ -1235,11 +1239,24 @@ class FinSnapTaskPanel:
         feature.remove_counter(self.obj)
         self.edited()
 
-    def changed(self):
+    def adjusted(self):
+        """A field changed, not taken yet: what depends on its value follows."""
         self.update_enabled()
         self.update_steps()
         self.update_marks()
-        self.timer.start()
+
+    def changed(self):
+        """A value taken: rebuilt after PREVIEW_DELAY_MS, unless the fields
+        hold what the fins are built with, as on leaving a field untouched."""
+        self.adjusted()
+        if self.differs():
+            self.timer.start()
+
+    def differs(self):
+        """Whether a field holds another value than the fins are built with."""
+        return any(not _same(prop, _read(prop, self.widgets[prop.name]), feature.value_of(self.obj, prop.name))
+                   for prop in feature.PROPERTIES)
+
 
     def apply(self):
         for prop in feature.PROPERTIES:
@@ -1467,8 +1484,8 @@ class FinSnapTaskPanel:
         """Show `values` in the fields of the handled fin, without taking them as typed."""
         self.filling_fields = True
         for kind, value in values.items():
-            # A field still being typed into keeps what is typed.
-            if kind != self.typing:
+            # A field changed and not taken yet keeps what it holds.
+            if kind != self.typed_field:
                 self.fin_fields[kind].setValue(value)
         self.filling_fields = False
 
@@ -1747,9 +1764,10 @@ class FinSnapTaskPanel:
         self.ends_timer.stop()
         # A field at an arrow is dropped, as a click elsewhere drops it.
         self.close_arrow_field()
-        # A value typed just before is built first, or the drag would keep the
-        # parameters from before it, or the value would come in the middle of it.
-        if self.timer.isActive():
+        # A value typed just before is built first, taken or not, as grabbing
+        # an arrow leaves its field; or the drag would keep the parameters from
+        # before it, or the value would come in the middle of it.
+        if self.timer.isActive() or self.differs():
             self.preview()
         self.take_typed()
         # While the drag lasts, builds with the same changes by hand are made once;
@@ -1924,39 +1942,31 @@ class FinSnapTaskPanel:
         box.selectAll()
 
     def field_typed(self, kind, _value):
-        """A field of the handled fin changed while typing: its value is taken
-        once typing pauses; a value the panel fills in is not."""
+        """A field of the handled fin changed, typed into or stepped: noted, and
+        taken on Enter or on leaving it; a value the panel fills in is not."""
         if self.filling_fields:
             return
         self.typed_field = kind
-        self.field_timer.start()
 
     def take_typed(self):
-        """Take a value still waiting for typing to pause, before the handles
-        go to another fin or an arrow is grabbed, so it is neither lost nor
-        taken in the middle of a drag."""
-        if self.field_timer.isActive():
+        """Take a value changed and not taken yet, before the handles go to
+        another fin or an arrow is grabbed, so it is neither lost nor taken in
+        the middle of a drag."""
+        if self.typed_field is not None:
             self.field_entered(self.typed_field)
 
-    def field_entered(self, kind, paused=False):
-        """A value typed into a field of the handled fin: where it stands along
-        the face (ALONG) or how high it is (UP). With `paused`, typing has only
-        paused: the field may still be typed into, so it is left as typed.
+    def field_entered(self, kind):
+        """A value taken from a field of the handled fin, on Enter or on leaving
+        it: where the fin stands along the face (ALONG) or how high it is (UP).
 
         INPUTS this has to withstand:
-          paused, the fin stands there          ->  built there, the field left as typed
-          paused, the fin cannot stand there    ->  nothing built, the reason shown, the
-                                                    field left as typed
-          paused, the build fails all the same  ->  taken back, the reason shown, the
-                                                    field left as typed
-          Enter or the field left, the fin
-            stands there                        ->  built there, the field shows it
-          Enter or the field left, it cannot    ->  the reason shown, the field shows
+          the fin stands there                  ->  built there, the field shows it
+          it cannot stand there                 ->  the reason shown, the field shows
                                                     where the fin stands
           the value as shown, untouched         ->  nothing
           no fin with the handles               ->  nothing
         """
-        self.field_timer.stop()
+        self.typed_field = None
         if self.filling_fields or self.handled_result() is None:
             return
         value = self.fin_fields[kind].value()
@@ -1975,17 +1985,8 @@ class FinSnapTaskPanel:
                 return
             if kind == handles.ALONG:
                 value = self.built_value(kind) + value - current
-        if not paused:
-            if not self.set_fin(kind, value):
-                self.place_handles()
-            return
-        # set_fin() tries the value first and shows why where the fin cannot
-        # stand; the field it leaves as typed meanwhile.
-        self.typing = kind
-        try:
-            self.set_fin(kind, value)
-        finally:
-            self.typing = None
+        if not self.set_fin(kind, value):
+            self.place_handles()
 
     def arrow_double_clicked(self, kind, end):
         """The half `end` of the arrow of `kind` double clicked: a field past its
@@ -2101,7 +2102,7 @@ class FinSnapTaskPanel:
         except RuntimeError:
             pass
         # Closed by FreeCAD first, the panel's form and its timers are gone already.
-        for timer in (self.timer, self.drag_timer, self.ends_timer, self.field_timer, self.key_timer):
+        for timer in (self.timer, self.drag_timer, self.ends_timer, self.key_timer):
             try:
                 timer.stop()
             except RuntimeError:
@@ -2130,7 +2131,7 @@ class FinSnapTaskPanel:
     def check_stability(self):
         """Check whether the part stays standing while it is printed with these
         fins as they are built now, and say so below the button."""
-        if self.timer.isActive():
+        if self.timer.isActive() or self.differs():
             self.preview()
         level, note = check_stability(self.obj.Base[0], feature.params_of(self.obj))
         self.stability.setText(note)
