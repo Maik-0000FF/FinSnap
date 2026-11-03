@@ -862,6 +862,9 @@ def face_tines(p, frame, tine_count, restart):
     room = frame.face_top_z - frame.bed_z - d.FACE_TOP_MARGIN
     limit = p.fin_height if p.fin_height > 0 else room
     if frame.contour is not None:
+        # `restart` is off for every round side, whose one grid is kept; along
+        # a contour the tine restart of the parameters starts it anew on each
+        # stretch the tines rest on.
         zs = _spread(p, frame.contour.bands(), limit, tine_count) if p.tine_restart and limit <= room else []
     else:
         floor = frame.face_bottom_z - frame.bed_z

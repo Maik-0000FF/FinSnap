@@ -1680,8 +1680,12 @@ def check_contour():
            "%.1f mm high, %.1f under the side alone" % (tall.height, short.height))
     again = geometry.build(stood, stood.Faces[side], FinParams(placement=d.PLACEMENT_CENTER, fin_height=short.height))
     other = geometry.build(stood, stood.Faces[side], FinParams(placement=d.PLACEMENT_CENTER, contour_bridge=1.0))
-    expect(again.frame.contour is tall.frame.contour and other.frame.contour is not tall.frame.contour,
-           "the contour is worked out once for the part as it stands, again for another bridge")
+    wider = geometry.build(stood, stood.Faces[side], FinParams(placement=d.PLACEMENT_CENTER,
+                                                                contour_gap=2 * p.contour_gap))
+    expect(again.frame.contour is tall.frame.contour and other.frame.contour is not tall.frame.contour
+           and wider.frame.contour.flank_at != tall.frame.contour.flank_at,
+           "the contour is worked out once for the part as it stands, again for another bridge or gap without "
+           "tines")
     expect(flank_slopes(tall, p) <= inward + d.TOLERANCE,
            "the flank follows the step, inward no steeper than %g degrees allow" % d.FIN_FLANK_ANGLE)
     expect(all(tine.distToShape(stood)[0] < d.TINE_END_TOLERANCE for tine in tall.tines) and not [

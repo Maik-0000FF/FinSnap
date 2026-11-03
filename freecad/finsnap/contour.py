@@ -145,9 +145,9 @@ def loop_pieces(loop, close=False):
     part, the way round the loop runs tells which, for a loop that closes,
     or with `close`, closed where it does not; None for an open one, which
     gets no mitres either: without knowing the side of the part, a corner
-    is not known to be one to run on past. The mitres let the line the gap away from a piece
-    run on to where it meets that of the next, so the fin has a sharp corner
-    where the part has one (_mitre())."""
+    is not known to be one to run on past. The mitres let the line the gap
+    away from a piece run on to where it meets that of the next, so the fin
+    has a sharp corner where the part has one (_mitre())."""
     points = [loop[0]]
     for point in loop[1:]:
         if math.hypot(point[0] - points[-1][0], point[1] - points[-1][1]) > d.TOLERANCE:
@@ -249,8 +249,8 @@ def _shifted(piece, radius):
     out its gap reaches, each run on at either end by its mitre to where it
     meets that of the next piece: the one out of the part, where its loop
     tells which side that is; where it does not, the one towards larger s,
-    the fin's side, both, above and below, for a piece lying level. None for
-    a piece without length."""
+    the fin's side, both, above and below, for a piece lying level. None at
+    all for a piece without length."""
     (s0, z0), (s1, z1), before, after, outward = piece
     length = math.hypot(s1 - s0, z1 - z0)
     if length <= 0:
@@ -625,12 +625,13 @@ class Contour:
                 return True
         return False
 
+
 def of(part, frame, p, width):
     """The contour of `part` under the round side of `frame`, through the
     middle of the side, where its one fin stands, at most `width` thick;
     kept for the same part, plane and parameters, worked out once."""
     key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.along_min, frame.along_max, frame.bed_z,
-           width, p.layer_height, p.fin_offset, p.clearance, p.contour_bridge)
+           width, p.layer_height, p.fin_offset, p.clearance, p.contour_bridge, p.contour_gap)
     return keep(_kept, key, lambda: _worked_out(part, frame, p, width))
 
 
