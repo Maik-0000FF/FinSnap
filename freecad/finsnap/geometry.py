@@ -78,15 +78,17 @@ INPUTS this has to withstand (build()):
                                             more hold on the bed
   part of a side                        ->  one fin under its lowest line, whatever
                                             the placement and shift; no note on a rim
+  whole round side, two fins            ->  one parallel to the lowest line on each
+                                            side of it, numbered from the left
   whole round side, three fins          ->  one under the lowest line, one parallel
                                             to it on each side, numbered from the left;
                                             their feet may overlap, see joined()
-  three fins, contour not followed      ->  FinError saying to follow it
-  three fins, side too small for them
+  two or three fins, contour not followed ->  FinError saying to follow it
+  two or three fins, side too small for them
     to stand apart                      ->  FinError: they do not fit
-  three fins, part of a side            ->  one fin: it has no line beside the lowest
+  two or three fins, part of a side     ->  one fin: it has no line beside the lowest
                                             to count on
-  three fins, part turned by hand       ->  the fins stay in their places, as one does
+  two or three fins, part turned by hand ->  the fins stay in their places, as one does
 """
 
 import math
@@ -107,14 +109,13 @@ from .tine_rows import (NARROW_AT_EVERY_TINE, TINE_CUTS_IN, TINE_MISSES, extent_
                         tine_end_edges, tine_end_fault, tine_end_points, tine_start, tines_on_face, touching_at,
                         wide_enough)
 
-# How many fins stand under a whole round side with three asked for.
-ROUND_FIN_COUNT = 3
-
+# Said where fins beside the lowest line of a round side are asked for without
+# the contour, on which alone they stand.
+NOTE_SIDE_FINS_NEED_CONTOUR = QT_TRANSLATE_NOOP("FinSnap", "fins beside the lowest line of a round side stand on "
+                                                           "its contour: turn on Follow the contour")
 # Said where the end of a tine, measured on the part itself, lies further off
 # its surface than the tine clearance and tolerance, or reaches into the part:
 # the heights of those tines over the bed and the tolerance (mm).
-NOTE_THREE_NEED_CONTOUR = QT_TRANSLATE_NOOP("FinSnap", "three fins under a round side stand on its contour: turn on "
-                                                       "Follow the contour")
 NOTE_TINES_MISS = QT_TRANSLATE_NOOP("FinSnap", "tines at %s mm above the bed miss the face of the part by more "
                                                "than %.2f mm")
 NOTE_TINES_CUT_IN = QT_TRANSLATE_NOOP("FinSnap", "tines at %s mm above the bed reach more than %.2f mm into the "
@@ -210,14 +211,17 @@ def positions_for(p, frame, thickness):
     """Start of each fin along the face."""
     if frame.round_side:
         # One fin, its tine in the middle under the lowest line, whatever the
-        # placement; on a whole side, if asked, one more parallel on each side.
+        # placement; on a whole side, if asked, one parallel on each side of
+        # it instead, or as well.
         middle = (frame.along_min + frame.along_max - thickness) / 2
-        if not (frame.whole_side and p.round_fins == d.ROUND_FINS_THREE):
+        if not (frame.whole_side and p.round_fins != d.ROUND_FINS_ONE):
             return [middle]
         pitch = beside_lowest(frame.radius, p.round_fin_angle)
-        if pitch < thickness + d.FOOT_CLEARANCE:
-            raise FinError(translate("FinSnap", "%d fins do not fit side by side on this face") % ROUND_FIN_COUNT)
-        return [middle - pitch, middle, middle + pitch]
+        positions = [middle - pitch, middle, middle + pitch] if p.round_fins == d.ROUND_FINS_THREE \
+            else [middle - pitch, middle + pitch]
+        if positions[1] - positions[0] < thickness + d.FOOT_CLEARANCE:
+            raise FinError(translate("FinSnap", "%d fins do not fit side by side on this face") % len(positions))
+        return positions
     if p.placement == d.PLACEMENT_CORNERS or p.placement in d.PLACEMENT_ONE_CORNER:
         # The tine sits in the middle of the fin; its outer side ends flush
         # with the end of the face, the fin reaches past it. Along the face
@@ -477,7 +481,7 @@ FacePlan = namedtuple("FacePlan", "frame height thickness tine_z gap_z narrow_he
 
 def side_frames(part, frame, p, width):
     """By number, the frames of the two fins beside the fin under the lowest
-    line of the whole round side of `frame`, for three fins; each at the place
+    line of the whole round side of `frame`, or in its place; each at the place
     positions_for() gives it, as thick as `width` at most. The side falls away
     towards them: the gap and the clearance, measured in the upright plane, are
     as much longer that the part stays as far off along its normal.
@@ -493,7 +497,8 @@ def side_frames(part, frame, p, width):
     pitch = beside_lowest(frame.radius, p.round_fin_angle)
     foot_from = flank_at(p, frame, frame.bed_z + p.foot_height)
     frames = {}
-    for number, sense in ((1, -1), (ROUND_FIN_COUNT, 1)):
+    numbers = (1, 3) if p.round_fins == d.ROUND_FINS_THREE else (1, 2)
+    for number, sense in zip(numbers, (-1, 1)):
         centre = middle + sense * pitch
         nearest, furthest = centre - sense * width / 2, centre + sense * width / 2
 
@@ -697,9 +702,9 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     # Fins beside the lowest line stand on the contour alone: only that says
     # what they rest on there.
     frames = {}
-    if frame.whole_side and p.round_fins == d.ROUND_FINS_THREE:
+    if frame.whole_side and p.round_fins != d.ROUND_FINS_ONE:
         if frame.contour is None:
-            raise FinError(translate("FinSnap", NOTE_THREE_NEED_CONTOUR))
+            raise FinError(translate("FinSnap", NOTE_SIDE_FINS_NEED_CONTOUR))
         try:
             frames = side_frames(part, frame, p, thickness_for(p, bounds(part).ZLength))
         except contours.ContourError as error:

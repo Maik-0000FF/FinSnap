@@ -1730,6 +1730,24 @@ def check_three_round_fins():
         expect(turned.numbers == [1, 2, 3] and abs(turned.positions[0] - result.positions[0]) < d.TOLERANCE,
                "%s: a turn by hand leaves the fins in their places" % name)
 
+    two = FinParams(placement=d.PLACEMENT_CENTER, round_fins=d.ROUND_FINS_TWO)
+    for name, shape in (("cylinder", rod), ("tube", tube), ("shaft with a step", step)):
+        stood, side = stood_on_free_rim(shape)
+        alone = geometry.build(stood, stood.Faces[side], one)
+        result = geometry.build(stood, stood.Faces[side], two)
+        pitch = face_frame.beside_lowest(ROD_RADIUS, d.ROUND_FIN_ANGLE)
+        expect(result.numbers == [1, 2] and result.planned == 2
+               and abs(result.positions[0] - alone.positions[0] + pitch) < d.TOLERANCE
+               and abs(result.positions[1] - alone.positions[0] - pitch) < d.TOLERANCE,
+               "%s: two fins, one on each side of the lowest line, none under it" % name)
+        off = max(abs(tine.distToShape(stood)[0] - two.clearance) for tine in result.tines)
+        expect(off < d.TINE_END_TOLERANCE and result.fins.common(stood).Volume < d.TOLERANCE,
+               "%s: two fins, every tine ends the clearance off the part, off by %.4f" % (name, off))
+        expect(min(result.touching_z[1]) > min(alone.touching_z[1]),
+               "%s: two fins start to hold higher up than the one under the lowest line" % name)
+        turned = geometry.build(stood, stood.Faces[side], two, shifts={1: ROD_RADIUS})
+        expect(turned.numbers == [1, 2], "%s: two fins, a turn by hand leaves them in their places" % name)
+
     stood, side = stood_on_free_rim(rod)
     rectangle = geometry.build(stood, stood.Faces[side],
                                FinParams(placement=d.PLACEMENT_CENTER, round_fins=d.ROUND_FINS_THREE,

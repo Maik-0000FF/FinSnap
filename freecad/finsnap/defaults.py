@@ -202,12 +202,12 @@ TINE_END_TOLERANCE = ROUND_SIDE_MAX_DROP
 # top, as a cut through the lowest line shows it: steps, cones, fillets and
 # curves alike. Off, it stands under the round side alone.
 FOLLOW_CONTOUR = True
-# How many fins stand under a whole round side: one under its lowest line, or
-# that one and one parallel to it on each side of it, for hold against tipping
-# sideways. The two beside it follow the contour, as the lines of the side they
-# stand under are no lowest line.
-ROUND_FINS_ONE, ROUND_FINS_THREE = "one", "three"
-ROUND_FINS_CHOICES = (ROUND_FINS_ONE, ROUND_FINS_THREE)
+# How many fins stand under a whole round side: one under its lowest line; one
+# parallel to it on each side of it instead, for hold against tipping sideways;
+# or all three. The two beside it follow the contour, as the lines of the side
+# they stand under are no lowest line.
+ROUND_FINS_ONE, ROUND_FINS_TWO, ROUND_FINS_THREE = "one", "two", "three"
+ROUND_FINS_CHOICES = (ROUND_FINS_ONE, ROUND_FINS_TWO, ROUND_FINS_THREE)
 ROUND_FINS = ROUND_FINS_ONE
 # How far round the side from the lowest line those two stand (degrees): at 30
 # they stand a radius apart from each other. Further round the side falls away

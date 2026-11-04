@@ -221,7 +221,8 @@ CHOICE_LABELS = {
     d.FOOT_RECTANGLE: QT_TRANSLATE_NOOP("FinSnap", "rectangle"),
     d.FOOT_NONE: QT_TRANSLATE_NOOP("FinSnap", "none"),
     d.ROUND_FINS_ONE: QT_TRANSLATE_NOOP("FinSnap", "one, under its lowest line"),
-    d.ROUND_FINS_THREE: QT_TRANSLATE_NOOP("FinSnap", "three, one more on each side"),
+    d.ROUND_FINS_TWO: QT_TRANSLATE_NOOP("FinSnap", "two, one on each side of that line"),
+    d.ROUND_FINS_THREE: QT_TRANSLATE_NOOP("FinSnap", "three, that line and each side of it"),
 }
 
 # choices: allowed values of an enumeration, None for plain values.
@@ -330,15 +331,15 @@ PROPERTIES = (
          QT_TRANSLATE_NOOP("FinSnap", "Fins under a round side"),
          QT_TRANSLATE_NOOP("App::Property",
                            "Under the whole round side of a part standing on its rim: one fin under its lowest "
-                           "line, or one more parallel to it on each side, which widen the footprint against "
-                           "tipping sideways; these need Follow the contour. Their feet may overlap and are "
-                           "joined on export."),
+                           "line; one parallel to it on each side instead, which widen the footprint against "
+                           "tipping sideways but start to hold higher up; or all three. Those beside it need "
+                           "Follow the contour. Their feet may overlap and are joined on export."),
          "round_fins", d.ROUND_FINS_CHOICES),
     Prop("RoundFinAngle", FLOAT, GROUP_FIN,
          QT_TRANSLATE_NOOP("FinSnap", "Angle of the side fins"),
          QT_TRANSLATE_NOOP("App::Property",
-                           "With three fins under a round side: how far round the side from the lowest line the "
-                           "two side fins stand, in degrees. Further round they stand further apart, but hold "
+                           "With two or three fins under a round side: how far round the side from the lowest line "
+                           "the two side fins stand, in degrees. Further round they stand further apart, but hold "
                            "the part only from higher up."),
          "round_fin_angle", None, None, d.ROUND_FIN_ANGLE_MAX),
     Prop("FinPlateau", LENGTH, GROUP_FIN,

@@ -40,7 +40,7 @@ How much each effect matters depends on the material, the printer and the part.
 - Tine height and width in layers and beads, so the design follows the print profile
 - Fin height set by the highest tine that finds the face, 1 mm thick up to 100 mm of height and thicker above
 - Under the round side of a part standing on its rim, the fin follows the contour of the part up to its top, over steps, fillets and curves; small recesses are bridged
-- Under a whole round side, optionally three fins instead of one, for a wider footprint against tipping sideways
+- Under a whole round side, optionally two or three fins instead of one, for a wider footprint against tipping sideways
 - Adjustable tine clearance, so the tines end short of the face and leave fainter marks
 - A face split by a groove across it is supported as one: the fin reaches over the groove to the piece beyond it
 - One fin centred, two at the ends, two on the corners, one on the left or right corner, or several distributed along the face
@@ -254,7 +254,7 @@ The file is a ZIP archive; the content above sits in `3D/3dmodel.model`. A slice
 | Fin | Fin thickness | 0 = 1 mm up to 100 mm of height, 1 mm per 100 mm above, at least 2 beads | Wall thickness |
 | | Fin height | 0 = top of the highest tine that finds the face | Height of the fin. Tines over a recess are left out, and the fin ends at the highest tine left. A lower value leaves out the tines above it; at most just below the top of the face |
 | | Top width | 2 mm | Width of the flat top of the fin, instead of a tip |
-| | Fins under a round side | one | One fin under the lowest line, or three: one more parallel to it on each side, which need **Follow the contour**. Their tines end at a slant along the side; feet that overlap are joined on export |
+| | Fins under a round side | one | One fin under the lowest line; two, parallel to it on each side, which need **Follow the contour**; or all three. Their tines end at a slant along the side; feet that overlap are joined on export |
 | | Angle of the side fins | 30 degrees | How far round the side from the lowest line the two side fins stand, at most 45 degrees |
 | Placement | Fin placement | auto | auto, centre, ends, corners, left corner, right corner, distributed. Corners puts a fin on each end of the face: each tine lies whole on the face and ends flush with its end, so the tine marks merge with the edges. The fin itself reaches a little past the end. Left corner and right corner put one such fin on that end only, left and right as seen from outside, looking at the face |
 | | Fin count | 3 | Fins for distributed placement |
