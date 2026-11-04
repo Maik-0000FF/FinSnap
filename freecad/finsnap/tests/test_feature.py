@@ -410,8 +410,10 @@ def warnings_and_old_files(doc):
     doc.recompute()
     lowered = [solid for solid, tag in zip(fins.Shape.Solids, fins.FinTags)
                if feature.tag_fin(tag)[0] == feature.COUNTER][0]
+    feature.note_turn(fins, TUBE_TURN)
     done = feature.remove_fins(fins, every_main)
     doc.recompute()
+    expect(not feature.round_shift(fins), "the counter fin made the main fin, no turn of the part is left noted")
     expect(done == feature.COUNTER_PROMOTED and not fins.CounterFace
            and (fins.Base[0], list(fins.Base[1])) == counter_link and fins.isValid()
            and len(fins.Shape.Solids) == 1 and abs(fins.Shape.Volume - lowered.Volume) < d.TOLERANCE

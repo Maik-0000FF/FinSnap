@@ -1508,12 +1508,15 @@ class FinSnapTaskPanel:
             feature.set_round_shift(self.obj, before)
             self.preview()
             self.refuse(error)
+        else:
+            self.update_enabled()
+            self.show_result()
         self.place_handles()
 
     def place_handles(self):
-        self.show_turn_field()
         if self.handled_result() is None:
             self.handled = self.choose_fin()
+        self.show_turn_field()
         found = self.handled_result()
         enabled = found is not None
         for box in self.fin_fields.values():

@@ -1587,8 +1587,7 @@ def put_back_turns(document, turns):
     """Note again how far the part of the fins in `turns`, from round_turns(),
     was turned, once it stands as it did then: the placement put back holds
     the turn itself, so the part is not turned again. Fins deleted since are
-    passed over. Only the shift is written back: the count of fins it was
-    made for stays as it was noted then."""
+    passed over."""
     for name, mm in turns.items():
         obj = document.getObject(name)
         if obj is not None:
@@ -1598,8 +1597,8 @@ def put_back_turns(document, turns):
 def forget_turn(obj):
     """Drop how far the part of `obj` was turned about its round side, once
     the part is laid flat or stood anew: the turn went with its placement,
-    and the fin starts from where it stands then. Only the shift goes: the
-    count of fins it was made for stays, as it does in put_back_turns()."""
+    and the fin starts from where it stands then. The changes by hand to the
+    fins stay."""
     if round_shift(obj):
         note_turn(obj, 0.0)
 
@@ -1696,7 +1695,10 @@ def promote_counter(obj):
     """Make the counter fin of `obj` its main fin: the face it stands under,
     the plane it is found by, its changes by hand and its tine count; the
     counter fin is then none. The part stays as it stands. What Quick fins
-    started from is forgotten, its ways were those of the main fin gone."""
+    started from is forgotten, its ways were those of the main fin gone, and so
+    is how far the part was turned about the side of that fin: it stays as it
+    stands, from here on as the counter fin found it."""
+    forget_turn(obj)
     counter = obj.CounterFace
     # Moved over before the links change, which note the planes anew.
     for names in (PLANE_OF, REMOVED, SHIFTS, HEIGHTS, EDITED_OF, HEIGHTS_GRID, PLANNED):

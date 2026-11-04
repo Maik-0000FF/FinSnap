@@ -1772,6 +1772,23 @@ def check_three_round_fins():
         expect(over.numbers == [1, 2] and abs(over.positions[0] - alone.positions[0]) < d.TOLERANCE
                and over.fins.common(stood).Volume < d.TOLERANCE,
                "%s: of two fins one moved under the lowest line stands there, clear of the part" % name)
+    # Thick fins and thin rods: the flank stays at the gap between its planes too.
+    for radius, thickness, degrees, kind in ((10.0, 3.0, 30.0, d.ROUND_FINS_THREE),
+                                             (10.0, 2.0, 45.0, d.ROUND_FINS_THREE),
+                                             (20.0, 4.0, 30.0, d.ROUND_FINS_THREE),
+                                             (5.0, 2.0, 30.0, d.ROUND_FINS_TWO),
+                                             (3.0, 0.0, 45.0, d.ROUND_FINS_THREE), (2.5, 0.0, 45.0, d.ROUND_FINS_TWO)):
+        thick_rod = Part.makeCylinder(radius, ROD_HEIGHT)
+        number = round_side_of(thick_rod, radius)
+        thick_plan = quick_stands.quick_plan(thick_rod, [], [(thick_rod.Faces[number], number)], one, d.TILT_ANGLE)
+        thick_stood = moved(thick_rod, thick_plan.change)
+        asked = FinParams(placement=d.PLACEMENT_CENTER, round_fins=kind, round_fin_angle=degrees,
+                          fin_thickness=thickness)
+        built = geometry.build(thick_stood, thick_stood.Faces[number], asked)
+        closest = min(body.distToShape(thick_stood)[0] for body in built.bodies)
+        expect(abs(closest - asked.gap) < d.CONTOUR_TOLERANCE + d.TOLERANCE,
+               "R %g, fin %g mm thick, %g degrees, %s: the gap holds, %.4f at its closest"
+               % (radius, built.thickness, degrees, kind, closest))
     # A shaft whose thin step ends the side fins lower than the fin between them.
     thin_step = rod.fuse(Part.makeCylinder(THIN_STEP_RADIUS, ROD_HEIGHT, V(0, 0, ROD_HEIGHT))).removeSplitter()
     stood, side = stood_on_free_rim(thin_step)

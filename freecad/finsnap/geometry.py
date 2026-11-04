@@ -120,10 +120,12 @@ SMALLEST_AREA = 1e-9
 # is measured, the two edges and the middle: across a tine the side curves by
 # less than the chord between them leaves out.
 TINE_END_PLANES = 3
-# Said where fins beside the lowest line of a round side are asked for without
-# the contour, on which alone they stand.
+# Said where a fin beside the lowest line of a round side is moved past
+# ROUND_FIN_ANGLE_MAX: its number and that angle.
 NOTE_SIDE_FIN_TOO_FAR = QT_TRANSLATE_NOOP("FinSnap", "fin %d would stand further round the side than %.0f degrees "
                                                      "from its lowest line")
+# Said where fins beside the lowest line of a round side are asked for without
+# the contour, on which alone they stand.
 NOTE_SIDE_FINS_NEED_CONTOUR = QT_TRANSLATE_NOOP("FinSnap", "fins beside the lowest line of a round side stand on "
                                                            "its contour: turn on Follow the contour")
 # Said where the end of a tine, measured on the part itself, lies further off
@@ -404,10 +406,19 @@ def _following_blade(p, frame, t0, thickness, head, low, high):
     INPUTS this has to withstand:
       plain side                            ->  the flank a curve across the fin, the
                                                 gap kept to within its chords
+      thick fin, thin side                  ->  as many planes as keep the chords within
+                                                CONTOUR_SHARE
       contour with bends at other heights
         in other planes                     ->  every plane measured at all of them
     """
-    planes = [t0 + thickness * k / (d.CONTOUR_CUTS - 1) for k in range(d.CONTOUR_CUTS)]
+    # Straight from plane to plane, the flank comes closer to the part by what
+    # a chord leaves out of its curve. Nothing the planes cut lies nearer the
+    # axis than they do, so the thinnest step it can follow bounds how far apart
+    # they may stand; over the lowest line, the fin itself bounds it.
+    away = abs(t0 + thickness / 2 - (frame.along_min + frame.along_max) / 2) - thickness / 2
+    curve = min(frame.radius, max(away, thickness))
+    pieces = max(1, math.ceil(thickness / math.sqrt(8 * curve * d.CONTOUR_SHARE)))
+    planes = [t0 + thickness * k / pieces for k in range(pieces + 1)]
     lines = [frame.flank_line(t) for t in planes]
     base = frame.bed_z
     bends = {round(z, d.LENGTH_DECIMALS) for line in lines for _, z in line.outline(low - base, high - base)}
@@ -551,9 +562,9 @@ def side_frames(part, frame, p, width, shifts):
     """By number, the frames of the two fins beside the fin under the lowest
     line of the whole round side of `frame`, or in its place; each at the place
     positions_for() gives it, moved by `shifts`, as thick as `width` at most.
-    Their flanks and the
-    ends of their tines keep the gap and the clearance round the axis of the
-    side, as it falls away across them (contour.beside(), contour.across()).
+    Their flanks and the ends of their tines keep the gap and the clearance
+    round the axis of the side, as it falls away across them (contour.beside(),
+    contour.across()).
 
     INPUTS this has to withstand:
       fin to the left, or the right         ->  its contour and tine edges at its own
