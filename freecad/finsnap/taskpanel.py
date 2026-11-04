@@ -48,6 +48,7 @@ LENGTH_SUFFIX = " mm"
 SHOWN_ON = QT_TRANSLATE_NOOP("FinSnap", "on")
 SHOWN_OFF = QT_TRANSLATE_NOOP("FinSnap", "off")
 # Said in the tooltip of a field with a limit of its own.
+NOTE_BUILDING = QT_TRANSLATE_NOOP("FinSnap", "Building the fins...")
 FIELD_RANGE = QT_TRANSLATE_NOOP("FinSnap", "From %s up to %s.")
 DEGREE_SUFFIX = " \N{DEGREE SIGN}"
 # Pause after a change is taken before the preview is rebuilt, so several
@@ -1284,9 +1285,20 @@ class FinSnapTaskPanel:
     def apply(self):
         for prop in feature.PROPERTIES:
             setattr(self.obj, prop.name, _read(prop, self.widgets[prop.name]))
-        # A failed build does not raise here; FreeCAD marks the object and
-        # keeps the message, which the panel has to show.
-        if not self.obj.recompute():
+        # Fins beside a lowest line can take a moment on a large part: said so,
+        # as FreeCAD does not answer meanwhile.
+        bar = Gui.getMainWindow().statusBar()
+        bar.showMessage(translate("FinSnap", NOTE_BUILDING))
+        bar.repaint()
+        QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+        try:
+            # A failed build does not raise here; FreeCAD marks the object and
+            # keeps the message, which the panel has to show.
+            built = self.obj.recompute()
+        finally:
+            QtWidgets.QApplication.restoreOverrideCursor()
+            bar.clearMessage()
+        if not built:
             raise ValueError(self.obj.getStatusString())
 
     def show_notes(self, title, lines, color, linked=(), sign=WARNING_SIGN):
@@ -1831,6 +1843,11 @@ class FinSnapTaskPanel:
             return known[kind]
         return tuple(end for end, _ in self.next_values(kind, self.built_value(kind)))
 
+    def side_fins_built(self):
+        """Whether the handled fin belongs to fins with some beside a lowest line."""
+        return self.handled is not None and self.handled[0] == feature.MAIN and bool(
+            geometry.side_numbers(self.obj.RoundFins)) and feature.on_round_side(self.obj)
+
     def update_ends(self):
         """Leave out each end of an arrow where the handled fin cannot go.
         Tried once for each fin as it stands: a rebuild that changed nothing
@@ -1841,9 +1858,12 @@ class FinSnapTaskPanel:
         if key not in self.known_ends:
             while len(self.known_ends) >= ENDS_KEPT:
                 self.known_ends.pop(next(iter(self.known_ends)))
+            # With fins beside a lowest line every try is a build that can take
+            # seconds: every end is offered, and a step too far is refused then.
+            tried = not self.side_fins_built()
             self.known_ends[key] = {
                 kind: tuple(end for end, value in self.next_values(kind, self.built_value(kind))
-                            if self.can_stand(kind, value))
+                            if not tried or self.can_stand(kind, value))
                 for kind in handles.KINDS}
         for kind, ends in self.known_ends[key].items():
             self.handles.show_ends(kind, ends)
@@ -1958,6 +1978,11 @@ class FinSnapTaskPanel:
             return
         kind, raw = self.dragged
         mm, on_step = self.dragged_mm(kind, raw, HEIGHT_REACH)
+        # With fins beside a lowest line a build takes too long for every step:
+        # the fin is shown where it would go, and built once let go.
+        if self.side_fins_built():
+            self.show_dragged(kind, mm, handles.BETWEEN_COLOR)
+            return
         if self.drag_to(kind, mm):
             self.handles.clear_preview()
             if not on_step:

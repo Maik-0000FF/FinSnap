@@ -1845,6 +1845,24 @@ def check_three_round_fins():
                    and built.fins.common(near_stood).Volume < d.TOLERANCE,
                    "%s, %g degrees, fin %g mm thick: three fins, %.3f off at the closest"
                    % (name, degrees, built.thickness, closest))
+    # Standing on a fillet: the fin does not follow it down to its foot.
+    bottom_rim = [e for e in rod.Edges if orient.is_rim(e) and e.BoundBox.ZMax < 1]
+    filleted = rod.makeFillet(FILLET_RADIUS, bottom_rim)
+    number = round_side_of(filleted)
+    fillet = next(k for k, f in enumerate(filleted.Faces) if isinstance(f.Surface, Part.Toroid))
+    plain_plan = quick_stands.quick_plan(filleted, [], [(filleted.Faces[number], number),
+                                                        (filleted.Faces[fillet], fillet)], one, d.TILT_ANGLE)
+    on_fillet = moved(filleted, plain_plan.change)
+    for kind in (one, three):
+        built = geometry.build(on_fillet, on_fillet.Faces[number], kind)
+        line = built.frame.contour
+        start = built.frame.face_bottom_z - built.frame.bed_z
+        slope = -built.frame.n_z / built.frame.n_out
+        lower = [height for height in line.heights if height < start - d.TOLERANCE]
+        expect(lower and not any(line.rests(height, height) for height in lower)
+               and all(abs(line.flank(height) - (line.flank(start) - (start - height) * slope)) < GAP_ACROSS_FIN
+                       for height in lower),
+               "standing on a fillet the fin goes on in the line of the side down to its foot, no tine on the fillet")
     # A rib beside the wall of a side fin, high up: moving out gains nothing there.
     stood, side = stood_on_free_rim(rod)
     free = geometry.build(stood, stood.Faces[side], three)
@@ -1879,9 +1897,10 @@ def check_three_round_fins():
     rectangle = geometry.build(stood, stood.Faces[side],
                                FinParams(placement=d.PLACEMENT_CENTER, round_fins=d.ROUND_FINS_THREE,
                                          foot_shape=d.FOOT_RECTANGLE))
-    expect(rectangle.fins.common(stood).Volume < d.TOLERANCE,
-           "a rectangular foot beside the lowest line clears the part")
-    whole = rectangle.fins
+    expect(rectangle.fins.common(stood).Volume < d.TOLERANCE
+           and rectangle.frames[3].flank_out < d.TOLERANCE,
+           "a rectangular foot beside the lowest line clears the part, the flank stays at the side")
+    whole = geometry.build(stood, stood.Faces[side], three).fins
     joined = geometry.joined(whole)
     overlap = sum(a.common(b).Volume for k, a in enumerate(whole.Solids) for b in whole.Solids[k + 1:])
     expect(overlap > d.TOLERANCE and len(joined.Solids) == 1 and joined.isValid()

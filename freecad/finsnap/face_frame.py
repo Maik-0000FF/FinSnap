@@ -117,10 +117,12 @@ class Frame:
     # themselves; the curve its flank follows across
     # its thickness, as (where the lowest line is, the place along the face the
     # contour is measured at, the radius of the flank); and how far out its
-    # flank stands past the contour, as measured on the part.
+    # flank stands past the contour and its foot starts past the flank, as
+    # measured on the part.
     tine_edges: tuple = None
     flank_curve: tuple = None
     flank_out: float = 0.0
+    foot_out: float = 0.0
 
     @property
     def round_side(self):
