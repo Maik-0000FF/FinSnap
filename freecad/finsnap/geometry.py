@@ -592,15 +592,19 @@ def _clear_of_part(p, part, frame, fin, thickness, half_foot):
     INPUTS this has to withstand:
       plain side, the gap kept              ->  built once, as planned
       foot wider than the part leaves room  ->  the foot starts further out, the flank stays
+      foot well inside the part             ->  the same, in steps that double
       step or fillet in front of it         ->  moved out until it keeps the gap, as far
                                                 as GAP_MAX from the side, past that lower
       a part passing beside its wall        ->  ends below, its tines above left out
+      the same above all its tines          ->  ends at its last tine
+      the same at its last tine             ->  ends at the tine below it
       nothing of it clear of the part       ->  FinError, as check() says it
     """
     while True:
         moved_out = frame
         before = None
         foot_stuck = False
+        inside = 0
         for _ in range(FLANK_TRIES):
             built = one_fin(p, moved_out, fin.t0, fin.height, thickness, half_foot, fin.candidate_z)
             distance, points, _ = built[0].distToShape(part)
@@ -616,9 +620,12 @@ def _clear_of_part(p, part, frame, fin, thickness, half_foot):
             # fin, and little comes of moving out; nothing gained on the foot,
             # the blade moves; nothing gained on the blade, only lower helps.
             by = short / frame.n_out
-            # Reaching into the part says nothing of how far is enough: on by as much.
+            # Reaching into the part says nothing of how far is enough: on, twice
+            # as far each time, so a foot well inside it gets out within the tries.
             if distance <= d.TOLERANCE:
                 before = None
+                by *= 2 ** inside
+                inside += 1
             if before is not None and before[2] == name:
                 gained = (distance - before[0]) / (now - before[1])
                 if gained < FLANK_LEAST_GAIN:
@@ -636,7 +643,10 @@ def _clear_of_part(p, part, frame, fin, thickness, half_foot):
         # Up to where it stays clear: the gap and a tine below that place.
         lowest_close = points[0][0].z - frame.bed_z - p.gap - p.tine_height
         kept = [(z, whole) for z, whole in zip(fin.candidate_z, fin.on_face) if z <= lowest_close and whole]
-        if not kept or len(kept) == len(fin.candidate_z):
+        # Ending at its last tine already, that tine has to go as well.
+        if kept and kept[-1][0] + p.tine_height >= fin.height - d.TOLERANCE:
+            kept = kept[:-1]
+        if not kept:
             raise FinError(translate("FinSnap", NOTE_TOO_CLOSE) % (distance, p.gap))
         fin = fin._replace(candidate_z=[z for z, _ in kept], on_face=[whole for _, whole in kept],
                            height=kept[-1][0] + p.tine_height)
@@ -709,12 +719,30 @@ def fin_at(p, result, number, height):
     return [body] + tines
 
 
+def overlap_of(fins, part):
+    """How much of `fins` lies in `part` (mm3). Measured off first: what stands
+    clear of the part cannot lie in it, and the kernel, cutting a fin of many plane
+    faces, has been seen to give the whole part for it. More than the fins hold
+    is no answer either.
+
+    INPUTS this has to withstand:
+      fins clear of the part                ->  0, not asked of the kernel
+      fins touching it, none inside         ->  0
+      fins reaching into it                 ->  the volume inside
+      an answer larger than the fins        ->  0: says nothing of them
+    """
+    if fins.distToShape(part)[0] > d.TOLERANCE:
+        return 0.0
+    found = fins.common(part).Volume
+    return 0.0 if found > fins.Volume else found
+
+
 def check(p, part, fins, bodies, slack=0.0):
     """Fins clear of the part, no closer than their distance from the face,
     give or take `slack`: along a contour, CONTOUR_TOLERANCE. That every tine
     reaches the face is settled when the tines are chosen, by contact_share()."""
     if p.connection == d.CONNECTION_SEPARATE:
-        overlap = fins.common(part).Volume
+        overlap = overlap_of(fins, part)
         if overlap > d.TOLERANCE:
             raise FinError(translate("FinSnap", "the fins overlap the part by %.4f mm³") % overlap)
 
@@ -762,10 +790,6 @@ PlannedFin = namedtuple("PlannedFin", "number t0 height candidate_z on_face touc
 # The fins of a face as planned, before any is built.
 FacePlan = namedtuple("FacePlan", "frame height thickness tine_z gap_z narrow_heights positions face_start "
                                   "starts half_foot fins moved fins_left_out")
-
-
-# How many fins each choice of fins under a round side asks for.
-ROUND_FIN_COUNTS = {d.ROUND_FINS_ONE: 1, d.ROUND_FINS_TWO: 2, d.ROUND_FINS_THREE: 3}
 
 
 def side_numbers(round_fins):
