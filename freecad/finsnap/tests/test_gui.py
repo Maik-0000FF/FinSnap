@@ -242,6 +242,22 @@ def side_fins_on_tube(doc):
     far = face_frame.beside_lowest(TUBE_RADIUS, d.ROUND_FIN_ANGLE_MAX)
     expect(not panel.set_fin(handles.ALONG, far), "a side fin does not go past the furthest angle")
     panel.drag_together = True
+    # The other side fin left out for lack of room: the move is refused.
+    side_builder = fins.Proxy.side_builder
+
+    def other_left_out(obj, which):
+        part, build = side_builder(obj, which)
+
+        def built(*changes):
+            result = build(*changes)
+            result.numbers = [number for number in result.numbers if number != 1]
+            return result
+        return part, built
+
+    fins.Proxy.side_builder = other_left_out
+    refused = panel.stand_error(handles.ALONG, 2 * SIDE_FIN_MOVE)
+    del fins.Proxy.side_builder
+    expect(refused is not None, "with Shift held a move that leaves out the other side fin is refused")
     panel.set_fin(handles.ALONG, 2 * SIDE_FIN_MOVE)
     panel.drag_together = False
     shifts = feature.edits(fins, feature.MAIN)[1]

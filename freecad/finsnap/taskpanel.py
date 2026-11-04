@@ -1779,12 +1779,14 @@ class FinSnapTaskPanel:
         tried = dict(shifts if kind == handles.ALONG else heights)
         # As the value would be stored, so a drag's real build finds this trial.
         tried[number] = feature.stored_mm(value)
+        moving = [number]
         if kind == handles.ALONG:
             if abs(value) < d.TOLERANCE:
                 del tried[number]
             other = self.other_side_fin(value)
             if other is not None:
                 tried[other[0]] = feature.stored_mm(other[1])
+                moving.append(other[0])
             shifts = tried
         else:
             heights = tried
@@ -1792,7 +1794,9 @@ class FinSnapTaskPanel:
             result = part_and_build[1](left, shifts, heights)
         except (ValueError, Part.OCCError) as error:
             return error
-        return None if number in result.numbers else nowhere
+        # Both of a pair moved together have to stand: one left out for lack of
+        # room would be no move of it, only a note.
+        return None if all(fin in result.numbers for fin in moving) else nowhere
 
     def nearest_standing(self, kind, good, bad):
         """A limit between `good`, where the handled fin stands, and `bad`,

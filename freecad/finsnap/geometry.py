@@ -764,6 +764,10 @@ FacePlan = namedtuple("FacePlan", "frame height thickness tine_z gap_z narrow_he
                                   "starts half_foot fins moved fins_left_out")
 
 
+# How many fins each choice of fins under a round side asks for.
+ROUND_FIN_COUNTS = {d.ROUND_FINS_ONE: 1, d.ROUND_FINS_TWO: 2, d.ROUND_FINS_THREE: 3}
+
+
 def side_numbers(round_fins):
     """The numbers of the fins beside the lowest line of a round side, from
     the left, for the choice `round_fins`: none of one fin."""

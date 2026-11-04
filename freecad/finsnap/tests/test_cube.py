@@ -128,6 +128,10 @@ FLANK_OUT_LITTLE = 0.2 # how far out a foot may make a side fin stand on a plain
 # The cases of check_side_fin_matrix(): fins, degrees round the side, fin thickness (0 from its height).
 MATRIX_CASES = ((d.ROUND_FINS_TWO, 30.0, 0.0), (d.ROUND_FINS_THREE, 45.0, 0.0), (d.ROUND_FINS_THREE, 30.0, 3.0),
                 (d.ROUND_FINS_THREE, 45.0, 3.0))
+# The cases that leave out side fins on purpose, for lack of room, and the fins left then.
+MATRIX_FEWER = {("step near the fins", d.ROUND_FINS_THREE, 45.0, 3.0): 1,
+                ("thin step", d.ROUND_FINS_THREE, 45.0, 3.0): 1}
+MATRIX_LEAST_TINES = 5  # the fewest tines a fin beside the lowest line has in the matrix
 HEIGHT_ACROSS_FIN = 0.02  # how far above the height it says a fin may reach (mm)
 LARGE_FILLET_RADIUS = 9.5  # nearly the radius of the rod
 GROOVE_WIDTH = 4.0     # a groove round a shaft
@@ -1744,7 +1748,8 @@ def matrix_shapes():
 def fin_matrix_faults(name, stood, number, kind, degrees, thickness):
     """What is wrong with the fins of `kind` under face `number` of `stood`, as
     lines of text: refused, overlapping or too close to the part, invalid, higher
-    than they say, hanging over, or with fewer tines than the fin alone."""
+    than they say, hanging over, fewer fins than asked for, or with fewer tines
+    than the fin alone, or than MATRIX_LEAST_TINES beside it."""
     asked = FinParams(placement=d.PLACEMENT_CENTER, round_fins=kind, round_fin_angle=degrees,
                       fin_thickness=thickness)
     case = "%s, %s, %g degrees, %g mm thick: " % (name, kind, degrees, thickness)
@@ -1753,6 +1758,12 @@ def fin_matrix_faults(name, stood, number, kind, degrees, thickness):
     except face_frame.FinError as error:
         return [case + "refused: %s" % error]
     faults = []
+    planned = MATRIX_FEWER.get((name, kind, degrees, thickness), geometry.ROUND_FIN_COUNTS[kind])
+    if len(built.numbers) != planned:
+        faults.append(case + "%d fins, %d asked for" % (len(built.numbers), planned))
+    for fin in built.frames:
+        if fin in built.numbers and len(built.touching_z[fin]) < MATRIX_LEAST_TINES:
+            faults.append(case + "fin %d has %d tines" % (fin, len(built.touching_z[fin])))
     if built.fins.common(stood).Volume > d.TOLERANCE:
         faults.append(case + "reaches into the part")
     for position, fin in enumerate(built.numbers):
