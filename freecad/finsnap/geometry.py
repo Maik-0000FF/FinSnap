@@ -118,6 +118,9 @@ NOTE_TOO_CLOSE = QT_TRANSLATE_NOOP("FinSnap", "a fin comes within %.3f mm of the
                                               "keeps from the face")
 # Said where fins beside the lowest line end below what passes beside them: their numbers.
 NOTE_ENDED_LOWER = QT_TRANSLATE_NOOP("FinSnap", "side fins %s end lower: above, the part comes too close beside them")
+# Said where side fins end at the top of their contour, below the fin height set: their numbers.
+NOTE_BELOW_SET_HEIGHT = QT_TRANSLATE_NOOP("FinSnap", "side fins %s end below the fin height set: the part does not "
+                                                     "reach that high beside the lowest line")
 # Said where a foot further out or the part itself leaves out tines of side fins: their numbers.
 NOTE_TINES_AT_FOOT = QT_TRANSLATE_NOOP("FinSnap", "side fins %s: some tines left out, at a foot standing further out "
                                                   "to clear the part, or where they would reach into it")
@@ -129,7 +132,7 @@ NOTE_NO_SIDE_FIN = QT_TRANSLATE_NOOP("FinSnap", "no side fin finds room beside t
 # What the shape of a single fin does not depend on, of the parameters.
 NOT_SHAPING_A_FIN = ("placement", "fin_count", "end_inset", "face_length_per_fin", "brim_width",
                      "counter_tine_count", "round_fins", "round_fin_angle")
-# A hair: how far apart points of a flank at the top of a fin are held (mm).
+# A hair: how far apart at most points of a flank at the top of a fin are held (mm).
 FLANK_TOP_HAIR = 1e-3
 # Fins beside the lowest line built whole (shapes.keep()), by what they depend on.
 _kept_side_fins = {}
@@ -436,6 +439,39 @@ def _ruled(rings):
     return Part.makeSolid(Part.makeShell(faces)).removeSplitter()
 
 
+def _cut_at_height(points, high, low):
+    """The `points` (s, z) of a flank, from its top down to `low`, cut off at the
+    height `high` where the flank passes it. Those above stay as points, as every
+    plane of a blade has the same corners: held at the cut, falling from the
+    height to the next point left, at most a hair apart, so no two coincide and
+    the outline never folds back.
+
+    INPUTS this has to withstand:
+      nothing above the height, or the top
+        exactly on it                       ->  as they are
+      one point above                       ->  it moves onto the height, on the flank
+      several above                         ->  held at the cut, falling
+      the next point a hair under the
+        height, or on it                    ->  held as well, the rest still falling
+      a point turned above one before it,
+        past the height                     ->  all down to it held, the fin no higher
+      all of them above                     ->  all held at the last place, falling
+                                                towards `low`
+    """
+    crossing = 1 + max((k for k, (_, z) in enumerate(points) if z > high), default=-1)
+    if not crossing:
+        return points
+    if crossing == len(points):
+        cut = points[-1][0]
+    else:
+        (s_above, z_above), (s_below, z_below) = points[crossing - 1], points[crossing]
+        cut = s_below + (s_above - s_below) * (high - z_below) / (z_above - z_below)
+    held = next((k for k in range(crossing, len(points)) if points[k][1] < high - FLANK_TOP_HAIR), len(points))
+    floor = points[held][1] if held < len(points) else low
+    hair = min(FLANK_TOP_HAIR, (high - floor) / (held + 1))
+    return [(cut, high - (k + 1) * hair) for k in range(held)] + points[held:]
+
+
 def _following_blade(p, frame, t0, thickness, head, low, high, least=None):
     """The blade of a fin beside the lowest line: its outline in every upright
     plane across its thickness the same but for the flank, from height `high`
@@ -490,21 +526,13 @@ def _following_blade(p, frame, t0, thickness, head, low, high, least=None):
 
     ordered = sorted(heights, reverse=True)
     def turned_flank(t):
-        """The flank in the plane at `t`, from its top down: each point turned, no
-        further in than the foot, and cut off where it passes the height of the
-        fin, on the flank itself, the points above it held there, a hair apart
-        so no two coincide."""
+        """The flank in the plane at `t`, from its top down: each point turned,
+        cut off at the height of the fin, no further in than the foot."""
         points = []
         for s, z in ((flank_there(z), z) for z in ordered):
             by = round_move(frame, s, z, t)
             points.append((s + by * frame.n_out, z + by * frame.n_z))
-        below = next((k for k, (_, z) in enumerate(points) if z <= high), len(points) - 1)
-        if below:
-            (s_above, z_above), (s_below, z_below) = points[below - 1], points[below]
-            share = (high - z_below) / (z_above - z_below)
-            cut = s_below + (s_above - s_below) * share
-            points[:below] = [(cut, high - (below - k) * FLANK_TOP_HAIR) for k in range(below)]
-        return [(s if least is None else max(s, least), z) for s, z in points]
+        return [(s if least is None else max(s, least), z) for s, z in _cut_at_height(points, high, low)]
 
     rings = [[frame.point(t, s, z) for s, z in head + turned_flank(t)] for t in planes]
     return _ruled(rings)
@@ -1132,6 +1160,8 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     ended_lower = []
     # Fins beside the lowest line that lost tines to a foot standing further out.
     tines_at_foot = []
+    # Fins beside the lowest line whose contour ends below the fin height set.
+    below_set_height = []
     built_fins = []
     for fin in plan.fins:
         own_frame = frames.get(fin.number, frame)
@@ -1152,6 +1182,8 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
                 ended_lower.append(fin.number)
             elif sum(fin.on_face) < planned_tines:
                 tines_at_foot.append(fin.number)
+            if planned_height < p.fin_height - d.TOLERANCE:
+                below_set_height.append(fin.number)
         else:
             body, tines, edge = one_fin(p, own_frame, fin.t0, fin.height, thickness, plan.half_foot, fin.candidate_z)
         kept = [tine for tine, whole in zip(tines, fin.on_face) if whole]
@@ -1202,7 +1234,8 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
             warnings.append(translate("FinSnap", note) % (_mm_list({z for _, z, _ in found}), d.TINE_END_TOLERANCE))
             targets.append(WarningTarget(sorted({number for number, _, _ in found}), [tine for _, _, tine in found],
                                          False))
-    for note, numbers_of in ((NOTE_ENDED_LOWER, ended_lower), (NOTE_TINES_AT_FOOT, tines_at_foot),
+    for note, numbers_of in ((NOTE_ENDED_LOWER, ended_lower), (NOTE_BELOW_SET_HEIGHT, below_set_height),
+                             (NOTE_TINES_AT_FOOT, tines_at_foot),
                              (NOTE_SIDE_FIN_LEFT_OUT, side_missing)):
         if numbers_of:
             warnings.append(translate("FinSnap", note) % ", ".join(str(number) for number in numbers_of))

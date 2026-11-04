@@ -130,13 +130,16 @@ MATRIX_CASES = ((d.ROUND_FINS_TWO, 30.0, 0.0), (d.ROUND_FINS_THREE, 45.0, 0.0), 
                 (d.ROUND_FINS_THREE, 45.0, 3.0))
 MATRIX_FIN_COUNTS = {d.ROUND_FINS_TWO: 2, d.ROUND_FINS_THREE: 3}
 # Cases with a fin height set, above what the side fins can reach on some shapes.
-MATRIX_HIGH_CASES = {"rod": ((d.ROUND_FINS_THREE, 45.0, 0.0, 35.0), (d.ROUND_FINS_THREE, 30.0, 3.0, 35.0)),
+MATRIX_HIGH_CASES = {"rod": ((d.ROUND_FINS_THREE, 45.0, 0.0, 35.0), (d.ROUND_FINS_THREE, 30.0, 3.0, 35.0),
+                             (d.ROUND_FINS_THREE, 30.0, 0.0, 30.0), (d.ROUND_FINS_THREE, 45.0, 2.0, 32.0)),
+                     "cone": ((d.ROUND_FINS_THREE, 45.0, 3.0, 38.0),),
                      "thin step": ((d.ROUND_FINS_THREE, 45.0, 3.0, 35.0),),
                      "step near the fins": ((d.ROUND_FINS_THREE, 45.0, 3.0, 35.0),),
                      "fillet": ((d.ROUND_FINS_THREE, 45.0, 0.0, 20.0),)}
 # How many tines a side fin has, by shape, for MATRIX_CASES and then MATRIX_HIGH_CASES.
-MATRIX_SIDE_TINES = {"rod": (7, 7, 7, 7, 7, 7), "step near the fins": (13, 7, 13, 7, 7),
-                     "thin step": (7, 7, 7, 7, 7), "cone": (7, 7, 7, 7), "fillet": (7, 7, 7, 7, 5),
+MATRIX_SIDE_TINES = {"rod": (7, 7, 7, 7, 7, 7, 7, 7), "tube": (7, 7, 7, 7), "step near the fins": (13, 7, 13, 7, 7),
+                     "flange": (7, 7, 7, 6), "thin step": (7, 7, 7, 7, 7), "cone": (7, 7, 7, 7, 7),
+                     "fillet": (7, 7, 7, 7, 5),
                      "large fillet": (5, 6, 5, 5)}
 HEIGHT_ACROSS_FIN = 0.02  # how far above the height it says a fin may reach (mm)
 LARGE_FILLET_RADIUS = 9.5  # nearly the radius of the rod
@@ -149,6 +152,8 @@ RIB_LENGTH = 30.0      # reaching past the fin
 RIB_INTO_PART = 1.0    # how far it starts inside the part
 RIB_HEIGHT_SHARE = 0.6 # how high up the side fin it stands
 THIN_STEP_RADIUS = 3.0 # a step thinner than the side fins stand from the lowest line
+FLANGE_RADIUS = 14.0   # a flange at the start of a rod
+FLANGE_HEIGHT = 2.0
 DISC_HEIGHT = 4.0      # a disc: its flat face is larger than its side, the side takes the fins all the same
 BORE_RADIUS = 6.0      # the hole that makes it a tube
 ROUND_TURN = 5.0       # how far the fin under a round side is moved by hand, in mm round it
@@ -1743,7 +1748,10 @@ def matrix_shapes():
     free_end = [e for e in rod.Edges if orient.is_rim(e) and e.BoundBox.ZMin > 1]
     upper = V(0, 0, ROD_HEIGHT)
     return {"rod": rod,
+            "tube": rod.cut(Part.makeCylinder(BORE_RADIUS, ROD_HEIGHT)),
             "step near the fins": rod.fuse(Part.makeCylinder(STEPS_NEAR_FINS[1], ROD_HEIGHT, upper)).removeSplitter(),
+            "flange": Part.makeCylinder(FLANGE_RADIUS, FLANGE_HEIGHT).fuse(
+                Part.makeCylinder(ROD_RADIUS, ROD_HEIGHT, V(0, 0, FLANGE_HEIGHT))).removeSplitter(),
             "thin step": rod.fuse(Part.makeCylinder(THIN_STEP_RADIUS, ROD_HEIGHT, upper)).removeSplitter(),
             "cone": rod.fuse(Part.makeCone(ROD_RADIUS, CONE_TOP, CONE_HEIGHT, upper)).removeSplitter(),
             "fillet": rod.makeFillet(FILLET_RADIUS, free_end),
@@ -1818,7 +1826,7 @@ def check_side_fin_matrix():
         plan = quick_stands.quick_plan(shape, [], [(shape.Faces[number], number)], FinParams(), d.TILT_ANGLE)
         stood = moved(shape, plan.change)
         cases = [(*case, 0.0) for case in MATRIX_CASES] + list(MATRIX_HIGH_CASES.get(name, ()))
-        for (kind, degrees, thickness, height), side_tines in zip(cases, MATRIX_SIDE_TINES[name]):
+        for (kind, degrees, thickness, height), side_tines in zip(cases, MATRIX_SIDE_TINES[name], strict=True):
             faults += fin_matrix_faults(name, stood, number, kind, degrees, thickness, side_tines, height)
     expect(not faults, "the matrix of side fins holds: %s" % "; ".join(faults))
 
@@ -1847,6 +1855,21 @@ def check_side_fin_matrix():
            and min(full.touching_z[1]) < start + TINE_NEAR_START,
            "above a groove the fin holds right from the start of the side: %s from %.1f"
            % (sorted(full.touching_z[1])[:2], start))
+
+
+def check_cut_at_height():
+    """A flank cut off at the height of its fin never folds back and is no higher."""
+    height, low = 10.0, 3.0
+    just_under = height - geometry.FLANK_TOP_HAIR / 2
+    for flank, unchanged in (([(1, 9), (2, 5)], True), ([(1, height), (2, 5)], True), ([(1, 11), (2, 5)], False),
+                             ([(1, 12), (1, 11), (2, 5)], False), ([(1, 12), (1.5, just_under), (2, 5)], False),
+                             ([(1, 12), (1.5, height), (2, 5)], False), ([(1, 9.9), (1.5, 11), (2, 5)], False),
+                             ([(1, 12), (2, 11)], False)):
+        cut = geometry._cut_at_height(flank, height, low)
+        heights = [z for _, z in cut]
+        expect(len(cut) == len(flank) and max(heights) <= height and heights[-1] >= low
+               and all(a > b for a, b in zip(heights, heights[1:])) and (cut == flank) == unchanged,
+               "%s cut at %g falls without folding: %s" % (flank, height, cut))
 
 
 def check_three_round_fins():
@@ -2022,8 +2045,8 @@ def check_three_round_fins():
     capped = geometry.build(stood, stood.Faces[side], FinParams(placement=d.PLACEMENT_CENTER, fin_height=high,
                                                                 round_fins=d.ROUND_FINS_THREE))
     expect(abs(capped.heights[2] - high) < d.TOLERANCE and capped.heights[1] <= side_top + d.TOLERANCE
-           and capped.heights[3] <= side_top + d.TOLERANCE,
-           "a fin height above the side fins: they end at their contour, the middle one keeps it")
+           and capped.heights[3] <= side_top + d.TOLERANCE and any("end below" in w for w in capped.warnings),
+           "a fin height above the side fins: they end at their contour, said so, the middle one keeps it")
 
     stood, side = stood_on_free_rim(rod)
     rectangle = geometry.build(stood, stood.Faces[side],
@@ -2611,6 +2634,7 @@ def main():
     check_stability()
     check_round_side()
     check_contour()
+    check_cut_at_height()
     check_three_round_fins()
     check_side_fin_matrix()
     check_part_of_side()
