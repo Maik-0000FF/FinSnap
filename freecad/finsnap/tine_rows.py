@@ -366,6 +366,30 @@ def flank_bend(frame, t):
     return (along_normal(t) - along_normal(nearest)) / frame.n_out
 
 
+def round_move(frame, s, z, t):
+    """How far along the normal of the frame a point of the flank at (s, z), in
+    the plane the contour is measured in, comes in the plane at `t`, turned about
+    the axis of the side at its own radius: so a step or a cone the flank goes
+    over keeps its place along the axis in every plane, and its own curve.
+
+    INPUTS this has to withstand:
+      on the side, further round            ->  less than 0, as flank_bend()
+      on a thinner step                     ->  more, by its own radius
+      past its radius, or nearly            ->  no further in than ROUND_MOVE_MOST times
+                                                the side itself: it stays further off
+      at the height of the axis or behind   ->  0: not the side the fin stands on
+    """
+    middle, nearest, _ = frame.flank_curve
+    along_normal = s * frame.n_out + z * frame.n_z - (frame.c - frame.radius)
+    if along_normal <= 0:
+        return 0.0
+    radius = math.hypot(along_normal, nearest - middle)
+    # A step about as thin as the plane is far from the axis falls away ever
+    # steeper there; staying further off is safe, a flank plunging in twists.
+    least = flank_bend(frame, t) * ROUND_MOVE_MOST * frame.n_out
+    return max(least, math.sqrt(max(0.0, radius ** 2 - (t - middle) ** 2)) - along_normal)
+
+
 def side_foot_start(p, frame, t0, thickness):
     """How far out the foot of the fin starting at t0 beside the lowest line
     starts: under all of its flank, which lies furthest in at the place on the fin
@@ -400,7 +424,9 @@ def side_tine(p, frame, t0, thickness, z):
     bottom, top = frame.bed_z + z, frame.bed_z + z + p.tine_height
     # Where it leaves the fin, in the middle of its thickness: on the flank there.
     line = frame.contour
-    leaves = line.flank(z + p.tine_height / 2) + frame.flank_out + flank_bend(frame, t_fin)
+    middle_height = (bottom + top) / 2
+    leaves = line.flank(z + p.tine_height / 2) + frame.flank_out
+    leaves += round_move(frame, leaves, middle_height, t_fin) / frame.n_out
     # The blade comes no further in than its foot, also above it.
     if p.foot_height > 0:
         leaves = max(leaves, side_foot_start(p, frame, t0, thickness))
@@ -471,6 +497,9 @@ def tine_end_points(p, frame, t0, thickness, z):
     return corners + [middle]
 
 
+# How many times as far as the side itself a point of a flank beside the lowest
+# line may turn in over a thinner step.
+ROUND_MOVE_MOST = 2.0
 # How often the way to the end of a tine beside the lowest line is halved.
 SIDE_TINE_STEPS = 16
 # What is wrong with the end of a tine, see tine_end_fault().
