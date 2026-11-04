@@ -437,7 +437,7 @@ def _on_one_line(values, heights, below, above, run):
     on the same face after the stretch between, as past a pocket. The run
     is measured over `run` samples."""
     start = max(0, below - run)
-    if start == below:
+    if start == below or None in (values[start], values[below], values[above]):
         return False
     slope = (values[below] - values[start]) / (heights[below] - heights[start])
     led = values[below] + slope * (heights[above] - heights[below])
@@ -655,58 +655,23 @@ def _worked_out(part, frame, p, width):
                                                     if abs(t - middle) > d.TOLERANCE], p)
 
 
-def _round_cut(part, frame, t, distance):
-    """The cut of `part` at `t` along the face of `frame`, its round side and
-    what turns about the same axis moved out so that `distance` measured in the
-    plane of the cut, as a Contour measures it, is that far off the part round
-    the axis. Beside the lowest line the part falls away across the plane, and a
-    distance in it alone comes out too small, the more so on a thinner step.
-
-    A point at radius r of the axis and `away` beside the plane through it lies
-    at sqrt(r^2 - away^2) along the normal of the frame; a point `distance` off
-    it round the axis at sqrt((r + distance)^2 - away^2).
-
-    INPUTS this has to withstand:
-      on the lowest line, away 0            ->  unmoved
-      a side of radius R                    ->  the Contour keeps `distance` from it exactly
-      a thinner step                        ->  moved further, by its own radius
-      a point at the height of the axis or
-        behind it                           ->  unmoved: not the side the fin stands on
-      a distance of 0                       ->  unmoved
-    """
-    away = t - (frame.along_min + frame.along_max) / 2
-    axis = frame.c - frame.radius
-
-    def moved(s, z):
-        along_normal = s * frame.n_out + (z + frame.bed_z) * frame.n_z - axis
-        if along_normal <= 0:
-            return s, z
-        radius = math.hypot(along_normal, away)
-        by = math.sqrt((radius + distance) ** 2 - away ** 2) - distance - along_normal
-        return s + by * frame.n_out, z + by * frame.n_z
-    return [[moved(s, z) for s, z in line] for line in cut_of(part, frame, t)]
-
-
 def beside(part, frame, p, nearest, furthest):
     """The contour of a fin parallel to the one under the lowest line of the
     round side of `frame`, as thick as from `nearest`, its edge nearest that
-    line, to `furthest` along the face, at the gap round the axis of the side:
-    the first cut, which it rests on, is the one at `nearest`, where the side
-    reaches furthest out; kept as of() is."""
+    line, to `furthest` along the face: the first cut, which it rests on, is
+    the one at `nearest`, where the side reaches furthest out; kept as of() is."""
     key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.bed_z, nearest, furthest,
            p.layer_height, p.gap, p.clearance, p.contour_bridge, p.contour_gap)
 
     def worked_out():
         planes = [nearest + (furthest - nearest) * k / (d.CONTOUR_CUTS - 1) for k in range(d.CONTOUR_CUTS)]
-        return Contour([_round_cut(part, frame, t, p.gap) for t in planes], p, above_bed=True)
+        return Contour([cut_of(part, frame, t) for t in planes], p, above_bed=True)
     return keep(_kept_beside, key, worked_out, BESIDE_KEPT)
 
 
-def across(part, frame, p, t, distance):
+def across(part, frame, p, t):
     """The contour in the one upright plane at `t` along the face of `frame`,
-    `distance` off the part round the axis of the side, for the flank of a fin
-    or the end of a tine beside the lowest line; kept as of() is."""
-    key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.bed_z, t, distance,
+    for the end of a tine beside the lowest line; kept as of() is."""
+    key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.bed_z, t,
            p.layer_height, p.gap, p.clearance, p.contour_bridge, p.contour_gap)
-    return keep(_kept_beside, key, lambda: Contour([_round_cut(part, frame, t, distance)], p, above_bed=True),
-                BESIDE_KEPT)
+    return keep(_kept_beside, key, lambda: Contour([cut_of(part, frame, t)], p, above_bed=True), BESIDE_KEPT)

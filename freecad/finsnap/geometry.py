@@ -107,19 +107,35 @@ import Part
 from . import contour as contours
 from . import defaults as d
 from . import orient
-from .face_frame import UP, FinError, Frame, HandEditError, beside_lowest, frame_of, support_of
+from .face_frame import UP, FinError, Frame, HandEditError, beside_lowest, frame_of, in_plane, support_of
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .shapes import bounds
 from .tine_rows import (NARROW_AT_EVERY_TINE, TINE_CUTS_IN, TINE_MISSES, extent_at, face_tines, restarted_tines,
-                        tine_end_edges, tine_end_fault, tine_end_points, tine_start, tines_on_face, touching_at,
-                        wide_enough)
+                        flank_bend, side_tine, tine_end, tine_end_fault, tine_end_points, tine_start, tines_on_face,
+                        touching_at, wide_enough)
 
+NOTE_TOO_CLOSE = QT_TRANSLATE_NOOP("FinSnap", "a fin comes within %.3f mm of the part, closer than the %.3f mm it "
+                                              "keeps from the face")
+# Said where fins beside the lowest line end below what passes beside them: their numbers.
+NOTE_ENDED_LOWER = QT_TRANSLATE_NOOP("FinSnap", "fins %s end lower than the one under the lowest line: above, the part "
+                                                "comes too close beside them")
+# How often a fin beside the lowest line is moved out to keep the gap, measured
+# on the part: each time by what was short, which a step or a cone leaves
+# little of after the first.
+FLANK_TRIES = 6
+# How far the gap has to grow for each mm a fin moves out for that to be worth it.
+FLANK_LEAST_GAIN = 0.02
+# Where the side falls away steepest across such a fin, as the cosine: past it
+# the fin has left the side, and more planes would follow nothing.
+FLANK_STEEPEST = 0.2
 # Twice the area of a triangle too small to be a face of a ruled solid (mm2).
 SMALLEST_AREA = 1e-9
-# Places across a tine beside the lowest line of a round side at which its end
-# is measured, the two edges and the middle: across a tine the side curves by
-# less than the chord between them leaves out.
-TINE_END_PLANES = 3
+# Upright planes round a tine beside the lowest line of a round side at which
+# its end is measured: how far apart (mm), and how far beyond its start towards
+# the axis they go (mm), as it runs at the axis and so ends beside where it
+# starts, the further the longer it is and the steeper a thin step rises.
+TINE_END_STEP = 0.3
+TINE_END_TRAVEL = 1.5
 # Said where a fin beside the lowest line of a round side is moved past
 # ROUND_FIN_ANGLE_MAX: its number and that angle.
 NOTE_SIDE_FIN_TOO_FAR = QT_TRANSLATE_NOOP("FinSnap", "fin %d would stand further round the side than %.0f degrees "
@@ -288,7 +304,7 @@ def flank_at(p, frame, z):
     """Where the flank of a fin stands at height z (absolute): the fin
     distance off the face, or along the contour the frame follows."""
     if frame.contour is not None:
-        return frame.contour.flank(z - frame.bed_z)
+        return frame.contour.flank(z - frame.bed_z) + frame.flank_out
     return frame.s_flank(z, p.gap)
 
 
@@ -296,7 +312,8 @@ def flank_outline(p, frame, low, high):
     """The flank of a fin from height `high` down to `low` (absolute), as
     (s, z) points: its two ends under a face, every bend along a contour."""
     if frame.contour is not None:
-        return [(s, z + frame.bed_z) for s, z in frame.contour.outline(low - frame.bed_z, high - frame.bed_z)]
+        return [(s + frame.flank_out, z + frame.bed_z)
+                for s, z in frame.contour.outline(low - frame.bed_z, high - frame.bed_z)]
     return [(flank_at(p, frame, high), high), (flank_at(p, frame, low), low)]
 
 
@@ -315,25 +332,46 @@ def foot_span(p, frame, height):
     the flank lies further in and the clearance only grows.
     """
     s_from = flank_at(p, frame, frame.bed_z + p.foot_height)
-    if frame.foot_from is not None:
-        s_from = max(s_from, frame.foot_from)
     return s_from, fin_out(p, frame, height) + p.foot_overhang
+
+
+def _off_the_side(frame, shape, reach):
+    """`shape` of a fin beside the lowest line, cut back to the gap from the
+    round side, which it follows there: a foot, wider than its fin, reaches
+    towards the lowest line, where the side lies further out than at the fin.
+    `reach` is how far along the axis to either side the cut has to go.
+
+    INPUTS this has to withstand:
+      foot reaching in front of the side    ->  cut back along the radius
+      foot clear of the side                ->  as it is
+    """
+    middle, _, radius = frame.flank_curve
+    s_axis = frame.s_face(frame.bed_z) - frame.radius / frame.n_out
+    axis = App.Vector(frame.out * -frame.n_z + UP * frame.n_out).normalize()
+    if axis.z < 0:
+        axis = -axis
+    start = frame.point(middle, s_axis, frame.bed_z) - axis * reach
+    return shape.cut(Part.makeCylinder(radius, 2 * reach, start, axis))
 
 
 def foot(p, frame, t0, thickness, s_from, s_to, half_width):
     z = frame.bed_z
     height = p.foot_height
+    # A fin beside the lowest line stands further round than the foot reaches.
+    def shaped(shape):
+        return _off_the_side(frame, shape, frame.radius + s_to - s_from + height) if frame.flank_curve else shape
+
     if p.foot_shape == d.FOOT_RECTANGLE:
         t_mid = t0 + thickness / 2
-        return frame.section(t_mid - half_width, [(s_from, z), (s_to, z), (s_to, z + height),
-                                                  (s_from, z + height)], 2 * half_width)
+        return shaped(frame.section(t_mid - half_width, [(s_from, z), (s_to, z), (s_to, z + height),
+                                                         (s_from, z + height)], 2 * half_width))
 
     half_length = (s_to - s_from) / 2
     centre = frame.point(t0 + thickness / 2, s_from + half_length, z)
     major, minor = (frame.out, frame.along) if half_length >= half_width else (frame.along, frame.out)
     a, b = max(half_length, half_width), min(half_length, half_width)
     ellipse = Part.Ellipse(centre + major * a, centre + minor * b, centre)
-    return Part.Face(Part.Wire(ellipse.toShape())).extrude(UP * height)
+    return shaped(Part.Face(Part.Wire(ellipse.toShape())).extrude(UP * height))
 
 
 def _mm_list(values):
@@ -398,33 +436,80 @@ def _ruled(rings):
 
 
 def _following_blade(p, frame, t0, thickness, head, low, high):
-    """The blade of a fin beside the lowest line of a round side, its flank
-    from height `high` down to `low` following the side across its thickness,
-    so the gap stays the same over all of it: ruled from one upright plane to
-    the next. `head` is the rest of its outline, the same in every plane.
+    """The blade of a fin beside the lowest line of a round side: its outline in
+    every upright plane across its thickness the same but for the flank, from
+    height `high` down to `low`, which follows the radius of the side across
+    it, so the gap stays the same over all of it. Every plane has the same
+    corners, so a step or a cone cannot be cut through between two of them, and
+    `head` is the rest of the outline, the same in every plane.
 
     INPUTS this has to withstand:
-      plain side                            ->  the flank a curve across the fin, the
-                                                gap kept to within its chords
-      thick fin, thin side                  ->  as many planes as keep the chords within
-                                                CONTOUR_SHARE
-      contour with bends at other heights
-        in other planes                     ->  every plane measured at all of them
+      plain side                            ->  the gap the same across the fin, to
+                                                within CONTOUR_SHARE
+      thick fin, far round                  ->  as many planes as keep to that, more the
+                                                more the side falls away
+      fin as far round as the radius and
+        past                                ->  the flank stays at the last place on it
+      fin over the lowest line              ->  the curve its middle there
+      cone, fillet or step above the side   ->  the same curve, of the side: the gap
+                                                larger there, measured in _clear_of_part()
     """
-    # Straight from plane to plane, the flank comes closer to the part by what
-    # a chord leaves out of its curve. Nothing the planes cut lies nearer the
-    # axis than they do, so the thinnest step it can follow bounds how far apart
-    # they may stand; over the lowest line, the fin itself bounds it.
-    away = abs(t0 + thickness / 2 - (frame.along_min + frame.along_max) / 2) - thickness / 2
-    curve = min(frame.radius, max(away, thickness))
-    pieces = max(1, math.ceil(thickness / math.sqrt(8 * curve * d.CONTOUR_SHARE)))
-    planes = [t0 + thickness * k / pieces for k in range(pieces + 1)]
-    lines = [frame.flank_line(t) for t in planes]
-    base = frame.bed_z
-    bends = {round(z, d.LENGTH_DECIMALS) for line in lines for _, z in line.outline(low - base, high - base)}
-    heights = sorted(bends | {low - base, high - base}, reverse=True)
-    return _ruled([[frame.point(t, s, z) for s, z in head + [(line.flank(z), z + base) for z in heights]]
-                   for t, line in zip(planes, lines)])
+    middle, _, radius = frame.flank_curve
+    furthest = max(abs(t0 - middle), abs(t0 + thickness - middle))
+    falling = max(FLANK_STEEPEST, math.sqrt(max(0.0, 1 - (furthest / radius) ** 2)))
+    pieces = max(1, math.ceil(thickness / (falling * math.sqrt(8 * radius * d.CONTOUR_SHARE))))
+    outline = flank_outline(p, frame, low, high)
+    rings = []
+    for k in range(pieces + 1):
+        t = t0 + thickness * k / pieces
+        by = flank_bend(frame, t)
+        rings.append([frame.point(t, s, z) for s, z in head + [(s + by, z) for s, z in outline]])
+    return _ruled(rings)
+
+
+def _clear_of_part(p, part, frame, fin, thickness, half_foot):
+    """One fin `fin` beside the lowest line as one_fin() builds it, the gap kept
+    off the part as measured on it, what the curve of the side knows nothing of:
+    where it comes closer, it stands out by as much; where that does not help, as
+    a cone or a thin step passing beside its wall, it ends below that place, at
+    the last tine there. Returned with the frame and the fin as they came to be.
+
+    INPUTS this has to withstand:
+      plain side, the gap kept              ->  built once, as planned
+      step or fillet in front of it         ->  moved out until it keeps the gap, as far
+                                                as GAP_MAX from the side, past that lower
+      a part passing beside its wall        ->  ends below, its tines above left out
+      nothing of it clear of the part       ->  FinError, as check() says it
+    """
+    while True:
+        moved_out = frame
+        before = None
+        for _ in range(FLANK_TRIES):
+            built = one_fin(p, moved_out, fin.t0, fin.height, thickness, half_foot, fin.candidate_z)
+            distance, points, _ = built[0].distToShape(part)
+            short = p.gap - distance
+            if short <= d.TOLERANCE:
+                return (*built, moved_out, fin)
+            # As far as the last move gained, the part may lie mostly beside the
+            # fin, and little comes of moving out; nothing gained, only lower helps.
+            by = short / frame.n_out
+            if before is not None:
+                gained = (distance - before[0]) / (moved_out.flank_out - before[1])
+                if gained < FLANK_LEAST_GAIN:
+                    break
+                by = short / gained
+            before = (distance, moved_out.flank_out)
+            # Not past the gap tines still print straight across.
+            if (moved_out.flank_out + by) * frame.n_out + p.gap > d.GAP_MAX:
+                break
+            moved_out = replace(moved_out, flank_out=moved_out.flank_out + by)
+        # Up to where it stays clear: the gap and a tine below that place.
+        lowest_close = points[0][0].z - frame.bed_z - p.gap - p.tine_height
+        kept = [(z, whole) for z, whole in zip(fin.candidate_z, fin.on_face) if z <= lowest_close and whole]
+        if not kept or len(kept) == len(fin.candidate_z):
+            raise FinError(translate("FinSnap", NOTE_TOO_CLOSE) % (distance, p.gap))
+        fin = fin._replace(candidate_z=[z for z, _ in kept], on_face=[whole for _, whole in kept],
+                           height=kept[-1][0] + p.tine_height)
 
 
 def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
@@ -435,7 +520,7 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
 
     if p.foot_shape == d.FOOT_NONE:
         head = [(s_out, zb), (s_out, top)]
-        body = (_following_blade(p, frame, t0, thickness, head, zb, top) if frame.flank_line
+        body = (_following_blade(p, frame, t0, thickness, head, zb, top) if frame.flank_curve
                 else frame.section(t0, head + flank_outline(p, frame, zb, top), thickness))
     else:
         # Below the top of the foot the slanted flank would only add a thin tip
@@ -443,7 +528,7 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
         s_from, s_to = foot_span(p, frame, height)
         foot_top = zb + p.foot_height
         head = [(s_from, zb), (s_out, zb), (s_out, top)]
-        body = (_following_blade(p, frame, t0, thickness, head, foot_top, top) if frame.flank_line
+        body = (_following_blade(p, frame, t0, thickness, head, foot_top, top) if frame.flank_curve
                 else frame.section(t0, head + flank_outline(p, frame, foot_top, top), thickness))
         body = body.fuse(foot(p, frame, t0, thickness, s_from, s_to, half_foot))
     outer_middle = frame.point(t0 + thickness / 2, s_out, zb + height / 2)
@@ -451,8 +536,12 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
     tines = []
     t_tine = tine_start(p, t0, thickness)
     for z in tine_z:
-        bottom, tine_top = zb + z, zb + z + p.tine_height
-        across = tine_end_edges(p, frame, z)
+        if frame.tine_edges is not None:
+            low, high = side_tine(p, frame, t0, thickness, z)
+            tines.append(_ruled([[frame.point(t, s, zb + z) for t, s in low],
+                                 [frame.point(t, s, zb + z + p.tine_height) for t, s in high]]))
+            continue
+        bottom, tine_top, s_end_bottom, s_end_top = tine_end(p, frame, z)
         # The fin edge furthest out along the tine: the flank at its ends, or
         # the vertical inner end of the foot for a tine below the top of the
         # foot. Measured from there, a tine always reaches into the fin.
@@ -460,15 +549,8 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
         if p.foot_height > 0 and bottom < zb + p.foot_height:
             edge = max(edge, foot_span(p, frame, height)[0])
         s_into_fin = edge + d.TINE_INTO_FIN
-
-        def outline(ends):
-            return [(ends[0], bottom), (s_into_fin, bottom), (s_into_fin, tine_top), (ends[1], tine_top)]
-        if across[0] == across[-1]:
-            tines.append(frame.section(t_tine, outline(across[0]), p.tine_width))
-        else:
-            # Its end follows the side across it: ruled from one place to the next.
-            tines.append(_ruled([[frame.point(t_tine + p.tine_width * k / (len(across) - 1), s, z_at)
-                                  for s, z_at in outline(ends)] for k, ends in enumerate(across)]))
+        tines.append(frame.section(t_tine, [(s_end_bottom, bottom), (s_into_fin, bottom),
+                                            (s_into_fin, tine_top), (s_end_top, tine_top)], p.tine_width))
     return body, tines, outer_middle
 
 
@@ -507,9 +589,7 @@ def check(p, part, fins, bodies, slack=0.0):
     for body in bodies:
         distance = body.distToShape(part)[0]
         if distance < p.gap - slack - d.TOLERANCE:
-            raise FinError(translate("FinSnap", "a fin comes within %.3f mm of the part, closer than the %.3f mm it "
-                                                  "keeps from the face")
-                           % (distance, p.gap))
+            raise FinError(translate("FinSnap", NOTE_TOO_CLOSE) % (distance, p.gap))
 
 
 def build(part, face, p, tine_count=None, left_out=(), shifts=None, heights=None):
@@ -562,14 +642,14 @@ def side_frames(part, frame, p, width, shifts):
     """By number, the frames of the two fins beside the fin under the lowest
     line of the whole round side of `frame`, or in its place; each at the place
     positions_for() gives it, moved by `shifts`, as thick as `width` at most.
-    Their flanks and the ends of their tines keep the gap and the clearance
-    round the axis of the side, as it falls away across them (contour.beside(),
-    contour.across()).
+    The gap and the clearance are measured in their upright planes, as much
+    longer as the side falls away there (in_plane()).
 
     INPUTS this has to withstand:
       fin to the left, or the right         ->  its contour and tine edges at its own
                                                 planes, nearest the lowest line first
-      side with a step of another radius    ->  the gap kept round the axis there too
+      side with a step of another radius    ->  the gap of the side; _clear_of_part()
+                                                moves the fin out where that is too little
       fin moved by hand                     ->  measured where it stands now
       fin moved over the lowest line        ->  its edge nearest that line stands on it
       fin moved past ROUND_FIN_ANGLE_MAX    ->  HandEditError, the number of fins known
@@ -577,7 +657,6 @@ def side_frames(part, frame, p, width, shifts):
     """
     middle = (frame.along_min + frame.along_max) / 2
     pitch = beside_lowest(frame.radius, p.round_fin_angle)
-    foot_from = flank_at(p, frame, frame.bed_z + p.foot_height)
     frames = {}
     furthest_round = beside_lowest(frame.radius, d.ROUND_FIN_ANGLE_MAX)
     numbers = side_numbers(p.round_fins)
@@ -590,12 +669,22 @@ def side_frames(part, frame, p, width, shifts):
         towards = 1.0 if centre > middle else -1.0
         nearest = middle if abs(centre - middle) < width / 2 else centre - towards * width / 2
         furthest = centre + towards * width / 2
-        line = contours.beside(part, frame, p, nearest, furthest)
-        edges = tuple(contours.across(part, frame, p, centre + p.tine_width * (k / (TINE_END_PLANES - 1) - 0.5),
-                                      p.clearance)
-                      for k in range(TINE_END_PLANES))
-        frames[number] = replace(frame, contour=line, tine_edges=edges, foot_from=foot_from,
-                                 flank_line=partial(_flank_line, part, frame, p),
+
+        def measured_at(t):
+            """`p` with gap and clearance as they come to in the plane at `t`."""
+            away = t - middle
+            return replace(p, gap=in_plane(frame.radius, away, p.gap),
+                           tine_clearance=in_plane(frame.radius, away, p.tine_clearance))
+        line = contours.beside(part, frame, measured_at(nearest), nearest, furthest)
+        half = p.tine_width / 2 + TINE_END_STEP
+        low = centre - half - (TINE_END_TRAVEL if centre > middle else 0.0)
+        high = centre + half + (TINE_END_TRAVEL if centre < middle else 0.0)
+        count = math.ceil((high - low) / TINE_END_STEP)
+        planes = [low + (high - low) * k / count for k in range(count + 1)]
+        ends = [contours.across(part, frame, measured_at(t), t) for t in planes]
+        edges = (planes, ends, [end for t, end in zip(planes, ends) if abs(t - centre) <= half])
+        frames[number] = replace(frame, contour=line, tine_edges=edges,
+                                 flank_curve=(middle, nearest, frame.radius + p.gap),
                                  face_top_z=frame.bed_z + line.top)
     return frames
 
@@ -603,11 +692,6 @@ def side_frames(part, frame, p, width, shifts):
 def _within(p, room):
     """`p` with a fin height set by hand no higher than `room`."""
     return replace(p, fin_height=room) if p.fin_height > room else p
-
-
-def _flank_line(part, frame, p, t):
-    """The contour the flank of a fin beside the lowest line follows at `t`."""
-    return contours.across(part, frame, p, t, p.gap)
 
 
 def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out, shifts, heights, slices,
@@ -844,9 +928,19 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     # Tines whose end misses the face or reaches into the part, by fault, as
     # (fin number, height, tine).
     off_ends = {TINE_MISSES: [], TINE_CUTS_IN: []}
+    # Fins beside the lowest line that end below what passes beside them.
+    ended_lower = []
+    built_fins = []
     for fin in plan.fins:
         own_frame = frames.get(fin.number, frame)
-        body, tines, edge = one_fin(p, own_frame, fin.t0, fin.height, thickness, plan.half_foot, fin.candidate_z)
+        if fin.number in frames:
+            planned_height = fin.height
+            body, tines, edge, own_frame, fin = _clear_of_part(p, part, own_frame, fin, thickness, plan.half_foot)
+            frames[fin.number] = own_frame
+            if fin.height < planned_height - d.TOLERANCE:
+                ended_lower.append(fin.number)
+        else:
+            body, tines, edge = one_fin(p, own_frame, fin.t0, fin.height, thickness, plan.half_foot, fin.candidate_z)
         kept = [tine for tine, whole in zip(tines, fin.on_face) if whole]
         left = [(z, tine) for z, tine, whole in zip(fin.candidate_z, tines, fin.on_face) if not whole]
         dropped += [tine for _, tine in left]
@@ -859,6 +953,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         elif left:
             gap_heights.update(z for z, _ in left)
             gapped.append(fin.number)
+        built_fins.append(fin)
         edges.append(edge)
         bodies.append(body)
         all_tines.extend(kept)
@@ -873,7 +968,9 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         pieces.append(body.multiFuse(kept).removeSplitter())
 
     fins = Part.makeCompound(pieces)
-    check(p, part, fins, bodies, 0.0 if frame.contour is None else d.CONTOUR_TOLERANCE)
+    # Fins beside the lowest line were measured as they were built.
+    measured = [body for fin, body in zip(built_fins, bodies) if fin.number not in frames]
+    check(p, part, fins, measured, 0.0 if frame.contour is None else d.CONTOUR_TOLERANCE)
 
     # Each warning with what it is about, as a WarningTarget, in the same order.
     warnings, targets = [], []
@@ -890,6 +987,9 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
             warnings.append(translate("FinSnap", note) % (_mm_list({z for _, z, _ in found}), d.TINE_END_TOLERANCE))
             targets.append(WarningTarget(sorted({number for number, _, _ in found}), [tine for _, _, tine in found],
                                          False))
+    if ended_lower:
+        warnings.append(translate("FinSnap", NOTE_ENDED_LOWER) % ", ".join(str(number) for number in ended_lower))
+        targets.append(WarningTarget(ended_lower, [], False))
     if plan.moved:
         warnings.append(translate("FinSnap", "fins moved along the face to where their tines rest, beside a "
                                   "hole or recess under their planned place: %s") % ", ".join(
@@ -926,8 +1026,8 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
                                   "a brim in the slicer give it more hold on the bed"))
         targets.append(WarningTarget([], [], False))
 
-    numbers = [fin.number for fin in plan.fins]
-    fin_heights = [fin.height for fin in plan.fins]
+    numbers = [fin.number for fin in built_fins]
+    fin_heights = [fin.height for fin in built_fins]
     return FinResult(fins=fins, bodies=bodies, tines=all_tines, height=max(fin_heights),
                      thickness=thickness, tine_z=plan.tine_z, positions=[fin.t0 for fin in plan.fins],
                      foot_half_width=plan.half_foot, warnings=warnings, warning_targets=targets,
@@ -935,7 +1035,8 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
                      numbers=numbers, planned=len(plan.positions),
                      dropped=dropped, starts={n: plan.starts[n] for n in numbers}, along=frame.along,
                      out=frame.out, heights=dict(zip(numbers, fin_heights)), edges=dict(zip(numbers, edges)),
-                     touching_z={fin.number: fin.touching for fin in plan.fins},
+                     touching_z={fin.number: [z for z in fin.touching if z in fin.candidate_z]
+                                 if fin.number in frames else fin.touching for fin in built_fins},
                      face_start=plan.face_start, radius=frame.radius, frame=frame, frames=frames,
                      moved=dict(plan.moved))
 

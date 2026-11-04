@@ -115,6 +115,17 @@ PLANE_INSIDE = 0.01    # how far inside the outer edge of a fin it is cut throug
 BIG = 500.0            # far past any test part
 GAP_ACROSS_FIN = 0.01  # how far the gap may differ across the thickness of a fin
 SIDE_FIN_MOVE = 0.5    # how far a side fin is moved by hand
+CONE_TOP = 3.0         # a cone on top of a rod narrows to this radius
+CONE_HEIGHT = 15.0
+FILLET_RADIUS = 3.0    # a fillet round the free end of a rod
+STEPS_NEAR_FINS = (5.4, 5.5, 5.6, 6.0)  # steps ending about where side fins stand at 30 degrees
+TINE_MIDDLE_TOLERANCE = 0.05  # how far off the middle of a side fin a tine may leave it (mm)
+AIM_TOLERANCE = 1e-3   # how far off the axis a tine beside the lowest line may aim (cross product, mm2)
+RIB_OFF_WALL = 0.1     # a rib stands this far beside the wall of a side fin
+RIB_WIDTH = 1.0
+RIB_LENGTH = 30.0      # reaching past the fin
+RIB_INTO_PART = 1.0    # how far it starts inside the part
+RIB_HEIGHT_SHARE = 0.6 # how high up the side fin it stands
 THIN_STEP_RADIUS = 3.0 # a step thinner than the side fins stand from the lowest line
 DISC_HEIGHT = 4.0      # a disc: its flat face is larger than its side, the side takes the fins all the same
 BORE_RADIUS = 6.0      # the hole that makes it a tube
@@ -1718,6 +1729,28 @@ def check_three_round_fins():
                "%s: every tine is a valid solid, also with a slanted end" % name)
         off = max(abs(tine.distToShape(stood)[0] - three.clearance) for tine in result.tines)
         expect(off < d.TINE_END_TOLERANCE, "%s: every tine ends the clearance off the part, off by %.4f" % (name, off))
+        if shape is not step:
+            own = result.frames[3]
+            low, high = tine_rows.side_tine(three, own, result.positions[2], result.thickness, result.touching_z[3][0])
+            t_from, s_from = (low[0][0] + low[1][0]) / 2, (low[0][1] + low[1][1]) / 2
+            t_to, s_to = low[3]
+            z_first = own.bed_z + result.touching_z[3][0]
+            flank_there = geometry.flank_at(three, own, z_first + three.tine_height / 2) + tine_rows.flank_bend(
+                own, result.positions[2] + result.thickness / 2)
+            run = (flank_there - s_from) / (s_to - s_from)
+            at_flank = t_from + run * (t_to - t_from)
+            expect(abs(at_flank - (result.positions[2] + result.thickness / 2)) < TINE_MIDDLE_TOLERANCE,
+                   "%s: a tine of a side fin leaves it in the middle of its thickness, off by %.3f"
+                   % (name, at_flank - (result.positions[2] + result.thickness / 2)))
+            foot_at = geometry.foot_span(three, own, result.heights[3])[0]
+            expect(abs(foot_at - geometry.flank_at(three, own, own.bed_z + three.foot_height)) < d.TOLERANCE,
+                   "%s: the foot of a side fin reaches under it, up to its flank" % name)
+            middle = (own.along_min + own.along_max) / 2
+            height = own.bed_z + result.touching_z[3][0] + three.tine_height / 2
+            axis_s = own.s_face(height) - own.radius / own.n_out
+            aim = (s_to - s_from) * (middle - t_from) - (t_to - t_from) * (axis_s - s_from)
+            expect(t_to < t_from and s_to < s_from and abs(aim) < AIM_TOLERANCE,
+                   "%s: a tine of a side fin runs level straight at the axis, off by %.5f" % (name, aim))
         expect(result.fins.common(stood).Volume < d.TOLERANCE, "%s: no fin reaches into the part" % name)
         nearest = min(body.distToShape(stood)[0] for body in result.bodies)
         # Near the outer edge of a side fin the gap is as near the inner one.
@@ -1725,7 +1758,8 @@ def check_three_round_fins():
         ring = [result.frame.point(outer, s, z) for s, z in ((-BIG, -BIG), (BIG, -BIG), (BIG, BIG), (-BIG, BIG))]
         plane = Part.Face(Part.makePolygon(ring + ring[:1]))
         at_outer = result.bodies[2].common(plane).distToShape(stood)[0]
-        expect(abs(at_outer - three.gap) < GAP_ACROSS_FIN,
+        # A step asks the whole fin to stand a little further out.
+        expect(abs(at_outer - three.gap) < GAP_ACROSS_FIN or (shape is step and at_outer > three.gap),
                "%s: the side fin keeps the gap across its thickness too: %.3f at its outer edge" % (name, at_outer))
         expect(nearest > three.gap - d.CONTOUR_TOLERANCE - GAP_ACROSS_FIN,
                "%s: the side fins keep the gap from the side: %.3f" % (name, nearest))
@@ -1789,6 +1823,44 @@ def check_three_round_fins():
         expect(abs(closest - asked.gap) < d.CONTOUR_TOLERANCE + d.TOLERANCE,
                "R %g, fin %g mm thick, %g degrees, %s: the gap holds, %.4f at its closest"
                % (radius, built.thickness, degrees, kind, closest))
+    # What the side does not tell the fins: they are built all the same, at
+    # least the gap off, as far out as the part asks for.
+    shapes_beside = [("a cone on top", rod.fuse(Part.makeCone(ROD_RADIUS, CONE_TOP, CONE_HEIGHT, V(0, 0, ROD_HEIGHT)))),
+                     ("a fillet on top", rod.makeFillet(FILLET_RADIUS, [e for e in rod.Edges if orient.is_rim(e)
+                                                                        and e.BoundBox.ZMin > 1]))]
+    shapes_beside += [("a step of %g" % r, rod.fuse(Part.makeCylinder(r, ROD_HEIGHT, V(0, 0, ROD_HEIGHT))))
+                      for r in STEPS_NEAR_FINS]
+    for name, shape in shapes_beside:
+        shape = shape.removeSplitter()
+        number = round_side_of(shape)
+        near_plan = quick_stands.quick_plan(shape, [], [(shape.Faces[number], number)], one, d.TILT_ANGLE)
+        near_stood = moved(shape, near_plan.change)
+        for degrees, thickness in ((15.0, 0.0), (d.ROUND_FIN_ANGLE, 0.0), (d.ROUND_FIN_ANGLE_MAX, 0.0),
+                                   (d.ROUND_FIN_ANGLE, 3.0)):
+            asked = FinParams(placement=d.PLACEMENT_CENTER, round_fins=d.ROUND_FINS_THREE, round_fin_angle=degrees,
+                              fin_thickness=thickness)
+            built = geometry.build(near_stood, near_stood.Faces[number], asked)
+            closest = min(body.distToShape(near_stood)[0] for body in built.bodies)
+            expect(len(built.bodies) == 3 and closest > asked.gap - d.TOLERANCE - GAP_ACROSS_FIN
+                   and built.fins.common(near_stood).Volume < d.TOLERANCE,
+                   "%s, %g degrees, fin %g mm thick: three fins, %.3f off at the closest"
+                   % (name, degrees, built.thickness, closest))
+    # A rib beside the wall of a side fin, high up: moving out gains nothing there.
+    stood, side = stood_on_free_rim(rod)
+    free = geometry.build(stood, stood.Faces[side], three)
+    wall = free.positions[2] - RIB_OFF_WALL - RIB_WIDTH
+    level = free.heights[3] * RIB_HEIGHT_SHARE
+    low, high = free.frame.bed_z + level, free.frame.bed_z + level + RIB_WIDTH
+    start = free.frame.s_face(low) - RIB_INTO_PART
+    rib = free.frame.section(wall, [(start, low), (start + RIB_LENGTH, low), (start + RIB_LENGTH, high), (start, high)],
+                             RIB_WIDTH)
+    ribbed = stood.fuse(rib).removeSplitter()
+    number = round_side_of(ribbed)
+    lowered = geometry.build(ribbed, ribbed.Faces[number], three)
+    expect(lowered.heights[3] < level and lowered.heights[3] < free.heights[3] and lowered.heights[1] > level
+           and any("end lower" in w for w in lowered.warnings),
+           "a rib beside its wall: that side fin ends below it, said so, the other stays: %.1f, %.1f"
+           % (lowered.heights[3], lowered.heights[1]))
     # A shaft whose thin step ends the side fins lower than the fin between them.
     thin_step = rod.fuse(Part.makeCylinder(THIN_STEP_RADIUS, ROD_HEIGHT, V(0, 0, ROD_HEIGHT))).removeSplitter()
     stood, side = stood_on_free_rim(thin_step)
