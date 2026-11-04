@@ -55,6 +55,8 @@ TUBE_RADIUS = 10.0
 TUBE_BORE = 6.0
 TUBE_HEIGHT = 40.0
 TUBE_ANGLE = 30.0  # how far the fin under the side of a tube is turned in the panel, in degrees
+SIDE_ANGLE_STEP = 10.0  # how far each angle typed at the middle of three fins turns the tube, in degrees
+SIDE_FIN_MOVE = 0.5  # how far a side fin is moved by its arrow (mm)
 PLACE_STEP = 1.0  # how far a fin is moved along the face in the panel, in mm
 HELD_REPEATS = 3  # repeats of an arrow key held down
 ZOOM_OUT = 2.0  # how far the view is zoomed out to see the arc keep its size on the screen
@@ -181,6 +183,85 @@ def quick_on_split_tube(doc):
         fins[0].ViewObject.Proxy.panel.reject()
         doc.recompute()
         expect(tube.Placement.isSame(flat, d.TOLERANCE), "Cancel lays the split tube back as it lay")
+    doc.removeObject(tube.Name)
+    doc.recompute()
+
+
+def side_fins_on_tube(doc):
+    """Fins beside the lowest line in their panel: the arc of the one under it
+    turns the part, from where it is turned; the arrow of one beside it moves
+    that fin, with Shift held both; the angle on the part has a field of its own."""
+    from freecad.finsnap import commands, defaults as d, face_frame, feature, handles, orient, quick_stands
+    from freecad.finsnap.params import FinParams
+    shape = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
+    side = [i for i, f in enumerate(shape.Faces)
+            if orient.is_round_side(f) and abs(f.Surface.Radius - TUBE_RADIUS) < d.TOLERANCE][0]
+    plan = quick_stands.quick_plan(shape, [], [(shape.Faces[side], side)], FinParams(), d.TILT_ANGLE)
+    tube = doc.addObject("Part::Feature", "SideFinsTube")
+    tube.Shape = shape
+    tube.Placement = plan.change
+    fins = feature.create(tube, "Face%d" % (side + 1))
+    commands.ViewProviderFinSnap(fins.ViewObject)
+    fins.RoundFins = d.ROUND_FINS_THREE
+    doc.recompute()
+    Gui.ActiveDocument.setEdit(fins)
+    panel = fins.ViewObject.Proxy.panel
+
+    def angle():
+        return panel.part_angle()
+
+    def handle(number):
+        panel.handled = (feature.MAIN, number)
+        panel.place_handles()
+
+    def type_angle(value):
+        panel.fin_fields[handles.ALONG].setValue(value)
+        panel.field_entered(handles.ALONG)
+
+    handle(2)
+    expect(panel.turns_part() and panel.turn_field.isHidden(), "the middle fin of three turns the part")
+    base = angle()
+    for step in (1, 2, 3):
+        type_angle(face_frame.round_angle(base + step * SIDE_ANGLE_STEP))
+        expect(abs(angle() - face_frame.round_angle(base + step * SIDE_ANGLE_STEP)) < d.TOLERANCE,
+               "an angle typed at the middle fin, turn %d: the part stands at it" % step)
+    turned = abs(feature.round_shift(fins))
+    expect(abs(turned - math.radians(3 * SIDE_ANGLE_STEP) * TUBE_RADIUS) < d.TOLERANCE
+           and abs(abs(panel.built_value(handles.ALONG)) - turned) < d.TOLERANCE,
+           "the middle fin starts from the turn of the part, not from none")
+    standing = App.Placement(tube.Placement)
+
+    handle(3)
+    expect(not panel.turns_part() and not panel.turn_field.isHidden(),
+           "a side fin moves itself, the angle on the part has its own field")
+    start = fins.Proxy.results[feature.MAIN].starts[3]
+    expect(panel.set_fin(handles.ALONG, SIDE_FIN_MOVE)
+           and abs(fins.Proxy.results[feature.MAIN].starts[3] - start - SIDE_FIN_MOVE) < d.TOLERANCE
+           and tube.Placement.isSame(standing, d.TOLERANCE),
+           "a side fin moved by its arrow stands there, the part stays")
+    far = face_frame.beside_lowest(TUBE_RADIUS, d.ROUND_FIN_ANGLE_MAX)
+    expect(not panel.set_fin(handles.ALONG, far), "a side fin does not go past the furthest angle")
+    panel.drag_together = True
+    panel.set_fin(handles.ALONG, 2 * SIDE_FIN_MOVE)
+    panel.drag_together = False
+    shifts = feature.edits(fins, feature.MAIN)[1]
+    expect(abs(shifts[3] - 2 * SIDE_FIN_MOVE) < d.TOLERANCE and abs(shifts[1] + SIDE_FIN_MOVE) < d.TOLERANCE,
+           "with Shift held both side fins move, mirrored: %s" % shifts)
+    panel.turn_field.setValue(face_frame.round_angle(base))
+    panel.turn_entered()
+    expect(abs(angle() - face_frame.round_angle(base)) < d.TOLERANCE and not feature.round_shift(fins),
+           "the field of its own turns the part back")
+    panel.reject()
+    doc.recompute()
+    fins.RoundFins = d.ROUND_FINS_TWO
+    doc.recompute()
+    Gui.ActiveDocument.setEdit(fins)
+    panel = fins.ViewObject.Proxy.panel
+    handle(1)
+    expect(not panel.turns_part() and not panel.turn_field.isHidden(),
+           "with two fins neither arrow turns the part, the field does")
+    panel.reject()
+    doc.removeObject(fins.Name)
     doc.removeObject(tube.Name)
     doc.recompute()
 
@@ -2381,6 +2462,7 @@ def main():
         model = archive.read("3D/3dmodel.model").decode()
     expect(model.count("<object ") == 2, "export without a selection takes all fins with their parts")
     turned_tube(doc)
+    side_fins_on_tube(doc)
     added_on_tube(doc)
     quick_on_split_tube(doc)
     moved_beside_groove(doc)

@@ -801,6 +801,13 @@ def three_fins_on_tube(doc):
     feature.set_round_shift(fins, 0.0)
     doc.recompute()
     expect(part.Placement.isSame(standing, d.TOLERANCE), "turned back, the part stands where it stood")
+    # Saved when the turn was noted as the shift of the one fin.
+    fins.removeProperty(feature.ROUND_TURN)
+    feature.set_fin_shift(fins, feature.MAIN, 1, TUBE_TURN)
+    fins.Proxy.onDocumentRestored(fins)
+    expect(feature.round_shift(fins) == TUBE_TURN and not feature.edits(fins, feature.MAIN)[1],
+           "a turn saved as the shift of the fin is taken over as the turn")
+    feature.note_turn(fins, 0.0)
     doc.removeObject(fins.Name)
     doc.removeObject(part.Name)
     doc.recompute()
@@ -893,6 +900,7 @@ def turned_tube(doc):
     feature.set_round_shift(fins, TUBE_TURN)
     # A count of its own, which a build would not give: it has to stay as it is.
     made_for = getattr(fins, feature.PLANNED[feature.MAIN]) + 1
+    feature.hidden_property(fins, feature.EDITED_OF[feature.MAIN], "App::PropertyInteger")
     setattr(fins, feature.EDITED_OF[feature.MAIN], made_for)
     feature.keep_laid_flat(fins, App.Placement())
     expect(not feature.round_shift(fins) and getattr(fins, feature.EDITED_OF[feature.MAIN]) == made_for,

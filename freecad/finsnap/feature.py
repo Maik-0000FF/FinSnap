@@ -78,6 +78,9 @@ TAG_SEPARATOR = ":"
 PLANNED = {"main": "PlannedFins", "counter": "PlannedCounterFins"}
 # Fins moved along the face and fins with a height of their own, by number: mm.
 SHIFTS = {"main": "FinShifts", "counter": "CounterFinShifts"}
+# How far the part was turned about the round side its main fin stands under (mm
+# round the side), to turn it back.
+ROUND_TURN = "RoundTurn"
 HEIGHTS = {"main": "FinHeights", "counter": "CounterFinHeights"}
 # How many fins the face was planned for when a fin of it was changed by hand,
 # and the name earlier versions kept it under, when fins could only be removed.
@@ -156,7 +159,8 @@ EDITOR_HIDDEN = 2
 # step: how far one turn of the mouse wheel or an arrow press changes the field;
 # None keeps the default of the field, one unit.
 # most: the largest value the field takes, None for no limit of its own.
-Prop = namedtuple("Prop", "name kind group label tip field choices step most", defaults=(None, None))
+# least: the smallest value it takes, None for 0.
+Prop = namedtuple("Prop", "name kind group label tip field choices step most least", defaults=(None, None, None))
 
 # Steps of the fields, each sized to what the value is: hundredths for the
 # print profile and the gap, whole millimetres only for the fin height.
@@ -340,8 +344,9 @@ PROPERTIES = (
          QT_TRANSLATE_NOOP("App::Property",
                            "With two or three fins under a round side: how far round the side from the lowest line "
                            "the two side fins stand, in degrees. Further round they stand further apart, but hold "
-                           "the part only from higher up."),
-         "round_fin_angle", None, None, d.ROUND_FIN_ANGLE_MAX),
+                           "the part only from higher up. The arrow of a side fin moves that fin; with Shift held "
+                           "while dragging, both."),
+         "round_fin_angle", None, None, d.ROUND_FIN_ANGLE_MAX, d.ROUND_FIN_ANGLE_MIN),
     Prop("FinPlateau", LENGTH, GROUP_FIN,
          QT_TRANSLATE_NOOP("FinSnap", "Top width"),
          QT_TRANSLATE_NOOP("App::Property", "Width of the flat top of a fin"),
@@ -1016,6 +1021,12 @@ class FinSnapFeature:
                     hidden_property(obj, EDITED_OF[which], "App::PropertyInteger")
                     setattr(obj, EDITED_OF[which], getattr(obj, old))
                 obj.removeProperty(old)
+        # Saved when the turn of the part was noted as a shift of its one fin.
+        if ROUND_TURN not in obj.PropertiesList:
+            turn = edits(obj, MAIN)[1].get(1)
+            if turn is not None and on_round_side(obj):
+                note_turn(obj, turn)
+                _set_mm(obj, SHIFTS[MAIN], 1, None)
         # A parameter added in a later version starts with its built-in value,
         # or where that would change the fins with the value it stands for
         # off, so fins saved before it keep their shape.
@@ -1355,11 +1366,8 @@ def build_keeping_edits(obj, which, build_fn, notes):
       changes made, count changed           ->  built as planned, changes dropped, note
       every fin removed, same count         ->  FinError: every fin is removed
       every fin removed, count changed      ->  built as planned, changes dropped, note
-      part turned about its round side only,
-        count changed                       ->  built with the turn, no note: fins moved
-                                                by none
-      part turned and fins changed, count
-        changed                             ->  built as planned, the turn kept, note
+      part turned about its round side,
+        count changed                       ->  the turn is no change to a fin: it stays
       changes made, count they were made
         for unknown                         ->  built with them; a FinError passed on
       FinError for any other reason         ->  passed on
@@ -1368,10 +1376,7 @@ def build_keeping_edits(obj, which, build_fn, notes):
     """
     drop_heights_off_grid(obj, which, notes)
     left, shifts, heights = edits(obj, which)
-    # How far the part was turned about its round side is no change to a fin,
-    # whatever their number: the part stays turned, and the turn has to stay known.
-    turn = shifts.get(1) if which == MAIN and shifts and on_round_side(obj) else None
-    changed = bool(left or heights or (shifts and turn is None))
+    changed = bool(left or shifts or heights)
     made_for = getattr(obj, EDITED_OF[which], None)
     result, failure = None, None
     try:
@@ -1386,10 +1391,7 @@ def build_keeping_edits(obj, which, build_fn, notes):
         return result
     reset_fins(obj, which)
     notes.append(translate("FinSnap", NOTE_EDITS_DROPPED))
-    if turn is None:
-        return build_fn((), {}, {})
-    _set_mm(obj, SHIFTS[which], 1, turn)
-    return build_fn((), {1: turn}, {})
+    return build_fn((), {}, {})
 
 
 def note_target(obj, which, target):
@@ -1553,9 +1555,21 @@ def round_side(obj):
 
 
 def round_shift(obj):
-    """How far the part of `obj` was turned about its round side by hand, as
-    the shift of its main fin (mm round the side); 0 if not."""
-    return edits(obj, MAIN)[1].get(1, 0.0)
+    """How far the part of `obj` was turned about its round side by hand (mm
+    round the side); 0 if not."""
+    return getattr(obj, ROUND_TURN, 0.0)
+
+
+def note_turn(obj, mm):
+    """Note how far the part of `obj` is turned about its round side."""
+    hidden_property(obj, ROUND_TURN, "App::PropertyFloat")
+    setattr(obj, ROUND_TURN, mm)
+
+
+def is_side_fin(obj, number):
+    """Whether main fin `number` of `obj` stands beside the lowest line of its
+    round side: moved by hand it moves along the face, and the part stays."""
+    return number in geometry.side_numbers(obj.RoundFins) and on_round_side(obj)
 
 
 def round_turns(owner, document):
@@ -1578,7 +1592,7 @@ def put_back_turns(document, turns):
     for name, mm in turns.items():
         obj = document.getObject(name)
         if obj is not None:
-            _set_mm(obj, SHIFTS[MAIN], 1, mm)
+            note_turn(obj, mm)
 
 
 def forget_turn(obj):
@@ -1586,21 +1600,21 @@ def forget_turn(obj):
     the part is laid flat or stood anew: the turn went with its placement,
     and the fin starts from where it stands then. Only the shift goes: the
     count of fins it was made for stays, as it does in put_back_turns()."""
-    if round_shift(obj) and on_round_side(obj):
-        _set_mm(obj, SHIFTS[MAIN], 1, None)
+    if round_shift(obj):
+        note_turn(obj, 0.0)
 
 
 def set_round_shift(obj, mm):
     """Turn the part so its main fin stands `mm` round its round side from
-    where it was stood, and keep that as the shift of the fin. Turned by the
-    shift as it is kept (kept_shift()), so the part stands where the shift
+    where it was stood, and note that (round_shift()). Turned by the shift as
+    it is kept (kept_shift()), so the part stands where the note
     says, also after many small turns and a turn back; a change smaller than
     the tolerance neither turns nor is kept, so none adds up unturned."""
     kept, current = kept_shift(mm), round_shift(obj)
     if abs(kept - current) < d.TOLERANCE:
         return
     turn_part(obj, kept - current)
-    set_fin_shift(obj, MAIN, 1, kept)
+    note_turn(obj, kept)
 
 
 def reset_fins(obj, which=None):
@@ -1618,7 +1632,8 @@ def reset_fins(obj, which=None):
 def changed_by_hand(obj):
     """Whether a fin of `obj` was removed, moved or given a height of its own,
     the part turned about its round side, or a counter fin added."""
-    return bool(obj.CounterFace) or any(any(edits(obj, which)) for which in (MAIN, COUNTER))
+    return (bool(obj.CounterFace) or bool(round_shift(obj))
+            or any(any(edits(obj, which)) for which in (MAIN, COUNTER)))
 
 
 # What remove_fins() did: left fins out, made the counter fin the main fin as

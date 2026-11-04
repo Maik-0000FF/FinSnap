@@ -725,6 +725,7 @@ class QuickStands:
         plan, face = self.plans[index].plan, self.plans[index].face
         feature.remove_counter(fins)
         feature.reset_fins(fins)
+        feature.forget_turn(fins)
         orient.put_back(self.owner, self.before)
         _stand(self.obj, plan.change)
         _keep_checked(self.obj, self.plans[index])

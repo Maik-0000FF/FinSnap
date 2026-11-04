@@ -63,6 +63,8 @@ ARROW_FIELD_GAP = 4
 # Pause after the last repeat of an arrow key held before the fin is built
 # for all of them at once: repeats come faster than the fins are built.
 KEY_REPEAT_PAUSE_MS = 150
+# The row of the fields of the handled fin that holds the angle on the part.
+TURN_FIELD_ROW = 7
 # Keys that move the fin with the arrows while the 3D view has the focus: left
 # and right along the face as it runs on the screen, by one step of its field;
 # with Shift, up and down to the next tine that finds the face.
@@ -670,7 +672,7 @@ def _widget(prop, value):
             box.setDecimals(LENGTH_DECIMALS)
             box.setSuffix(LENGTH_SUFFIX)
         else:
-            box.setRange(0, MAX_RATIO if prop.most is None else prop.most)
+            box.setRange(prop.least or 0, MAX_RATIO if prop.most is None else prop.most)
             box.setDecimals(RATIO_DECIMALS)
         if prop.step not in (None, feature.STEP_LAYER):
             box.setSingleStep(prop.step)
@@ -683,7 +685,8 @@ def _field_tip(prop, notes=()):
     where it has a limit of its own, and `notes` on why it is unused."""
     paragraphs = [translate("App::Property", prop.tip)]
     if prop.most is not None:
-        paragraphs.append(translate("FinSnap", FIELD_RANGE) % (_shown(prop, 0.0), _shown(prop, prop.most)))
+        lowest = prop.least or 0.0
+        paragraphs.append(translate("FinSnap", FIELD_RANGE) % (_shown(prop, lowest), _shown(prop, prop.most)))
     if notes:
         paragraphs.append(" ".join(translate("FinSnap", note) for note in notes))
     return _wrapped(*paragraphs)
@@ -940,6 +943,26 @@ class FinSnapTaskPanel:
             self.set_field(kind, FIN_FIELD_PLACE if kind == handles.ALONG else FIN_FIELD_HEIGHT)
         # Whether the field along the face takes the angle on a round side.
         self.angle_field = False
+        # Whether a drag of a side fin moves both side fins.
+        self.drag_together = False
+        # The angle on the part, while a fin beside the lowest line has the
+        # arrows, which moves itself: a part with two fins has no other way.
+        self.turn_label = QtWidgets.QLabel(translate("FinSnap", FIN_FIELD_ANGLE[0]))
+        self.turn_field = QtWidgets.QDoubleSpinBox()
+        *_, suffix, decimals, lowest, highest, wraps, step = FIN_FIELD_ANGLE
+        self.turn_field.setSuffix(suffix)
+        self.turn_field.setDecimals(decimals)
+        self.turn_field.setRange(lowest, highest)
+        self.turn_field.setWrapping(wraps)
+        self.turn_field.setSingleStep(step)
+        self.turn_field.setToolTip(_wrapped(translate("FinSnap", FIN_FIELD_ANGLE[1])))
+        self.turn_label.setToolTip(self.turn_field.toolTip())
+        self.turn_field.editingFinished.connect(self.turn_entered)
+        self.turn_field.installEventFilter(EnterTakes(self.turn_entered, self.turn_field))
+        edit_layout.addWidget(self.turn_label, TURN_FIELD_ROW, 0)
+        edit_layout.addWidget(self.turn_field, TURN_FIELD_ROW, 1)
+        self.turn_label.hide()
+        self.turn_field.hide()
 
         standard_buttons = QtWidgets.QHBoxLayout()
         save = QtWidgets.QPushButton(translate("FinSnap", "Save as standard"))
@@ -1434,7 +1457,7 @@ class FinSnapTaskPanel:
         result = self.handled_result()[0]
         number = self.handled[1]
         # The angle rounded as the field shows it: just below 360 is 0.
-        along = (face_frame.round_angle(face_frame.side_angle(feature.round_side(self.obj)), ANGLE_TOLERANCE)
+        along = (self.part_angle()
                  if self.turns_part()
                  else result.starts[number] + result.thickness / 2 - result.face_start)
         return {handles.ALONG: along, handles.UP: result.heights[number]}
@@ -1447,7 +1470,48 @@ class FinSnapTaskPanel:
         surface = face.Surface
         return App.Vector(surface.Center), App.Vector(surface.Axis).normalize(), face_frame.turn_mm(face, 1.0)
 
+    def show_turn_field(self):
+        """Show the angle on the part while a fin beside the lowest line has
+        the arrows; under the lowest line the field along the face takes it."""
+        shown = (self.handled is not None and self.handled[0] == feature.MAIN
+                 and feature.is_side_fin(self.obj, self.handled[1]))
+        self.turn_label.setVisible(shown)
+        self.turn_field.setVisible(shown)
+        if shown:
+            self.turn_field.blockSignals(True)
+            self.turn_field.setValue(self.part_angle())
+            self.turn_field.blockSignals(False)
+
+    def part_angle(self):
+        """The angle of the lowest line on the part, rounded as the field shows it."""
+        return face_frame.round_angle(face_frame.side_angle(feature.round_side(self.obj)), ANGLE_TOLERANCE)
+
+    def turn_entered(self):
+        """The part turned to the angle taken from the field, the shorter way;
+        where the fins cannot be built so it stays, and the reason is shown.
+
+        INPUTS this has to withstand:
+          the angle as shown, untouched         ->  nothing
+          an angle the fins stand at            ->  turned, built
+          a build that fails                    ->  turned back, the reason shown
+        """
+        if self.turn_field.isHidden():
+            return
+        turn = math.remainder(self.part_angle() - self.turn_field.value(), face_frame.FULL_CIRCLE)
+        if abs(turn) < ANGLE_TOLERANCE:
+            return
+        before = feature.round_shift(self.obj)
+        feature.set_round_shift(self.obj, before + face_frame.turn_mm(feature.round_side(self.obj), turn))
+        try:
+            self.apply()
+        except ValueError as error:
+            feature.set_round_shift(self.obj, before)
+            self.preview()
+            self.refuse(error)
+        self.place_handles()
+
     def place_handles(self):
+        self.show_turn_field()
         if self.handled_result() is None:
             self.handled = self.choose_fin()
         found = self.handled_result()
@@ -1495,13 +1559,30 @@ class FinSnapTaskPanel:
         lowest line, and the part turns about its axis. Asked of the face, not
         of the last build, which a failed build leaves empty: a turn that fails
         is still turned back."""
-        return self.handled is not None and self.handled[0] == feature.MAIN and feature.on_round_side(self.obj)
+        return (self.handled is not None and self.handled[0] == feature.MAIN and feature.on_round_side(self.obj)
+                and not feature.is_side_fin(self.obj, self.handled[1]))
 
     def own_value(self, kind):
         """What the handled fin has by hand now: its shift along the face
         (ALONG) or its own height (UP), in mm, or None."""
         which, number = self.handled
+        if kind == handles.ALONG and self.turns_part():
+            return feature.round_shift(self.obj) or None
         return feature.edits(self.obj, which)[1 if kind == handles.ALONG else 2].get(number)
+
+    def other_side_fin(self, value):
+        """While a side fin is dragged with Shift held, both move, mirrored: the
+        number of the other one and its shift for the handled one at `value`;
+        None otherwise, as with the other one removed."""
+        if not self.drag_together:
+            return None
+        which, number = self.handled
+        numbers = geometry.side_numbers(self.obj.RoundFins)
+        left, shifts, _ = feature.edits(self.obj, which)
+        other = next((n for n in numbers if n != number and n not in left), None)
+        if other is None or number not in numbers:
+            return None
+        return other, shifts.get(other, 0.0) - ((value or 0.0) - shifts.get(number, 0.0))
 
     def write_fin(self, kind, value):
         """Store `value` as the shift (ALONG) or the own height (UP) of the
@@ -1511,6 +1592,9 @@ class FinSnapTaskPanel:
             if self.turns_part():
                 feature.set_round_shift(self.obj, value or 0.0)
                 return
+            other = self.other_side_fin(value)
+            if other is not None:
+                feature.set_fin_shift(self.obj, which, *other)
             feature.set_fin_shift(self.obj, which, number, value or 0.0)
         else:
             feature.set_fin_height(self.obj, which, number, value)
@@ -1682,6 +1766,9 @@ class FinSnapTaskPanel:
         if kind == handles.ALONG:
             if abs(value) < d.TOLERANCE:
                 del tried[number]
+            other = self.other_side_fin(value)
+            if other is not None:
+                tried[other[0]] = feature.stored_mm(other[1])
             shifts = tried
         else:
             heights = tried
@@ -1776,6 +1863,7 @@ class FinSnapTaskPanel:
         # Nothing of an earlier drag carries over; without a fin the drag is passed over.
         self.drag_base, self.drag_own, self.drag_values = {}, {}, {}
         self.drag_mm_per_degree = None
+        self.drag_together = bool(QtWidgets.QApplication.keyboardModifiers() & QtCore.Qt.ShiftModifier)
         if self.handled_result() is None:
             return
         which, number = self.handled
@@ -1937,6 +2025,7 @@ class FinSnapTaskPanel:
             # and nothing failing was built into the object, so the colours of
             # the drag go.
             self.obj.Proxy.reuse = None
+            self.drag_together = False
             self.handles.tint(True)
             self.handles.clear_preview()
             self.handles.hide_value()
@@ -2230,6 +2319,7 @@ class FinSnapTaskPanel:
         try:
             if feature.on_round_side(self.obj):
                 feature.turn_part(self.obj, self.original_turn - turned)
+                feature.note_turn(self.obj, self.original_turn)
         finally:
             self.obj.recompute()
         return True

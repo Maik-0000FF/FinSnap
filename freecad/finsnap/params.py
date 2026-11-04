@@ -29,8 +29,8 @@ INPUTS this has to withstand (validate()):
   brim_width < 0                        ->  ParamError; 0 means no brim
   contour_bridge < 0                    ->  ParamError; 0 follows every recess
   round_fins unknown                    ->  ParamError listing the choices
-  round_fin_angle <= 0 or above
-    ROUND_FIN_ANGLE_MAX                 ->  ParamError naming the range
+  round_fin_angle below ROUND_FIN_ANGLE_MIN
+    or above ROUND_FIN_ANGLE_MAX        ->  ParamError naming the range
   fin_count < 1 with "distributed"      ->  ParamError
   unknown connection / placement / foot ->  ParamError listing the choices
   tine wider than a manual fin_thickness ->  ParamError: tine would stick out
@@ -122,9 +122,9 @@ class FinParams:
             raise ParamError(translate("FinSnap", "brim_width must be 0 (no brim) or greater"))
         if self.contour_bridge < 0:
             raise ParamError(translate("FinSnap", "contour_bridge must be 0 (follow every recess) or greater"))
-        if not 0 < self.round_fin_angle <= d.ROUND_FIN_ANGLE_MAX:
-            raise ParamError(translate("FinSnap", "round_fin_angle must be greater than 0 and at most %.0f degrees")
-                             % d.ROUND_FIN_ANGLE_MAX)
+        if not d.ROUND_FIN_ANGLE_MIN <= self.round_fin_angle <= d.ROUND_FIN_ANGLE_MAX:
+            raise ParamError(translate("FinSnap", "round_fin_angle must be from %.0f up to %.0f degrees")
+                             % (d.ROUND_FIN_ANGLE_MIN, d.ROUND_FIN_ANGLE_MAX))
         if self.bead_width < self.nozzle_diameter / 2:
             raise ParamError(translate("FinSnap", "bead_width is less than half the nozzle diameter"))
         if self.layer_height > self.nozzle_diameter:

@@ -345,32 +345,31 @@ def tine_end(p, frame, z):
 
 
 def tine_end_edges(p, frame, z):
-    """How far out the end of the tine at height z lies at its left and at its
-    right edge, each as (s at its bottom, s at its top); beside the lowest line
-    of a round side the end slants across the tine, as the side falls away.
+    """How far out the end of the tine at height z lies, at places evenly across
+    it from left to right, each as (s at its bottom, s at its top); beside the
+    lowest line of a round side the end follows the side as it falls away.
 
     INPUTS this has to withstand:
       under a face, or the lowest line      ->  the same at both edges, tine_end()
-      beside the lowest line                ->  each from the contour at that edge
+      beside the lowest line                ->  each from the contour at that place
     """
     if frame.tine_edges is None:
         ends = tine_end(p, frame, z)[2:]
         return ends, ends
-    left, right = frame.tine_edges
-    return left.tine_ends(z, z + p.tine_height), right.tine_ends(z, z + p.tine_height)
+    return tuple(line.tine_ends(z, z + p.tine_height) for line in frame.tine_edges)
 
 
 def tine_end_points(p, frame, t0, thickness, z):
     """The corners and the middle of the end of the tine of the fin starting
     at t0 at height z over the bed, see tine_end()."""
     bottom, top = frame.bed_z + z, frame.bed_z + z + p.tine_height
-    left, right = tine_end_edges(p, frame, z)
+    across = tine_end_edges(p, frame, z)
     t_tine = tine_start(p, t0, thickness)
     corners = [frame.point(t, s, height)
-               for t, ends in ((t_tine, left), (t_tine + p.tine_width, right))
+               for t, ends in ((t_tine, across[0]), (t_tine + p.tine_width, across[-1]))
                for s, height in zip(ends, (bottom, top))]
-    # The end runs straight between its corners: its middle lies halfway.
-    middle = frame.point(t_tine + p.tine_width / 2, (sum(left) + sum(right)) / 4, (bottom + top) / 2)
+    # From bottom to top the end runs straight: its middle lies halfway.
+    middle = frame.point(t_tine + p.tine_width / 2, sum(across[len(across) // 2]) / 2, (bottom + top) / 2)
     return corners + [middle]
 
 

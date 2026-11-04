@@ -111,6 +111,11 @@ FRUSTUM_HEIGHT = 15.0  # sides at 56 degrees against the base
 ROD_RADIUS = 10.0      # a cylinder standing on its rim
 ROD_HEIGHT = 40.0
 THIN_ROD_RADIUS = 2.0  # too thin for side fins to stand clear of the middle one
+PLANE_INSIDE = 0.01    # how far inside the outer edge of a fin it is cut through
+BIG = 500.0            # far past any test part
+GAP_ACROSS_FIN = 0.01  # how far the gap may differ across the thickness of a fin
+SIDE_FIN_MOVE = 0.5    # how far a side fin is moved by hand
+THIN_STEP_RADIUS = 3.0 # a step thinner than the side fins stand from the lowest line
 DISC_HEIGHT = 4.0      # a disc: its flat face is larger than its side, the side takes the fins all the same
 BORE_RADIUS = 6.0      # the hole that makes it a tube
 ROUND_TURN = 5.0       # how far the fin under a round side is moved by hand, in mm round it
@@ -1666,9 +1671,9 @@ def check_round_side():
     expect(went < -ROUND_TURN / 2 and len(shifted.tines) == len(whole.tines),
            "the part turns under the fin moved %.0f mm, the hole goes %.1f mm the other way" % (ROUND_TURN, went))
     shown = shifted.starts[1] + shifted.thickness / 2 - shifted.face_start
-    expect(abs(shown - ROUND_TURN) < d.TOLERANCE and abs(shifted.radius - ROD_RADIUS) < d.TOLERANCE
+    expect(abs(shown) < d.TOLERANCE and abs(shifted.radius - ROD_RADIUS) < d.TOLERANCE
            and shifted.fins.BoundBox.isInside(whole.fins.BoundBox.Center),
-           "the fin stays under the lowest line, its place on the face shows the turn")
+           "the fin stays under the lowest line, whatever it is asked to move by: the part turns instead")
 
 
 def stood_on_free_rim(shape):
@@ -1687,7 +1692,7 @@ def check_three_round_fins():
     three = FinParams(placement=d.PLACEMENT_CENTER, round_fins=d.ROUND_FINS_THREE)
     expect(FinParams().round_fins == d.ROUND_FINS_ONE and FinParams().round_fin_angle == d.ROUND_FIN_ANGLE,
            "new fins stand under a round side alone, the side fins 30 degrees round if asked for")
-    for wrong in (0.0, -1.0, d.ROUND_FIN_ANGLE_MAX + 1):
+    for wrong in (0.0, -1.0, d.ROUND_FIN_ANGLE_MIN / 2, d.ROUND_FIN_ANGLE_MAX + 1):
         try:
             FinParams(round_fin_angle=wrong).validate()
             expect(False, "a side fin angle of %g is refused" % wrong)
@@ -1715,7 +1720,14 @@ def check_three_round_fins():
         expect(off < d.TINE_END_TOLERANCE, "%s: every tine ends the clearance off the part, off by %.4f" % (name, off))
         expect(result.fins.common(stood).Volume < d.TOLERANCE, "%s: no fin reaches into the part" % name)
         nearest = min(body.distToShape(stood)[0] for body in result.bodies)
-        expect(nearest > three.gap - d.TOLERANCE - 0.3 * three.gap,
+        # Near the outer edge of a side fin the gap is as near the inner one.
+        outer = result.positions[2] + result.thickness - PLANE_INSIDE
+        ring = [result.frame.point(outer, s, z) for s, z in ((-BIG, -BIG), (BIG, -BIG), (BIG, BIG), (-BIG, BIG))]
+        plane = Part.Face(Part.makePolygon(ring + ring[:1]))
+        at_outer = result.bodies[2].common(plane).distToShape(stood)[0]
+        expect(abs(at_outer - three.gap) < GAP_ACROSS_FIN,
+               "%s: the side fin keeps the gap across its thickness too: %.3f at its outer edge" % (name, at_outer))
+        expect(nearest > three.gap - d.CONTOUR_TOLERANCE - GAP_ACROSS_FIN,
                "%s: the side fins keep the gap from the side: %.3f" % (name, nearest))
         lowest = min(result.touching_z[1])
         expect(lowest > min(result.touching_z[2]) and result.touching_z[1] == result.touching_z[3],
@@ -1726,9 +1738,20 @@ def check_three_round_fins():
             fewer = geometry.build(stood, stood.Faces[side], three, left_out=[number])
             expect(fewer.numbers == kept and fewer.planned == 3,
                    "%s: fin %d removed, the others stay in their places" % (name, number))
-        turned = geometry.build(stood, stood.Faces[side], three, shifts={1: ROD_RADIUS})
-        expect(turned.numbers == [1, 2, 3] and abs(turned.positions[0] - result.positions[0]) < d.TOLERANCE,
-               "%s: a turn by hand leaves the fins in their places" % name)
+        moved_fin = geometry.build(stood, stood.Faces[side], three, shifts={1: SIDE_FIN_MOVE, 2: SIDE_FIN_MOVE})
+        expect(abs(moved_fin.positions[0] - result.positions[0] - SIDE_FIN_MOVE) < d.TOLERANCE
+               and abs(moved_fin.positions[1] - result.positions[1]) < d.TOLERANCE
+               and moved_fin.positions[2] == result.positions[2],
+               "%s: a side fin moved by hand stands there, the one under the lowest line stays" % name)
+        off = max(abs(tine.distToShape(stood)[0] - three.clearance) for tine in moved_fin.tines)
+        expect(off < d.TINE_END_TOLERANCE and moved_fin.fins.common(stood).Volume < d.TOLERANCE,
+               "%s: moved, its tines end the clearance off the part, off by %.4f" % (name, off))
+        too_far = face_frame.beside_lowest(ROD_RADIUS, d.ROUND_FIN_ANGLE_MAX) - pitch + SIDE_FIN_MOVE
+        try:
+            geometry.build(stood, stood.Faces[side], three, shifts={3: too_far})
+            expect(False, "%s: a side fin moved past the furthest angle is refused" % name)
+        except face_frame.HandEditError:
+            expect(True, "%s: a side fin moved past the furthest angle is refused" % name)
 
     two = FinParams(placement=d.PLACEMENT_CENTER, round_fins=d.ROUND_FINS_TWO)
     for name, shape in (("cylinder", rod), ("tube", tube), ("shaft with a step", step)):
@@ -1745,8 +1768,23 @@ def check_three_round_fins():
                "%s: two fins, every tine ends the clearance off the part, off by %.4f" % (name, off))
         expect(min(result.touching_z[1]) > min(alone.touching_z[1]),
                "%s: two fins start to hold higher up than the one under the lowest line" % name)
-        turned = geometry.build(stood, stood.Faces[side], two, shifts={1: ROD_RADIUS})
-        expect(turned.numbers == [1, 2], "%s: two fins, a turn by hand leaves them in their places" % name)
+        over = geometry.build(stood, stood.Faces[side], two, shifts={1: pitch})
+        expect(over.numbers == [1, 2] and abs(over.positions[0] - alone.positions[0]) < d.TOLERANCE
+               and over.fins.common(stood).Volume < d.TOLERANCE,
+               "%s: of two fins one moved under the lowest line stands there, clear of the part" % name)
+    # A shaft whose thin step ends the side fins lower than the fin between them.
+    thin_step = rod.fuse(Part.makeCylinder(THIN_STEP_RADIUS, ROD_HEIGHT, V(0, 0, ROD_HEIGHT))).removeSplitter()
+    stood, side = stood_on_free_rim(thin_step)
+    free = geometry.build(stood, stood.Faces[side], three)
+    side_top = free.frames[1].face_top_z - free.frames[1].bed_z - d.FACE_TOP_MARGIN
+    middle_top = free.frame.face_top_z - free.frame.bed_z - d.FACE_TOP_MARGIN
+    expect(side_top < middle_top, "the side fins end lower on a thin step than the fin between them")
+    high = (side_top + middle_top) / 2
+    capped = geometry.build(stood, stood.Faces[side], FinParams(placement=d.PLACEMENT_CENTER, fin_height=high,
+                                                                round_fins=d.ROUND_FINS_THREE))
+    expect(abs(capped.heights[2] - high) < d.TOLERANCE and capped.heights[1] <= side_top + d.TOLERANCE
+           and capped.heights[3] <= side_top + d.TOLERANCE,
+           "a fin height above the side fins: they end at their contour, the middle one keeps it")
 
     stood, side = stood_on_free_rim(rod)
     rectangle = geometry.build(stood, stood.Faces[side],

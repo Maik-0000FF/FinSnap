@@ -213,6 +213,7 @@ ROUND_FINS = ROUND_FINS_ONE
 # they stand a radius apart from each other. Further round the side falls away
 # steeply across a tine and they start to hold the part only higher up.
 ROUND_FIN_ANGLE = 30.0
+ROUND_FIN_ANGLE_MIN = 1.0
 ROUND_FIN_ANGLE_MAX = 45.0
 # Recesses in the contour lower than this (mm), small chamfers, fillets, holes
 # and grooves, the fin bridges straight; its tines there are left out.

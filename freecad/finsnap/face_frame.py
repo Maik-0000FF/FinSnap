@@ -112,10 +112,12 @@ class Frame:
     # (contour.Contour), None where it stands under the side alone.
     contour: object = None
     # Only for a fin beside the lowest line of a whole side, where the side
-    # falls away across a tine: the contours at the left and the right edge of
-    # its tines, which end on each (contour.across()), and how far out its foot
-    # starts at least, to clear the side nearer the lowest line.
+    # falls away across the fin: the contours across its tines, left to right,
+    # which end on each (contour.across()); the contour at a place along the
+    # face, for its flank to follow the side across its thickness; and how far
+    # out its foot starts at least, to clear the side nearer the lowest line.
     tine_edges: tuple = None
+    flank_line: object = None
     foot_from: float = None
 
     @property
@@ -153,22 +155,6 @@ def beside_lowest(radius, degrees):
     """How far along the face of a round side of `radius` a line of it lies
     that is `degrees` round from the lowest line (mm)."""
     return radius * math.sin(math.radians(degrees))
-
-
-def across_side(radius, away):
-    """What a distance along the normal of a round side of `radius` is, at a
-    line `away` mm along the face from its lowest line, as measured in the
-    upright plane through that line, along the plane of the frame: the side
-    falls away there, and a distance so measured comes out longer. Past the
-    side, as for a smaller step of it, the share at its edge is no use: 1.
-
-    INPUTS this has to withstand:
-      on the lowest line                    ->  1
-      30 degrees round                      ->  1 / cos 30
-      at or past the radius                 ->  1
-    """
-    share = away / radius
-    return 1.0 if abs(share) >= 1 else 1.0 / math.sqrt(1 - share * share)
 
 
 def span_along(shape, direction):
