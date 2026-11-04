@@ -670,7 +670,7 @@ def _widget(prop, value):
             box.setDecimals(LENGTH_DECIMALS)
             box.setSuffix(LENGTH_SUFFIX)
         else:
-            box.setRange(0, MAX_RATIO)
+            box.setRange(0, MAX_RATIO if prop.most is None else prop.most)
             box.setDecimals(RATIO_DECIMALS)
         if prop.step not in (None, feature.STEP_LAYER):
             box.setSingleStep(prop.step)

@@ -204,6 +204,24 @@ def _spread(p, bands, limit, count):
     return zs
 
 
+def _resting_bands(frame):
+    """The stretches of height a tine rests on along the contour of `frame`:
+    beside the lowest line of a round side, those the contours at both its
+    edges rest on too, so its grid starts where the first tine can rest whole,
+    not a spacing further up.
+
+    INPUTS this has to withstand:
+      no contours at the edges of the tine  ->  the bands of the contour
+      bands starting at different heights   ->  from the highest of those starts
+      bands that do not overlap             ->  none from those
+    """
+    bands = frame.contour.bands()
+    for line in frame.tine_edges or ():
+        bands = [(max(low, other_low), min(high, other_high)) for low, high in bands
+                 for other_low, other_high in line.bands() if max(low, other_low) < min(high, other_high)]
+    return bands
+
+
 def face_tines(p, frame, tine_count, restart):
     """Bottoms of the tines for the face as a whole (mm, from the bed) and the
     fin height: the one grid from the bed (tine_heights()). With `restart`, a
@@ -232,7 +250,7 @@ def face_tines(p, frame, tine_count, restart):
         # `restart` is off for every round side, whose one grid is kept; along
         # a contour the tine restart of the parameters starts it anew on each
         # stretch the tines rest on.
-        zs = _spread(p, frame.contour.bands(), limit, tine_count) if p.tine_restart and limit <= room else []
+        zs = _spread(p, _resting_bands(frame), limit, tine_count) if p.tine_restart and limit <= room else []
     else:
         floor = frame.face_bottom_z - frame.bed_z
         if not restart or floor <= d.TOLERANCE:
@@ -282,9 +300,12 @@ def restarted_tines(p, frame, face, t0, thickness, limit, count):
 def touching_at(frame, face, p, tine_z, t0, thickness):
     """The heights in `tine_z` at which the tine of the fin starting at t0
     lies on `face`, as contact_share() finds it; along a contour, where the
-    flank keeps its distance from the part (contour.Contour.rests())."""
+    flank keeps its distance from the part (contour.Contour.rests()), beside
+    the lowest line of a round side also at both edges of the tine, so a hole
+    under it leaves it out."""
     if frame.contour is not None:
-        return {z for z in tine_z if frame.contour.rests(z, z + p.tine_height)}
+        contours = (frame.contour, *(frame.tine_edges or ()))
+        return {z for z in tine_z if all(line.rests(z, z + p.tine_height) for line in contours)}
     start = tine_start(p, t0, thickness)
     return {z for z in tine_z if contact_share(frame, face, start, p, z) >= d.TINE_MIN_CONTACT - d.TOLERANCE}
 
@@ -323,15 +344,33 @@ def tine_end(p, frame, z):
     return bottom, top, frame.s_flank(bottom, p.clearance), frame.s_flank(top, p.clearance)
 
 
+def tine_end_edges(p, frame, z):
+    """How far out the end of the tine at height z lies at its left and at its
+    right edge, each as (s at its bottom, s at its top); beside the lowest line
+    of a round side the end slants across the tine, as the side falls away.
+
+    INPUTS this has to withstand:
+      under a face, or the lowest line      ->  the same at both edges, tine_end()
+      beside the lowest line                ->  each from the contour at that edge
+    """
+    if frame.tine_edges is None:
+        ends = tine_end(p, frame, z)[2:]
+        return ends, ends
+    left, right = frame.tine_edges
+    return left.tine_ends(z, z + p.tine_height), right.tine_ends(z, z + p.tine_height)
+
+
 def tine_end_points(p, frame, t0, thickness, z):
     """The corners and the middle of the end of the tine of the fin starting
     at t0 at height z over the bed, see tine_end()."""
-    bottom, top, s_bottom, s_top = tine_end(p, frame, z)
+    bottom, top = frame.bed_z + z, frame.bed_z + z + p.tine_height
+    left, right = tine_end_edges(p, frame, z)
     t_tine = tine_start(p, t0, thickness)
     corners = [frame.point(t, s, height)
-               for t in (t_tine, t_tine + p.tine_width) for s, height in ((s_bottom, bottom), (s_top, top))]
-    # The end runs straight from bottom to top: its middle lies halfway.
-    middle = frame.point(t_tine + p.tine_width / 2, (s_bottom + s_top) / 2, (bottom + top) / 2)
+               for t, ends in ((t_tine, left), (t_tine + p.tine_width, right))
+               for s, height in zip(ends, (bottom, top))]
+    # The end runs straight between its corners: its middle lies halfway.
+    middle = frame.point(t_tine + p.tine_width / 2, (sum(left) + sum(right)) / 4, (bottom + top) / 2)
     return corners + [middle]
 
 

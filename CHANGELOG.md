@@ -11,6 +11,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Three fins under the whole round side of a part standing on its rim (**Fins under a round side**, one by default): one under the lowest line, one parallel to it on each side, **Angle of the side fins** round from it (30 degrees, at most 45), for a wider footprint against tipping sideways. The side fins need **Follow the contour**, their tines end at a slant along the side, and each fin holds the part from its own lowest tine in **Check stability**. Feet that overlap are joined on export, so a STEP file split to objects does not print the overlap twice (#43)
+
 ## [0.14.0] - 2026-11-03
 
 ### Added

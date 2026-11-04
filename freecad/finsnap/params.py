@@ -28,6 +28,9 @@ INPUTS this has to withstand (validate()):
   foot_overhang < 0                     ->  ParamError; 0 ends the foot at the fin
   brim_width < 0                        ->  ParamError; 0 means no brim
   contour_bridge < 0                    ->  ParamError; 0 follows every recess
+  round_fins unknown                    ->  ParamError listing the choices
+  round_fin_angle <= 0 or above
+    ROUND_FIN_ANGLE_MAX                 ->  ParamError naming the range
   fin_count < 1 with "distributed"      ->  ParamError
   unknown connection / placement / foot ->  ParamError listing the choices
   tine wider than a manual fin_thickness ->  ParamError: tine would stick out
@@ -71,6 +74,8 @@ class FinParams:
     follow_contour: bool = d.FOLLOW_CONTOUR
     contour_bridge: float = d.CONTOUR_BRIDGE
     contour_gap: float = d.CONTOUR_GAP
+    round_fins: str = d.ROUND_FINS
+    round_fin_angle: float = d.ROUND_FIN_ANGLE
     # Placement
     placement: str = d.PLACEMENT
     fin_count: int = d.FIN_COUNT
@@ -117,6 +122,9 @@ class FinParams:
             raise ParamError(translate("FinSnap", "brim_width must be 0 (no brim) or greater"))
         if self.contour_bridge < 0:
             raise ParamError(translate("FinSnap", "contour_bridge must be 0 (follow every recess) or greater"))
+        if not 0 < self.round_fin_angle <= d.ROUND_FIN_ANGLE_MAX:
+            raise ParamError(translate("FinSnap", "round_fin_angle must be greater than 0 and at most %.0f degrees")
+                             % d.ROUND_FIN_ANGLE_MAX)
         if self.bead_width < self.nozzle_diameter / 2:
             raise ParamError(translate("FinSnap", "bead_width is less than half the nozzle diameter"))
         if self.layer_height > self.nozzle_diameter:
@@ -130,7 +138,7 @@ class FinParams:
                                        "it needs at least %.2f mm") % (self.tine_spacing, self.least_tine_spacing))
 
         choices = (("connection", d.CONNECTIONS), ("placement", d.PLACEMENTS),
-                   ("foot_shape", d.FOOT_SHAPES))
+                   ("foot_shape", d.FOOT_SHAPES), ("round_fins", d.ROUND_FINS_CHOICES))
         for name, allowed in choices:
             if getattr(self, name) not in allowed:
                 raise ParamError(translate("FinSnap", "%s must be one of %s") % (name, ", ".join(allowed)))

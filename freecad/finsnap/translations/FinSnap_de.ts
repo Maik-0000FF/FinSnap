@@ -49,177 +49,187 @@
         <translation>Ergebnis</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="229"/>
+        <location filename="../feature.py" line="231"/>
         <source>Nozzle diameter of the print profile</source>
         <translation>Düsendurchmesser im Druckprofil</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="237"/>
+        <location filename="../feature.py" line="239"/>
         <source>Layer height of the print profile</source>
         <translation>Schichthöhe im Druckprofil</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="241"/>
+        <location filename="../feature.py" line="243"/>
         <source>Height of the first layer</source>
         <translation>Höhe der ersten Schicht</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="250"/>
+        <location filename="../feature.py" line="252"/>
         <source>separate: fins are their own object and only touch the part; merged: fins and part become one body</source>
         <translation>getrennt: die Finnen sind ein eigenes Objekt und berühren das Teil nur; verbunden: Finnen und Teil werden ein Körper</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="261"/>
+        <location filename="../feature.py" line="263"/>
         <source>Distance between the end of a tine and the face, along the face normal, smaller than the gap; the tines are as much shorter, the fin stays where it is. 0 = the tine touches the face. More leaves fainter marks and separate beads in the slicer, too much and the tine does not hold: find the value by a test print.</source>
         <translation>Abstand zwischen dem Ende einer Zinke und der Fläche, senkrecht zur Fläche gemessen, kleiner als der Spalt; die Zinken sind um so viel kürzer, die Finne bleibt, wo sie ist. 0 = die Zinke berührt die Fläche. Mehr hinterlässt schwächere Spuren und getrennte Raupen im Slicer, zu viel und die Zinke hält nicht: den Wert mit einem Testdruck finden.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="269"/>
+        <location filename="../feature.py" line="271"/>
         <source>Vertical distance between tines, at least the tine height plus one layer</source>
         <translation>Senkrechter Abstand der Zinken, mindestens die Zinkenhöhe plus eine Schicht</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="233"/>
+        <location filename="../feature.py" line="235"/>
         <source>Bead width, the extrusion width of the outer perimeter</source>
         <translation>Raupenbreite, die Extrusionsbreite der Außenwand</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="245"/>
+        <location filename="../feature.py" line="247"/>
         <source>Width of the brim the slicer prints round the part and the fins on the bed, 0 without. Check stability counts it as part of the footprint.</source>
         <translation>Breite des Brims, den der Slicer um Teil und Finnen auf dem Bett druckt, 0 ohne. Standfestigkeit prüfen zählt ihn zur Standfläche.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="256"/>
+        <location filename="../feature.py" line="258"/>
         <source>Gap between fin and face that the tines reach across, along the face normal; a tine clearance makes the tines as much shorter</source>
         <translation>Spalt zwischen Finne und Fläche, über den die Zinken reichen, senkrecht zur Fläche gemessen; ein Abstand Zinke zum Teil macht die Zinken um so viel kürzer</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="274"/>
+        <location filename="../feature.py" line="276"/>
         <source>Start the tine grid anew at the lower edge of the face under each fin and above every interruption it reaches over, so a short face or one above a hole still gets tines; off, one grid counts from the bed for every fin</source>
         <translation>Zinkenraster an der Unterkante der Fläche unter jeder Finne und über jeder Unterbrechung, über die sie hinwegreicht, neu beginnen, damit auch eine kurze Fläche oder eine über einem Loch Zinken bekommt; aus: ein Raster vom Bett aus für alle Finnen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="281"/>
+        <location filename="../feature.py" line="283"/>
         <source>Height of the lowest tine above the bed, 0 = on the top of the foot</source>
         <translation>Höhe der untersten Zinke über dem Bett, 0 = auf der Oberkante des Fußes</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="285"/>
+        <location filename="../feature.py" line="287"/>
         <source>Tine height in layers</source>
         <translation>Höhe einer Zinke in Schichten</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="289"/>
+        <location filename="../feature.py" line="291"/>
         <source>Tine width in beads</source>
         <translation>Breite einer Zinke in Raupen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="293"/>
+        <location filename="../feature.py" line="295"/>
         <source>Number of tines per fin, 0 = as many as fit</source>
         <translation>Zinken je Finne, 0 = so viele wie passen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="297"/>
+        <location filename="../feature.py" line="299"/>
         <source>Wall thickness of a fin, 0 = from its height</source>
         <translation>Wandstärke einer Finne, 0 = aus ihrer Höhe</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="301"/>
+        <location filename="../feature.py" line="303"/>
         <source>Height of the fins, 0 = top of the highest tine. A lower value leaves out the tines above it; the fins reach at most to just below the top of the face.</source>
         <translation>Höhe der Finnen, 0 = Oberkante der höchsten Zinke. Ein kleinerer Wert lässt die Zinken darüber weg; die Finnen reichen höchstens bis knapp unter die Oberkante der Fläche.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="307"/>
+        <location filename="../feature.py" line="309"/>
         <source>Under the round side of a part standing on its rim: the fin follows the contour of the part up to its top, over steps, cones, fillets and curves, keeping the gap; off, it stands under the round side alone</source>
         <translation>Unter der runden Seite eines Teils, das auf seinem Rand steht: die Finne folgt der Kontur des Teils bis nach oben, über Stufen, Kegel, Rundungen und Kurven, und hält dabei den Spalt; aus: sie steht nur unter der runden Seite</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="314"/>
+        <location filename="../feature.py" line="316"/>
         <source>When the fin follows the contour: recesses in it lower than this, such as small chamfers, fillets, holes and grooves, the fin spans straight instead of following them, and leaves out its tines there; a pocket in one face that no tine rests in, whatever its size, as well. 0 = follow every recess.</source>
         <translation>Wenn die Finne der Kontur folgt: Einbuchtungen, die niedriger sind als dieser Wert, etwa kleine Fasen, Rundungen, Löcher und Nuten, überspannt die Finne gerade, statt ihnen zu folgen, und lässt dort ihre Zinken weg; ebenso eine Tasche in einer Fläche, in der keine Zinke anliegt, gleich wie groß. 0 = jeder Einbuchtung folgen.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="322"/>
+        <location filename="../feature.py" line="324"/>
         <source>When the fin follows the contour: the distance it keeps from the part over faces looking up, where no tine rests, so it cannot stick to the part there; never less than the gap, a smaller value keeps the gap</source>
         <translation>Wenn die Finne der Kontur folgt: der Abstand, den sie zum Teil über nach oben zeigenden Flächen hält, an denen keine Zinke anliegt, damit sie dort nicht am Teil festklebt; nie weniger als der Spalt, ein kleinerer Wert behält den Spalt</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="329"/>
+        <location filename="../feature.py" line="331"/>
+        <source>Under the whole round side of a part standing on its rim: one fin under its lowest line, or one more parallel to it on each side, which widen the footprint against tipping sideways; these need Follow the contour. Their feet may overlap and are joined on export.</source>
+        <translation>Unter der ganzen runden Seite eines Teils, das auf seinem Rand steht: eine Finne unter der untersten Linie oder dazu je eine parallele zu jeder Seite, die die Standfläche gegen seitliches Kippen vergrößern; diese brauchen Kontur folgen. Ihre Füße dürfen sich überlappen und werden beim Export verbunden.</translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="339"/>
+        <source>With three fins under a round side: how far round the side from the lowest line the two side fins stand, in degrees. Further round they stand further apart, but hold the part only from higher up.</source>
+        <translation>Bei drei Finnen unter einer runden Seite: wie weit die beiden Seitenfinnen von der untersten Linie aus um die Seite herum stehen, in Grad. Weiter herum stehen sie weiter auseinander, halten das Teil aber erst weiter oben.</translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="346"/>
         <source>Width of the flat top of a fin</source>
         <translation>Breite der flachen Oberseite einer Finne</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="333"/>
+        <location filename="../feature.py" line="350"/>
         <source>auto: by face length; center: one fin; ends: two fins; corners: two fins on the face ends, each tine whole on the face and flush with its end, so the tine marks merge with the edges; the fin reaches a little past the end; left corner, right corner: one such fin on that end, left and right as seen from outside, looking at the face; distributed: FinCount fins</source>
         <translation>automatisch: nach Flächenlänge; mittig: eine Finne; Enden: zwei Finnen; Ecken: zwei Finnen an den Flächenenden, jede Zinke liegt ganz auf der Fläche und schließt bündig mit ihrem Ende ab, so verschwinden die Spuren der Zinken in den Kanten; die Finne ragt etwas über das Ende hinaus; linke Ecke, rechte Ecke: eine solche Finne an diesem Ende, links und rechts von außen auf die Fläche gesehen; verteilt: Anzahl Finnen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="343"/>
+        <location filename="../feature.py" line="360"/>
         <source>Number of fins for distributed placement</source>
         <translation>Anzahl der Finnen bei verteilter Lage</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="347"/>
+        <location filename="../feature.py" line="364"/>
         <source>Distance of the outer fins from the face ends</source>
         <translation>Abstand der äußeren Finnen von den Enden der Fläche</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="351"/>
+        <location filename="../feature.py" line="368"/>
         <source>Automatic placement: one fin per this much face length</source>
         <translation>Automatische Lage: eine Finne je so viel Flächenlänge</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="355"/>
+        <location filename="../feature.py" line="372"/>
         <source>Shape of the foot on the bed</source>
         <translation>Form des Fußes auf dem Bett</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="359"/>
+        <location filename="../feature.py" line="376"/>
         <source>Height of the foot, rounded to whole layers</source>
         <translation>Höhe des Fußes, auf ganze Schichten gerundet</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="363"/>
+        <location filename="../feature.py" line="380"/>
         <source>How far the foot reaches past the outer end of the fin</source>
         <translation>Wie weit der Fuß über das äußere Ende der Finne hinausreicht</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="367"/>
+        <location filename="../feature.py" line="384"/>
         <source>Foot width as a share of its length</source>
         <translation>Breite des Fußes als Anteil seiner Länge</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="371"/>
+        <location filename="../feature.py" line="388"/>
         <source>Half width of the foot, 0 = from FootWidthRatio</source>
         <translation>Halbe Breite des Fußes, 0 = aus dem Breitenanteil</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="375"/>
+        <location filename="../feature.py" line="392"/>
         <source>Tines of the counter fin, 0 = as many as the main fin. The counter fin only has to stop the part from tipping over, so it may be smaller.</source>
         <translation>Zinken der Gegenfinne, 0 = so viele wie die Hauptfinne. Die Gegenfinne muss nur das Umkippen des Teils verhindern und darf deshalb kleiner sein.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="428"/>
+        <location filename="../feature.py" line="445"/>
         <source>Part and the face the fins support</source>
         <translation>Teil und die Fläche, die die Finnen stützen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="430"/>
+        <location filename="../feature.py" line="447"/>
         <source>Outermost container of the part, so moving it rebuilds the fins</source>
         <translation>Äußerster Container des Teils, damit ein Verschieben die Finnen neu berechnet</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="435"/>
+        <location filename="../feature.py" line="452"/>
         <source>Optional face on the opposite side for a small counter fin</source>
         <translation>Optionale Fläche auf der Gegenseite für eine kleine Gegenfinne</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="450"/>
+        <location filename="../feature.py" line="467"/>
         <source>Faces of the part that overhang too flatly and carry no fins</source>
         <translation>Flächen des Teils, die zu flach überhängen und keine Finnen tragen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="456"/>
+        <location filename="../feature.py" line="473"/>
         <source>Where the part would start printing in the air</source>
         <translation>Wo das Teil in der Luft zu drucken beginnen würde</translation>
     </message>
@@ -328,12 +338,12 @@
         <translation>Wähle eine Kante oder eine Fläche eines Teils.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="954"/>
+        <location filename="../commands.py" line="955"/>
         <source>nothing to export: the parts of %s lie flat; stand them on their edge again</source>
         <translation>nichts zu exportieren: die Teile von %s liegen flach; stelle sie wieder auf die Kante</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1069"/>
+        <location filename="../commands.py" line="1070"/>
         <source>Left out, as their part lies flat: %s. Stand it on its edge again to export these fins.</source>
         <translation>Ausgelassen, weil ihr Teil flach liegt: %s. Stelle es wieder auf die Kante, um diese Finnen zu exportieren.</translation>
     </message>
@@ -389,32 +399,32 @@
         <translation>Keine Gegenfinne auf dieser Fläche: %s</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="963"/>
+        <location filename="../commands.py" line="964"/>
         <source>Mesh fineness</source>
         <translation>Netzfeinheit</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="971"/>
+        <location filename="../commands.py" line="972"/>
         <source>Surface deviation</source>
         <translation>Oberflächenabweichung</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="978"/>
+        <location filename="../commands.py" line="979"/>
         <source>Angular deviation</source>
         <translation>Winkelabweichung</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="980"/>
+        <location filename="../commands.py" line="981"/>
         <source>Planar faces are exported exactly; these values only affect curved surfaces.</source>
         <translation>Ebene Flächen werden exakt exportiert; diese Werte wirken nur auf gekrümmte Flächen.</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1015"/>
+        <location filename="../commands.py" line="1016"/>
         <source>Export 3MF</source>
         <translation>3MF exportieren</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1038"/>
+        <location filename="../commands.py" line="1039"/>
         <source>Export STEP</source>
         <translation>STEP exportieren</translation>
     </message>
@@ -579,197 +589,217 @@
         <translation>keiner</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="228"/>
+        <location filename="../feature.py" line="223"/>
+        <source>one, under its lowest line</source>
+        <translation>eine, unter der untersten Linie</translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="224"/>
+        <source>three, one more on each side</source>
+        <translation>drei, dazu je eine zu jeder Seite</translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="230"/>
         <source>Nozzle diameter</source>
         <translation>Düsendurchmesser</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="232"/>
+        <location filename="../feature.py" line="234"/>
         <source>Bead width</source>
         <translation>Raupenbreite</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="236"/>
+        <location filename="../feature.py" line="238"/>
         <source>Layer height</source>
         <translation>Schichthöhe</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="240"/>
+        <location filename="../feature.py" line="242"/>
         <source>First layer height</source>
         <translation>Höhe der ersten Schicht</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="244"/>
+        <location filename="../feature.py" line="246"/>
         <source>Brim width</source>
         <translation>Brim-Breite</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="249"/>
+        <location filename="../feature.py" line="251"/>
         <source>Connection</source>
         <translation>Verbindung</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="255"/>
+        <location filename="../feature.py" line="257"/>
         <source>Gap</source>
         <translation>Spalt</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="260"/>
+        <location filename="../feature.py" line="262"/>
         <source>Tine clearance</source>
         <translation>Abstand Zinke zum Teil</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="268"/>
+        <location filename="../feature.py" line="270"/>
         <source>Tine spacing</source>
         <translation>Zinkenabstand</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="273"/>
+        <location filename="../feature.py" line="275"/>
         <source>Restart tines after an interruption</source>
         <translation>Zinken nach Unterbrechung neu beginnen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="306"/>
+        <location filename="../feature.py" line="308"/>
         <source>Follow the contour</source>
         <translation>Kontur folgen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="313"/>
+        <location filename="../feature.py" line="315"/>
         <source>Bridge recesses up to</source>
         <translation>Einbuchtungen überbrücken bis</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="321"/>
+        <location filename="../feature.py" line="323"/>
         <source>Gap without tines</source>
         <translation>Spalt ohne Zinken</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="358"/>
+        <location filename="../feature.py" line="330"/>
+        <source>Fins under a round side</source>
+        <translation>Finnen unter einer runden Seite</translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="338"/>
+        <source>Angle of the side fins</source>
+        <translation>Winkel der Seitenfinnen</translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="375"/>
         <source>Foot height</source>
         <translation>Fußhöhe</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="362"/>
+        <location filename="../feature.py" line="379"/>
         <source>Foot reach</source>
         <translation>Fußüberstand</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="1593"/>
+        <location filename="../feature.py" line="1628"/>
         <source>The main fins are removed; the counter fin is the main fin now, with its changes by hand.</source>
         <translation>Die Hauptfinnen sind entfernt; die Gegenfinne ist jetzt die Hauptfinne, mit ihren Änderungen von Hand.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="280"/>
+        <location filename="../feature.py" line="282"/>
         <source>Tine first</source>
         <translation>Erste Zinke</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="284"/>
+        <location filename="../feature.py" line="286"/>
         <source>Tine layers</source>
         <translation>Zinkenhöhe in Schichten</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="288"/>
+        <location filename="../feature.py" line="290"/>
         <source>Tine width beads</source>
         <translation>Zinkenbreite in Raupen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="292"/>
+        <location filename="../feature.py" line="294"/>
         <source>Tine count</source>
         <translation>Zinkenanzahl</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="296"/>
+        <location filename="../feature.py" line="298"/>
         <source>Fin thickness</source>
         <translation>Finnendicke</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="300"/>
+        <location filename="../feature.py" line="302"/>
         <source>Fin height</source>
         <translation>Finnenhöhe</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="328"/>
+        <location filename="../feature.py" line="345"/>
         <source>Top width</source>
         <translation>Breite der Oberseite</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="332"/>
+        <location filename="../feature.py" line="349"/>
         <source>Fin placement</source>
         <translation>Lage der Finnen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="342"/>
+        <location filename="../feature.py" line="359"/>
         <source>Fin count</source>
         <translation>Anzahl Finnen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="346"/>
+        <location filename="../feature.py" line="363"/>
         <source>End inset</source>
         <translation>Randabstand</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="350"/>
+        <location filename="../feature.py" line="367"/>
         <source>Face length per fin</source>
         <translation>Flächenlänge je Finne</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="354"/>
+        <location filename="../feature.py" line="371"/>
         <source>Foot shape</source>
         <translation>Fußform</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="366"/>
+        <location filename="../feature.py" line="383"/>
         <source>Foot width ratio</source>
         <translation>Breitenanteil des Fußes</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="370"/>
+        <location filename="../feature.py" line="387"/>
         <source>Foot half width</source>
         <translation>Halbe Fußbreite</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="374"/>
+        <location filename="../feature.py" line="391"/>
         <source>Counter tine count</source>
         <translation>Zinken der Gegenfinne</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="386"/>
+        <location filename="../feature.py" line="403"/>
         <source>Not used without a foot.</source>
         <translation>Ohne Fuß nicht verwendet.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="389"/>
+        <location filename="../feature.py" line="406"/>
         <source>Only used with distributed placement.</source>
         <translation>Nur bei verteilter Lage verwendet.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="391"/>
+        <location filename="../feature.py" line="408"/>
         <source>Only used with automatic placement.</source>
         <translation>Nur bei automatischer Lage verwendet.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="393"/>
+        <location filename="../feature.py" line="410"/>
         <source>Not used with one fin in the centre or fins on the corners.</source>
         <translation>Nicht verwendet bei einer Finne in der Mitte oder Finnen auf den Ecken.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="399"/>
+        <location filename="../feature.py" line="416"/>
         <source>Only used while Foot half width is 0.</source>
         <translation>Nur verwendet, solange Halbe Fußbreite 0 ist.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="401"/>
+        <location filename="../feature.py" line="418"/>
         <source>Only used with a counter fin.</source>
         <translation>Nur mit Gegenfinne verwendet.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="403"/>
+        <location filename="../feature.py" line="420"/>
         <source>Not used with fins merged into the part: they need their tines on the face, or they would be loose bodies.</source>
         <translation>Nicht verwendet bei Finnen, die mit dem Teil verbunden werden: Ihre Zinken müssen auf der Fläche sitzen, sonst wären sie lose Körper.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="483"/>
+        <location filename="../feature.py" line="500"/>
         <source>no face selected on %s</source>
         <translation>keine Fläche an %s gewählt</translation>
     </message>
@@ -829,13 +859,13 @@
         <translation>Farben nach Höhe: grün steht sicher, gelb ist kippgefährdet (Kippwinkel unter %.0f Grad), rot kippt ab dort.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="916"/>
+        <location filename="../feature.py" line="940"/>
         <source>Main fin: %s</source>
         <translation>Hauptfinne: %s</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="875"/>
-        <location filename="../feature.py" line="920"/>
+        <location filename="../feature.py" line="899"/>
+        <location filename="../feature.py" line="944"/>
         <source>Counter fin: %s</source>
         <translation>Gegenfinne: %s</translation>
     </message>
@@ -1185,12 +1215,12 @@
         <translation>%s hat keinen Volumenkörper zum Exportieren</translation>
     </message>
     <message>
-        <location filename="../face_frame.py" line="301"/>
+        <location filename="../face_frame.py" line="329"/>
         <source>the selected face is not planar</source>
         <translation>die gewählte Fläche ist nicht eben</translation>
     </message>
     <message>
-        <location filename="../face_frame.py" line="224"/>
+        <location filename="../face_frame.py" line="252"/>
         <source>the selected face curves inward; fins go under the outside of a cylinder or tube</source>
         <translation>die gewählte Fläche wölbt sich nach innen; Finnen kommen unter die Außenseite eines Zylinders oder Rohrs</translation>
     </message>
@@ -1205,7 +1235,7 @@
         <translation>die gewählte gewölbte Fläche reicht nicht bis zu ihrer untersten Linie, unter der ihre Finne stünde</translation>
     </message>
     <message>
-        <location filename="../face_frame.py" line="230"/>
+        <location filename="../face_frame.py" line="258"/>
         <source>the lowest line of the selected face is cut away</source>
         <translation>die unterste Linie der gewählten Fläche ist weggeschnitten</translation>
     </message>
@@ -1230,83 +1260,89 @@
         <translation>die Fläche ist an jeder Zinke schmaler als die %.2f mm, die eine Finne braucht</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="103"/>
+        <location filename="../geometry.py" line="118"/>
         <source>tines at %s mm above the bed miss the face of the part by more than %.2f mm</source>
         <translation>Zinken bei %s mm über dem Bett verfehlen die Fläche des Teils um mehr als %.2f mm</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="105"/>
+        <location filename="../geometry.py" line="120"/>
         <source>tines at %s mm above the bed reach more than %.2f mm into the part</source>
         <translation>Zinken bei %s mm über dem Bett ragen mehr als %.2f mm in das Teil hinein</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="107"/>
+        <location filename="../geometry.py" line="122"/>
         <source>tines are %.2f mm long, shorter than %.2f bead widths; the slicer may not print them to the face. A gap of %.2f mm makes them long enough</source>
         <translation>die Zinken sind %.2f mm lang, kürzer als %.2f Raupenbreiten; der Slicer druckt sie womöglich nicht bis an die Fläche. Ein Spalt von %.2f mm macht sie lang genug</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="110"/>
+        <location filename="../geometry.py" line="125"/>
         <source>tines are %.2f mm long, shorter than %.2f bead widths; the slicer may not print them to the face. No gap up to %.1f mm makes them long enough: set a narrower bead</source>
         <translation>die Zinken sind %.2f mm lang, kürzer als %.2f Raupenbreiten; der Slicer druckt sie womöglich nicht bis an die Fläche. Kein Spalt bis %.1f mm macht sie lang genug: eine schmalere Raupe einstellen</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="113"/>
+        <location filename="../geometry.py" line="128"/>
         <source>tines at %s mm above the bed left out: the contour falls back further than the fin can follow without overhanging itself</source>
         <translation>Zinken bei %s mm über dem Bett weggelassen: die Kontur weicht weiter zurück, als die Finne folgen kann, ohne selbst überzuhängen</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="207"/>
+        <location filename="../geometry.py" line="232"/>
         <source>the face is too short for a fin on each corner</source>
         <translation>die Fläche ist zu kurz für eine Finne auf jeder Ecke</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="213"/>
+        <location filename="../geometry.py" line="238"/>
         <source>the face is too short for a fin of %.2f mm</source>
         <translation>die Fläche ist zu kurz für eine Finne von %.2f mm</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="231"/>
+        <location filename="../geometry.py" line="219"/>
+        <location filename="../geometry.py" line="256"/>
         <source>%d fins do not fit side by side on this face</source>
         <translation>%d Finnen passen nicht nebeneinander unter diese Fläche</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="392"/>
+        <location filename="../geometry.py" line="116"/>
+        <source>three fins under a round side stand on its contour: turn on Follow the contour</source>
+        <translation>drei Finnen unter einer runden Seite stehen auf ihrer Kontur: Kontur folgen einschalten</translation>
+    </message>
+    <message>
+        <location filename="../geometry.py" line="428"/>
         <source>the fins overlap the part by %.4f mm³</source>
         <translation>die Finnen überschneiden das Teil um %.4f mm³</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="427"/>
+        <location filename="../geometry.py" line="463"/>
         <source>fins under the selected face alone, not reaching over the groove: %s</source>
         <translation>Finnen nur unter der gewählten Fläche, nicht über die Rille hinweg: %s</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="451"/>
-        <location filename="../params.py" line="141"/>
+        <location filename="../geometry.py" line="523"/>
+        <location filename="../params.py" line="149"/>
         <source>tines (%.2f mm) are wider than the fin (%.2f mm)</source>
         <translation>die Zinken (%.2f mm) sind breiter als die Finne (%.2f mm)</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="493"/>
+        <location filename="../geometry.py" line="568"/>
         <source>fin %d would pass fin %d; a fin stays between its neighbours</source>
         <translation>die Finne %d käme an der Finne %d vorbei; eine Finne bleibt zwischen ihren Nachbarinnen</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="496"/>
+        <location filename="../geometry.py" line="571"/>
         <source>fins %d and %d stand %.2f mm apart, closer than %.2f mm</source>
         <translation>die Finnen %d und %d stehen %.2f mm auseinander, näher als %.2f mm</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="557"/>
+        <location filename="../geometry.py" line="640"/>
         <source>fin %d is %.2f mm high, above the face (%.2f mm)</source>
         <translation>die Finne %d ist %.2f mm hoch, höher als die Fläche (%.2f mm)</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="561"/>
+        <location filename="../geometry.py" line="644"/>
         <source>fin %d is lower than its first tine</source>
         <translation>die Finne %d ist niedriger als ihre erste Zinke</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="499"/>
+        <location filename="../geometry.py" line="574"/>
         <source>every fin is removed; delete the fins instead, or bring them back</source>
         <translation>alle Finnen sind entfernt; lösche stattdessen die Finnen oder hole sie zurück</translation>
     </message>
@@ -1321,27 +1357,27 @@
         <translation>die gewählte Fläche liegt waagerecht; sie liegt auf dem Bett oder braucht normale Stützen</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="697"/>
+        <location filename="../geometry.py" line="796"/>
         <source>fins moved along the face to where their tines rest, beside a hole or recess under their planned place: %s</source>
         <translation>Finnen entlang der Fläche dorthin gerückt, wo ihre Zinken aufliegen, neben ein Loch oder eine Vertiefung unter ihrem geplanten Platz: %s</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="699"/>
+        <location filename="../geometry.py" line="798"/>
         <source>fin %d by %.2f mm</source>
         <translation>Finne %d um %.2f mm</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="706"/>
+        <location filename="../geometry.py" line="805"/>
         <source>tines at %s mm above the bed left out: the face is narrower there than the fin</source>
         <translation>Zinken bei %s mm über dem Bett weggelassen: die Fläche ist dort schmaler als die Finne</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="711"/>
+        <location filename="../geometry.py" line="810"/>
         <source>the face is inclined %.0f degrees to the bed, outside %.0f to %.0f</source>
         <translation>die Fläche ist %.0f Grad zur Bettebene geneigt, außerhalb von %.0f bis %.0f</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="728"/>
+        <location filename="../geometry.py" line="827"/>
         <source>the part stands on one point of its rim: a chamfer on the rim and a brim in the slicer give it more hold on the bed</source>
         <translation>das Teil steht auf einem Punkt seines Rands: eine Fase am Rand und ein Brim im Slicer geben ihm mehr Halt auf dem Bett</translation>
     </message>
@@ -1366,22 +1402,22 @@
         <translation>die Finnen passen in dieser Lage nicht unter die gewählte Fläche: %s</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="596"/>
+        <location filename="../geometry.py" line="679"/>
         <source>no tine finds the face; it has a recess or hole at every tine</source>
         <translation>keine Zinke trifft die Fläche; sie hat an jeder Zinke eine Aussparung oder ein Loch</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="397"/>
+        <location filename="../geometry.py" line="433"/>
         <source>a fin comes within %.3f mm of the part, closer than the %.3f mm it keeps from the face</source>
         <translation>eine Finne kommt dem Teil bis auf %.3f mm nahe, näher als die %.3f mm, die sie von der Fläche hält</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="684"/>
+        <location filename="../geometry.py" line="783"/>
         <source>tines at %s mm above the bed left out: a recess or hole in the face lies under them</source>
         <translation>Zinken bei %s mm über dem Bett weggelassen: unter ihnen liegt eine Aussparung oder ein Loch in der Fläche</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="702"/>
+        <location filename="../geometry.py" line="801"/>
         <source>fins at %s mm from the end of the face left out: none of their tines lies wholly on the face</source>
         <translation>Finnen bei %s mm vom Ende der Fläche weggelassen: keine ihrer Zinken liegt ganz auf der Fläche</translation>
     </message>
@@ -1449,7 +1485,7 @@
     </message>
     <message>
         <location filename="../limits.py" line="110"/>
-        <location filename="../params.py" line="92"/>
+        <location filename="../params.py" line="97"/>
         <source>%s is not a finite number</source>
         <translation>%s ist keine endliche Zahl</translation>
     </message>
@@ -1474,77 +1510,82 @@
         <translation>„Nicht druckbar über“ darf bei Brücken nicht kürzer sein als „Kritisch über“</translation>
     </message>
     <message>
-        <location filename="../params.py" line="99"/>
+        <location filename="../params.py" line="104"/>
         <source>%s must be greater than 0</source>
         <translation>%s muss größer als 0 sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="105"/>
+        <location filename="../params.py" line="110"/>
         <source>%s must be 0 (automatic) or greater</source>
         <translation>%s muss 0 (automatisch) oder größer sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="108"/>
+        <location filename="../params.py" line="113"/>
         <source>tine_clearance must be 0 (touching) or greater</source>
         <translation>der Abstand Zinke zum Teil muss 0 (berührend) oder größer sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="110"/>
+        <location filename="../params.py" line="115"/>
         <source>gap must be at most %.1f mm, longer tines do not print straight</source>
         <translation>der Spalt darf höchstens %.1f mm sein, längere Zinken lassen sich nicht gerade drucken</translation>
     </message>
     <message>
-        <location filename="../params.py" line="113"/>
+        <location filename="../params.py" line="118"/>
         <source>tine_clearance must be smaller than the gap</source>
         <translation>der Abstand Zinke zum Teil muss kleiner sein als der Spalt</translation>
     </message>
     <message>
-        <location filename="../params.py" line="115"/>
+        <location filename="../params.py" line="120"/>
         <source>foot_overhang must be 0 or greater</source>
         <translation>Fußüberstand muss 0 oder größer sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="117"/>
+        <location filename="../params.py" line="122"/>
         <source>brim_width must be 0 (no brim) or greater</source>
         <translation>die Brim-Breite muss 0 (kein Brim) oder größer sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="119"/>
+        <location filename="../params.py" line="124"/>
         <source>contour_bridge must be 0 (follow every recess) or greater</source>
         <translation>die Überbrückung muss 0 (jeder Einbuchtung folgen) oder größer sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="121"/>
+        <location filename="../params.py" line="126"/>
+        <source>round_fin_angle must be greater than 0 and at most %.0f degrees</source>
+        <translation>round_fin_angle muss größer als 0 und höchstens %.0f Grad sein</translation>
+    </message>
+    <message>
+        <location filename="../params.py" line="129"/>
         <source>bead_width is less than half the nozzle diameter</source>
         <translation>die Raupenbreite ist kleiner als der halbe Düsendurchmesser</translation>
     </message>
     <message>
-        <location filename="../params.py" line="123"/>
+        <location filename="../params.py" line="131"/>
         <source>layer_height is greater than the nozzle diameter</source>
         <translation>die Schichthöhe ist größer als der Düsendurchmesser</translation>
     </message>
     <message>
-        <location filename="../params.py" line="125"/>
+        <location filename="../params.py" line="133"/>
         <source>tine_layers must be at least 1</source>
         <translation>die Zinkenhöhe in Schichten muss mindestens 1 sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="127"/>
+        <location filename="../params.py" line="135"/>
         <source>tine_width_beads must be at least 1</source>
         <translation>Zinkenbreite in Raupen muss mindestens 1 sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="129"/>
+        <location filename="../params.py" line="137"/>
         <source>tine_spacing %.2f mm leaves no free layer between the tines; it needs at least %.2f mm</source>
         <translation>Zinkenabstand %.2f mm lässt keine freie Schicht zwischen den Zinken; nötig sind mindestens %.2f mm</translation>
     </message>
     <message>
-        <location filename="../params.py" line="136"/>
+        <location filename="../params.py" line="144"/>
         <source>%s must be one of %s</source>
         <translation>%s muss eines von %s sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="139"/>
+        <location filename="../params.py" line="147"/>
         <source>fin_count must be at least 1</source>
         <translation>Anzahl Finnen muss mindestens 1 sein</translation>
     </message>
@@ -1686,7 +1727,7 @@
         <translation>die Ebene der Finne schneidet das Teil nicht</translation>
     </message>
     <message>
-        <location filename="../contour.py" line="553"/>
+        <location filename="../contour.py" line="556"/>
         <source>the part does not reach the bed in the plane of the fin</source>
         <translation>das Teil reicht in der Ebene der Finne nicht bis zum Bett</translation>
     </message>
@@ -1720,12 +1761,12 @@
 <context>
     <name>FinSnap_CheckBridges</name>
     <message>
-        <location filename="../commands.py" line="1141"/>
+        <location filename="../commands.py" line="1142"/>
         <source>Check bridges</source>
         <translation>Brücken prüfen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1142"/>
+        <location filename="../commands.py" line="1143"/>
         <source>Checks the selected part, as it stands, for bridges: faces that span a gap between supports on the layer below, at two or more sides, which the slicer prints as straight lines across. Says how far each spans, rated by the check limits, and keeps it as a bridge check in the tree, which shows where they span too far on the underside of the part. Once the part, its place or its fins change, the check is marked out of date; double-click it to check again.</source>
         <translation>Prüft das ausgewählte Teil, so wie es steht, auf Brücken: Flächen, die eine Lücke zwischen Auflagen auf der Schicht darunter überspannen, an zwei oder mehr Seiten, die der Slicer als gerade Linien quer hinüber druckt. Sagt, wie weit jede spannt, bewertet nach den Prüfgrenzen, und legt es als Brückenprüfung im Baum ab, die an der Unterseite des Teils zeigt, wo sie zu weit spannen. Ändern sich das Teil, seine Lage oder seine Finnen, wird die Prüfung als veraltet markiert; zum erneuten Prüfen doppelklicken.</translation>
     </message>
@@ -1733,12 +1774,12 @@
 <context>
     <name>FinSnap_CheckLimits</name>
     <message>
-        <location filename="../commands.py" line="1241"/>
+        <location filename="../commands.py" line="1242"/>
         <source>Check limits...</source>
         <translation>Prüfgrenzen...</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1242"/>
+        <location filename="../commands.py" line="1243"/>
         <source>Opens the limits the checks rate by, in Edit &gt; Preferences: the strictness, strict or normal, or limits of your own for overhangs, bridges and the tipping margin.</source>
         <translation>Öffnet die Grenzen, nach denen die Prüfungen bewerten, unter Bearbeiten &gt; Einstellungen: die Strenge, streng oder normal, oder eigene Grenzen für Überhänge, Brücken und den Kippabstand.</translation>
     </message>
@@ -1746,12 +1787,12 @@
 <context>
     <name>FinSnap_CheckPart</name>
     <message>
-        <location filename="../commands.py" line="1165"/>
+        <location filename="../commands.py" line="1166"/>
         <source>Check part</source>
         <translation>Teil prüfen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1166"/>
+        <location filename="../commands.py" line="1167"/>
         <source>Checks the selected part, with or without fins, as it stands, for everything that keeps it from printing, all at once: faces overhanging without fins, bridges spanning too far, islands, where it would start printing in the air, and whether it stays standing while it is printed. Says what it found and keeps it as a part check in the tree, which shows it all: the eye shows or hides it, deleting the check removes it. Once the part, its place or its fins change, the check is marked out of date; double-click it to check again.</source>
         <translation>Prüft das ausgewählte Teil, mit oder ohne Finnen, so wie es steht, auf einmal auf alles, was den Druck verhindert: Flächen, die ohne Finnen überhängen, zu weit gespannte Brücken, Inseln, wo es in der Luft zu drucken beginnen würde, und ob es während des Drucks stehen bleibt. Sagt, was gefunden wurde, und legt es als Prüfung im Baum ab, die alles anzeigt: das Auge blendet es ein und aus, Löschen der Prüfung entfernt es. Ändern sich das Teil, seine Lage oder seine Finnen, wird die Prüfung als veraltet markiert; zum erneuten Prüfen doppelklicken.</translation>
     </message>
@@ -1759,12 +1800,12 @@
 <context>
     <name>FinSnap_CheckStability</name>
     <message>
-        <location filename="../commands.py" line="1088"/>
+        <location filename="../commands.py" line="1089"/>
         <source>Check stability</source>
         <translation>Standfestigkeit prüfen</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1089"/>
+        <location filename="../commands.py" line="1090"/>
         <source>Checks whether the selected part stays standing while it is printed, layer by layer, as it grows and its centre of mass moves: first on its own, then, where it would tip over, held by its fins, which hold it only from their lowest tine up. Says at which layer it would tip and which way. Keeps it as a stability check in the tree, which shows the part coloured by height, the layer it tips at and the plumb line from its centre of mass to the bed: the eye shows or hides them, deleting the check removes them. Once the part, its place or its fins change, the check is marked out of date; double-click it to check again.</source>
         <translation>Prüft Schicht für Schicht, ob das ausgewählte Teil während des Drucks stehen bleibt, während es wächst und sein Schwerpunkt wandert: zuerst allein, dann, wo es umkippen würde, von seinen Finnen gehalten, die es erst ab ihrer untersten Zinke halten. Sagt, bei welcher Schicht es kippen würde und wohin. Legt es als Standfestigkeitsprüfung im Baum ab, die das Teil nach Höhe eingefärbt, die Schicht, an der es kippt, und das Lot von seinem Schwerpunkt zum Bett zeigt: das Auge blendet sie ein und aus, Löschen der Prüfung entfernt sie. Ändern sich das Teil, seine Lage oder seine Finnen, wird die Prüfung als veraltet markiert; zum erneuten Prüfen doppelklicken.</translation>
     </message>
@@ -1772,12 +1813,12 @@
 <context>
     <name>FinSnap_Export3MF</name>
     <message>
-        <location filename="../commands.py" line="999"/>
+        <location filename="../commands.py" line="1000"/>
         <source>Export 3MF</source>
         <translation>3MF exportieren</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1000"/>
+        <location filename="../commands.py" line="1001"/>
         <source>Export the selection to 3MF, every body as its own object for the slicer. With nothing selected, all fins of the document are exported together with their parts.</source>
         <translation>Die Auswahl als 3MF exportieren, jeden Körper als eigenes Objekt für den Slicer. Ist nichts ausgewählt, werden alle Finnen des Dokuments mit ihren Teilen exportiert.</translation>
     </message>
@@ -1785,12 +1826,12 @@
 <context>
     <name>FinSnap_ExportSTEP</name>
     <message>
-        <location filename="../commands.py" line="1023"/>
+        <location filename="../commands.py" line="1024"/>
         <source>Export STEP</source>
         <translation>STEP exportieren</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1024"/>
+        <location filename="../commands.py" line="1025"/>
         <source>Export the selection to STEP, with exact surfaces instead of a mesh. The slicer loads it as one object with a part per body: split it into objects there, so part and fins are printed separately. With nothing selected, all fins of the document are exported together with their parts.</source>
         <translation>Die Auswahl als STEP exportieren, mit exakten Flächen statt eines Netzes. Der Slicer lädt sie als ein Objekt mit einem Teil je Körper: dort in Objekte trennen, damit Bauteil und Finnen getrennt gedruckt werden. Ist nichts ausgewählt, werden alle Finnen des Dokuments mit ihren Bauteilen exportiert.</translation>
     </message>
@@ -1798,12 +1839,12 @@
 <context>
     <name>FinSnap_IslandsWhileEditing</name>
     <message>
-        <location filename="../commands.py" line="1191"/>
+        <location filename="../commands.py" line="1192"/>
         <source>Islands and bridges while editing</source>
         <translation>Inseln und Brücken beim Bearbeiten</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1192"/>
+        <location filename="../commands.py" line="1193"/>
         <source>While on, fins check their part for islands and bridges as they are made and edited, and Quick fins rates the ways to stand it by them. Off, they are not checked then, which keeps a large part quick on a slow computer: bridge faces count as overhangs meanwhile, and Check part checks them at the end.</source>
         <translation>Eingeschaltet prüfen Finnen ihr Teil beim Erzeugen und Bearbeiten auf Inseln und Brücken, und Schnelle Finnen bewertet danach die Möglichkeiten, es aufzustellen. Ausgeschaltet wird dabei nicht geprüft, das hält ein großes Teil auf einem langsamen Rechner schnell: Brückenflächen zählen solange als Überhänge, und die Teilprüfung prüft sie am Ende.</translation>
     </message>

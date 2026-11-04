@@ -220,6 +220,8 @@ CHOICE_LABELS = {
     d.FOOT_ELLIPSE: QT_TRANSLATE_NOOP("FinSnap", "oval"),
     d.FOOT_RECTANGLE: QT_TRANSLATE_NOOP("FinSnap", "rectangle"),
     d.FOOT_NONE: QT_TRANSLATE_NOOP("FinSnap", "none"),
+    d.ROUND_FINS_ONE: QT_TRANSLATE_NOOP("FinSnap", "one, under its lowest line"),
+    d.ROUND_FINS_THREE: QT_TRANSLATE_NOOP("FinSnap", "three, one more on each side"),
 }
 
 # choices: allowed values of an enumeration, None for plain values.
@@ -324,6 +326,21 @@ PROPERTIES = (
                            "looking up, where no tine rests, so it cannot stick to the part there; never less "
                            "than the gap, a smaller value keeps the gap"),
          "contour_gap", None, STEP_PROFILE),
+    Prop("RoundFins", CHOICE, GROUP_FIN,
+         QT_TRANSLATE_NOOP("FinSnap", "Fins under a round side"),
+         QT_TRANSLATE_NOOP("App::Property",
+                           "Under the whole round side of a part standing on its rim: one fin under its lowest "
+                           "line, or one more parallel to it on each side, which widen the footprint against "
+                           "tipping sideways; these need Follow the contour. Their feet may overlap and are "
+                           "joined on export."),
+         "round_fins", d.ROUND_FINS_CHOICES),
+    Prop("RoundFinAngle", FLOAT, GROUP_FIN,
+         QT_TRANSLATE_NOOP("FinSnap", "Angle of the side fins"),
+         QT_TRANSLATE_NOOP("App::Property",
+                           "With three fins under a round side: how far round the side from the lowest line the "
+                           "two side fins stand, in degrees. Further round they stand further apart, but hold "
+                           "the part only from higher up."),
+         "round_fin_angle", None, None, d.ROUND_FIN_ANGLE_MAX),
     Prop("FinPlateau", LENGTH, GROUP_FIN,
          QT_TRANSLATE_NOOP("FinSnap", "Top width"),
          QT_TRANSLATE_NOOP("App::Property", "Width of the flat top of a fin"),
@@ -790,8 +807,15 @@ def supports_of(part_obj, document):
                 continue
             if not result.tine_z:
                 continue
-            # The tines are measured from the bed, the bottom of the part.
-            supports.append((result.fins, bounds(part).ZMin + min(result.tine_z)))
+            # The tines are measured from the bed, the bottom of the part. Fins
+            # beside the lowest line of a round side start to hold higher up
+            # than the one under it: each from its own lowest tine.
+            bed = bounds(part).ZMin
+            if result.frames:
+                supports += [(solid, bed + min(result.touching_z[number]))
+                             for solid, number in zip(result.fins.Solids, result.numbers)]
+            else:
+                supports.append((result.fins, bed + min(result.tine_z)))
             out = face_frame.frame_of(part, _face(side_link(fins, which), plane_kept(fins, which))[1]).out
             sides.append(App.Vector(out.x, out.y, 0))
     return supports, sides
@@ -1330,6 +1354,11 @@ def build_keeping_edits(obj, which, build_fn, notes):
       changes made, count changed           ->  built as planned, changes dropped, note
       every fin removed, same count         ->  FinError: every fin is removed
       every fin removed, count changed      ->  built as planned, changes dropped, note
+      part turned about its round side only,
+        count changed                       ->  built with the turn, no note: fins moved
+                                                by none
+      part turned and fins changed, count
+        changed                             ->  built as planned, the turn kept, note
       changes made, count they were made
         for unknown                         ->  built with them; a FinError passed on
       FinError for any other reason         ->  passed on
@@ -1338,7 +1367,10 @@ def build_keeping_edits(obj, which, build_fn, notes):
     """
     drop_heights_off_grid(obj, which, notes)
     left, shifts, heights = edits(obj, which)
-    changed = bool(left or shifts or heights)
+    # How far the part was turned about its round side is no change to a fin,
+    # whatever their number: the part stays turned, and the turn has to stay known.
+    turn = shifts.get(1) if which == MAIN and shifts and on_round_side(obj) else None
+    changed = bool(left or heights or (shifts and turn is None))
     made_for = getattr(obj, EDITED_OF[which], None)
     result, failure = None, None
     try:
@@ -1353,7 +1385,10 @@ def build_keeping_edits(obj, which, build_fn, notes):
         return result
     reset_fins(obj, which)
     notes.append(translate("FinSnap", NOTE_EDITS_DROPPED))
-    return build_fn((), {}, {})
+    if turn is None:
+        return build_fn((), {}, {})
+    _set_mm(obj, SHIFTS[which], 1, turn)
+    return build_fn((), {1: turn}, {})
 
 
 def note_target(obj, which, target):

@@ -19,7 +19,7 @@ from . import defaults as d
 from . import export_3mf
 from . import export_step
 from . import feature
-from . import face_frame, quick_stands
+from . import face_frame, geometry, quick_stands
 from . import handles
 from . import limits
 from . import orient
@@ -929,7 +929,8 @@ def _export_list(objects):
     """What to export: named shapes, and the fins left out because their part lies flat.
 
     SELECTIONS this has to withstand:
-      separate fins                         ->  their part, then the fins
+      separate fins                         ->  their part, then the fins, those that
+                                                overlap joined (geometry.joined())
       merged fins, or any other body        ->  that body
       fins whose part lies flat             ->  left out and named; their part
                                                 only if it was selected itself
@@ -946,7 +947,7 @@ def _export_list(objects):
             if base.Name not in seen:
                 shapes.append((base.Label, global_shape(base)))
                 seen.add(base.Name)
-            shapes.append((base.Label + FINS_SUFFIX, obj.Shape))
+            shapes.append((base.Label + FINS_SUFFIX, geometry.joined(obj.Shape)))
         elif obj.Name not in seen and isinstance(getattr(obj, "Shape", None), Part.Shape):
             shapes.append((obj.Label, global_shape(obj)))
         seen.add(obj.Name)

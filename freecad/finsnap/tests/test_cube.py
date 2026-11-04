@@ -110,6 +110,7 @@ FRUSTUM_TOP = 20.0
 FRUSTUM_HEIGHT = 15.0  # sides at 56 degrees against the base
 ROD_RADIUS = 10.0      # a cylinder standing on its rim
 ROD_HEIGHT = 40.0
+THIN_ROD_RADIUS = 2.0  # too thin for side fins to stand clear of the middle one
 DISC_HEIGHT = 4.0      # a disc: its flat face is larger than its side, the side takes the fins all the same
 BORE_RADIUS = 6.0      # the hole that makes it a tube
 ROUND_TURN = 5.0       # how far the fin under a round side is moved by hand, in mm round it
@@ -1678,6 +1679,105 @@ def stood_on_free_rim(shape):
     return moved(shape, plan.change), side
 
 
+def check_three_round_fins():
+    """Three fins under a whole round side: the one under the lowest line as it
+    stands alone, one parallel on each side, clear of the part, their tines
+    ending on it across their whole width, overlapping feet joined for export."""
+    one = FinParams(placement=d.PLACEMENT_CENTER)
+    three = FinParams(placement=d.PLACEMENT_CENTER, round_fins=d.ROUND_FINS_THREE)
+    expect(FinParams().round_fins == d.ROUND_FINS_ONE and FinParams().round_fin_angle == d.ROUND_FIN_ANGLE,
+           "new fins stand under a round side alone, the side fins 30 degrees round if asked for")
+    for wrong in (0.0, -1.0, d.ROUND_FIN_ANGLE_MAX + 1):
+        try:
+            FinParams(round_fin_angle=wrong).validate()
+            expect(False, "a side fin angle of %g is refused" % wrong)
+        except ParamError:
+            expect(True, "a side fin angle of %g is refused" % wrong)
+    rod = Part.makeCylinder(ROD_RADIUS, ROD_HEIGHT)
+    tube = rod.cut(Part.makeCylinder(BORE_RADIUS, ROD_HEIGHT))
+    step = rod.fuse(Part.makeCylinder(STEP_RADIUS, ROD_HEIGHT, V(0, 0, ROD_HEIGHT))).removeSplitter()
+    for name, shape in (("cylinder", rod), ("tube", tube), ("shaft with a step", step)):
+        stood, side = stood_on_free_rim(shape)
+        alone = geometry.build(stood, stood.Faces[side], one)
+        result = geometry.build(stood, stood.Faces[side], three)
+        pitch = face_frame.beside_lowest(ROD_RADIUS, d.ROUND_FIN_ANGLE)
+        expect(result.numbers == [1, 2, 3] and result.planned == 3
+               and abs(result.positions[1] - alone.positions[0]) < d.TOLERANCE
+               and abs(result.positions[2] - result.positions[1] - pitch) < d.TOLERANCE
+               and abs(result.positions[1] - result.positions[0] - pitch) < d.TOLERANCE,
+               "%s: three fins, a radius share apart, the middle one where it stands alone" % name)
+        expect(abs(result.bodies[1].Volume - alone.bodies[0].Volume) < 1e-6
+               and result.touching_z[2] == alone.touching_z[1],
+               "%s: the middle fin of three is the fin alone" % name)
+        expect(all(tine.isValid() and tine.Volume > 0 for tine in result.tines),
+               "%s: every tine is a valid solid, also with a slanted end" % name)
+        off = max(abs(tine.distToShape(stood)[0] - three.clearance) for tine in result.tines)
+        expect(off < d.TINE_END_TOLERANCE, "%s: every tine ends the clearance off the part, off by %.4f" % (name, off))
+        expect(result.fins.common(stood).Volume < d.TOLERANCE, "%s: no fin reaches into the part" % name)
+        nearest = min(body.distToShape(stood)[0] for body in result.bodies)
+        expect(nearest > three.gap - d.TOLERANCE - 0.3 * three.gap,
+               "%s: the side fins keep the gap from the side: %.3f" % (name, nearest))
+        lowest = min(result.touching_z[1])
+        expect(lowest > min(result.touching_z[2]) and result.touching_z[1] == result.touching_z[3],
+               "%s: the side fins start to hold higher up, alike: from %.2f mm" % (name, lowest))
+        expect(not any("miss" in w or "reach more" in w for w in result.warnings),
+               "%s: no tine said to miss or cut in: %s" % (name, result.warnings))
+        for number, kept in ((2, [1, 3]), (1, [2, 3])):
+            fewer = geometry.build(stood, stood.Faces[side], three, left_out=[number])
+            expect(fewer.numbers == kept and fewer.planned == 3,
+                   "%s: fin %d removed, the others stay in their places" % (name, number))
+        turned = geometry.build(stood, stood.Faces[side], three, shifts={1: ROD_RADIUS})
+        expect(turned.numbers == [1, 2, 3] and abs(turned.positions[0] - result.positions[0]) < d.TOLERANCE,
+               "%s: a turn by hand leaves the fins in their places" % name)
+
+    stood, side = stood_on_free_rim(rod)
+    rectangle = geometry.build(stood, stood.Faces[side],
+                               FinParams(placement=d.PLACEMENT_CENTER, round_fins=d.ROUND_FINS_THREE,
+                                         foot_shape=d.FOOT_RECTANGLE))
+    expect(rectangle.fins.common(stood).Volume < d.TOLERANCE,
+           "a rectangular foot beside the lowest line clears the part")
+    whole = rectangle.fins
+    joined = geometry.joined(whole)
+    overlap = sum(a.common(b).Volume for k, a in enumerate(whole.Solids) for b in whole.Solids[k + 1:])
+    expect(overlap > d.TOLERANCE and len(joined.Solids) == 1 and joined.isValid()
+           and abs(joined.Volume - (sum(s.Volume for s in whole.Solids) - overlap)) < 1e-3,
+           "overlapping feet join into one valid solid, the overlap counted once")
+    expect(len(whole.Solids) == 3, "the fins stay apart in the document, to be picked and removed")
+    apart = Part.makeCompound([Part.makeBox(1, 1, 1), Part.makeBox(1, 1, 1, V(5, 0, 0))])
+    expect(geometry.joined(apart) is apart, "solids apart are not joined")
+    touching = Part.makeCompound([Part.makeBox(1, 1, 1), Part.makeBox(1, 1, 1, V(1, 0, 0))])
+    expect(geometry.joined(touching) is touching, "solids that only touch are not joined")
+    some = Part.makeCompound([Part.makeBox(2, 1, 1), Part.makeBox(2, 1, 1, V(1, 0, 0)),
+                              Part.makeBox(1, 1, 1, V(9, 0, 0))])
+    expect(len(geometry.joined(some).Solids) == 2, "of three solids the two that overlap join, the third stays")
+
+    try:
+        geometry.build(stood, stood.Faces[side], FinParams(placement=d.PLACEMENT_CENTER, follow_contour=False,
+                                                           round_fins=d.ROUND_FINS_THREE))
+        expect(False, "three fins without the contour are refused")
+    except face_frame.FinError as error:
+        expect("Follow the contour" in str(error), "three fins without the contour say to follow it: %s" % error)
+    thin = Part.makeCylinder(THIN_ROD_RADIUS, ROD_HEIGHT)
+    thin_side = round_side_of(thin, THIN_ROD_RADIUS)
+    thin_plan = quick_stands.quick_plan(thin, [], [(thin.Faces[thin_side], thin_side)], one, d.TILT_ANGLE)
+    stood_thin = moved(thin, thin_plan.change)
+    try:
+        geometry.build(stood_thin, stood_thin.Faces[thin_side], three)
+        expect(False, "three fins on a thin rod are refused")
+    except face_frame.FinError as error:
+        expect("do not fit" in str(error), "three fins on a thin rod do not fit: %s" % error)
+
+    slot = slot_on_end()
+    built = []
+    for number in [i for i, f in enumerate(slot.Faces) if orient.is_curved_side(f)]:
+        try:
+            built.append(geometry.build(slot, slot.Faces[number], three))
+        except face_frame.FinError:
+            pass
+    expect(built and all(len(result.positions) == 1 for result in built),
+           "part of a side keeps its one fin with three asked for")
+
+
 def flank_slopes(result, p):
     """How far the flank of `result` runs inward per mm up, its steepest."""
     outline = result.frame.contour.outline(p.foot_height, result.height)
@@ -2215,6 +2315,7 @@ def main():
     check_stability()
     check_round_side()
     check_contour()
+    check_three_round_fins()
     check_part_of_side()
     check_split_side()
     check_left_out(cube, face)
