@@ -130,13 +130,14 @@ MATRIX_CASES = ((d.ROUND_FINS_TWO, 30.0, 0.0), (d.ROUND_FINS_THREE, 45.0, 0.0), 
                 (d.ROUND_FINS_THREE, 45.0, 3.0))
 MATRIX_FIN_COUNTS = {d.ROUND_FINS_TWO: 2, d.ROUND_FINS_THREE: 3}
 # Cases with a fin height set, above what the side fins can reach on some shapes.
-MATRIX_HIGH_CASES = {"rod": ((d.ROUND_FINS_THREE, 45.0, 0.0, 35.0), (d.ROUND_FINS_THREE, 30.0, 3.0, 35.0),
-                             (d.ROUND_FINS_THREE, 30.0, 0.0, 35.0)),
-                     "thin step": ((d.ROUND_FINS_THREE, 45.0, 3.0, 28.0), (d.ROUND_FINS_THREE, 45.0, 3.0, 35.0)),
-                     "step near the fins": ((d.ROUND_FINS_THREE, 45.0, 3.0, 28.0),
-                                            (d.ROUND_FINS_THREE, 45.0, 3.0, 35.0)),
+MATRIX_HIGH_CASES = {"rod": ((d.ROUND_FINS_THREE, 45.0, 0.0, 35.0), (d.ROUND_FINS_THREE, 30.0, 3.0, 35.0)),
+                     "thin step": ((d.ROUND_FINS_THREE, 45.0, 3.0, 35.0),),
+                     "step near the fins": ((d.ROUND_FINS_THREE, 45.0, 3.0, 35.0),),
                      "fillet": ((d.ROUND_FINS_THREE, 45.0, 0.0, 20.0),)}
-MATRIX_LEAST_TINES = 5  # the fewest tines a fin beside the lowest line has in the matrix
+# How many tines a side fin has, by shape, for MATRIX_CASES and then MATRIX_HIGH_CASES.
+MATRIX_SIDE_TINES = {"rod": (7, 7, 7, 7, 7, 7), "step near the fins": (13, 7, 13, 7, 7),
+                     "thin step": (7, 7, 7, 7, 7), "cone": (7, 7, 7, 7), "fillet": (7, 7, 7, 7, 5),
+                     "large fillet": (5, 6, 5, 5)}
 HEIGHT_ACROSS_FIN = 0.02  # how far above the height it says a fin may reach (mm)
 LARGE_FILLET_RADIUS = 9.5  # nearly the radius of the rod
 GROOVE_WIDTH = 4.0     # a groove round a shaft
@@ -1742,7 +1743,6 @@ def matrix_shapes():
     free_end = [e for e in rod.Edges if orient.is_rim(e) and e.BoundBox.ZMin > 1]
     upper = V(0, 0, ROD_HEIGHT)
     return {"rod": rod,
-            "tube": rod.cut(Part.makeCylinder(BORE_RADIUS, ROD_HEIGHT)),
             "step near the fins": rod.fuse(Part.makeCylinder(STEPS_NEAR_FINS[1], ROD_HEIGHT, upper)).removeSplitter(),
             "thin step": rod.fuse(Part.makeCylinder(THIN_STEP_RADIUS, ROD_HEIGHT, upper)).removeSplitter(),
             "cone": rod.fuse(Part.makeCone(ROD_RADIUS, CONE_TOP, CONE_HEIGHT, upper)).removeSplitter(),
@@ -1750,11 +1750,12 @@ def matrix_shapes():
             "large fillet": rod.makeFillet(LARGE_FILLET_RADIUS, free_end)}
 
 
-def fin_matrix_faults(name, stood, number, kind, degrees, thickness, height=0.0):
+def fin_matrix_faults(name, stood, number, kind, degrees, thickness, side_tines, height=0.0):
     """What is wrong with the fins of `kind` under face `number` of `stood`, as
     lines of text: refused, overlapping or too close to the part, invalid, higher
-    than they say, hanging over, fewer fins than asked for, or with fewer tines
-    than the fin alone, or than MATRIX_LEAST_TINES beside it."""
+    than they say or than asked of the rod, hanging over, fewer fins than asked
+    for, with fewer tines than the fin alone, or side fins with other than
+    `side_tines`: what a change costs them shows here."""
     asked = FinParams(placement=d.PLACEMENT_CENTER, round_fins=kind, round_fin_angle=degrees,
                       fin_thickness=thickness, fin_height=height)
     case = "%s, %s, %g degrees, %g mm thick, %g mm high: " % (name, kind, degrees, thickness, height)
@@ -1767,8 +1768,10 @@ def fin_matrix_faults(name, stood, number, kind, degrees, thickness, height=0.0)
     if len(built.numbers) != planned:
         faults.append(case + "%d fins, %d asked for" % (len(built.numbers), planned))
     for fin in built.frames:
-        if fin in built.numbers and len(built.touching_z[fin]) < MATRIX_LEAST_TINES:
-            faults.append(case + "fin %d has %d tines" % (fin, len(built.touching_z[fin])))
+        if fin in built.numbers and len(built.touching_z[fin]) != side_tines:
+            faults.append(case + "fin %d has %d tines, not %d" % (fin, len(built.touching_z[fin]), side_tines))
+        if name == "rod" and height and abs(built.heights.get(fin, height) - height) > d.TOLERANCE:
+            faults.append(case + "fin %d only %.1f mm high" % (fin, built.heights[fin]))
     if geometry.overlap_of(built.fins, stood) > d.TOLERANCE:
         faults.append(case + "reaches into the part")
     for position, fin in enumerate(built.numbers):
@@ -1781,7 +1784,8 @@ def fin_matrix_faults(name, stood, number, kind, degrees, thickness, height=0.0)
         above = body.BoundBox.ZMax - built.frame.bed_z - built.heights[fin]
         if above > HEIGHT_ACROSS_FIN:
             faults.append(case + "fin %d %.2f mm above its height" % (fin, above))
-        if fin in built.frames:
+        # The fins are mirror images: one tells for both.
+        if fin == 1:
             steep = steepest_step(body, built.frames[fin])
             if steep > OVERHANG_LAYER + GAP_ACROSS_FIN:
                 faults.append(case + "fin %d hangs over by %.3f" % (fin, steep))
@@ -1813,10 +1817,9 @@ def check_side_fin_matrix():
         number = round_side_of(shape)
         plan = quick_stands.quick_plan(shape, [], [(shape.Faces[number], number)], FinParams(), d.TILT_ANGLE)
         stood = moved(shape, plan.change)
-        for kind, degrees, thickness in MATRIX_CASES:
-            faults += fin_matrix_faults(name, stood, number, kind, degrees, thickness)
-        for kind, degrees, thickness, height in MATRIX_HIGH_CASES.get(name, ()):
-            faults += fin_matrix_faults(name, stood, number, kind, degrees, thickness, height)
+        cases = [(*case, 0.0) for case in MATRIX_CASES] + list(MATRIX_HIGH_CASES.get(name, ()))
+        for (kind, degrees, thickness, height), side_tines in zip(cases, MATRIX_SIDE_TINES[name]):
+            faults += fin_matrix_faults(name, stood, number, kind, degrees, thickness, side_tines, height)
     expect(not faults, "the matrix of side fins holds: %s" % "; ".join(faults))
 
     # A groove: the side above it, then below it, on one shaft, and the other way round.

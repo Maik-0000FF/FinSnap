@@ -134,12 +134,12 @@ FLANK_TOP_HAIR = 1e-3
 # Fins beside the lowest line built whole (shapes.keep()), by what they depend on.
 _kept_side_fins = {}
 SIDE_FINS_KEPT = 32
-# How often a fin beside the lowest line is moved out to keep the gap, measured
-# on the part: each time by what was short, which a step or a cone leaves
-# little of after the first.
-FLANK_TRIES = 8
-# How far the gap has to grow for each mm a fin moves out for that to be worth it.
-FLANK_LEAST_GAIN = 0.02
+# How a foot and a blade beside the lowest line look for where they keep the gap,
+# see _least_clear(): the first step out and how near it comes (mm).
+FOOT_SEARCH_STEP = 0.5
+FOOT_RESOLUTION = 0.05
+FLANK_SEARCH_STEP = 0.1
+FLANK_RESOLUTION = 0.01
 # Where the side falls away steepest across such a fin, as the cosine: past it
 # the fin has left the side, and more planes would follow nothing.
 FLANK_STEEPEST = 0.2
@@ -455,8 +455,9 @@ def _following_blade(p, frame, t0, thickness, head, low, high, least=None):
       fin as far round as the radius and
         past                                ->  the flank stays at the last place on it
       a point turned up past the height of
-        the fin                             ->  on along the side down to that height:
-                                                the fin is as high as it says
+        the fin                             ->  the flank cut off at that height, where
+                                                it runs: the fin is as high as it says,
+                                                also where the flank rounds an end of the part
       fin over the lowest line              ->  the curve its middle there
       foot further out than the flank       ->  straight down onto the foot, from where
                                                 the flank passes its start
@@ -488,22 +489,24 @@ def _following_blade(p, frame, t0, thickness, head, low, high, least=None):
                     for (s_high, z_high), (s_low, z_low) in zip(outline, outline[1:]) if z_low <= z <= z_high)
 
     ordered = sorted(heights, reverse=True)
-    def turned(s, z, t, order):
-        """The point (s, z) of the flank in the plane at `t`: no further in than
-        the foot, and no higher than the fin, on along the line of the side down
-        to that height, the points held apart by a hair so no two coincide."""
-        by = round_move(frame, s, z, t)
-        moved_s, moved_z = s + by * frame.n_out, z + by * frame.n_z
-        ceiling = high - order * FLANK_TOP_HAIR
-        if moved_z > ceiling:
-            moved_s -= (moved_z - ceiling) * -frame.n_z / frame.n_out
-            moved_z = ceiling
-        return (moved_s, moved_z) if least is None else (max(moved_s, least), moved_z)
+    def turned_flank(t):
+        """The flank in the plane at `t`, from its top down: each point turned, no
+        further in than the foot, and cut off where it passes the height of the
+        fin, on the flank itself, the points above it held there, a hair apart
+        so no two coincide."""
+        points = []
+        for s, z in ((flank_there(z), z) for z in ordered):
+            by = round_move(frame, s, z, t)
+            points.append((s + by * frame.n_out, z + by * frame.n_z))
+        below = next((k for k, (_, z) in enumerate(points) if z <= high), len(points) - 1)
+        if below:
+            (s_above, z_above), (s_below, z_below) = points[below - 1], points[below]
+            share = (high - z_below) / (z_above - z_below)
+            cut = s_below + (s_above - s_below) * share
+            points[:below] = [(cut, high - (below - k) * FLANK_TOP_HAIR) for k in range(below)]
+        return [(s if least is None else max(s, least), z) for s, z in points]
 
-    rings = []
-    for t in planes:
-        flank = [turned(flank_there(z), z, t, order) for order, z in enumerate(ordered)]
-        rings.append([frame.point(t, s, z) for s, z in head + flank])
+    rings = [[frame.point(t, s, z) for s, z in head + turned_flank(t)] for t in planes]
     return _ruled(rings)
 
 
@@ -580,70 +583,102 @@ def _on_flank(p, frame, fin, thickness):
     return fin._replace(on_face=on_face, touching=[z for z in fin.touching if on_flank(z)])
 
 
-def _clear_of_part(p, part, frame, fin, thickness, half_foot):
-    """One fin `fin` beside the lowest line as one_fin() builds it, the gap kept
-    off the part as measured on it, what the curve of the side knows nothing of:
-    where its foot comes closer, the foot alone starts further out, so the flank
-    keeps to the side; where the blade does, it stands out by as much; where that
-    does not help, as a cone or a thin step passing beside its wall, it ends
-    below that place, at the last tine there. Returned with the frame and the fin
-    as they came to be.
+def _least_clear(clear, step, most, resolution):
+    """The smallest value from 0 up to `most` at which `clear(value)` holds, within
+    `resolution`: outward by doubling `step` until it holds, then halved back
+    between the last value that does not and the first that does, so it never
+    stays further out than it has to. None where it holds nowhere up to `most`.
 
     INPUTS this has to withstand:
-      plain side, the gap kept              ->  built once, as planned
-      foot wider than the part leaves room  ->  the foot starts further out, the flank stays
-      foot well inside the part             ->  the same, in steps that double
-      step or fillet in front of it         ->  moved out until it keeps the gap, as far
-                                                as GAP_MAX from the side, past that lower
-      a part passing beside its wall        ->  ends below, its tines above left out
+      clear at 0                            ->  0, asked once
+      clear from 1.7 on                     ->  within `resolution` above 1.7
+      clear from just below `most`          ->  found, `most` itself tried
+      never clear                           ->  None
+      `most` 0 or less, not clear at 0      ->  None
+    """
+    if clear(0.0):
+        return 0.0
+    if most <= 0:
+        return None
+    inside, outside = 0.0, min(step, most)
+    while not clear(outside):
+        if outside >= most:
+            return None
+        inside, outside = outside, min(2 * outside, most)
+    while outside - inside > resolution:
+        between_them = (inside + outside) / 2
+        if clear(between_them):
+            outside = between_them
+        else:
+            inside = between_them
+    return outside
+
+
+def _foot_out_for(p, part, frame, fin, thickness, half_foot):
+    """How far out the foot of `fin` has to start to keep the gap off the part,
+    measured on the foot alone; None where no place on its length does."""
+    if p.foot_height <= 0:
+        return 0.0
+    s_to = foot_span(p, frame, fin.height)[1]
+
+    def clear(out):
+        moved = replace(frame, foot_out=out)
+        s_from = side_foot_start(p, moved, fin.t0, thickness)
+        shape = foot(p, moved, fin.t0, thickness, s_from, s_to, half_foot)
+        return shape.distToShape(part)[0] >= p.gap - d.CONTOUR_TOLERANCE
+
+    return _least_clear(clear, FOOT_SEARCH_STEP, (s_to - side_foot_start(p, frame, fin.t0, thickness)) / 2,
+                        FOOT_RESOLUTION)
+
+
+def _clear_of_part(p, part, frame, fin, thickness, half_foot):
+    """One fin `fin` beside the lowest line as one_fin() builds it, the gap kept off
+    the part as measured on it, what the curve of the side knows nothing of. As
+    little as it takes, in this order: its foot starts further out; if the blade
+    is still too close, it stands further out, as far as GAP_MAX from the side;
+    if that does not do, it ends lower, below where it comes too close. Returned
+    with the frame and the fin as they came to be.
+
+    INPUTS this has to withstand:
+      plain side, the gap kept              ->  built as planned, nothing moved
+      foot wider than the part leaves room  ->  the foot as little further out as keeps
+                                                the gap, within FOOT_RESOLUTION; the flank stays
+      foot well inside the part             ->  the same
+      step or fillet in front of the blade  ->  the blade as little further out as keeps
+                                                the gap, within FLANK_RESOLUTION
+      a part passing beside its wall, moving
+        out does not help                   ->  ends below, its tines above left out
       the same above all its tines          ->  ends at its last tine
       the same at its last tine             ->  ends at the tine below it
-      nothing of it clear of the part       ->  FinError, as check() says it
+      no tine left                          ->  FinError, as check() says it
     """
+    furthest = (d.GAP_MAX - p.gap) / frame.n_out
     while True:
-        moved_out = frame
-        before = None
-        foot_stuck = False
-        inside = 0
-        for _ in range(FLANK_TRIES):
-            built = one_fin(p, moved_out, fin.t0, fin.height, thickness, half_foot, fin.candidate_z)
-            distance, points, _ = built[0].distToShape(part)
-            short = p.gap - distance
-            # As along a contour: the chords of the flank leave this much.
-            if short <= d.CONTOUR_TOLERANCE:
-                return (*built, moved_out, _on_flank(p, moved_out, fin, thickness))
-            at_foot = (not foot_stuck and p.foot_height > 0
-                       and points[0][0].z - frame.bed_z <= p.foot_height + d.TOLERANCE)
-            name = "foot_out" if at_foot else "flank_out"
-            now = getattr(moved_out, name)
-            # As far as the last move gained, the part may lie mostly beside the
-            # fin, and little comes of moving out; nothing gained on the foot,
-            # the blade moves; nothing gained on the blade, only lower helps.
-            by = short / frame.n_out
-            # Reaching into the part says nothing of how far is enough: on, twice
-            # as far each time, so a foot well inside it gets out within the tries.
-            if distance <= d.TOLERANCE:
-                before = None
-                by *= 2 ** inside
-                inside += 1
-            if before is not None and before[2] == name:
-                gained = (distance - before[0]) / (now - before[1])
-                if gained < FLANK_LEAST_GAIN:
-                    if not at_foot:
-                        break
-                    foot_stuck = True
-                    before = None
-                    continue
-                by = short / gained
-            before = (distance, now, name)
-            # Not past the gap tines still print straight across.
-            if not at_foot and (now + by) * frame.n_out + p.gap > d.GAP_MAX:
-                break
-            moved_out = replace(moved_out, **{name: now + by})
-        # Up to where it stays clear: the gap and a tine below that place.
+        def placed(out):
+            """The frame with the blade `out` further out and its foot where that
+            lets it stand, None where it finds no place."""
+            moved = replace(frame, flank_out=out)
+            foot_out = _foot_out_for(p, part, moved, fin, thickness, half_foot)
+            return None if foot_out is None else replace(moved, foot_out=foot_out)
+
+        def blade_clear(out):
+            moved = placed(out)
+            if moved is None:
+                return False
+            body = one_fin(p, moved, fin.t0, fin.height, thickness, half_foot, [])[0]
+            return body.distToShape(part)[0] >= p.gap - d.CONTOUR_TOLERANCE
+
+        out = _least_clear(blade_clear, FLANK_SEARCH_STEP, furthest, FLANK_RESOLUTION)
+        if out is not None:
+            moved = placed(out)
+            return (*one_fin(p, moved, fin.t0, fin.height, thickness, half_foot, fin.candidate_z),
+                    moved, _on_flank(p, moved, fin, thickness))
+        # Where it stays clear with nothing moved but the foot: the gap and a tine
+        # below where it is closest, and a tine less if it ends at that one already.
+        moved = placed(0.0) or frame
+        distance, points, _ = one_fin(p, moved, fin.t0, fin.height, thickness, half_foot, [])[0].distToShape(part)
         lowest_close = points[0][0].z - frame.bed_z - p.gap - p.tine_height
         kept = [(z, whole) for z, whole in zip(fin.candidate_z, fin.on_face) if z <= lowest_close and whole]
-        # Ending at its last tine already, that tine has to go as well.
         if kept and kept[-1][0] + p.tine_height >= fin.height - d.TOLERANCE:
             kept = kept[:-1]
         if not kept:
