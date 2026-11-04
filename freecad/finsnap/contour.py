@@ -584,7 +584,9 @@ class Contour(_TineEnds):
                     for carry, flank, touched in zip(self.carries, self.flank_at, self.touched)]
         clear = d.CONTOUR_SAMPLES_PER_LAYER + int(math.ceil(distance / step))
         self.resting = [all(touching[max(0, k - clear):k + clear + 1]) for k in range(len(touching))]
-        if side_from is not None:
+        # Only over what the part stands on: above a groove or a thicker part, the
+        # contour looks up on the way, and the fin follows it as anywhere.
+        if side_from is not None and not any(looks_up[:self._index(side_from[0])]):
             start = self._index(side_from[0])
             for k in range(start):
                 self.flank_at[k] = max(self.flank_at[k],
@@ -675,6 +677,12 @@ class Contour(_TineEnds):
         return False
 
 
+def clear_kept():
+    """Forget every contour kept, as if none had been worked out."""
+    _kept.clear()
+    _kept_beside.clear()
+
+
 def side_from(frame, away=0.0):
     """Where the round side of `frame` starts above the bed, in the upright plane
     `away` along the face from its lowest line, and how far out a flank along
@@ -692,7 +700,8 @@ def of(part, frame, p, width):
     middle of the side, where its one fin stands, at most `width` thick;
     kept for the same part, plane and parameters, worked out once."""
     key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.along_min, frame.along_max, frame.bed_z,
-           width, p.layer_height, p.gap, p.clearance, p.contour_bridge, p.contour_gap)
+           frame.face_bottom_z, frame.radius, width, p.layer_height, p.gap, p.clearance, p.contour_bridge,
+           p.contour_gap)
     return keep(_kept, key, lambda: _worked_out(part, frame, p, width))
 
 
@@ -709,8 +718,8 @@ def beside(part, frame, p, nearest, furthest):
     round side of `frame`, as thick as from `nearest`, its edge nearest that
     line, to `furthest` along the face: the first cut, which it rests on, is
     the one at `nearest`, where the side reaches furthest out; kept as of() is."""
-    key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.bed_z, nearest, furthest,
-           p.layer_height, p.gap, p.clearance, p.contour_bridge, p.contour_gap)
+    key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.bed_z, frame.face_bottom_z, frame.radius,
+           nearest, furthest, p.layer_height, p.gap, p.clearance, p.contour_bridge, p.contour_gap)
 
     def worked_out():
         planes = [nearest + (furthest - nearest) * k / (d.CONTOUR_CUTS - 1) for k in range(d.CONTOUR_CUTS)]
@@ -730,7 +739,7 @@ def ends_at(part, frame, p, t, beside_line):
 def across(part, frame, p, t):
     """The contour in the one upright plane at `t` along the face of `frame`,
     for what a tine beside the lowest line rests on; kept as of() is."""
-    key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.bed_z, t,
+    key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.bed_z, frame.face_bottom_z, frame.radius, t,
            p.layer_height, p.gap, p.clearance, p.contour_bridge, p.contour_gap)
     away = t - (frame.along_min + frame.along_max) / 2
     return keep(_kept_beside, key,

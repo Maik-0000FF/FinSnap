@@ -19,7 +19,7 @@ from freecad.finsnap.tests.support import (HALF_TURN, RECESS_RADIUS, expect, gro
 from freecad.finsnap import analysis
 from freecad.finsnap import defaults as d
 from freecad.finsnap.bridge import bridges as find_bridges
-from freecad.finsnap import face_frame, geometry, quick_stands, tine_rows
+from freecad.finsnap import contour, face_frame, geometry, quick_stands, tine_rows
 from freecad.finsnap import limits
 from freecad.finsnap import orient
 from freecad.finsnap import overhang
@@ -125,6 +125,13 @@ OVERHANG_REACH = 3.0   # how far up its foot and blade are looked at (mm)
 OVERHANG_DEFLECTION = 0.05
 JOINED_VOLUME_TOLERANCE = 0.01  # mm3, of some 1700: the plane faces of the side fins round a little
 FLANK_OUT_LITTLE = 0.2 # how far out a foot may make a side fin stand on a plain side (mm)
+# The cases of check_side_fin_matrix(): fins, degrees round the side, fin thickness (0 from its height).
+MATRIX_CASES = ((d.ROUND_FINS_TWO, 30.0, 0.0), (d.ROUND_FINS_THREE, 45.0, 0.0), (d.ROUND_FINS_THREE, 30.0, 3.0),
+                (d.ROUND_FINS_THREE, 45.0, 3.0))
+HEIGHT_ACROSS_FIN = 0.02  # how far above the height it says a fin may reach (mm)
+LARGE_FILLET_RADIUS = 9.5  # nearly the radius of the rod
+GROOVE_WIDTH = 4.0     # a groove round a shaft
+TINE_NEAR_START = 6.0  # the first tine above a groove starts within this of the side (mm)
 AIM_TOLERANCE = 1e-3   # how far off the axis a tine beside the lowest line may aim (cross product, mm2)
 RIB_OFF_WALL = 0.1     # a rib stands this far beside the wall of a side fin
 RIB_WIDTH = 1.0
@@ -1719,6 +1726,106 @@ def steepest_step(body, frame):
     return worst
 
 
+def matrix_shapes():
+    """The shapes of check_side_fin_matrix(), by name: each with the radius of
+    the round side the fins stand under."""
+    rod = Part.makeCylinder(ROD_RADIUS, ROD_HEIGHT)
+    free_end = [e for e in rod.Edges if orient.is_rim(e) and e.BoundBox.ZMin > 1]
+    upper = V(0, 0, ROD_HEIGHT)
+    return {"rod": rod,
+            "tube": rod.cut(Part.makeCylinder(BORE_RADIUS, ROD_HEIGHT)),
+            "step near the fins": rod.fuse(Part.makeCylinder(STEPS_NEAR_FINS[1], ROD_HEIGHT, upper)).removeSplitter(),
+            "thin step": rod.fuse(Part.makeCylinder(THIN_STEP_RADIUS, ROD_HEIGHT, upper)).removeSplitter(),
+            "cone": rod.fuse(Part.makeCone(ROD_RADIUS, CONE_TOP, CONE_HEIGHT, upper)).removeSplitter(),
+            "fillet": rod.makeFillet(FILLET_RADIUS, free_end),
+            "large fillet": rod.makeFillet(LARGE_FILLET_RADIUS, free_end)}
+
+
+def fin_matrix_faults(name, stood, number, kind, degrees, thickness):
+    """What is wrong with the fins of `kind` under face `number` of `stood`, as
+    lines of text: refused, overlapping or too close to the part, invalid, higher
+    than they say, hanging over, or with fewer tines than the fin alone."""
+    asked = FinParams(placement=d.PLACEMENT_CENTER, round_fins=kind, round_fin_angle=degrees,
+                      fin_thickness=thickness)
+    case = "%s, %s, %g degrees, %g mm thick: " % (name, kind, degrees, thickness)
+    try:
+        built = geometry.build(stood, stood.Faces[number], asked)
+    except face_frame.FinError as error:
+        return [case + "refused: %s" % error]
+    faults = []
+    if built.fins.common(stood).Volume > d.TOLERANCE:
+        faults.append(case + "reaches into the part")
+    for position, fin in enumerate(built.numbers):
+        body = built.bodies[position]
+        closest = body.distToShape(stood)[0]
+        if closest < asked.gap - GAP_ACROSS_FIN:
+            faults.append(case + "fin %d %.3f off the part" % (fin, closest))
+        if not body.isValid():
+            faults.append(case + "fin %d invalid" % fin)
+        above = body.BoundBox.ZMax - built.frame.bed_z - built.heights[fin]
+        if above > HEIGHT_ACROSS_FIN:
+            faults.append(case + "fin %d %.2f mm above its height" % (fin, above))
+        if fin in built.frames:
+            steep = steepest_step(body, built.frames[fin])
+            if steep > OVERHANG_LAYER + GAP_ACROSS_FIN:
+                faults.append(case + "fin %d hangs over by %.3f" % (fin, steep))
+    alone = geometry.build(stood, stood.Faces[number], FinParams(placement=d.PLACEMENT_CENTER, fin_thickness=thickness))
+    middle = built.numbers.index(2) if kind == d.ROUND_FINS_THREE and 2 in built.numbers else None
+    if middle is not None and len(built.touching_z[2]) < len(alone.touching_z[1]):
+        faults.append(case + "the middle fin has %d tines, %d alone" % (len(built.touching_z[2]),
+                                                                         len(alone.touching_z[1])))
+    return faults
+
+
+def check_side_fin_matrix():
+    """Two and three fins under a round side, over shapes, angles and thicknesses
+    at once, so what one change does to the others shows here: every one is
+    built or says why, keeps the gap, is no higher than it says and hangs over
+    nowhere. One fin under a part of a side above a groove keeps its tines
+    whatever was built before.
+
+    INPUTS this has to withstand:
+      plain rod and tube                    ->  fins at the gap
+      step ending near the plane of a fin   ->  built, at least the gap off
+      thin step, cone, fillet               ->  built, at least the gap off
+      thick fin, far round                  ->  the same
+    """
+    faults = []
+    for name, shape in matrix_shapes().items():
+        number = round_side_of(shape)
+        plan = quick_stands.quick_plan(shape, [], [(shape.Faces[number], number)], FinParams(), d.TILT_ANGLE)
+        stood = moved(shape, plan.change)
+        for kind, degrees, thickness in MATRIX_CASES:
+            faults += fin_matrix_faults(name, stood, number, kind, degrees, thickness)
+    expect(not faults, "the matrix of side fins holds: %s" % "; ".join(faults))
+
+    # A groove: the side above it, then below it, on one shaft, and the other way round.
+    rod = Part.makeCylinder(ROD_RADIUS, 2 * ROD_HEIGHT)
+    grooved_shaft = rod.cut(Part.makeCylinder(ROD_RADIUS + 1, GROOVE_WIDTH, V(0, 0, ROD_HEIGHT)).cut(
+        Part.makeCylinder(BORE_RADIUS, GROOVE_WIDTH, V(0, 0, ROD_HEIGHT)))).removeSplitter()
+    sides = sorted((k for k, f in enumerate(grooved_shaft.Faces)
+                    if orient.is_round_side(f) and abs(f.Surface.Radius - ROD_RADIUS) < d.TOLERANCE),
+                   key=lambda k: grooved_shaft.Faces[k].CenterOfMass.z)
+    plan = quick_stands.quick_plan(grooved_shaft, [], [(grooved_shaft.Faces[sides[0]], sides[0])], FinParams(),
+                                   d.TILT_ANGLE)
+    stood = moved(grooved_shaft, plan.change)
+    one = FinParams(placement=d.PLACEMENT_CENTER)
+    counts = {}
+    for order in (sides, sides[::-1]):
+        contour.clear_kept()
+        for number in order:
+            counts.setdefault(number, []).append(len(geometry.build(stood, stood.Faces[number], one).tines))
+    expect(all(len(set(found)) == 1 for found in counts.values()),
+           "one fin keeps its tines whichever side of a groove is built first: %s" % counts)
+    above = max(sides, key=lambda k: stood.Faces[k].CenterOfMass.z)
+    full = geometry.build(stood, stood.Faces[above], one)
+    start = full.frame.face_bottom_z - full.frame.bed_z
+    expect(any(z >= start - d.TOLERANCE for z in full.touching_z[1])
+           and min(full.touching_z[1]) < start + TINE_NEAR_START,
+           "above a groove the fin holds right from the start of the side: %s from %.1f"
+           % (sorted(full.touching_z[1])[:2], start))
+
+
 def check_three_round_fins():
     """Three fins under a whole round side: the one under the lowest line as it
     stands alone, one parallel on each side, clear of the part, their tines
@@ -1847,32 +1954,6 @@ def check_three_round_fins():
         expect(abs(closest - asked.gap) < d.CONTOUR_TOLERANCE + d.TOLERANCE,
                "R %g, fin %g mm thick, %g degrees, %s: the gap holds, %.4f at its closest"
                % (radius, built.thickness, degrees, kind, closest))
-    # What the side does not tell the fins: they are built all the same, at
-    # least the gap off, as far out as the part asks for.
-    shapes_beside = [("a cone on top", rod.fuse(Part.makeCone(ROD_RADIUS, CONE_TOP, CONE_HEIGHT, V(0, 0, ROD_HEIGHT)))),
-                     ("a fillet on top", rod.makeFillet(FILLET_RADIUS, [e for e in rod.Edges if orient.is_rim(e)
-                                                                        and e.BoundBox.ZMin > 1]))]
-    shapes_beside += [("a step of %g" % r, rod.fuse(Part.makeCylinder(r, ROD_HEIGHT, V(0, 0, ROD_HEIGHT))))
-                      for r in STEPS_NEAR_FINS]
-    for name, shape in shapes_beside:
-        shape = shape.removeSplitter()
-        number = round_side_of(shape)
-        near_plan = quick_stands.quick_plan(shape, [], [(shape.Faces[number], number)], one, d.TILT_ANGLE)
-        near_stood = moved(shape, near_plan.change)
-        for degrees, thickness in ((15.0, 0.0), (d.ROUND_FIN_ANGLE, 0.0), (d.ROUND_FIN_ANGLE_MAX, 0.0),
-                                   (d.ROUND_FIN_ANGLE, 3.0)):
-            asked = FinParams(placement=d.PLACEMENT_CENTER, round_fins=d.ROUND_FINS_THREE, round_fin_angle=degrees,
-                              fin_thickness=thickness)
-            built = geometry.build(near_stood, near_stood.Faces[number], asked)
-            closest = min(body.distToShape(near_stood)[0] for body in built.bodies)
-            if degrees == d.ROUND_FIN_ANGLE and not thickness:
-                steep = steepest_step(built.bodies[0], built.frames[1])
-                expect(steep <= OVERHANG_LAYER + GAP_ACROSS_FIN,
-                       "%s, %g degrees: no layer hangs past 45 degrees: %.3f" % (name, degrees, steep))
-            expect(len(built.bodies) == 3 and closest > asked.gap - d.TOLERANCE - GAP_ACROSS_FIN
-                   and built.fins.common(near_stood).Volume < d.TOLERANCE,
-                   "%s, %g degrees, fin %g mm thick: three fins, %.3f off at the closest"
-                   % (name, degrees, built.thickness, closest))
     # Standing on a fillet: the fin does not follow it down to its foot.
     bottom_rim = [e for e in rod.Edges if orient.is_rim(e) and e.BoundBox.ZMax < 1]
     filleted = rod.makeFillet(FILLET_RADIUS, bottom_rim)
@@ -1927,7 +2008,7 @@ def check_three_round_fins():
                                          foot_shape=d.FOOT_RECTANGLE))
     expect(rectangle.fins.common(stood).Volume < d.TOLERANCE
            and rectangle.frames[3].flank_out < FLANK_OUT_LITTLE,
-           "a rectangular foot beside the lowest line clears the part, the flank stays at the side")
+           "a rectangular foot beside the lowest line clears the part, the flank at most a little further out")
     whole = geometry.build(stood, stood.Faces[side], three).fins
     joined = geometry.joined(whole)
     overlap = sum(a.common(b).Volume for k, a in enumerate(whole.Solids) for b in whole.Solids[k + 1:])
@@ -2508,6 +2589,7 @@ def main():
     check_round_side()
     check_contour()
     check_three_round_fins()
+    check_side_fin_matrix()
     check_part_of_side()
     check_split_side()
     check_left_out(cube, face)

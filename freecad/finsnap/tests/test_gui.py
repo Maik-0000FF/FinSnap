@@ -257,7 +257,6 @@ def side_fins_on_tube(doc):
     doc.recompute()
     Gui.ActiveDocument.setEdit(fins)
     panel = fins.ViewObject.Proxy.panel
-    panel.place_handles()
     expect(not panel.turns_part() and not panel.turn_field.isHidden(),
            "with two fins neither arrow turns the part, the field does, as soon as the panel opens")
     shown = []

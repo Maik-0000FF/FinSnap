@@ -98,7 +98,7 @@ INPUTS this has to withstand (build()):
 
 import math
 from collections import namedtuple
-from dataclasses import astuple, dataclass, field, replace
+from dataclasses import dataclass, field, fields, replace
 from functools import partial
 
 import FreeCAD as App
@@ -117,8 +117,20 @@ from .tine_rows import (NARROW_AT_EVERY_TINE, TINE_CUTS_IN, TINE_MISSES, extent_
 NOTE_TOO_CLOSE = QT_TRANSLATE_NOOP("FinSnap", "a fin comes within %.3f mm of the part, closer than the %.3f mm it "
                                               "keeps from the face")
 # Said where fins beside the lowest line end below what passes beside them: their numbers.
-NOTE_ENDED_LOWER = QT_TRANSLATE_NOOP("FinSnap", "fins %s end lower than the one under the lowest line: above, the part "
-                                                "comes too close beside them")
+NOTE_ENDED_LOWER = QT_TRANSLATE_NOOP("FinSnap", "side fins %s end lower: above, the part comes too close beside them")
+# Said where a foot further out or the part itself leaves out tines of side fins: their numbers.
+NOTE_TINES_AT_FOOT = QT_TRANSLATE_NOOP("FinSnap", "side fins %s: some tines left out, at a foot standing further out "
+                                                  "to clear the part, or where they would reach into it")
+# Said where side fins cannot stand clear of the part at all: their numbers.
+NOTE_SIDE_FIN_LEFT_OUT = QT_TRANSLATE_NOOP("FinSnap", "side fins %s left out: the part leaves them no room there; "
+                                                      "another angle may")
+# Said where no fin beside the lowest line can stand and none stands under it.
+NOTE_NO_SIDE_FIN = QT_TRANSLATE_NOOP("FinSnap", "no side fin finds room beside the part at this angle")
+# What the shape of a single fin does not depend on, of the parameters.
+NOT_SHAPING_A_FIN = ("placement", "fin_count", "end_inset", "face_length_per_fin", "brim_width",
+                     "counter_tine_count", "round_fins", "round_fin_angle")
+# A hair: how far apart points of a flank at the top of a fin are held (mm).
+FLANK_TOP_HAIR = 1e-3
 # Fins beside the lowest line built whole (shapes.keep()), by what they depend on.
 _kept_side_fins = {}
 SIDE_FINS_KEPT = 32
@@ -442,6 +454,9 @@ def _following_blade(p, frame, t0, thickness, head, low, high, least=None):
                                                 more the side falls away
       fin as far round as the radius and
         past                                ->  the flank stays at the last place on it
+      a point turned up past the height of
+        the fin                             ->  on along the side down to that height:
+                                                the fin is as high as it says
       fin over the lowest line              ->  the curve its middle there
       foot further out than the flank       ->  straight down onto the foot, from where
                                                 the flank passes its start
@@ -473,16 +488,22 @@ def _following_blade(p, frame, t0, thickness, head, low, high, least=None):
                     for (s_high, z_high), (s_low, z_low) in zip(outline, outline[1:]) if z_low <= z <= z_high)
 
     ordered = sorted(heights, reverse=True)
-    def turned(s, z, t):
-        """The point (s, z) of the flank in the plane at `t`, standing no further
-        in than the foot, whose top it may not rise off."""
+    def turned(s, z, t, order):
+        """The point (s, z) of the flank in the plane at `t`: no further in than
+        the foot, and no higher than the fin, on along the line of the side down
+        to that height, the points held apart by a hair so no two coincide."""
         by = round_move(frame, s, z, t)
         moved_s, moved_z = s + by * frame.n_out, z + by * frame.n_z
+        ceiling = high - order * FLANK_TOP_HAIR
+        if moved_z > ceiling:
+            moved_s -= (moved_z - ceiling) * -frame.n_z / frame.n_out
+            moved_z = ceiling
         return (moved_s, moved_z) if least is None else (max(moved_s, least), moved_z)
 
     rings = []
     for t in planes:
-        rings.append([frame.point(t, s, z) for s, z in head + [turned(flank_there(z), z, t) for z in ordered]])
+        flank = [turned(flank_there(z), z, t, order) for order, z in enumerate(ordered)]
+        rings.append([frame.point(t, s, z) for s, z in head + flank])
     return _ruled(rings)
 
 
@@ -497,14 +518,42 @@ def _tine_faults(p, surface, frame, fin, thickness, kept):
     return found
 
 
+def _shaping(p):
+    """What of `p` the shape of a single fin depends on, as a key: not how many
+    fins there are or where, nor what the slicer does round them."""
+    return tuple(getattr(p, f.name) for f in fields(p) if f.name not in NOT_SHAPING_A_FIN)
+
+
 def _side_fin(p, part, surface, frame, fin, thickness, half_foot):
     """A fin beside the lowest line built whole, for a build to keep: as it is the
     same as long as nothing it depends on changes, moving one of them or
-    changing a height leaves the others untouched, and this takes most of a build."""
-    body, tines, edge, frame, fin = _clear_of_part(p, part, frame, fin, thickness, half_foot)
+    changing a height leaves the others untouched, and this takes most of a build.
+    None where it cannot stand clear of the part: it is left out, and the others
+    are built all the same, with a note.
+
+    INPUTS this has to withstand:
+      a fin that stands clear               ->  it, as a build takes it
+      a fin nothing of which stands clear   ->  None, not a refusal of all the fins
+      a tine reaching into the part         ->  that tine left out; the fin without it
+      every tine reaching into the part     ->  None
+    """
+    try:
+        body, tines, edge, frame, fin = _clear_of_part(p, part, frame, fin, thickness, half_foot)
+    except FinError:
+        return None
     kept = [tine for tine, whole in zip(tines, fin.on_face) if whole]
-    return (body, tines, edge, frame, fin, _tine_faults(p, surface, frame, fin, thickness, kept),
-            body.multiFuse(kept).removeSplitter())
+    faults = _tine_faults(p, surface, frame, fin, thickness, kept)
+    # One reaching into the part, as over a large fillet the contour rounds off
+    # by the width of the tine, is left out: the others hold the fin.
+    cut_in = {z for fault, z, _ in faults if fault == TINE_CUTS_IN}
+    if cut_in:
+        on_face = [whole and z not in cut_in for z, whole in zip(fin.candidate_z, fin.on_face)]
+        if not any(on_face):
+            return None
+        fin = fin._replace(on_face=on_face, touching=[z for z in fin.touching if z not in cut_in])
+        faults = [found for found in faults if found[0] != TINE_CUTS_IN]
+        kept = [tine for tine, whole in zip(tines, on_face) if whole]
+    return body, tines, edge, frame, fin, faults, body.multiFuse(kept).removeSplitter()
 
 
 def _on_flank(p, frame, fin, thickness):
@@ -724,7 +773,8 @@ def side_numbers(round_fins):
 def side_frames(part, frame, p, width, shifts):
     """By number, the frames of the two fins beside the fin under the lowest
     line of the whole round side of `frame`, or in its place; each at the place
-    positions_for() gives it, moved by `shifts`, as thick as `width` at most.
+    positions_for() gives it, moved by `shifts`, as thick as `width` at most, and
+    the numbers of those that cannot stand there.
     The gap and the clearance are measured in their upright planes, as much
     longer as the side falls away there (in_plane()).
 
@@ -736,11 +786,11 @@ def side_frames(part, frame, p, width, shifts):
       fin moved by hand                     ->  measured where it stands now
       fin moved over the lowest line        ->  its edge nearest that line stands on it
       fin moved past ROUND_FIN_ANGLE_MAX    ->  HandEditError, the number of fins known
-      a plane that misses the part          ->  contour.ContourError, as for one fin
+      a plane that misses the part          ->  that fin named as missing, the others built
     """
     middle = (frame.along_min + frame.along_max) / 2
     pitch = beside_lowest(frame.radius, p.round_fin_angle)
-    frames = {}
+    frames, missing = {}, []
     furthest_round = beside_lowest(frame.radius, d.ROUND_FIN_ANGLE_MAX)
     numbers = side_numbers(p.round_fins)
     for number, sense in zip(numbers, (-1, 1)):
@@ -758,18 +808,22 @@ def side_frames(part, frame, p, width, shifts):
             away = t - middle
             return replace(p, gap=in_plane(frame.radius, away, p.gap),
                            tine_clearance=in_plane(frame.radius, away, p.tine_clearance))
-        line = contours.beside(part, frame, measured_at(nearest), nearest, furthest)
         half = p.tine_width / 2 + TINE_END_STEP
         low = centre - half - (TINE_END_TRAVEL if centre > middle else 0.0)
         high = centre + half + (TINE_END_TRAVEL if centre < middle else 0.0)
         count = math.ceil((high - low) / TINE_END_STEP)
         planes = [low + (high - low) * k / count for k in range(count + 1)]
-        ends = [contours.ends_at(part, frame, measured_at(t), t, line) for t in planes]
-        edges = (planes, ends, [contours.across(part, frame, measured_at(centre), centre)])
+        try:
+            line = contours.beside(part, frame, measured_at(nearest), nearest, furthest)
+            ends = [contours.ends_at(part, frame, measured_at(t), t, line) for t in planes]
+            edges = (planes, ends, [contours.across(part, frame, measured_at(centre), centre)])
+        except contours.ContourError:
+            missing.append(number)
+            continue
         frames[number] = replace(frame, contour=line, tine_edges=edges,
                                  flank_curve=(middle, nearest, frame.radius + p.gap),
                                  face_top_z=frame.bed_z + line.top)
-    return frames
+    return frames, missing
 
 
 def _within(p, room):
@@ -966,14 +1020,14 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         surface = Part.makeCompound(part.Faces)
     # Fins beside the lowest line stand on the contour alone: only that says
     # what they rest on there.
-    frames = {}
+    frames, side_missing = {}, []
     if frame.whole_side and p.round_fins != d.ROUND_FINS_ONE:
         if frame.contour is None:
             raise FinError(translate("FinSnap", NOTE_SIDE_FINS_NEED_CONTOUR))
-        try:
-            frames = side_frames(part, frame, p, thickness_for(p, bounds(part).ZLength), shifts)
-        except contours.ContourError as error:
-            raise FinError(str(error))
+        frames, side_missing = side_frames(part, frame, p, thickness_for(p, bounds(part).ZLength), shifts)
+        left_out = list(left_out) + side_missing
+        if p.round_fins == d.ROUND_FINS_TWO and len(side_missing) == len(side_numbers(p.round_fins)):
+            raise FinError(translate("FinSnap", NOTE_NO_SIDE_FIN))
     # The slices of the face at the height of a tine, kept for every plan of this build.
     slices = {}
     count = p.tine_count if tine_count is None else tine_count
@@ -1013,20 +1067,28 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     off_ends = {TINE_MISSES: [], TINE_CUTS_IN: []}
     # Fins beside the lowest line that end below what passes beside them.
     ended_lower = []
+    # Fins beside the lowest line that lost tines to a foot standing further out.
+    tines_at_foot = []
     built_fins = []
     for fin in plan.fins:
         own_frame = frames.get(fin.number, frame)
         faults, piece = None, None
         if fin.number in frames:
-            planned_height = fin.height
-            key = (shape_key(part), astuple(p), fin.number, fin.t0, fin.height, tuple(fin.candidate_z),
+            planned_height, planned_tines = fin.height, sum(fin.on_face)
+            key = (shape_key(part), _shaping(p), fin.number, fin.t0, fin.height, tuple(fin.candidate_z),
                    tuple(fin.on_face), thickness, plan.half_foot, own_frame.tine_edges[0][0])
-            body, tines, edge, own_frame, fin, faults, piece = keep(
-                _kept_side_fins, key, partial(_side_fin, p, part, surface, own_frame, fin, thickness, plan.half_foot),
-                SIDE_FINS_KEPT)
+            found = keep(_kept_side_fins, key,
+                         partial(_side_fin, p, part, surface, own_frame, fin, thickness, plan.half_foot),
+                         SIDE_FINS_KEPT)
+            if found is None:
+                side_missing.append(fin.number)
+                continue
+            body, tines, edge, own_frame, fin, faults, piece = found
             frames[fin.number] = own_frame
             if fin.height < planned_height - d.TOLERANCE:
                 ended_lower.append(fin.number)
+            elif sum(fin.on_face) < planned_tines:
+                tines_at_foot.append(fin.number)
         else:
             body, tines, edge = one_fin(p, own_frame, fin.t0, fin.height, thickness, plan.half_foot, fin.candidate_z)
         kept = [tine for tine, whole in zip(tines, fin.on_face) if whole]
@@ -1055,6 +1117,8 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         # and fusing them pairwise fails on that edge.
         pieces.append(body.multiFuse(kept).removeSplitter() if piece is None else piece)
 
+    if not built_fins:
+        raise FinError(translate("FinSnap", NOTE_NO_SIDE_FIN))
     fins = Part.makeCompound(pieces)
     # Fins beside the lowest line were measured as they were built.
     measured = [body for fin, body in zip(built_fins, bodies) if fin.number not in frames]
@@ -1075,9 +1139,11 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
             warnings.append(translate("FinSnap", note) % (_mm_list({z for _, z, _ in found}), d.TINE_END_TOLERANCE))
             targets.append(WarningTarget(sorted({number for number, _, _ in found}), [tine for _, _, tine in found],
                                          False))
-    if ended_lower:
-        warnings.append(translate("FinSnap", NOTE_ENDED_LOWER) % ", ".join(str(number) for number in ended_lower))
-        targets.append(WarningTarget(ended_lower, [], False))
+    for note, numbers_of in ((NOTE_ENDED_LOWER, ended_lower), (NOTE_TINES_AT_FOOT, tines_at_foot),
+                             (NOTE_SIDE_FIN_LEFT_OUT, side_missing)):
+        if numbers_of:
+            warnings.append(translate("FinSnap", note) % ", ".join(str(number) for number in numbers_of))
+            targets.append(WarningTarget([number for number in numbers_of if number not in side_missing], [], False))
     if plan.moved:
         warnings.append(translate("FinSnap", "fins moved along the face to where their tines rest, beside a "
                                   "hole or recess under their planned place: %s") % ", ".join(
@@ -1117,7 +1183,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     numbers = [fin.number for fin in built_fins]
     fin_heights = [fin.height for fin in built_fins]
     return FinResult(fins=fins, bodies=bodies, tines=all_tines, height=max(fin_heights),
-                     thickness=thickness, tine_z=plan.tine_z, positions=[fin.t0 for fin in plan.fins],
+                     thickness=thickness, tine_z=plan.tine_z, positions=[fin.t0 for fin in built_fins],
                      foot_half_width=plan.half_foot, warnings=warnings, warning_targets=targets,
                      carried=support.Faces,
                      numbers=numbers, planned=len(plan.positions),

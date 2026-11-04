@@ -47,8 +47,9 @@ LENGTH_SUFFIX = " mm"
 # A checkbox shown in a tooltip, as for the standard it goes back to.
 SHOWN_ON = QT_TRANSLATE_NOOP("FinSnap", "on")
 SHOWN_OFF = QT_TRANSLATE_NOOP("FinSnap", "off")
-# Said in the tooltip of a field with a limit of its own.
+# Said in the status bar while fins are built.
 NOTE_BUILDING = QT_TRANSLATE_NOOP("FinSnap", "Building the fins...")
+# Said in the tooltip of a field with a limit of its own.
 FIELD_RANGE = QT_TRANSLATE_NOOP("FinSnap", "From %s up to %s.")
 DEGREE_SUFFIX = " \N{DEGREE SIGN}"
 # Pause after a change is taken before the preview is rebuilt, so several
@@ -1520,10 +1521,10 @@ class FinSnapTaskPanel:
             feature.set_round_shift(self.obj, before)
             self.preview()
             self.refuse(error)
+            self.place_handles()
         else:
             self.update_enabled()
             self.show_result()
-        self.place_handles()
 
     def place_handles(self):
         if self.handled_result() is None:
