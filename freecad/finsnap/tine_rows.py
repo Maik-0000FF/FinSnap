@@ -366,6 +366,14 @@ def flank_bend(frame, t):
     return (along_normal(t) - along_normal(nearest)) / frame.n_out
 
 
+def side_foot_start(p, frame, t0, thickness):
+    """How far out the foot of the fin starting at t0 beside the lowest line
+    starts: under all of its flank, which lies furthest in at the place on the fin
+    furthest round the side; further out where the part leaves it no room there."""
+    bend = min(flank_bend(frame, t0), flank_bend(frame, t0 + thickness))
+    return frame.contour.flank(p.foot_height) + frame.flank_out + bend + frame.foot_out
+
+
 def side_tine(p, frame, t0, thickness, z):
     """The tine at height z of the fin starting at t0 beside the lowest line of
     a round side: level, as every tine, but running straight at the axis of the
@@ -393,6 +401,9 @@ def side_tine(p, frame, t0, thickness, z):
     # Where it leaves the fin, in the middle of its thickness: on the flank there.
     line = frame.contour
     leaves = line.flank(z + p.tine_height / 2) + frame.flank_out + flank_bend(frame, t_fin)
+    # The blade comes no further in than its foot, also above it.
+    if p.foot_height > 0:
+        leaves = max(leaves, side_foot_start(p, frame, t0, thickness))
     middle = (frame.along_min + frame.along_max) / 2
     towards_t = middle - t_fin
     # The axis lies a radius behind the plane of the side, along its normal.

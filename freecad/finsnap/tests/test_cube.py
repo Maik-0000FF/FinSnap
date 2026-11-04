@@ -120,6 +120,9 @@ CONE_HEIGHT = 15.0
 FILLET_RADIUS = 3.0    # a fillet round the free end of a rod
 STEPS_NEAR_FINS = (5.4, 5.5, 5.6, 6.0)  # steps ending about where side fins stand at 30 degrees
 TINE_MIDDLE_TOLERANCE = 0.05  # how far off the middle of a side fin a tine may leave it (mm)
+OVERHANG_LAYER = 0.2   # layers a side fin is cut into to see what hangs over (mm)
+OVERHANG_REACH = 6.0   # how far up its foot and blade are looked at (mm)
+OVERHANG_DEFLECTION = 0.01
 AIM_TOLERANCE = 1e-3   # how far off the axis a tine beside the lowest line may aim (cross product, mm2)
 RIB_OFF_WALL = 0.1     # a rib stands this far beside the wall of a side fin
 RIB_WIDTH = 1.0
@@ -1695,6 +1698,22 @@ def stood_on_free_rim(shape):
     return moved(shape, plan.change), side
 
 
+def steepest_step(body, frame):
+    """How far the side of `body` towards the part comes further in from one
+    layer to the next, up the first OVERHANG_REACH mm (mm per OVERHANG_LAYER)."""
+    box = body.BoundBox
+    inner, worst = None, 0.0
+    z = box.ZMin + OVERHANG_LAYER / 2
+    while z < min(box.ZMin + OVERHANG_REACH, box.ZMax):
+        points = [p for wire in body.slice(V(0, 0, 1), z) for p in wire.discretize(Deflection=OVERHANG_DEFLECTION)]
+        here = min(point.dot(frame.out) for point in points)
+        if inner is not None:
+            worst = max(worst, inner - here)
+        inner = here
+        z += OVERHANG_LAYER
+    return worst
+
+
 def check_three_round_fins():
     """Three fins under a whole round side: the one under the lowest line as it
     stands alone, one parallel on each side, clear of the part, their tines
@@ -1742,9 +1761,6 @@ def check_three_round_fins():
             expect(abs(at_flank - (result.positions[2] + result.thickness / 2)) < TINE_MIDDLE_TOLERANCE,
                    "%s: a tine of a side fin leaves it in the middle of its thickness, off by %.3f"
                    % (name, at_flank - (result.positions[2] + result.thickness / 2)))
-            foot_at = geometry.foot_span(three, own, result.heights[3])[0]
-            expect(abs(foot_at - geometry.flank_at(three, own, own.bed_z + three.foot_height)) < d.TOLERANCE,
-                   "%s: the foot of a side fin reaches under it, up to its flank" % name)
             middle = (own.along_min + own.along_max) / 2
             height = own.bed_z + result.touching_z[3][0] + three.tine_height / 2
             axis_s = own.s_face(height) - own.radius / own.n_out
@@ -1752,6 +1768,9 @@ def check_three_round_fins():
             expect(t_to < t_from and s_to < s_from and abs(aim) < AIM_TOLERANCE,
                    "%s: a tine of a side fin runs level straight at the axis, off by %.5f" % (name, aim))
         expect(result.fins.common(stood).Volume < d.TOLERANCE, "%s: no fin reaches into the part" % name)
+        steep = max(steepest_step(result.bodies[k], result.frames[n]) for k, n in ((0, 1), (2, 3)))
+        expect(steep <= OVERHANG_LAYER + GAP_ACROSS_FIN,
+               "%s: no layer of a side fin hangs past the one below by more than 45 degrees: %.3f" % (name, steep))
         nearest = min(body.distToShape(stood)[0] for body in result.bodies)
         # Near the outer edge of a side fin the gap is as near the inner one.
         outer = result.positions[2] + result.thickness - PLANE_INSIDE
@@ -1841,6 +1860,10 @@ def check_three_round_fins():
                               fin_thickness=thickness)
             built = geometry.build(near_stood, near_stood.Faces[number], asked)
             closest = min(body.distToShape(near_stood)[0] for body in built.bodies)
+            steep = max(steepest_step(built.bodies[k], built.frames[n]) for k, n in ((0, 1), (2, 3)))
+            expect(steep <= OVERHANG_LAYER + GAP_ACROSS_FIN,
+                   "%s, %g degrees, fin %g mm thick: no layer hangs past 45 degrees: %.3f"
+                   % (name, degrees, built.thickness, steep))
             expect(len(built.bodies) == 3 and closest > asked.gap - d.TOLERANCE - GAP_ACROSS_FIN
                    and built.fins.common(near_stood).Volume < d.TOLERANCE,
                    "%s, %g degrees, fin %g mm thick: three fins, %.3f off at the closest"

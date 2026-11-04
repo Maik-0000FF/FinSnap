@@ -111,7 +111,8 @@ from .face_frame import UP, FinError, Frame, HandEditError, beside_lowest, frame
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .shapes import bounds, keep, shape_key
 from .tine_rows import (NARROW_AT_EVERY_TINE, TINE_CUTS_IN, TINE_MISSES, extent_at, face_tines, restarted_tines,
-                        flank_bend, side_tine, tine_end, tine_end_fault, tine_end_points, tine_start, tines_on_face,
+                        flank_bend, side_foot_start, side_tine, tine_end, tine_end_fault, tine_end_points, tine_start,
+                        tines_on_face,
                         touching_at, wide_enough)
 
 NOTE_TOO_CLOSE = QT_TRANSLATE_NOOP("FinSnap", "a fin comes within %.3f mm of the part, closer than the %.3f mm it "
@@ -420,13 +421,15 @@ def _ruled(rings):
     return Part.makeSolid(Part.makeShell(faces)).removeSplitter()
 
 
-def _following_blade(p, frame, t0, thickness, head, low, high):
-    """The blade of a fin beside the lowest line of a round side: its outline in
-    every upright plane across its thickness the same but for the flank, from
-    height `high` down to `low`, which follows the radius of the side across
-    it, so the gap stays the same over all of it. Every plane has the same
-    corners, so a step or a cone cannot be cut through between two of them, and
-    `head` is the rest of the outline, the same in every plane.
+def _following_blade(p, frame, t0, thickness, head, low, high, least=None):
+    """The blade of a fin beside the lowest line: its outline in every upright
+    plane across its thickness the same but for the flank, from height `high`
+    down to `low`, which follows the radius of the side across it, so the gap
+    stays the same over all of it. Every plane has the same corners, so a step or
+    a cone cannot be cut through between two of them. `head` is the rest of the
+    outline, the same in every plane. No flank comes further in than `least`, the
+    start of the foot it stands on: below where it would, it goes straight down,
+    so nothing hangs in the air over the foot.
 
     INPUTS this has to withstand:
       plain side                            ->  the gap the same across the fin, to
@@ -436,6 +439,8 @@ def _following_blade(p, frame, t0, thickness, head, low, high):
       fin as far round as the radius and
         past                                ->  the flank stays at the last place on it
       fin over the lowest line              ->  the curve its middle there
+      foot further out than the flank       ->  straight down onto the foot, from where
+                                                the flank passes its start
       cone, fillet or step above the side   ->  the same curve, of the side: the gap
                                                 larger there, measured in _clear_of_part()
     """
@@ -443,12 +448,28 @@ def _following_blade(p, frame, t0, thickness, head, low, high):
     furthest = max(abs(t0 - middle), abs(t0 + thickness - middle))
     falling = max(FLANK_STEEPEST, math.sqrt(max(0.0, 1 - (furthest / radius) ** 2)))
     pieces = max(1, math.ceil(thickness / (falling * math.sqrt(8 * radius * d.CONTOUR_SHARE))))
+    planes = [t0 + thickness * k / pieces for k in range(pieces + 1)]
     outline = flank_outline(p, frame, low, high)
+    heights = {z for _, z in outline}
+    if least is not None:
+        # Where the flank of each plane passes the start of the foot: a corner
+        # in every plane, as they have to have the same corners.
+        for t in planes:
+            by = flank_bend(frame, t)
+            for (s_high, z_high), (s_low, z_low) in zip(outline, outline[1:]):
+                if (s_high + by - least) * (s_low + by - least) < 0:
+                    heights.add(z_low + (z_high - z_low) * (least - s_low - by) / (s_high - s_low))
+
+    def flank_there(z):
+        return next(s_low + (s_high - s_low) * (z - z_low) / (z_high - z_low)
+                    for (s_high, z_high), (s_low, z_low) in zip(outline, outline[1:]) if z_low <= z <= z_high)
+
+    ordered = sorted(heights, reverse=True)
     rings = []
-    for k in range(pieces + 1):
-        t = t0 + thickness * k / pieces
+    for t in planes:
         by = flank_bend(frame, t)
-        rings.append([frame.point(t, s, z) for s, z in head + [(s + by, z) for s, z in outline]])
+        flank = [(max(flank_there(z) + by, least) if least is not None else flank_there(z) + by, z) for z in ordered]
+        rings.append([frame.point(t, s, z) for s, z in head + flank])
     return _ruled(rings)
 
 
@@ -509,6 +530,9 @@ def _clear_of_part(p, part, frame, fin, thickness, half_foot):
             # fin, and little comes of moving out; nothing gained on the foot,
             # the blade moves; nothing gained on the blade, only lower helps.
             by = short / frame.n_out
+            # Reaching into the part says nothing of how far is enough: on by as much.
+            if distance <= d.TOLERANCE:
+                before = None
             if before is not None and before[2] == name:
                 gained = (distance - before[0]) / (now - before[1])
                 if gained < FLANK_LEAST_GAIN:
@@ -547,8 +571,10 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
         # under the part; the blade ends vertically there and the foot carries it.
         s_from, s_to = foot_span(p, frame, height)
         foot_top = zb + p.foot_height
+        if frame.flank_curve:
+            s_from = side_foot_start(p, frame, t0, thickness)
         head = [(s_from, zb), (s_out, zb), (s_out, top)]
-        body = (_following_blade(p, frame, t0, thickness, head, foot_top, top) if frame.flank_curve
+        body = (_following_blade(p, frame, t0, thickness, head, foot_top, top, s_from) if frame.flank_curve
                 else frame.section(t0, head + flank_outline(p, frame, foot_top, top), thickness))
         body = body.fuse(foot(p, frame, t0, thickness, s_from, s_to, half_foot))
     outer_middle = frame.point(t0 + thickness / 2, s_out, zb + height / 2)
