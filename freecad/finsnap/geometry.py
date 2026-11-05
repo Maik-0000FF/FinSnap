@@ -109,7 +109,7 @@ from . import defaults as d
 from . import orient
 from .face_frame import UP, FinError, Frame, HandEditError, beside_lowest, frame_of, in_plane, support_of
 from .i18n import QT_TRANSLATE_NOOP, translate
-from .shapes import bounds, keep, shape_key
+from .shapes import Meshed, bounds, keep, shape_key
 from .tine_rows import (NARROW_AT_EVERY_TINE, TINE_CUTS_IN, TINE_MISSES, extent_at, face_tines, restarted_tines,
                         flank_bend, round_move, side_foot_start, side_tine, tine_end, tine_end_fault, tine_end_points,
                         tine_start, tines_on_face, touching_at, wide_enough)
@@ -136,6 +136,8 @@ NOT_SHAPING_A_FIN = ("placement", "fin_count", "end_inset", "face_length_per_fin
 FLANK_TOP_HAIR = 1e-3
 # Fins beside the lowest line built whole (shapes.keep()), by what they depend on.
 _kept_side_fins = {}
+# The part as a mesh (shapes.Meshed), to find where a side fin keeps the gap.
+_kept_meshes = {}
 SIDE_FINS_KEPT = 32
 # How a foot and a blade beside the lowest line look for where they keep the gap,
 # see _least_clear(): the first step out and how near it comes (mm).
@@ -472,8 +474,8 @@ def _cut_at_height(points, high, low):
     return [(cut, high - (k + 1) * hair) for k in range(held)] + points[held:]
 
 
-def _following_blade(p, frame, t0, thickness, head, low, high, least=None):
-    """The blade of a fin beside the lowest line: its outline in every upright
+def _blade_rings(p, frame, t0, thickness, head, low, high, least=None):
+    """The rings of the blade of a fin beside the lowest line, for _ruled(): its outline in every upright
     plane across its thickness the same but for the flank, from height `high`
     down to `low`, which follows the radius of the side across it, so the gap
     stays the same over all of it: each point of it turned about the axis at its
@@ -534,8 +536,19 @@ def _following_blade(p, frame, t0, thickness, head, low, high, least=None):
             points.append((s + by * frame.n_out, z + by * frame.n_z))
         return [(s if least is None else max(s, least), z) for s, z in _cut_at_height(points, high, low)]
 
-    rings = [[frame.point(t, s, z) for s, z in head + turned_flank(t)] for t in planes]
-    return _ruled(rings)
+    return [[frame.point(t, s, z) for s, z in head + turned_flank(t)] for t in planes]
+
+
+def _side_blade_rings(p, frame, t0, height, thickness):
+    """The rings of the blade of a fin `height` high beside the lowest line: down
+    to the bed without a foot, to the top of the foot on one, from its start."""
+    zb, top = frame.bed_z, frame.bed_z + height
+    s_out = fin_out(p, frame, height)
+    if p.foot_shape == d.FOOT_NONE:
+        return _blade_rings(p, frame, t0, thickness, [(s_out, zb), (s_out, top)], zb, top)
+    s_from = side_foot_start(p, frame, t0, thickness)
+    return _blade_rings(p, frame, t0, thickness, [(s_from, zb), (s_out, zb), (s_out, top)], zb + p.foot_height, top,
+                        s_from)
 
 
 def _tine_faults(p, surface, frame, fin, thickness, kept):
@@ -642,6 +655,48 @@ def _least_clear(clear, step, most, resolution):
     return outside
 
 
+def _settled_clear(clear, guess, most, resolution):
+    """What _least_clear() finds, asked from a `guess` near it: `resolution` to
+    either side of the guess, doubled until `clear` changes, then halved back.
+    None where it holds nowhere up to `most`.
+
+    INPUTS this has to withstand:
+      guess right                           ->  within `resolution`, asked twice
+      guess a little off, either way        ->  the same, a few more times
+      clear at 0, guess above it            ->  0, whatever the guess
+      never clear                           ->  None, `most` itself tried
+      guess past `most`                     ->  taken as `most`
+      `most` 0 or less, not clear at 0      ->  None
+    """
+    guess = max(0.0, min(guess, most))
+    width = resolution
+    if clear(guess):
+        outside = guess
+        while True:
+            if outside <= 0:
+                return 0.0
+            inside = max(0.0, outside - width)
+            if not clear(inside):
+                break
+            outside, width = inside, 2 * width
+    else:
+        inside = guess
+        while True:
+            if inside >= most:
+                return None
+            outside = min(most, inside + width)
+            if clear(outside):
+                break
+            inside, width = outside, 2 * width
+    while outside - inside > resolution + d.TOLERANCE:
+        between_them = (inside + outside) / 2
+        if clear(between_them):
+            outside = between_them
+        else:
+            inside = between_them
+    return outside
+
+
 def _foot_out_for(p, part, frame, fin, thickness, half_foot):
     """How far out the foot of `fin` has to start to keep the gap off the part,
     measured on the foot alone; None where no place on its length does."""
@@ -681,6 +736,8 @@ def _clear_of_part(p, part, frame, fin, thickness, half_foot):
       no tine left                          ->  FinError, as check() says it
     """
     furthest = (d.GAP_MAX - p.gap) / frame.n_out
+    needed = p.gap - d.CONTOUR_TOLERANCE
+    near = keep(_kept_meshes, shape_key(part), lambda: Meshed(part))
     while True:
         def placed(out):
             """The frame with the blade `out` further out and its foot where that
@@ -693,10 +750,18 @@ def _clear_of_part(p, part, frame, fin, thickness, half_foot):
             moved = placed(out)
             if moved is None:
                 return False
-            body = one_fin(p, moved, fin.t0, fin.height, thickness, half_foot, [])[0]
-            return body.distToShape(part)[0] >= p.gap - d.CONTOUR_TOLERANCE
+            return one_fin(p, moved, fin.t0, fin.height, thickness, half_foot, [])[0].distToShape(part)[0] >= needed
 
-        out = _least_clear(blade_clear, FLANK_SEARCH_STEP, furthest, FLANK_RESOLUTION)
+        def looks_clear(out):
+            """What the mesh says of blade_clear(), in a fraction of its time."""
+            moved = placed(out)
+            if moved is None:
+                return False
+            least = near.distance(_side_blade_rings(p, moved, fin.t0, fin.height, thickness), p.gap)
+            return least is not None and least > needed
+
+        guess = _least_clear(looks_clear, FLANK_SEARCH_STEP, furthest, FLANK_RESOLUTION)
+        out = _settled_clear(blade_clear, furthest if guess is None else guess, furthest, FLANK_RESOLUTION)
         if out is not None:
             moved = placed(out)
             return (*one_fin(p, moved, fin.t0, fin.height, thickness, half_foot, fin.candidate_z),
@@ -723,7 +788,7 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
 
     if p.foot_shape == d.FOOT_NONE:
         head = [(s_out, zb), (s_out, top)]
-        body = (_following_blade(p, frame, t0, thickness, head, zb, top) if frame.flank_curve
+        body = (_ruled(_side_blade_rings(p, frame, t0, height, thickness)) if frame.flank_curve
                 else frame.section(t0, head + flank_outline(p, frame, zb, top), thickness))
     else:
         # Below the top of the foot the slanted flank would only add a thin tip
@@ -733,7 +798,7 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
         if frame.flank_curve:
             s_from = side_foot_start(p, frame, t0, thickness)
         head = [(s_from, zb), (s_out, zb), (s_out, top)]
-        body = (_following_blade(p, frame, t0, thickness, head, foot_top, top, s_from) if frame.flank_curve
+        body = (_ruled(_side_blade_rings(p, frame, t0, height, thickness)) if frame.flank_curve
                 else frame.section(t0, head + flank_outline(p, frame, foot_top, top), thickness))
         body = body.fuse(foot(p, frame, t0, thickness, s_from, s_to, half_foot))
     outer_middle = frame.point(t0 + thickness / 2, s_out, zb + height / 2)

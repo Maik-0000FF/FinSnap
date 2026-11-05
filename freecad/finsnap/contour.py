@@ -59,6 +59,7 @@ INPUTS this has to withstand (reach()):
 
 import bisect
 import math
+from itertools import takewhile
 
 import Part
 
@@ -222,24 +223,34 @@ def reach(pieces, z, radius):
     return max(found) if found else None
 
 
+def _outermost(piece, radius):
+    """No point within `radius` of `piece` reaches further out than this."""
+    return max([max(piece[0][0], piece[1][0]) + radius] + [s for line in _shifted(piece, radius) for s, _ in line])
+
+
 def _over_heights(pieces, heights, radius, measure):
     """At every one of the evenly spaced `heights`, how far out the pieces
     reach within `radius`, kept with `measure`(piece) of the piece reaching
     furthest: (reach, value), or None where none reaches. Of pieces reaching
     as far, within TOLERANCE, as two do where they meet, the smallest value
-    is kept, so where they meet does not hang on their order."""
+    is kept, so where they meet does not hang on their order. Those reaching
+    furthest are asked first: the rest, the back of a cut above all, then
+    need no working out at most heights."""
     first, step = heights[0], heights[1] - heights[0]
     found = [None] * len(heights)
-    for piece in pieces:
+    for outermost, piece in sorted(((_outermost(piece, radius), piece) for piece in pieces),
+                                   key=lambda pair: -pair[0]):
         low, high = _heights_of(piece, radius)
         start = max(0, math.ceil((low - first) / step - d.TOLERANCE))
         end = min(len(heights) - 1, math.floor((high - first) / step + d.TOLERANCE))
         value = measure(piece)
         for k in range(start, end + 1):
+            best = found[k]
+            if best is not None and outermost < best[0] - d.TOLERANCE:
+                continue
             r = _piece_reach(piece, heights[k], radius)
             if r is None:
                 continue
-            best = found[k]
             if best is None or r > best[0] + d.TOLERANCE:
                 found[k] = (r, value)
             elif r >= best[0] - d.TOLERANCE:
@@ -300,11 +311,12 @@ def _reach_between(piece, low, high, radius):
 
 def _near(pieces, heights, radius):
     """For each stretch between two of the evenly spaced `heights`, the
-    pieces that reach into it within `radius`: what reach() and _lifted()
-    need to look at there, not every piece of the cut."""
+    pieces that reach into it within `radius`, those reaching furthest out
+    first: what reach() and _lifted() need to look at there, not every piece
+    of the cut."""
     first, step = heights[0], heights[1] - heights[0]
     near = [[] for _ in heights[:-1]]
-    for piece in pieces:
+    for piece in sorted(pieces, key=lambda piece: -_outermost(piece, radius)):
         low, high = _heights_of(piece, radius)
         start = max(0, math.floor((low - first) / step))
         end = min(len(near) - 1, math.floor((high - first) / step))
@@ -372,8 +384,12 @@ def _lifted(values, near, heights, radius):
         def chord(z, a=a, b=b, low=low, high=high):
             return a + (b - a) * (z - low) / (high - low)
 
-        found = [r for r in (_past_chord(piece, low, high, chord, radius) for piece in pieces) if r is not None]
-        if found and max(found) > d.CONTOUR_SHARE:
+        # In the order of _near(): once a piece stays inside both samples by
+        # more than the share, so do all after it, and none reaches past the run.
+        lowest = min(a, b)
+        reaching = takewhile(lambda piece: _outermost(piece, radius) - lowest > d.CONTOUR_SHARE, pieces)
+        past = (_past_chord(piece, low, high, chord, radius) for piece in reaching)
+        if any(r is not None and r > d.CONTOUR_SHARE for r in past):
             most = max(r for r in (_reach_between(piece, low, high, radius) for piece in pieces) if r is not None)
             raised[k], raised[k + 1] = max(raised[k], most), max(raised[k + 1], most)
     return [value if value is None else max(value, up) for value, up in zip(result, raised)]

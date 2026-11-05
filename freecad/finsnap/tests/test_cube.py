@@ -24,6 +24,7 @@ from freecad.finsnap import limits
 from freecad.finsnap import orient
 from freecad.finsnap import overhang
 from freecad.finsnap import stability
+from freecad.finsnap.shapes import Meshed
 from freecad.finsnap.params import FinParams, ParamError
 
 import FreeCAD as App
@@ -143,6 +144,7 @@ MATRIX_SIDE_TINES = {"rod": (7, 7, 7, 7, 7, 7, 7, 7), "tube": (7, 7, 7, 7), "ste
                      "large fillet": (5, 6, 5, 5)}
 HEIGHT_ACROSS_FIN = 0.02  # how far above the height it says a fin may reach (mm)
 LARGE_FILLET_RADIUS = 9.5  # nearly the radius of the rod
+MESHED_BOX, MESHED_OFF = 10.0, 0.5  # a box measured by its mesh, and how far off it (mm)
 GROOVE_WIDTH = 4.0     # a groove round a shaft
 TINE_NEAR_START = 6.0  # the first tine above a groove starts within this of the side (mm)
 AIM_TOLERANCE = 1e-3   # how far off the axis a tine beside the lowest line may aim (cross product, mm2)
@@ -1857,6 +1859,61 @@ def check_side_fin_matrix():
            % (sorted(full.touching_z[1])[:2], start))
 
 
+def check_meshed_distance():
+    """The distance on a mesh says what the shape says, and leaves the mesh of
+    the shape as it was, where the islands and the centres of mass get theirs."""
+    box = Part.makeBox(MESHED_BOX, MESHED_BOX, MESHED_BOX)
+    near = Meshed(box)
+    expect(len(box.tessellate(d.ISLAND_MESH_DEFLECTION)[1]) == len(Part.makeBox(MESHED_BOX, MESHED_BOX, MESHED_BOX)
+                                                                 .tessellate(d.ISLAND_MESH_DEFLECTION)[1]),
+           "the mesh for distances leaves the mesh of the shape alone")
+
+    def rings(x, low=0.0, high=MESHED_BOX, y0=0.0, y1=MESHED_BOX):
+        return [[V(x, y, low), V(x, y, high), V(x + 1, y, high), V(x + 1, y, low)] for y in (y0, y1)]
+
+    far = 2 * MESHED_BOX
+    off_face = rings(MESHED_BOX + MESHED_OFF)
+    expect(abs(near.distance(off_face, far) - MESHED_OFF) < d.TOLERANCE, "a surface beside a face: its distance")
+    beyond = rings(MESHED_BOX + MESHED_OFF, y0=MESHED_BOX + MESHED_OFF, y1=2 * MESHED_BOX)
+    expect(abs(near.distance(beyond, far) - math.hypot(MESHED_OFF, MESHED_OFF)) < d.TOLERANCE,
+           "a surface past an edge: the distance to that edge")
+    expect(near.distance(off_face, MESHED_OFF / 2) == MESHED_OFF / 2, "further than asked: what was asked")
+    twice = rings(MESHED_BOX + MESHED_OFF)
+    twice[0].insert(1, twice[0][0])
+    twice[1].insert(1, twice[1][0])
+    expect(abs(near.distance(twice, far) - MESHED_OFF) < d.TOLERANCE, "points alike in a ring change nothing")
+    many, limit = rings(MESHED_BOX + MESHED_OFF), d.NEAR_MOST_PAIRS
+    d.NEAR_MOST_PAIRS = 0
+    try:
+        expect(near.distance(many, far) is None, "too many pairs: not told")
+    finally:
+        d.NEAR_MOST_PAIRS = limit
+
+
+def check_settled_clear():
+    """Asked from a guess, the search ends where it would without one, and asks
+    little where the guess is right."""
+    resolution, most = 0.01, 2.0
+    for limit, guess, expected in ((1.7, 1.7, 1.7), (1.7, 1.69, 1.7), (1.7, 1.75, 1.7), (1.7, 0.2, 1.7), (1.7, 3.0, 1.7),
+                                   (0.0, 1.0, 0.0), (0.0, 0.0, 0.0), (1.995, 1.9, 1.995), (3.0, 1.0, None),
+                                   (3.0, 2.0, None)):
+        asked = []
+
+        def clear(value, limit=limit, asked=asked):
+            asked.append(value)
+            return value >= limit
+
+        found = geometry._settled_clear(clear, guess, most, resolution)
+        expect(found is None if expected is None
+               else found == expected or 0 <= found - expected <= resolution and found <= most,
+               "from %g, clear from %g: %s, not %s" % (guess, limit, found, expected))
+    asked = []
+    geometry._settled_clear(lambda value: asked.append(value) or value >= 1.7, 1.7, most, resolution)
+    expect(len(asked) == 2, "a right guess is asked twice: %d" % len(asked))
+    expect(geometry._settled_clear(lambda value: False, 1.0, 0.0, resolution) is None,
+           "no room and not clear at 0: None")
+
+
 def check_cut_at_height():
     """A flank cut off at the height of its fin never folds back and is no higher."""
     height, low = 10.0, 3.0
@@ -2634,6 +2691,8 @@ def main():
     check_stability()
     check_round_side()
     check_contour()
+    check_meshed_distance()
+    check_settled_clear()
     check_cut_at_height()
     check_three_round_fins()
     check_side_fin_matrix()

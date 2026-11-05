@@ -249,6 +249,11 @@ CONTOUR_TOLERANCE = 0.005
 # raised, and as much again what the flank may shift as it is drawn with
 # fewer points: together with the curve off its pieces, the tolerance.
 CONTOUR_SHARE = (CONTOUR_TOLERANCE - CONTOUR_DEFLECTION) / 2
+# How closely the mesh follows the part on which it is told quickly where a side
+# fin keeps the gap (mm), which the fin itself then confirms. Past NEAR_MOST_PAIRS
+# of a point and a triangle that would take more memory than a fin takes time.
+NEAR_MESH_DEFLECTION = 0.01
+NEAR_MOST_PAIRS = 30_000_000
 # The flank of the fin never runs inward up the contour more steeply than
 # this angle from the bed allows: the fin itself prints without an overhang.
 FIN_FLANK_ANGLE = OVERHANG_ANGLE

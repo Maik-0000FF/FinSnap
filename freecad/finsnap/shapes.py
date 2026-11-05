@@ -34,8 +34,10 @@ INPUTS this has to withstand (bounds()):
                                             deflection off them
 """
 
+import numpy
 import Part
 
+from . import defaults as d
 from .i18n import translate
 
 # bounds() measures the surfaces themselves, never a mesh that may hang on them.
@@ -53,6 +55,8 @@ SAME_DIRECTION = 1.0 - 1e-6
 KEY_DIGITS = 6
 # What keep() holds in one store at most, the oldest going first.
 KEPT = 8
+# Shorter than this, the cross product of a triangle counts as no area, and no normal (mm).
+SMALLEST_LENGTH = 1e-9
 
 
 def face_name(number):
@@ -96,6 +100,89 @@ def keep(store, key, make, most=KEPT):
             store.pop(next(iter(store)))
         store[key] = make()
     return store[key]
+
+
+def _point_triangle_distances(points, a, b, c):
+    """The distance of each of `points` to the triangle (a, b, c) on its row, by
+    which of its corners, sides or its inside lies nearest."""
+    ab, ac = b - a, c - a
+    d1, d2 = (ab * (points - a)).sum(1), (ac * (points - a)).sum(1)
+    d3, d4 = (ab * (points - b)).sum(1), (ac * (points - b)).sum(1)
+    d5, d6 = (ab * (points - c)).sum(1), (ac * (points - c)).sum(1)
+    vc, vb, va = d1 * d4 - d3 * d2, d5 * d2 - d1 * d6, d3 * d6 - d5 * d4
+    with numpy.errstate(divide="ignore", invalid="ignore"):
+        whole = 1.0 / (va + vb + vc)
+        nearest = a + ab * (vb * whole)[:, None] + ac * (vc * whole)[:, None]
+        for where, there in (((vc <= 0) & (d1 >= 0) & (d3 <= 0), a + ab * (d1 / (d1 - d3))[:, None]),
+                             ((vb <= 0) & (d2 >= 0) & (d6 <= 0), a + ac * (d2 / (d2 - d6))[:, None]),
+                             ((va <= 0) & (d4 >= d3) & (d5 >= d6),
+                              b + (c - b) * ((d4 - d3) / ((d4 - d3) + (d5 - d6)))[:, None]),
+                             ((d1 <= 0) & (d2 <= 0), a), ((d3 >= 0) & (d4 <= d3), b), ((d6 >= 0) & (d5 <= d6), c)):
+            nearest = numpy.where(where[:, None], there, nearest)
+    return numpy.sqrt(((points - nearest) ** 2).sum(1))
+
+
+def _least_distance(points, a, b, c, reach):
+    """The least distance of `points` to the triangles, `reach` where none comes
+    nearer. Most pairs are ruled out by the plane of the triangle and its box."""
+    if not len(points) or not len(a):
+        return reach
+    normals = numpy.cross(b - a, c - a)
+    normals /= numpy.maximum(numpy.linalg.norm(normals, axis=1, keepdims=True), SMALLEST_LENGTH)
+    near = numpy.abs(points @ normals.T - (normals * a).sum(1)) <= reach
+    low, high = numpy.minimum(numpy.minimum(a, b), c), numpy.maximum(numpy.maximum(a, b), c)
+    for axis in range(3):
+        along = points[:, axis:axis + 1]
+        near &= (along >= low[:, axis] - reach) & (along <= high[:, axis] + reach)
+    which, of = numpy.nonzero(near)
+    if not len(which):
+        return reach
+    return min(reach, float(_point_triangle_distances(points[which], a[of], b[of], c[of]).min()))
+
+
+class Meshed:
+    """A shape as triangles, to tell in a fraction of the time a solid takes how
+    far from it the surface between rings of points lies. On a copy: the kernel
+    keeps one mesh with a shape and would reuse this one for others asked of it.
+
+    It measures the corners of each against the triangles of the other, and the
+    rings' end faces only by their corners. What only crosses, far from any
+    corner, it does not see: a caller has the last word measured on the shape.
+
+    INPUTS this has to withstand (distance()):
+      surface some way off a face           ->  that distance, within the deflection
+      a corner of the shape near the surface ->  the distance to that corner
+      all of it further than `reach`        ->  `reach`
+      rings with points alike               ->  the triangles without area left out
+      too many pairs to hold                ->  None: not told
+    """
+
+    def __init__(self, shape):
+        points, triangles = shape.copy().tessellate(d.NEAR_MESH_DEFLECTION)
+        self.points = numpy.array([tuple(point) for point in points], dtype=float).reshape(-1, 3)
+        self.triangles = numpy.array(triangles, dtype=int).reshape(-1, 3)
+
+    def distance(self, rings, reach):
+        """The least distance of the surface between `rings`, lists of as many
+        points, from the shape, `reach` where it is no nearer than that; None
+        where that would take too much memory."""
+        surface = numpy.array([[tuple(point) for point in ring] for ring in rings], dtype=float)
+        corners = surface.reshape(-1, 3)
+        a, b, c = (self.points[self.triangles[:, k]] for k in range(3))
+        within = ((numpy.minimum(numpy.minimum(a, b), c) <= corners.max(0) + reach).all(1)
+                  & (numpy.maximum(numpy.maximum(a, b), c) >= corners.min(0) - reach).all(1))
+        a, b, c = a[within], b[within], c[within]
+        one, next_one = surface[:-1].reshape(-1, 3), numpy.roll(surface[:-1], -1, 1).reshape(-1, 3)
+        other, next_other = surface[1:].reshape(-1, 3), numpy.roll(surface[1:], -1, 1).reshape(-1, 3)
+        first, second, third = (numpy.vstack((one, one)), numpy.vstack((next_one, next_other)),
+                                numpy.vstack((next_other, other)))
+        solid = numpy.linalg.norm(numpy.cross(second - first, third - first), axis=1) > SMALLEST_LENGTH
+        first, second, third = first[solid], second[solid], third[solid]
+        near_corners = self.points[numpy.unique(self.triangles[within])]
+        if max(len(corners) * len(a), len(near_corners) * len(first)) > d.NEAR_MOST_PAIRS:
+            return None
+        least = _least_distance(corners, a, b, c, reach)
+        return _least_distance(near_corners, first, second, third, least)
 
 
 def moved(shape, change):
