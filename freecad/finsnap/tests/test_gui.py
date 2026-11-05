@@ -895,6 +895,10 @@ def arrow_field(panel, fins):
     popup_focus(QtCore.QEvent.FocusIn)
     for closed_with in (QtCore.Qt.Key_Escape, QtCore.Qt.Key_Return):
         let_go(closed_with)
+        # Held to close the menu: its repeats arrive in the field before it is let go.
+        QtWidgets.QApplication.sendEvent(field, QtGui.QKeyEvent(QtCore.QEvent.KeyPress, closed_with,
+                                                                QtCore.Qt.NoModifier, "", True))
+        let_go(closed_with)
         expect(panel.arrow_field is not None and abs(field.value() - moved_to) < d.TOLERANCE
                and abs(box.value() - place) < d.TOLERANCE,
                "a key let go closing its menu leaves the field as it was: %s" % closed_with)

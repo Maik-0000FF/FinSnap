@@ -585,6 +585,8 @@ class ArrowFieldKeys(QtCore.QObject):
       a key held, repeating                 ->  the repeats kept, acted on once let go
       Enter or Escape let go, not pressed
         in the field, closing its menu      ->  kept, nothing done
+      the same held, its repeats in the
+        field before it is let go           ->  kept, nothing done
       a shortcut on Enter or Escape         ->  claimed for the field
       the focus gone, a click elsewhere     ->  take()
       the focus gone to its own menu        ->  stays open, nothing taken
@@ -624,7 +626,7 @@ class ArrowFieldKeys(QtCore.QObject):
                 or event.key() not in ENTER_KEYS + CANCEL_KEYS:
             return False
         event.accept()
-        if kind == QtCore.QEvent.KeyPress:
+        if kind == QtCore.QEvent.KeyPress and not event.isAutoRepeat():
             self.pressed.add(event.key())
         elif kind == QtCore.QEvent.KeyRelease and not event.isAutoRepeat() and event.key() in self.pressed:
             self.pressed.discard(event.key())
