@@ -60,6 +60,9 @@ ENTER_KEYS = (QtCore.Qt.Key_Return, QtCore.Qt.Key_Enter)
 # The field a double click on an arrow lays over the 3D view past its tip:
 # Escape closes it untaken; Enter or a click elsewhere takes it.
 CANCEL_KEYS = (QtCore.Qt.Key_Escape,)
+# What a mouse button does in a widget, pressed, let go or double clicked.
+MOUSE_BUTTON_EVENTS = (QtCore.QEvent.MouseButtonPress, QtCore.QEvent.MouseButtonRelease,
+                       QtCore.QEvent.MouseButtonDblClick)
 # It stands this many pixels past the tip of its arrow.
 ARROW_FIELD_GAP = 4
 # Pause after the last repeat of an arrow key held before the fin is built
@@ -560,31 +563,34 @@ class EnterTakes(QtCore.QObject):
         return False
 
 
-MOUSE_BUTTON_EVENTS = (QtCore.QEvent.MouseButtonPress, QtCore.QEvent.MouseButtonRelease,
-                       QtCore.QEvent.MouseButtonDblClick)
-
-
 class ArrowFieldKeys(QtCore.QObject):
     """Ends typing in the field at an arrow: Enter and the field losing the
-    focus call `take`, as a field of the panel takes its value then; Escape
-    calls `cancel`. Enter and Escape are kept from FreeCAD whole, pressed and
-    let go: the field lies in the 3D view, which leaves edit mode on Escape
-    let go, closing the task panel, and a shortcut on them is claimed for the
-    field before FreeCAD takes it. The field acts when the key is let go, so
-    it still holds the focus and takes that too.
+    focus, but to its own menu, call `take`, as a field of the panel takes its
+    value then; Escape calls `cancel`. Enter and Escape are kept from FreeCAD
+    whole, pressed and let go: the field lies in the 3D view, which leaves edit
+    mode on Escape let go, closing the task panel, and a shortcut on them is
+    claimed for the field before FreeCAD takes it. The field acts when the key
+    is let go, so it still holds the focus and takes that too, and only on a key
+    pressed in it: one let go there after closing its menu was meant for the menu.
 
-    A press of another button than the left is kept from the 3D view it lies
-    in: its let go goes to the menu it opens, and the navigation would hold that
-    button as pressed, panning with the next click until pressed again.
+    Buttons other than the left, pressed or let go, are kept from the 3D view:
+    the navigation would hold one it sees pressed and not let go, as the right
+    button before the menu it opens, and pan with the next click until it is
+    pressed again.
 
     INPUTS this has to withstand:
       Enter or Return let go                ->  take(), press and release kept
       Escape let go                         ->  cancel(), press and release kept,
                                                 the task panel left open
       a key held, repeating                 ->  the repeats kept, acted on once let go
+      Enter or Escape let go, not pressed
+        in the field, closing its menu      ->  kept, nothing done
       a shortcut on Enter or Escape         ->  claimed for the field
       the focus gone, a click elsewhere     ->  take()
       the focus gone to its own menu        ->  stays open, nothing taken
+      the focus gone to another menu, as
+        the one of the main window          ->  take(), so what it saves has the value
+      its own menu closed, then another     ->  take()
       right or middle button in the field   ->  kept from the view, its menu still opens
       left button in the field              ->  passed on: selects, steps
       any other key, digits, a sign         ->  passed on to the field
@@ -593,21 +599,35 @@ class ArrowFieldKeys(QtCore.QObject):
     def __init__(self, take, cancel, parent):
         super().__init__(parent)
         self.take, self.cancel = take, cancel
+        self.own_menu = False
+        self.pressed = set()
 
     def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
         kind = event.type()
+        if kind == QtCore.QEvent.ContextMenu:
+            # Comes just before the focus goes to the menu it opens.
+            self.own_menu = True
+            return False
+        if kind == QtCore.QEvent.FocusIn:
+            self.own_menu = False
+            return False
         if kind == QtCore.QEvent.FocusOut:
-            if event.reason() != QtCore.Qt.PopupFocusReason:
+            if not (self.own_menu and event.reason() == QtCore.Qt.PopupFocusReason):
                 self.take()
             return False
-        if kind in MOUSE_BUTTON_EVENTS and event.button() != QtCore.Qt.LeftButton:
+        if kind in MOUSE_BUTTON_EVENTS:
+            if event.button() == QtCore.Qt.LeftButton:
+                return False
             event.accept()
             return True
         if kind not in (QtCore.QEvent.ShortcutOverride, QtCore.QEvent.KeyPress, QtCore.QEvent.KeyRelease) \
                 or event.key() not in ENTER_KEYS + CANCEL_KEYS:
             return False
         event.accept()
-        if kind == QtCore.QEvent.KeyRelease and not event.isAutoRepeat():
+        if kind == QtCore.QEvent.KeyPress:
+            self.pressed.add(event.key())
+        elif kind == QtCore.QEvent.KeyRelease and not event.isAutoRepeat() and event.key() in self.pressed:
+            self.pressed.discard(event.key())
             (self.take if event.key() in ENTER_KEYS else self.cancel)()
         return True
 

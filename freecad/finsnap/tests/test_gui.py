@@ -864,13 +864,51 @@ def arrow_field(panel, fins):
                "a click elsewhere takes the value typed at the arrow: %.2f" % box.value())
     expect(feature.edits(fins, feature.MAIN)[1] == shifts, "typed back, the fin stands where it stood")
 
-    # Its own menu takes the focus too: nothing taken, the field stays.
+    # Its own menu takes the focus too: nothing taken, the field stays. A key let
+    # go after closing it was meant for the menu; another menu takes the value.
+    def popup_focus(kind):
+        QtWidgets.QApplication.sendEvent(panel.arrow_field[2], QtGui.QFocusEvent(kind, QtCore.Qt.PopupFocusReason))
+
+    def let_go(pressed):
+        QtWidgets.QApplication.sendEvent(panel.arrow_field[2], QtGui.QKeyEvent(QtCore.QEvent.KeyRelease, pressed,
+                                                                                QtCore.Qt.NoModifier))
+
     panel.edit_at_arrow(handles.ALONG)
     field = panel.arrow_field[2]
-    field.setValue(place - FIN_SHIFT)
-    QtWidgets.QApplication.sendEvent(field, QtGui.QFocusEvent(QtCore.QEvent.FocusOut, QtCore.Qt.PopupFocusReason))
-    expect(panel.arrow_field is not None and abs(box.value() - place) < d.TOLERANCE,
-           "the menu of the field leaves it open, nothing taken: %.2f" % box.value())
+    moved_to = place - FIN_SHIFT
+    field.setValue(moved_to)
+    in_menu = []
+
+    def while_menu_open():
+        menu = QtWidgets.QApplication.activePopupWidget()
+        in_menu.append(type(menu).__name__ if menu else None)
+        popup_focus(QtCore.QEvent.FocusOut)
+        in_menu.append(panel.arrow_field is not None and abs(box.value() - place) < d.TOLERANCE)
+        if menu:
+            menu.close()
+
+    QtCore.QTimer.singleShot(0, while_menu_open)
+    at = QtCore.QPoint(1, 1)
+    QtWidgets.QApplication.sendEvent(field, QtGui.QContextMenuEvent(QtGui.QContextMenuEvent.Mouse, at,
+                                                                    field.mapToGlobal(at)))
+    expect(in_menu == ["QMenu", True], "the menu of the field opens and leaves it open, nothing taken: %s" % in_menu)
+    popup_focus(QtCore.QEvent.FocusIn)
+    for closed_with in (QtCore.Qt.Key_Escape, QtCore.Qt.Key_Return):
+        let_go(closed_with)
+        expect(panel.arrow_field is not None and abs(field.value() - moved_to) < d.TOLERANCE
+               and abs(box.value() - place) < d.TOLERANCE,
+               "a key let go closing its menu leaves the field as it was: %s" % closed_with)
+
+    filters = field.findChild(taskpanel.ArrowFieldKeys)
+    inside = QtCore.QPointF(at)
+
+    def filtered(kind, button):
+        return filters.eventFilter(field, QtGui.QMouseEvent(kind, inside, inside, button, button, QtCore.Qt.NoModifier))
+
+    for kind in taskpanel.MOUSE_BUTTON_EVENTS:
+        expect(not filtered(kind, QtCore.Qt.LeftButton), "the left button goes on to the field: %s" % kind)
+        for button in (QtCore.Qt.RightButton, QtCore.Qt.MiddleButton):
+            expect(filtered(kind, button), "another button stays from the view: %s, %s" % (kind, button))
 
     class Reached(QtCore.QObject):
         """What of the mouse gets past the field to the view it lies in."""
@@ -886,7 +924,6 @@ def arrow_field(panel, fins):
 
     reached = Reached()
     field.parentWidget().installEventFilter(reached)
-    inside = QtCore.QPointF(1, 1)
     for button in (QtCore.Qt.RightButton, QtCore.Qt.MiddleButton):
         for kind, held in ((QtCore.QEvent.MouseButtonPress, button),
                            (QtCore.QEvent.MouseButtonRelease, QtCore.Qt.NoButton)):
@@ -895,7 +932,15 @@ def arrow_field(panel, fins):
     field.parentWidget().removeEventFilter(reached)
     expect(not reached.events, "the right and the middle button in the field do not reach the view: %s"
            % reached.events)
-    panel.close_arrow_field()
+
+    popup_focus(QtCore.QEvent.FocusOut)
+    expect(panel.arrow_field is None and abs(box.value() - moved_to) < d.TOLERANCE,
+           "another menu takes the value typed, as what it saves has to have it: %.2f" % box.value())
+    panel.edit_at_arrow(handles.ALONG)
+    panel.arrow_field[2].setValue(place)
+    key(panel.arrow_field[2], QtCore.Qt.Key_Return)
+    expect(feature.edits(fins, feature.MAIN)[1] == shifts and panel.arrow_field is None,
+           "typed back, the fin stands where it stood again")
 
 
 def value_colors():
