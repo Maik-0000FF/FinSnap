@@ -34,8 +34,12 @@ INPUTS this has to withstand (bounds()):
                                             deflection off them
 """
 
+from collections import namedtuple
+
+import numpy
 import Part
 
+from . import defaults as d
 from .i18n import translate
 
 # bounds() measures the surfaces themselves, never a mesh that may hang on them.
@@ -53,6 +57,13 @@ SAME_DIRECTION = 1.0 - 1e-6
 KEY_DIGITS = 6
 # What keep() holds in one store at most, the oldest going first.
 KEPT = 8
+# A triangle whose cross product of two sides is no longer than this has no area (mm2).
+SMALLEST_AREA = 1e-9
+# How many parts meshed_of() keeps a fine mesh of. It stays in memory until another
+# part takes its place, also past the closing of a document, by decision: moving a
+# fin needs it again at once, and one mesh is what that costs.
+MESHES_KEPT = 1
+_kept_meshes = {}
 
 
 def face_name(number):
@@ -96,6 +107,153 @@ def keep(store, key, make, most=KEPT):
             store.pop(next(iter(store)))
         store[key] = make()
     return store[key]
+
+
+def _point_triangle_distances(points, a, b, c):
+    """The distance of each of `points` to the triangle (a, b, c) on its row, by
+    which of its corners, sides or its inside lies nearest."""
+    ab, ac = b - a, c - a
+    d1, d2 = (ab * (points - a)).sum(1), (ac * (points - a)).sum(1)
+    d3, d4 = (ab * (points - b)).sum(1), (ac * (points - b)).sum(1)
+    d5, d6 = (ab * (points - c)).sum(1), (ac * (points - c)).sum(1)
+    vc, vb, va = d1 * d4 - d3 * d2, d5 * d2 - d1 * d6, d3 * d6 - d5 * d4
+    with numpy.errstate(divide="ignore", invalid="ignore"):
+        whole = 1.0 / (va + vb + vc)
+        nearest = a + ab * (vb * whole)[:, None] + ac * (vc * whole)[:, None]
+        for where, there in (((vc <= 0) & (d1 >= 0) & (d3 <= 0), a + ab * (d1 / (d1 - d3))[:, None]),
+                             ((vb <= 0) & (d2 >= 0) & (d6 <= 0), a + ac * (d2 / (d2 - d6))[:, None]),
+                             ((va <= 0) & (d4 >= d3) & (d5 >= d6),
+                              b + (c - b) * ((d4 - d3) / ((d4 - d3) + (d5 - d6)))[:, None]),
+                             ((d1 <= 0) & (d2 <= 0), a), ((d3 >= 0) & (d4 <= d3), b), ((d6 >= 0) & (d5 <= d6), c)):
+            nearest = numpy.where(where[:, None], there, nearest)
+    return numpy.sqrt(((points - nearest) ** 2).sum(1))
+
+
+_Triangles = namedtuple("_Triangles", "a b c low high normals offsets")
+
+
+def _triangles(a, b, c):
+    """The triangles (a, b, c), all with an area, with what _least_distance() looks
+    at first: the box round each and its plane."""
+    normals = numpy.cross(b - a, c - a)
+    normals /= numpy.linalg.norm(normals, axis=1, keepdims=True)
+    return _Triangles(a, b, c, numpy.minimum(numpy.minimum(a, b), c), numpy.maximum(numpy.maximum(a, b), c),
+                      normals, (normals * a).sum(1))
+
+
+def _least_distance(points, triangles, reach):
+    """The least distance of `points` to the `triangles`, `reach` where none comes
+    nearer. In blocks of NEAR_PAIRS_AT_ONCE pairs, however many they are: most are
+    ruled out by the box of the triangle, then by its plane, and what one block
+    finds rules out more in the next."""
+    if not len(points) or not len(triangles.a):
+        return reach
+    block = max(1, d.NEAR_PAIRS_AT_ONCE // len(triangles.a))
+    for start in range(0, len(points), block):
+        some = points[start:start + block]
+        near = numpy.ones((len(some), len(triangles.a)), dtype=bool)
+        for axis in range(3):
+            along = some[:, axis:axis + 1]
+            near &= (along >= triangles.low[:, axis] - reach) & (along <= triangles.high[:, axis] + reach)
+        which, of = numpy.nonzero(near)
+        close = numpy.abs((some[which] * triangles.normals[of]).sum(1) - triangles.offsets[of]) <= reach
+        which, of = which[close], of[close]
+        if len(which):
+            found = _point_triangle_distances(some[which], triangles.a[of], triangles.b[of], triangles.c[of])
+            reach = min(reach, float(found.min()))
+    return reach
+
+
+class TooManyPairs(Exception):
+    """A distance on a mesh would take longer than measuring the shape, or the mesh
+    does not fit in memory."""
+
+
+def mesh_arrays(shape, deflection, on_copy=False):
+    """The mesh of `shape` as arrays: its points (n, 3) and the three points of each
+    triangle by number (m, 3). Empty where the kernel cannot mesh it. `on_copy`
+    leaves the mesh the kernel keeps with the shape as it is."""
+    try:
+        points, triangles = (shape.copy() if on_copy else shape).tessellate(deflection)
+    except Part.OCCError:
+        points, triangles = [], []
+    return (numpy.array([(point.x, point.y, point.z) for point in points], dtype=float).reshape(-1, 3),
+            numpy.array(triangles, dtype=int).reshape(-1, 3))
+
+
+class Meshed:
+    """A shape as triangles, to tell in a fraction of the time a solid takes how
+    far from it the surface between rings of points lies. On a copy: the kernel
+    keeps one mesh with a shape and would reuse this one for others asked of it.
+
+    It measures the corners of each against the triangles of the other, and the
+    rings' end faces only by their corners. It knows no inside: a caller has the
+    last word measured on the shape.
+
+    INPUTS this has to withstand (distance()):
+      surface some way off a face           ->  that distance, within the deflection
+      a corner of the shape near the surface ->  the distance to that corner
+      all of it further than `reach`        ->  `reach`
+      surface deep inside the shape, further
+        than `reach` from every face        ->  `reach`, as if clear: by decision, the
+                                                caller's measure on the shape says no
+      rings with points alike               ->  the triangles without area left out
+      a triangle of the mesh without area   ->  left out, it has no plane
+      a shape the kernel cannot mesh        ->  `reach`: nothing seen, for the same caller
+      too many pairs to go through          ->  TooManyPairs
+    """
+
+    def __init__(self, shape):
+        self.points, triangles = mesh_arrays(shape, d.NEAR_MESH_DEFLECTION, on_copy=True)
+        a, b, c = (self.points[triangles[:, k]] for k in range(3))
+        kept = numpy.linalg.norm(numpy.cross(b - a, c - a), axis=1) > SMALLEST_AREA
+        self.numbers = triangles[kept]
+        self.triangles = _triangles(a[kept], b[kept], c[kept])
+
+    def distance(self, rings, reach):
+        """The least distance of the surface between `rings`, lists of as many
+        points, from the shape, `reach` where it is no nearer than that."""
+        corners = numpy.array([tuple(point) for ring in rings for point in ring], dtype=float).reshape(-1, 3)
+        faces = numpy.array([[tuple(point) for point in triangle] for triangle in between_rings(rings)],
+                            dtype=float).reshape(-1, 3, 3)
+        mine = self.triangles
+        within = (mine.low <= corners.max(0) + reach).all(1) & (mine.high >= corners.min(0) - reach).all(1)
+        near_corners = self.points[numpy.unique(self.numbers[within])]
+        if max(len(corners) * int(within.sum()), len(near_corners) * len(faces)) > d.NEAR_MOST_PAIRS:
+            raise TooManyPairs
+        least = _least_distance(corners, _Triangles(*(field[within] for field in mine)), reach)
+        return _least_distance(near_corners, _triangles(faces[:, 0], faces[:, 1], faces[:, 2]), least)
+
+
+def meshed_of(shape):
+    """The Meshed of `shape`, made once, also where it does not fit in memory, which
+    is not tried again: TooManyPairs then."""
+    def make():
+        try:
+            return Meshed(shape)
+        except MemoryError:
+            return None
+
+    found = keep(_kept_meshes, shape_key(shape), make, MESHES_KEPT)
+    if found is None:
+        raise TooManyPairs
+    return found
+
+
+def clear_meshes():
+    """Forget every Meshed kept."""
+    _kept_meshes.clear()
+
+
+def between_rings(rings):
+    """The triangles from each of `rings`, polygons of as many points, to the
+    next, without those of no area."""
+    for one, other in zip(rings, rings[1:]):
+        for k in range(len(one)):
+            a, b, c, e = one[k], one[(k + 1) % len(one)], other[(k + 1) % len(one)], other[k]
+            for triangle in ((a, b, c), (a, c, e)):
+                if (triangle[1] - triangle[0]).cross(triangle[2] - triangle[0]).Length > SMALLEST_AREA:
+                    yield triangle
 
 
 def moved(shape, change):
