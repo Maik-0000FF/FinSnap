@@ -59,7 +59,7 @@ KEY_DIGITS = 6
 KEPT = 8
 # A triangle whose cross product of two sides is no longer than this has no area (mm2).
 SMALLEST_AREA = 1e-9
-# How many parts meshed_of() keeps a fine mesh of. It stays in memory until another
+# How many parts meshed_of() keeps a mesh of. It stays in memory until another
 # part takes its place, also past the closing of a document, by decision: moving a
 # fin needs it again at once, and one mesh is what that costs.
 MESHES_KEPT = 1
@@ -165,7 +165,7 @@ def _least_distance(points, triangles, reach):
 
 
 class TooManyPairs(Exception):
-    """A distance on a mesh would take longer than measuring the shape, or the mesh
+    """A mesh, or a distance on it, would take longer than measuring the shape, or
     does not fit in memory."""
 
 
@@ -200,10 +200,18 @@ class Meshed:
       rings with points alike               ->  the triangles without area left out
       a triangle of the mesh without area   ->  left out, it has no plane
       a shape the kernel cannot mesh        ->  `reach`: nothing seen, for the same caller
+      a shape with too many triangles at
+        NEAR_MESH_COARSE                    ->  TooManyPairs, before the fine mesh
+      exactly as many as NEAR_MESH_MOST     ->  the fine mesh
       too many pairs to go through          ->  TooManyPairs
     """
 
     def __init__(self, shape):
+        try:
+            if len(shape.copy().tessellate(d.NEAR_MESH_COARSE)[1]) > d.NEAR_MESH_MOST:
+                raise TooManyPairs
+        except Part.OCCError:
+            pass
         self.points, triangles = mesh_arrays(shape, d.NEAR_MESH_DEFLECTION, on_copy=True)
         a, b, c = (self.points[triangles[:, k]] for k in range(3))
         kept = numpy.linalg.norm(numpy.cross(b - a, c - a), axis=1) > SMALLEST_AREA
@@ -226,12 +234,12 @@ class Meshed:
 
 
 def meshed_of(shape):
-    """The Meshed of `shape`, made once, also where it does not fit in memory, which
-    is not tried again: TooManyPairs then."""
+    """The Meshed of `shape`, made once, also where there is none to have, as it is too
+    large for it or for memory, which is not tried again: TooManyPairs then."""
     def make():
         try:
             return Meshed(shape)
-        except MemoryError:
+        except (MemoryError, TooManyPairs):
             return None
 
     found = keep(_kept_meshes, shape_key(shape), make, MESHES_KEPT)

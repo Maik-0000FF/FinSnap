@@ -1903,6 +1903,8 @@ def check_meshed_distance():
     expect(abs(near.distance(twice, far) - MESHED_OFF) < d.TOLERANCE, "points alike in a ring change nothing")
 
 
+    asked_of = []
+
     class Stub:
         """A shape with the mesh it is given, or none where that is an error."""
 
@@ -1912,7 +1914,8 @@ def check_meshed_distance():
         def copy(self):
             return self
 
-        def tessellate(self, _):
+        def tessellate(self, deflection):
+            asked_of.append(deflection)
             if self.mesh is None:
                 raise Part.OCCError("no mesh")
             return self.mesh
@@ -1924,6 +1927,22 @@ def check_meshed_distance():
     above = [[V(0, 0, 1), V(1, 0, 1), V(0, 1, 1)], [V(0, 0, 2), V(1, 0, 2), V(0, 1, 2)]]
     expect(len(flat.triangles.a) == 1 and abs(flat.distance(above, far) - 1) < d.TOLERANCE,
            "a triangle of the mesh without area is left out, the distance stays a number")
+    expect(asked_of[-2:] == [d.NEAR_MESH_COARSE, d.NEAR_MESH_DEFLECTION], "a small mesh is made fine: %s" % asked_of)
+    two_triangles = Stub((corners, [(0, 1, 3), (1, 2, 3)]))
+    most = d.NEAR_MESH_MOST
+    try:
+        d.NEAR_MESH_MOST = 2
+        expect(len(Meshed(two_triangles).triangles.a) == 2, "as many triangles as the limit: made fine")
+        d.NEAR_MESH_MOST = 1
+        asked_of.clear()
+        try:
+            Meshed(two_triangles)
+            told = True
+        except shapes.TooManyPairs:
+            told = False
+        expect(not told and asked_of == [d.NEAR_MESH_COARSE], "past the limit: no fine mesh made: %s" % asked_of)
+    finally:
+        d.NEAR_MESH_MOST = most
 
     contour.clear_kept()
     for size in range(1, shapes.MESHES_KEPT + 3):
@@ -1977,7 +1996,13 @@ def check_meshed_distance():
         too_many = side_fins(filleted, three, shapes.meshed_of)
     finally:
         d.NEAR_MOST_PAIRS = limit
-    for reason, exact in (("too many pairs", too_many), ("no memory", side_fins(filleted, three, out_of_memory)),
+    most, d.NEAR_MESH_MOST = d.NEAR_MESH_MOST, 0
+    try:
+        too_large = side_fins(filleted, three, shapes.meshed_of)
+    finally:
+        d.NEAR_MESH_MOST = most
+    for reason, exact in (("too many pairs", too_many), ("too large for a mesh", too_large),
+                          ("no memory", side_fins(filleted, three, out_of_memory)),
                           ("the mesh sees no place", side_fins(filleted, three, lambda _: Sees(0.0))),
                           ("the mesh sees one at 0", side_fins(filleted, three, lambda _: Sees(far)))):
         expect(exact.touching_z == by_mesh.touching_z
