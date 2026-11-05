@@ -165,7 +165,8 @@ def _least_distance(points, triangles, reach):
 
 
 class TooManyPairs(Exception):
-    """A distance on a mesh would take longer than measuring the shape."""
+    """A distance on a mesh would take longer than measuring the shape, or the mesh
+    does not fit in memory."""
 
 
 def mesh_arrays(shape, deflection, on_copy=False):

@@ -636,13 +636,13 @@ def _halved(clear, inside, outside, resolution):
 
 def _least_clear(clear, step, most, resolution):
     """The smallest value from 0 up to `most` at which `clear(value)` holds, within
-    `resolution`: outward by doubling `step` until it holds, then halved back
+    `resolution` give or take TOLERANCE (_halved()): outward by doubling `step` until it holds, then halved back
     between the last value that does not and the first that does, so it never
     stays further out than it has to. None where it holds nowhere up to `most`.
 
     INPUTS this has to withstand:
       clear at 0                            ->  0, asked once
-      clear from 1.7 on                     ->  within `resolution` above 1.7
+      clear from 1.7 on                     ->  within that above 1.7
       clear from just below `most`          ->  found, `most` itself tried
       never clear                           ->  None
       `most` 0 or less, not clear at 0      ->  None
@@ -661,11 +661,12 @@ def _least_clear(clear, step, most, resolution):
 
 def _settled_clear(clear, guess, most, resolution):
     """What _least_clear() finds, asked from a `guess` near it: `resolution` to
-    either side of the guess, doubled until `clear` changes, then halved back.
+    either side of the guess, doubled until `clear` changes, then halved back, to
+    within `resolution` give or take TOLERANCE (_halved()).
     None where it holds nowhere up to `most`.
 
     INPUTS this has to withstand:
-      guess right                           ->  within `resolution`, asked twice
+      guess right                           ->  within that, asked twice
       guess a little off, either way        ->  the same, a few more times
       clear at 0, guess above it            ->  0, whatever the guess
       never clear                           ->  None, `most` itself tried
