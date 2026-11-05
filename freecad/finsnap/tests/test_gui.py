@@ -4,7 +4,7 @@
 """The commands as a user runs them, in a FreeCAD with GUI but without a screen.
 
 Run in FreeCAD, with this checkout installed as an addon (see CONTRIBUTING.md):
-    QT_QPA_PLATFORM=offscreen freecad freecad/finsnap/tests/test_gui.py
+    xvfb-run -a freecad freecad/finsnap/tests/test_gui.py
 
 Dialogs that would wait for a click are replaced by fixed answers; everything
 else, from the selection to the written file, runs as in FreeCAD.
