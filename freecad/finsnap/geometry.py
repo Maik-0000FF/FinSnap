@@ -109,7 +109,7 @@ from . import defaults as d
 from . import orient
 from .face_frame import UP, FinError, Frame, HandEditError, beside_lowest, frame_of, in_plane, support_of
 from .i18n import QT_TRANSLATE_NOOP, translate
-from .shapes import Meshed, bounds, keep, shape_key
+from .shapes import Meshed, TooManyPairs, between_rings, bounds, keep, shape_key
 from .tine_rows import (NARROW_AT_EVERY_TINE, TINE_CUTS_IN, TINE_MISSES, extent_at, face_tines, restarted_tines,
                         flank_bend, round_move, side_foot_start, side_tine, tine_end, tine_end_fault, tine_end_points,
                         tine_start, tines_on_face, touching_at, wide_enough)
@@ -148,8 +148,6 @@ FLANK_RESOLUTION = 0.01
 # Where the side falls away steepest across such a fin, as the cosine: past it
 # the fin has left the side, and more planes would follow nothing.
 FLANK_STEEPEST = 0.2
-# Twice the area of a triangle too small to be a face of a ruled solid (mm2).
-SMALLEST_AREA = 1e-9
 # Upright planes round a tine beside the lowest line of a round side at which
 # its end is measured: how far apart (mm), and how far beyond its start towards
 # the axis they go (mm), as it runs at the axis and so ends beside where it
@@ -431,13 +429,7 @@ def _ruled(rings):
     def face(points):
         return Part.Face(Part.makePolygon(points + points[:1]))
 
-    faces = [face(rings[0]), face(rings[-1])]
-    for one, other in zip(rings, rings[1:]):
-        for k in range(len(one)):
-            a, b, c, e = one[k], one[(k + 1) % len(one)], other[(k + 1) % len(one)], other[k]
-            for triangle in ((a, b, c), (a, c, e)):
-                if (triangle[1] - triangle[0]).cross(triangle[2] - triangle[0]).Length > SMALLEST_AREA:
-                    faces.append(face(list(triangle)))
+    faces = [face(rings[0]), face(rings[-1])] + [face(list(triangle)) for triangle in between_rings(rings)]
     return Part.makeSolid(Part.makeShell(faces)).removeSplitter()
 
 
@@ -624,6 +616,18 @@ def _on_flank(p, frame, fin, thickness):
     return fin._replace(on_face=on_face, touching=[z for z in fin.touching if on_flank(z)])
 
 
+def _halved(clear, inside, outside, resolution):
+    """Between `inside`, where `clear` does not hold, and `outside`, where it does,
+    the first value at which it holds, within `resolution`."""
+    while outside - inside > resolution + d.TOLERANCE:
+        between_them = (inside + outside) / 2
+        if clear(between_them):
+            outside = between_them
+        else:
+            inside = between_them
+    return outside
+
+
 def _least_clear(clear, step, most, resolution):
     """The smallest value from 0 up to `most` at which `clear(value)` holds, within
     `resolution`: outward by doubling `step` until it holds, then halved back
@@ -646,13 +650,7 @@ def _least_clear(clear, step, most, resolution):
         if outside >= most:
             return None
         inside, outside = outside, min(2 * outside, most)
-    while outside - inside > resolution:
-        between_them = (inside + outside) / 2
-        if clear(between_them):
-            outside = between_them
-        else:
-            inside = between_them
-    return outside
+    return _halved(clear, inside, outside, resolution)
 
 
 def _settled_clear(clear, guess, most, resolution):
@@ -688,13 +686,7 @@ def _settled_clear(clear, guess, most, resolution):
             if clear(outside):
                 break
             inside, width = outside, 2 * width
-    while outside - inside > resolution + d.TOLERANCE:
-        between_them = (inside + outside) / 2
-        if clear(between_them):
-            outside = between_them
-        else:
-            inside = between_them
-    return outside
+    return _halved(clear, inside, outside, resolution)
 
 
 def _foot_out_for(p, part, frame, fin, thickness, half_foot):
@@ -752,16 +744,20 @@ def _clear_of_part(p, part, frame, fin, thickness, half_foot):
                 return False
             return one_fin(p, moved, fin.t0, fin.height, thickness, half_foot, [])[0].distToShape(part)[0] >= needed
 
+        # For a guess the foot stays as it stands with nothing moved: looking for
+        # its place at every step is what a mesh is there to save.
+        standing = placed(0.0) or frame
+
         def looks_clear(out):
             """What the mesh says of blade_clear(), in a fraction of its time."""
-            moved = placed(out)
-            if moved is None:
-                return False
-            least = near.distance(_side_blade_rings(p, moved, fin.t0, fin.height, thickness), p.gap)
-            return least is not None and least > needed
+            rings = _side_blade_rings(p, replace(standing, flank_out=out), fin.t0, fin.height, thickness)
+            return near.distance(rings, p.gap) > needed
 
-        guess = _least_clear(looks_clear, FLANK_SEARCH_STEP, furthest, FLANK_RESOLUTION)
-        out = _settled_clear(blade_clear, furthest if guess is None else guess, furthest, FLANK_RESOLUTION)
+        try:
+            guess = _least_clear(looks_clear, FLANK_SEARCH_STEP, furthest, FLANK_RESOLUTION)
+            out = _settled_clear(blade_clear, furthest if guess is None else guess, furthest, FLANK_RESOLUTION)
+        except TooManyPairs:
+            out = _least_clear(blade_clear, FLANK_SEARCH_STEP, furthest, FLANK_RESOLUTION)
         if out is not None:
             moved = placed(out)
             return (*one_fin(p, moved, fin.t0, fin.height, thickness, half_foot, fin.candidate_z),

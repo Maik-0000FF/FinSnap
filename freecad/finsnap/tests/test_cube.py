@@ -12,6 +12,7 @@ import os
 import re
 import sys
 
+import numpy
 import Part
 
 from freecad.finsnap.tests.support import (HALF_TURN, RECESS_RADIUS, expect, grooved, lower_left_face, run,
@@ -24,7 +25,7 @@ from freecad.finsnap import limits
 from freecad.finsnap import orient
 from freecad.finsnap import overhang
 from freecad.finsnap import stability
-from freecad.finsnap.shapes import Meshed
+from freecad.finsnap.shapes import Meshed, TooManyPairs
 from freecad.finsnap.params import FinParams, ParamError
 
 import FreeCAD as App
@@ -145,6 +146,7 @@ MATRIX_SIDE_TINES = {"rod": (7, 7, 7, 7, 7, 7, 7, 7), "tube": (7, 7, 7, 7), "ste
 HEIGHT_ACROSS_FIN = 0.02  # how far above the height it says a fin may reach (mm)
 LARGE_FILLET_RADIUS = 9.5  # nearly the radius of the rod
 MESHED_BOX, MESHED_OFF = 10.0, 0.5  # a box measured by its mesh, and how far off it (mm)
+MESHED_VOLUME_APART = 0.5  # mm3: found on the mesh and exactly, the fins stand within a resolution
 GROOVE_WIDTH = 4.0     # a groove round a shaft
 TINE_NEAR_START = 6.0  # the first tine above a groove starts within this of the side (mm)
 AIM_TOLERANCE = 1e-3   # how far off the axis a tine beside the lowest line may aim (cross product, mm2)
@@ -1860,13 +1862,25 @@ def check_side_fin_matrix():
 
 
 def check_meshed_distance():
-    """The distance on a mesh says what the shape says, and leaves the mesh of
-    the shape as it was, where the islands and the centres of mass get theirs."""
+    """The distance on a mesh says what the shape says, leaves the mesh of the
+    shape as it was, where the islands and the centres of mass get theirs, and
+    a part too large for it is searched exactly, to the same fins."""
+    def cylinder():
+        return Part.makeCylinder(ROD_RADIUS, ROD_HEIGHT)
+
+    def triangles_after(shape):
+        return len(shape.tessellate(d.ISLAND_MESH_DEFLECTION)[1])
+
+    finer_first = cylinder()
+    finer_first.tessellate(d.NEAR_MESH_DEFLECTION)
+    plain = triangles_after(cylinder())
+    expect(triangles_after(finer_first) > plain, "a finer mesh asked of a shape stays with it")
+    meshed_first = cylinder()
+    Meshed(meshed_first)
+    expect(triangles_after(meshed_first) == plain, "the mesh for distances leaves the mesh of the shape alone")
+
     box = Part.makeBox(MESHED_BOX, MESHED_BOX, MESHED_BOX)
     near = Meshed(box)
-    expect(len(box.tessellate(d.ISLAND_MESH_DEFLECTION)[1]) == len(Part.makeBox(MESHED_BOX, MESHED_BOX, MESHED_BOX)
-                                                                 .tessellate(d.ISLAND_MESH_DEFLECTION)[1]),
-           "the mesh for distances leaves the mesh of the shape alone")
 
     def rings(x, low=0.0, high=MESHED_BOX, y0=0.0, y1=MESHED_BOX):
         return [[V(x, y, low), V(x, y, high), V(x + 1, y, high), V(x + 1, y, low)] for y in (y0, y1)]
@@ -1878,23 +1892,49 @@ def check_meshed_distance():
     expect(abs(near.distance(beyond, far) - math.hypot(MESHED_OFF, MESHED_OFF)) < d.TOLERANCE,
            "a surface past an edge: the distance to that edge")
     expect(near.distance(off_face, MESHED_OFF / 2) == MESHED_OFF / 2, "further than asked: what was asked")
+    middle = MESHED_BOX / 2
+    inside = rings(middle, middle - 1, middle + 1, middle - 1, middle + 1)
+    expect(near.distance(inside, MESHED_OFF) == MESHED_OFF, "deep inside it knows no inside: what was asked")
     twice = rings(MESHED_BOX + MESHED_OFF)
     twice[0].insert(1, twice[0][0])
     twice[1].insert(1, twice[1][0])
     expect(abs(near.distance(twice, far) - MESHED_OFF) < d.TOLERANCE, "points alike in a ring change nothing")
-    many, limit = rings(MESHED_BOX + MESHED_OFF), d.NEAR_MOST_PAIRS
+    expect(all(numpy.linalg.norm(numpy.cross(near.b - near.a, near.c - near.a), axis=1) > 0),
+           "no triangle of the mesh is without area")
+
+
+    rod = cylinder()
+    number = round_side_of(rod)
+    plan = quick_stands.quick_plan(rod, [], [(rod.Faces[number], number)], FinParams(), d.TILT_ANGLE)
+    stood = moved(rod, plan.change)
+    three = FinParams(placement=d.PLACEMENT_CENTER, round_fins=d.ROUND_FINS_THREE, round_fin_angle=45.0,
+                      fin_thickness=3.0)
+    by_mesh = geometry.build(stood, stood.Faces[number], three)
+    limit = d.NEAR_MOST_PAIRS
     d.NEAR_MOST_PAIRS = 0
     try:
-        expect(near.distance(many, far) is None, "too many pairs: not told")
+        try:
+            near.distance(off_face, far)
+            told = True
+        except TooManyPairs:
+            told = False
+        expect(not told, "too many pairs: not told")
+        contour.clear_kept()
+        geometry._kept_side_fins.clear()
+        exact = geometry.build(stood, stood.Faces[number], three)
     finally:
         d.NEAR_MOST_PAIRS = limit
+    expect(exact.touching_z == by_mesh.touching_z
+           and abs(exact.fins.Volume - by_mesh.fins.Volume) < MESHED_VOLUME_APART,
+           "too large for the mesh: the same fins, searched exactly")
 
 
 def check_settled_clear():
     """Asked from a guess, the search ends where it would without one, and asks
     little where the guess is right."""
     resolution, most = 0.01, 2.0
-    for limit, guess, expected in ((1.7, 1.7, 1.7), (1.7, 1.69, 1.7), (1.7, 1.75, 1.7), (1.7, 0.2, 1.7), (1.7, 3.0, 1.7),
+    for limit, guess, expected in ((1.7, 1.7, 1.7), (1.7, 1.69, 1.7), (1.7, 1.75, 1.7), (1.7, 0.2, 1.7),
+                                   (1.7, 3.0, 1.7),
                                    (0.0, 1.0, 0.0), (0.0, 0.0, 0.0), (1.995, 1.9, 1.995), (3.0, 1.0, None),
                                    (3.0, 2.0, None)):
         asked = []
