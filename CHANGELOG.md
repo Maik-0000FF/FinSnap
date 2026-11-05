@@ -11,6 +11,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A right click in the field at an arrow no longer closes the field or leaves the 3D view panning (Blender navigation) until the next right click.
+
 ### Added
 
 - Two or three fins under the whole round side of a part standing on its rim (**Fins under a round side**, one by default): one parallel to the lowest line on each side, **Angle of the side fins** round from it (30 degrees, at most 45), with or without the one under that line, for a wider footprint against tipping sideways. The side fins need **Follow the contour**, their flanks follow the radius of the side so the gap stays the same across them, and their tines stay level but run straight at its axis, like rays, the shortest way across the gap, ending on the side; where a step, a cone or a fillet comes closer they stand further out or end lower. Where the part stands on a fillet or chamfer, fins go on in the line of the side down to their foot, with no tines there. A side fin stands upright on its foot, which is at most as wide as to the lowest line and starts further out where the part leaves no room, tines there left out with a note; one that finds no room is left out with a note. Each fin holds the part from its own lowest tine in **Check stability**. Feet that overlap are joined on export, so a STEP file split to objects does not print the overlap twice. The arc of the fin under the lowest line turns the part; the straight arrow of a side fin moves that fin, with Shift held while dragging both, up to 45 degrees round; with a side fin chosen, a field of its own turns the part (#43)

@@ -864,6 +864,39 @@ def arrow_field(panel, fins):
                "a click elsewhere takes the value typed at the arrow: %.2f" % box.value())
     expect(feature.edits(fins, feature.MAIN)[1] == shifts, "typed back, the fin stands where it stood")
 
+    # Its own menu takes the focus too: nothing taken, the field stays.
+    panel.edit_at_arrow(handles.ALONG)
+    field = panel.arrow_field[2]
+    field.setValue(place - FIN_SHIFT)
+    QtWidgets.QApplication.sendEvent(field, QtGui.QFocusEvent(QtCore.QEvent.FocusOut, QtCore.Qt.PopupFocusReason))
+    expect(panel.arrow_field is not None and abs(box.value() - place) < d.TOLERANCE,
+           "the menu of the field leaves it open, nothing taken: %.2f" % box.value())
+
+    class Reached(QtCore.QObject):
+        """What of the mouse gets past the field to the view it lies in."""
+
+        def __init__(self):
+            super().__init__()
+            self.events = []
+
+        def eventFilter(self, _, event):  # noqa: N802 - Qt's name
+            if event.type() in taskpanel.MOUSE_BUTTON_EVENTS:
+                self.events.append(event.type())
+            return False
+
+    reached = Reached()
+    field.parentWidget().installEventFilter(reached)
+    inside = QtCore.QPointF(1, 1)
+    for button in (QtCore.Qt.RightButton, QtCore.Qt.MiddleButton):
+        for kind, held in ((QtCore.QEvent.MouseButtonPress, button),
+                           (QtCore.QEvent.MouseButtonRelease, QtCore.Qt.NoButton)):
+            QtWidgets.QApplication.sendEvent(field, QtGui.QMouseEvent(kind, inside, inside, button, held,
+                                                                      QtCore.Qt.NoModifier))
+    field.parentWidget().removeEventFilter(reached)
+    expect(not reached.events, "the right and the middle button in the field do not reach the view: %s"
+           % reached.events)
+    panel.close_arrow_field()
+
 
 def value_colors():
     """The value of a dragged arrow is written yellow over a dark background

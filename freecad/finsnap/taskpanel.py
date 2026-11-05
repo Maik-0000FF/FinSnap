@@ -560,6 +560,10 @@ class EnterTakes(QtCore.QObject):
         return False
 
 
+MOUSE_BUTTON_EVENTS = (QtCore.QEvent.MouseButtonPress, QtCore.QEvent.MouseButtonRelease,
+                       QtCore.QEvent.MouseButtonDblClick)
+
+
 class ArrowFieldKeys(QtCore.QObject):
     """Ends typing in the field at an arrow: Enter and the field losing the
     focus call `take`, as a field of the panel takes its value then; Escape
@@ -569,6 +573,10 @@ class ArrowFieldKeys(QtCore.QObject):
     field before FreeCAD takes it. The field acts when the key is let go, so
     it still holds the focus and takes that too.
 
+    A press of another button than the left is kept from the 3D view it lies
+    in: its let go goes to the menu it opens, and the navigation would hold that
+    button as pressed, panning with the next click until pressed again.
+
     INPUTS this has to withstand:
       Enter or Return let go                ->  take(), press and release kept
       Escape let go                         ->  cancel(), press and release kept,
@@ -576,6 +584,9 @@ class ArrowFieldKeys(QtCore.QObject):
       a key held, repeating                 ->  the repeats kept, acted on once let go
       a shortcut on Enter or Escape         ->  claimed for the field
       the focus gone, a click elsewhere     ->  take()
+      the focus gone to its own menu        ->  stays open, nothing taken
+      right or middle button in the field   ->  kept from the view, its menu still opens
+      left button in the field              ->  passed on: selects, steps
       any other key, digits, a sign         ->  passed on to the field
     """
 
@@ -586,8 +597,12 @@ class ArrowFieldKeys(QtCore.QObject):
     def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
         kind = event.type()
         if kind == QtCore.QEvent.FocusOut:
-            self.take()
+            if event.reason() != QtCore.Qt.PopupFocusReason:
+                self.take()
             return False
+        if kind in MOUSE_BUTTON_EVENTS and event.button() != QtCore.Qt.LeftButton:
+            event.accept()
+            return True
         if kind not in (QtCore.QEvent.ShortcutOverride, QtCore.QEvent.KeyPress, QtCore.QEvent.KeyRelease) \
                 or event.key() not in ENTER_KEYS + CANCEL_KEYS:
             return False
