@@ -1928,13 +1928,21 @@ def check_meshed_distance():
     expect(len(flat.triangles.a) == 1 and abs(flat.distance(above, far) - 1) < d.TOLERANCE,
            "a triangle of the mesh without area is left out, the distance stays a number")
     expect(asked_of[-2:] == [d.NEAR_MESH_COARSE, d.NEAR_MESH_DEFLECTION], "a small mesh is made fine: %s" % asked_of)
-    most, d.NEAR_MESH_MOST = d.NEAR_MESH_MOST, 1
+    two_triangles = Stub((corners, [(0, 1, 3), (1, 2, 3)]))
+    most = d.NEAR_MESH_MOST
     try:
-        Meshed(Stub((corners, [(0, 1, 3), (1, 2, 3)])))
+        d.NEAR_MESH_MOST = 2
+        expect(len(Meshed(two_triangles).triangles.a) == 2, "as many triangles as the limit: made fine")
+        d.NEAR_MESH_MOST = 1
+        asked_of.clear()
+        try:
+            Meshed(two_triangles)
+            told = True
+        except shapes.TooManyPairs:
+            told = False
+        expect(not told and asked_of == [d.NEAR_MESH_COARSE], "past the limit: no fine mesh made: %s" % asked_of)
     finally:
         d.NEAR_MESH_MOST = most
-    expect(asked_of[-1] == d.NEAR_MESH_COARSE and asked_of[-2] != d.NEAR_MESH_COARSE,
-           "a mesh with very many triangles stays coarse: %s" % asked_of[-2:])
 
     contour.clear_kept()
     for size in range(1, shapes.MESHES_KEPT + 3):
@@ -1988,7 +1996,13 @@ def check_meshed_distance():
         too_many = side_fins(filleted, three, shapes.meshed_of)
     finally:
         d.NEAR_MOST_PAIRS = limit
-    for reason, exact in (("too many pairs", too_many), ("no memory", side_fins(filleted, three, out_of_memory)),
+    most, d.NEAR_MESH_MOST = d.NEAR_MESH_MOST, 0
+    try:
+        too_large = side_fins(filleted, three, shapes.meshed_of)
+    finally:
+        d.NEAR_MESH_MOST = most
+    for reason, exact in (("too many pairs", too_many), ("too large for a mesh", too_large),
+                          ("no memory", side_fins(filleted, three, out_of_memory)),
                           ("the mesh sees no place", side_fins(filleted, three, lambda _: Sees(0.0))),
                           ("the mesh sees one at 0", side_fins(filleted, three, lambda _: Sees(far)))):
         expect(exact.touching_z == by_mesh.touching_z
