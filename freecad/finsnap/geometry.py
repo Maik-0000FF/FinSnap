@@ -623,7 +623,8 @@ def _on_flank(p, frame, fin, thickness):
 
 def _halved(clear, inside, outside, resolution):
     """Between `inside`, where `clear` does not hold, and `outside`, where it does,
-    the first value at which it holds, within `resolution`."""
+    the first value at which it holds, within `resolution` give or take TOLERANCE,
+    so a rounding in the last step does not cost another fin."""
     while outside - inside > resolution + d.TOLERANCE:
         between_them = (inside + outside) / 2
         if clear(between_them):
@@ -754,7 +755,11 @@ def _clear_of_part(p, part, frame, fin, thickness, half_foot):
             a guess the foot stays as it stands with nothing moved: looking for its
             place at every step is what a mesh is there to save."""
             rings = _side_blade_rings(p, replace(standing or frame, flank_out=out), fin.t0, fin.height, thickness)
-            return meshed_of(part).distance(rings, p.gap) > needed
+            return mesh.distance(rings, p.gap) > needed
+
+        def clear_past_0(out):
+            """blade_clear() where 0 has said no already."""
+            return out > 0 and blade_clear(out)
 
         # Most fins keep the gap as they stand, and need no mesh to say so.
         standing = placed(0.0)
@@ -762,10 +767,14 @@ def _clear_of_part(p, part, frame, fin, thickness, half_foot):
             out = 0.0
         else:
             try:
+                mesh = meshed_of(part)
                 guess = _least_clear(looks_clear, FLANK_SEARCH_STEP, furthest, FLANK_RESOLUTION)
-                out = _settled_clear(blade_clear, furthest if guess is None else guess, furthest, FLANK_RESOLUTION)
             except (TooManyPairs, MemoryError):
-                out = _least_clear(blade_clear, FLANK_SEARCH_STEP, furthest, FLANK_RESOLUTION)
+                guess = None
+            # A mesh that sees no place, or one at 0 where the fin itself just said
+            # no, gives nothing to start from: measured all the way.
+            out = (_settled_clear(blade_clear, guess, furthest, FLANK_RESOLUTION) if guess
+                   else _least_clear(clear_past_0, FLANK_SEARCH_STEP, furthest, FLANK_RESOLUTION))
         if out is not None:
             moved = standing if out == 0.0 else placed(out)
             return (*one_fin(p, moved, fin.t0, fin.height, thickness, half_foot, fin.candidate_z),

@@ -148,6 +148,7 @@ LARGE_FILLET_RADIUS = 9.5  # nearly the radius of the rod
 MESHED_BOX, MESHED_OFF = 10.0, 0.5  # a box measured by its mesh, and how far off it (mm)
 MESHED_VOLUME_APART = 0.5  # mm3: found on the mesh and exactly, the fins stand within a resolution
 FLANK_OUT_MOVED = 0.05  # mm: a blade moved out by more than this has really moved
+SETTLE_RESOLUTION, SETTLE_MOST = 0.01, 2.0  # what check_settled_clear() searches to and up to
 GROOVE_WIDTH = 4.0     # a groove round a shaft
 TINE_NEAR_START = 6.0  # the first tine above a groove starts within this of the side (mm)
 AIM_TOLERANCE = 1e-3   # how far off the axis a tine beside the lowest line may aim (cross product, mm2)
@@ -1874,11 +1875,11 @@ def check_meshed_distance():
 
     finer_first = cylinder()
     finer_first.tessellate(d.NEAR_MESH_DEFLECTION)
-    plain = triangles_after(cylinder())
-    expect(triangles_after(finer_first) > plain, "a finer mesh asked of a shape stays with it")
+    usual = triangles_after(cylinder())
+    expect(triangles_after(finer_first) > usual, "a finer mesh asked of a shape stays with it")
     meshed_first = cylinder()
     Meshed(meshed_first)
-    expect(triangles_after(meshed_first) == plain, "the mesh for distances leaves the mesh of the shape alone")
+    expect(triangles_after(meshed_first) == usual, "the mesh for distances leaves the mesh of the shape alone")
 
     box = Part.makeBox(MESHED_BOX, MESHED_BOX, MESHED_BOX)
     near = Meshed(box)
@@ -1937,6 +1938,15 @@ def check_meshed_distance():
     def out_of_memory(_):
         raise MemoryError
 
+    class Sees:
+        """A mesh that says the same distance of everything."""
+
+        def __init__(self, distance):
+            self.seen = distance
+
+        def distance(self, _rings, _reach):
+            return self.seen
+
     def side_fins(shape, asked, make):
         """The fins of `asked` under the round side of `shape`, the mesh coming from `make`."""
         number = round_side_of(shape)
@@ -1950,11 +1960,13 @@ def check_meshed_distance():
         finally:
             geometry.meshed_of = kept
 
-    plain = FinParams(placement=d.PLACEMENT_CENTER, round_fins=d.ROUND_FINS_TWO, round_fin_angle=30.0)
-    side_fins(cylinder(), plain, no_mesh)
+    def of_case(kind, degrees, thickness):
+        return FinParams(placement=d.PLACEMENT_CENTER, round_fins=kind, round_fin_angle=degrees,
+                         fin_thickness=thickness)
 
-    three = FinParams(placement=d.PLACEMENT_CENTER, round_fins=d.ROUND_FINS_THREE, round_fin_angle=45.0,
-                      fin_thickness=3.0)
+    side_fins(cylinder(), of_case(*MATRIX_CASES[0]), no_mesh)
+
+    three = of_case(*MATRIX_CASES[3])
     filleted = matrix_shapes()["fillet"]
     by_mesh = side_fins(filleted, three, shapes.meshed_of)
     out = max(frame.flank_out for frame in by_mesh.frames.values())
@@ -1965,16 +1977,38 @@ def check_meshed_distance():
         too_many = side_fins(filleted, three, shapes.meshed_of)
     finally:
         d.NEAR_MOST_PAIRS = limit
-    for reason, exact in (("too many pairs", too_many), ("no memory", side_fins(filleted, three, out_of_memory))):
+    for reason, exact in (("too many pairs", too_many), ("no memory", side_fins(filleted, three, out_of_memory)),
+                          ("the mesh sees no place", side_fins(filleted, three, lambda _: Sees(0.0))),
+                          ("the mesh sees one at 0", side_fins(filleted, three, lambda _: Sees(far)))):
         expect(exact.touching_z == by_mesh.touching_z
                and abs(exact.fins.Volume - by_mesh.fins.Volume) < MESHED_VOLUME_APART,
                "%s: the same fins, searched exactly" % reason)
+
+    tried = []
+
+    def no_room(_):
+        tried.append(1)
+        raise MemoryError
+
+    kept, shapes.Meshed = shapes.Meshed, no_room
+    contour.clear_kept()
+    try:
+        for _ in range(2):
+            try:
+                shapes.meshed_of(box)
+                expect(False, "no room for a mesh: not told")
+            except shapes.TooManyPairs:
+                pass
+    finally:
+        shapes.Meshed = kept
+        contour.clear_kept()
+    expect(len(tried) == 1, "no room for a mesh is not tried again: %d" % len(tried))
 
 
 def check_settled_clear():
     """Asked from a guess, the search ends where it would without one, and asks
     little where the guess is right."""
-    resolution, most = 0.01, 2.0
+    resolution, most = SETTLE_RESOLUTION, SETTLE_MOST
     for limit, guess, expected in ((1.7, 1.7, 1.7), (1.7, 1.69, 1.7), (1.7, 1.75, 1.7), (1.7, 0.2, 1.7),
                                    (1.7, 3.0, 1.7),
                                    (0.0, 1.0, 0.0), (0.0, 0.0, 0.0), (1.995, 1.9, 1.995), (3.0, 1.0, None),
@@ -1987,7 +2021,7 @@ def check_settled_clear():
 
         found = geometry._settled_clear(clear, guess, most, resolution)
         expect(found is None if expected is None
-               else found == expected or 0 <= found - expected <= resolution and found <= most,
+               else found == expected or 0 <= found - expected <= resolution + d.TOLERANCE and found <= most,
                "from %g, clear from %g: %s, not %s" % (guess, limit, found, expected))
     asked = []
     geometry._settled_clear(lambda value: asked.append(value) or value >= 1.7, 1.7, most, resolution)

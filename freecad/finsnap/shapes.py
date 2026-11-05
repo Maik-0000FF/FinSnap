@@ -59,8 +59,10 @@ KEY_DIGITS = 6
 KEPT = 8
 # A triangle whose cross product of two sides is no longer than this has no area (mm2).
 SMALLEST_AREA = 1e-9
-# How many parts meshed_of() keeps a fine mesh of, in memory for the whole session.
-MESHES_KEPT = 2
+# How many parts meshed_of() keeps a fine mesh of. It stays in memory until another
+# part takes its place, also past the closing of a document, by decision: moving a
+# fin needs it again at once, and one mesh is what that costs.
+MESHES_KEPT = 1
 _kept_meshes = {}
 
 
@@ -166,11 +168,12 @@ class TooManyPairs(Exception):
     """A distance on a mesh would take longer than measuring the shape."""
 
 
-def mesh_arrays(shape, deflection):
+def mesh_arrays(shape, deflection, on_copy=False):
     """The mesh of `shape` as arrays: its points (n, 3) and the three points of each
-    triangle by number (m, 3). Empty where the kernel cannot mesh it."""
+    triangle by number (m, 3). Empty where the kernel cannot mesh it. `on_copy`
+    leaves the mesh the kernel keeps with the shape as it is."""
     try:
-        points, triangles = shape.tessellate(deflection)
+        points, triangles = (shape.copy() if on_copy else shape).tessellate(deflection)
     except Part.OCCError:
         points, triangles = [], []
     return (numpy.array([(point.x, point.y, point.z) for point in points], dtype=float).reshape(-1, 3),
@@ -200,7 +203,7 @@ class Meshed:
     """
 
     def __init__(self, shape):
-        self.points, triangles = mesh_arrays(shape.copy(), d.NEAR_MESH_DEFLECTION)
+        self.points, triangles = mesh_arrays(shape, d.NEAR_MESH_DEFLECTION, on_copy=True)
         a, b, c = (self.points[triangles[:, k]] for k in range(3))
         kept = numpy.linalg.norm(numpy.cross(b - a, c - a), axis=1) > SMALLEST_AREA
         self.numbers = triangles[kept]
@@ -222,9 +225,18 @@ class Meshed:
 
 
 def meshed_of(shape):
-    """The Meshed of `shape`, made once; the mesh of a large part is large, so only
-    the last MESHES_KEPT stay."""
-    return keep(_kept_meshes, shape_key(shape), lambda: Meshed(shape), MESHES_KEPT)
+    """The Meshed of `shape`, made once, also where it does not fit in memory, which
+    is not tried again: TooManyPairs then."""
+    def make():
+        try:
+            return Meshed(shape)
+        except MemoryError:
+            return None
+
+    found = keep(_kept_meshes, shape_key(shape), make, MESHES_KEPT)
+    if found is None:
+        raise TooManyPairs
+    return found
 
 
 def clear_meshes():
