@@ -90,13 +90,29 @@ def bounds(shape):
 
 
 def shape_key(shape):
-    """What tells a shape as it stands from another: its measures and where
-    its corners lie, not its hash. FreeCAD gives a part a new hash each time
-    it is recomputed, the same shape or not; the corners tell a shape whose
-    measures stay apart, as with a hole moved."""
+    """What tells a shape as it stands from another: its measures, where its
+    corners lie and its centre, not its hash. FreeCAD gives a part a new hash each
+    time it is recomputed, the same shape or not; the corners tell a shape whose
+    measures stay apart, as with a hole moved, the centre one mirrored onto the
+    same corners, its curved side now on the other side.
+
+    INPUTS this has to withstand:
+      the same shape, recomputed            ->  the same key
+      a hole moved                          ->  another key, by its corners
+      mirrored onto the same corners        ->  another key, by its centre
+      the same, with the same centre too,
+        as a shape symmetric about a point  ->  the same key, by decision: a key never
+                                                proves two shapes alike, and this takes
+                                                exactly such a shape, exactly mirrored
+      an empty shape, which has no centre   ->  a key all the same
+    """
     corners = tuple(sorted(tuple(round(c, KEY_DIGITS) for c in vertex.Point) for vertex in shape.Vertexes))
+    try:
+        centre = tuple(round(c, KEY_DIGITS) for c in shape.CenterOfGravity)
+    except RuntimeError:
+        centre = None
     return (round(shape.Volume, KEY_DIGITS), round(shape.Area, KEY_DIGITS), len(shape.Faces), len(shape.Edges),
-            corners)
+            corners, centre)
 
 
 def keep(store, key, make, most=KEPT):
