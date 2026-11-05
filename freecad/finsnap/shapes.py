@@ -88,11 +88,11 @@ def shape_key(shape):
             corners)
 
 
-def keep(store, key, make):
+def keep(store, key, make, most=KEPT):
     """What the dict `store` keeps under `key`, made by make() where it keeps
-    nothing yet; past KEPT entries the oldest goes first."""
+    nothing yet; past `most` entries the oldest goes first."""
     if key not in store:
-        while len(store) >= KEPT:
+        while len(store) >= most:
             store.pop(next(iter(store)))
         store[key] = make()
     return store[key]

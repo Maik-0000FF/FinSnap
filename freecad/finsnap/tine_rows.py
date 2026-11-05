@@ -204,6 +204,30 @@ def _spread(p, bands, limit, count):
     return zs
 
 
+def _under_tine(frame):
+    """The contours of a fin beside the lowest line in the planes its tines
+    stand in, leaving out those further off, which only reach for where they end."""
+    return frame.tine_edges[2] if frame.tine_edges else ()
+
+
+def _resting_bands(frame):
+    """The stretches of height a tine rests on along the contour of `frame`:
+    beside the lowest line of a round side, those the contours at both its
+    edges rest on too, so its grid starts where the first tine can rest whole,
+    not a spacing further up.
+
+    INPUTS this has to withstand:
+      no contours at the edges of the tine  ->  the bands of the contour
+      bands starting at different heights   ->  from the highest of those starts
+      bands that do not overlap             ->  none from those
+    """
+    bands = frame.contour.bands()
+    for line in _under_tine(frame):
+        bands = [(max(low, other_low), min(high, other_high)) for low, high in bands
+                 for other_low, other_high in line.bands() if max(low, other_low) < min(high, other_high)]
+    return bands
+
+
 def face_tines(p, frame, tine_count, restart):
     """Bottoms of the tines for the face as a whole (mm, from the bed) and the
     fin height: the one grid from the bed (tine_heights()). With `restart`, a
@@ -232,7 +256,7 @@ def face_tines(p, frame, tine_count, restart):
         # `restart` is off for every round side, whose one grid is kept; along
         # a contour the tine restart of the parameters starts it anew on each
         # stretch the tines rest on.
-        zs = _spread(p, frame.contour.bands(), limit, tine_count) if p.tine_restart and limit <= room else []
+        zs = _spread(p, _resting_bands(frame), limit, tine_count) if p.tine_restart and limit <= room else []
     else:
         floor = frame.face_bottom_z - frame.bed_z
         if not restart or floor <= d.TOLERANCE:
@@ -282,9 +306,12 @@ def restarted_tines(p, frame, face, t0, thickness, limit, count):
 def touching_at(frame, face, p, tine_z, t0, thickness):
     """The heights in `tine_z` at which the tine of the fin starting at t0
     lies on `face`, as contact_share() finds it; along a contour, where the
-    flank keeps its distance from the part (contour.Contour.rests())."""
+    flank keeps its distance from the part (contour.Contour.rests()), beside
+    the lowest line of a round side also at both edges of the tine, so a hole
+    under it leaves it out."""
     if frame.contour is not None:
-        return {z for z in tine_z if frame.contour.rests(z, z + p.tine_height)}
+        contours = (frame.contour, *_under_tine(frame))
+        return {z for z in tine_z if all(line.rests(z, z + p.tine_height) for line in contours)}
     start = tine_start(p, t0, thickness)
     return {z for z in tine_z if contact_share(frame, face, start, p, z) >= d.TINE_MIN_CONTACT - d.TOLERANCE}
 
@@ -323,10 +350,145 @@ def tine_end(p, frame, z):
     return bottom, top, frame.s_flank(bottom, p.clearance), frame.s_flank(top, p.clearance)
 
 
+def flank_bend(frame, t):
+    """How far the flank of a fin beside the lowest line lies at place `t` from
+    where the contour measures it, as it follows the radius of the side.
+
+    INPUTS this has to withstand:
+      where the contour is measured         ->  0
+      further round the side                ->  less than 0, towards the part
+      past the radius of the flank          ->  from the last place on it
+    """
+    middle, nearest, radius = frame.flank_curve
+
+    def along_normal(place):
+        return math.sqrt(max(0.0, radius ** 2 - (place - middle) ** 2))
+    return (along_normal(t) - along_normal(nearest)) / frame.n_out
+
+
+def round_move(frame, s, z, t):
+    """How far along the normal of the frame a point of the flank at (s, z), in
+    the plane the contour is measured in, comes in the plane at `t`, turned about
+    the axis of the side at its own radius: so a step or a cone the flank goes
+    over keeps its place along the axis in every plane, and its own curve.
+
+    INPUTS this has to withstand:
+      on the side, further round            ->  less than 0, as flank_bend()
+      on a thinner step                     ->  more, by its own radius
+      past its radius, or nearly            ->  no further in than ROUND_MOVE_MOST times
+                                                the side itself: it stays further off
+      at the height of the axis or behind   ->  0: not the side the fin stands on
+    """
+    middle, nearest, _ = frame.flank_curve
+    along_normal = s * frame.n_out + z * frame.n_z - (frame.c - frame.radius)
+    if along_normal <= 0:
+        return 0.0
+    radius = math.hypot(along_normal, nearest - middle)
+    # A step about as thin as the plane is far from the axis falls away ever
+    # steeper there; staying further off is safe, a flank plunging in twists.
+    least = flank_bend(frame, t) * ROUND_MOVE_MOST * frame.n_out
+    return max(least, math.sqrt(max(0.0, radius ** 2 - (t - middle) ** 2)) - along_normal)
+
+
+def side_foot_start(p, frame, t0, thickness):
+    """How far out the foot of the fin starting at t0 beside the lowest line
+    starts: under all of its flank, which lies furthest in at the place on the fin
+    furthest round the side; further out where the part leaves it no room there."""
+    bend = min(flank_bend(frame, t0), flank_bend(frame, t0 + thickness))
+    return frame.contour.flank(p.foot_height) + frame.flank_out + bend + frame.foot_out
+
+
+def side_tine(p, frame, t0, thickness, z):
+    """The tine at height z of the fin starting at t0 beside the lowest line of
+    a round side: level, as every tine, but running straight at the axis of the
+    side at its height, as a ray, not parallel to the fin under the lowest line.
+    That is the shortest way across the gap to the side. As two rings of (t, s),
+    its outline at its bottom and at its top: both corners where it starts in the
+    fin, then where it ends on the part, the clearance short, right, middle, left.
+    It leaves the fin in the middle of its thickness.
+
+    Seen from above the part lies along s at the place t; where a ray along
+    the tine meets it is found from the contours in the upright planes around
+    the tine (frame.tine_edges), straight between them.
+
+    INPUTS this has to withstand:
+      plain side                            ->  ends the clearance off it across its width
+      fin moved round the side              ->  the ray at the axis from there
+      fin over the lowest line              ->  straight out along s, as the one there
+      fin moved out from the part           ->  the same ray, longer
+      fin thicker than the tine             ->  still leaves it in the middle
+      a step of the part past its start     ->  ends just past where it starts, not back
+                                                through the fin
+    """
+    t_fin = t0 + thickness / 2
+    bottom, top = frame.bed_z + z, frame.bed_z + z + p.tine_height
+    # Where it leaves the fin, in the middle of its thickness: on the flank there.
+    line = frame.contour
+    middle_height = (bottom + top) / 2
+    leaves = line.flank(z + p.tine_height / 2) + frame.flank_out
+    leaves += round_move(frame, leaves, middle_height, t_fin) / frame.n_out
+    # The blade comes no further in than its foot, also above it.
+    if p.foot_height > 0:
+        leaves = max(leaves, side_foot_start(p, frame, t0, thickness))
+    middle = (frame.along_min + frame.along_max) / 2
+    towards_t = middle - t_fin
+    # The axis lies a radius behind the plane of the side, along its normal.
+    towards_s = frame.s_face((bottom + top) / 2) - frame.radius / frame.n_out - leaves
+    length = math.hypot(towards_t, towards_s)
+    along_t, along_s = towards_t / length, towards_s / length
+    across_t, across_s = -along_s, along_t
+    width = p.tine_width / 2
+    # It starts as far back in the fin as its corners need to lie inside.
+    back = d.TINE_INTO_FIN + width
+    t_middle, start = t_fin - back * along_t, leaves - back * along_s
+    planes, ends, _ = frame.tine_edges
+    per_plane = [line_at.tine_ends(z, z + p.tine_height) for line_at in ends]
+
+    def part_at(t, which):
+        """How far out the end of the tine lies at place t, at its bottom or top."""
+        if t <= planes[0]:
+            k = 0
+        elif t >= planes[-1]:
+            k = len(planes) - 2
+        else:
+            k = next(k for k in range(len(planes) - 1) if planes[k] <= t <= planes[k + 1])
+        share = (t - planes[k]) / (planes[k + 1] - planes[k])
+        return per_plane[k][which] + (per_plane[k + 1][which] - per_plane[k][which]) * share
+
+    def end_of(offset, which):
+        """Where the ray `offset` to the side of the middle of the tine meets the part."""
+        t_from, s_from = t_middle + offset * across_t, start + offset * across_s
+        def still_out(run):
+            return s_from + run * along_s > part_at(t_from + run * along_t, which)
+
+        # Halved until it lands, as on a thin step the part rises steeply
+        # towards the axis. Where a step lies past its start: just past that.
+        short, long = d.TINE_INTO_FIN, length
+        if not still_out(short):
+            long = short
+        for _ in range(SIDE_TINE_STEPS):
+            run = (short + long) / 2
+            short, long = (run, long) if still_out(run) else (short, run)
+        return t_from + long * along_t, s_from + long * along_s
+
+    rings = []
+    for which in (0, 1):
+        rings.append([(t_middle - width * across_t, start - width * across_s),
+                      (t_middle + width * across_t, start + width * across_s),
+                      end_of(width, which), end_of(0.0, which), end_of(-width, which)])
+    return rings
+
+
 def tine_end_points(p, frame, t0, thickness, z):
     """The corners and the middle of the end of the tine of the fin starting
-    at t0 at height z over the bed, see tine_end()."""
-    bottom, top, s_bottom, s_top = tine_end(p, frame, z)
+    at t0 at height z over the bed, see tine_end() and side_tine()."""
+    bottom, top = frame.bed_z + z, frame.bed_z + z + p.tine_height
+    if frame.tine_edges is not None:
+        low, high = side_tine(p, frame, t0, thickness, z)
+        corners = [frame.point(t, s, height) for ring, height in ((low, bottom), (high, top))
+                   for t, s in (ring[2], ring[4])]
+        return corners + [frame.point((low[3][0] + high[3][0]) / 2, (low[3][1] + high[3][1]) / 2, (bottom + top) / 2)]
+    _, _, s_bottom, s_top = tine_end(p, frame, z)
     t_tine = tine_start(p, t0, thickness)
     corners = [frame.point(t, s, height)
                for t in (t_tine, t_tine + p.tine_width) for s, height in ((s_bottom, bottom), (s_top, top))]
@@ -335,6 +497,11 @@ def tine_end_points(p, frame, t0, thickness, z):
     return corners + [middle]
 
 
+# How many times as far as the side itself a point of a flank beside the lowest
+# line may turn in over a thinner step.
+ROUND_MOVE_MOST = 2.0
+# How often the way to the end of a tine beside the lowest line is halved.
+SIDE_TINE_STEPS = 16
 # What is wrong with the end of a tine, see tine_end_fault().
 TINE_MISSES, TINE_CUTS_IN = "misses", "cuts in"
 

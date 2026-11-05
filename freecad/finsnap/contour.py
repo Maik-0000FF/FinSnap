@@ -71,6 +71,10 @@ JOIN_DECIMALS = 4
 # Contours worked out, by part, plane and parameters (shapes.keep()): a fin
 # dragged or set higher is built again and again on the same part.
 _kept = {}
+# The contours of fins beside the lowest line, kept apart: one build asks for
+# some twenty, and fewer kept than that would never find one again.
+_kept_beside = {}
+BESIDE_KEPT = 256
 
 
 class ContourError(ValueError):
@@ -433,7 +437,7 @@ def _on_one_line(values, heights, below, above, run):
     on the same face after the stretch between, as past a pocket. The run
     is measured over `run` samples."""
     start = max(0, below - run)
-    if start == below:
+    if start == below or None in (values[start], values[below], values[above]):
         return False
     slope = (values[below] - values[start]) / (heights[below] - heights[start])
     led = values[below] + slope * (heights[above] - heights[below])
@@ -472,15 +476,61 @@ def _straightened(points, tolerance):
     return _straightened(points[:index + 1], tolerance)[:-1] + _straightened(points[index:], tolerance)
 
 
-class Contour:
+class _TineEnds:
+    """Where the ends of tines lie along cuts of the part: what a Contour and
+    CutEnds have in common. Holds `heights`, `near` and `corners` as _near()
+    and the cuts give them, and `clearance`; flank() stands in where nothing
+    of the cut lies near."""
+
+    def tine_ends(self, bottom, top):
+        """How far out the end of a tine from `bottom` to `top` lies at each:
+        on the contour, or the tine clearance off it, and no corner of the cut
+        between reaching past the straight end."""
+        ends = [reach(self.near[_stretch(self.heights, z)], z, self.clearance) for z in (bottom, top)]
+        ends = [self.flank(z) if end is None else end for end, z in zip(ends, (bottom, top))]
+        past = 0.0
+        low = bisect.bisect_left(self.corners, (bottom, -math.inf))
+        high = bisect.bisect_right(self.corners, (top, math.inf))
+        for z, s in self.corners[low:high]:
+            straight = ends[0] + (ends[1] - ends[0]) * (z - bottom) / (top - bottom)
+            past = max(past, s + self.clearance - straight)
+        return ends[0] + past, ends[1] + past
+
+
+class CutEnds(_TineEnds):
+    """The ends of tines along one cut, and nothing else: a Contour works out a
+    flank at every height as well, which a tine does not need and which takes
+    many times as long on a tall part. Where the cut has nothing at a height,
+    `beside`, the Contour of its fin, says where its flank stands."""
+
+    def __init__(self, lines, p, beside):
+        pieces = [piece for loop in loops_of(lines) for piece in loop_pieces(loop)]
+        self.beside = beside
+        self.clearance = p.clearance
+        top = max(max(start[1], end[1]) for start, end, *_ in pieces)
+        self.step = p.layer_height / d.CONTOUR_SAMPLES_PER_LAYER
+        self.heights = [k * self.step for k in range(int(math.ceil(top / self.step)) + 1)]
+        self.near = _near(pieces, self.heights, self.clearance)
+        self.corners = sorted((z, s) for piece in pieces for s, z in piece[:2])
+
+    def flank(self, z):
+        return self.beside.flank(z)
+
+
+class Contour(_TineEnds):
     """The flank of the fin under a round side along the contour of the part,
     the heights its tines rest on and how far they reach; see the module."""
 
-    def __init__(self, cuts, p):
+    def __init__(self, cuts, p, above_bed=False, side_from=None):
         """`cuts`, the lines of each cut across the thickness of the fin, the
         middle one first: that one, where the tines stand, gives the contour;
         the gap is kept from all of them, as a hole narrower than the fin
-        leaves the cuts beside the middle whole."""
+        leaves the cuts beside the middle whole. With `above_bed` the cuts may
+        start above the bed, as a line beside the lowest one does. `side_from` is
+        (height, slope) where the round side starts above what the part stands
+        on, a fillet or a chamfer, and how far out its flank goes per mm up:
+        below it the fin goes on in that line, down to its foot, with no tines,
+        as far off as the part asks, not along what the part stands on."""
         mitred = [[piece for loop in loops_of(lines) for piece in loop_pieces(loop)] for lines in cuts]
         self.pieces = [piece for pieces in mitred for piece in pieces]
         front = front_of(loops_of(cuts[0]))
@@ -513,7 +563,10 @@ class Contour:
         at_samples = envelope(self.pieces, distance, lifted=False)
         kept = _lifted(at_samples, _near(self.pieces, self.heights, distance), self.heights, distance)
         bridged = _closed(kept, width)
-        far = envelope(self.pieces, apart)
+        # Worked out only where the contour looks up at all: most cuts of a
+        # side beside the lowest line do so nowhere it matters, and this is
+        # as much work again.
+        far = envelope(self.pieces, apart) if any(looks_up) and apart != distance else bridged
         spaced = [max(value, away) if up and away is not None else value
                   for value, away, up in zip(bridged, far, looks_up)]
         inward = step / math.tan(math.radians(d.FIN_FLANK_ANGLE))
@@ -521,7 +574,7 @@ class Contour:
         # The gap from the middle cut alone, which the tines touch, at the
         # samples themselves: raised at a corner, as for the flank, a tine
         # beside the edge of a groove would seem to rest.
-        self.touched = envelope(mitred[0], distance, lifted=False)
+        self.touched = at_samples if len(mitred) == 1 else envelope(mitred[0], distance, lifted=False)
         self.bridged = _closed(self.touched, width)
         # Where a tine rests: the contour holds it, and the flank keeps to what
         # the middle of the fin touches there, also a layer and the gap above
@@ -531,6 +584,14 @@ class Contour:
                     for carry, flank, touched in zip(self.carries, self.flank_at, self.touched)]
         clear = d.CONTOUR_SAMPLES_PER_LAYER + int(math.ceil(distance / step))
         self.resting = [all(touching[max(0, k - clear):k + clear + 1]) for k in range(len(touching))]
+        # Only over what the part stands on: above a groove or a thicker part, the
+        # contour looks up on the way, and the fin follows it as anywhere.
+        if side_from is not None and not any(looks_up[:self._index(side_from[0])]):
+            start = self._index(side_from[0])
+            for k in range(start):
+                self.flank_at[k] = max(self.flank_at[k],
+                                       self.flank_at[start] - (self.heights[start] - self.heights[k]) * side_from[1])
+                self.resting[k] = False
         # A pocket, a groove or a hole in one face, with no tine resting in
         # it: the flank runs straight past it, from where the tines rest
         # below to where they rest again on the same face above; with the
@@ -550,7 +611,11 @@ class Contour:
                     self.flank_at[k] = max(gap, a + (b - a) * (k - low) / (high - low))
                     self.spanned[k] = True
         if self.flank_at[0] == -math.inf:
-            raise ContourError(translate("FinSnap", "the part does not reach the bed in the plane of the fin"))
+            start = next((k for k, value in enumerate(self.flank_at) if value != -math.inf), None)
+            if not above_bed or start is None:
+                raise ContourError(translate("FinSnap", "the part does not reach the bed in the plane of the fin"))
+            # Nothing of the part lies in the plane below: the flank goes straight down.
+            self.flank_at[:start] = [self.flank_at[start]] * start
         # The pieces near each height and the corners of the cut by height,
         # for the ends of the tines.
         self.near = _near(self.pieces, self.heights, self.clearance)
@@ -577,20 +642,6 @@ class Contour:
         points = [(self.flank(high), high)] + [(self.flank_at[k], self.heights[k]) for k in reversed(inside)]
         points.append((self.flank(low), low))
         return _straightened(points, d.CONTOUR_SHARE)
-
-    def tine_ends(self, bottom, top):
-        """How far out the end of a tine from `bottom` to `top` lies at each:
-        on the contour, or the tine clearance off it, and no corner of the cut
-        between reaching past the straight end."""
-        ends = [reach(self.near[_stretch(self.heights, z)], z, self.clearance) for z in (bottom, top)]
-        ends = [self.flank(z) if end is None else end for end, z in zip(ends, (bottom, top))]
-        past = 0.0
-        low = bisect.bisect_left(self.corners, (bottom, -math.inf))
-        high = bisect.bisect_right(self.corners, (top, math.inf))
-        for z, s in self.corners[low:high]:
-            straight = ends[0] + (ends[1] - ends[0]) * (z - bottom) / (top - bottom)
-            past = max(past, s + self.clearance - straight)
-        return ends[0] + past, ends[1] + past
 
     def bands(self):
         """The stretches of height (mm, from the bed, lowest first) on which
@@ -626,12 +677,31 @@ class Contour:
         return False
 
 
+def clear_kept():
+    """Forget every contour kept, as if none had been worked out."""
+    _kept.clear()
+    _kept_beside.clear()
+
+
+def side_from(frame, away=0.0):
+    """Where the round side of `frame` starts above the bed, in the upright plane
+    `away` along the face from its lowest line, and how far out a flank along
+    it goes per mm up, for Contour; None where it starts on the bed."""
+    start = frame.face_bottom_z - frame.bed_z
+    if start <= d.TOLERANCE:
+        return None
+    # Further round, the same place along the axis lies higher up.
+    rise = (frame.radius - math.sqrt(max(0.0, frame.radius ** 2 - away ** 2))) * -frame.n_z
+    return start + rise, -frame.n_z / frame.n_out
+
+
 def of(part, frame, p, width):
     """The contour of `part` under the round side of `frame`, through the
     middle of the side, where its one fin stands, at most `width` thick;
     kept for the same part, plane and parameters, worked out once."""
     key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.along_min, frame.along_max, frame.bed_z,
-           width, p.layer_height, p.gap, p.clearance, p.contour_bridge, p.contour_gap)
+           frame.face_bottom_z, frame.radius, width, p.layer_height, p.gap, p.clearance, p.contour_bridge,
+           p.contour_gap)
     return keep(_kept, key, lambda: _worked_out(part, frame, p, width))
 
 
@@ -640,4 +710,38 @@ def _worked_out(part, frame, p, width):
     middle = (frame.along_min + frame.along_max) / 2
     beside = [middle + width * (k / (d.CONTOUR_CUTS - 1) - 0.5) for k in range(d.CONTOUR_CUTS)]
     return Contour([cut_of(part, frame, middle)] + [cut_of(part, frame, t) for t in beside
-                                                    if abs(t - middle) > d.TOLERANCE], p)
+                                                    if abs(t - middle) > d.TOLERANCE], p, side_from=side_from(frame))
+
+
+def beside(part, frame, p, nearest, furthest):
+    """The contour of a fin parallel to the one under the lowest line of the
+    round side of `frame`, as thick as from `nearest`, its edge nearest that
+    line, to `furthest` along the face: the first cut, which it rests on, is
+    the one at `nearest`, where the side reaches furthest out; kept as of() is."""
+    key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.bed_z, frame.face_bottom_z, frame.radius,
+           nearest, furthest, p.layer_height, p.gap, p.clearance, p.contour_bridge, p.contour_gap)
+
+    def worked_out():
+        planes = [nearest + (furthest - nearest) * k / (d.CONTOUR_CUTS - 1) for k in range(d.CONTOUR_CUTS)]
+        away = nearest - (frame.along_min + frame.along_max) / 2
+        return Contour([cut_of(part, frame, t) for t in planes], p, above_bed=True, side_from=side_from(frame, away))
+    return keep(_kept_beside, key, worked_out, BESIDE_KEPT)
+
+
+def ends_at(part, frame, p, t, beside_line):
+    """Where tines end in the upright plane at `t` along the face of `frame`
+    (CutEnds), for one beside the lowest line; kept as of() is."""
+    key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.bed_z, t,
+           p.layer_height, p.clearance)
+    return keep(_kept_beside, key, lambda: CutEnds(cut_of(part, frame, t), p, beside_line), BESIDE_KEPT)
+
+
+def across(part, frame, p, t):
+    """The contour in the one upright plane at `t` along the face of `frame`,
+    for what a tine beside the lowest line rests on; kept as of() is."""
+    key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.bed_z, frame.face_bottom_z, frame.radius, t,
+           p.layer_height, p.gap, p.clearance, p.contour_bridge, p.contour_gap)
+    away = t - (frame.along_min + frame.along_max) / 2
+    return keep(_kept_beside, key,
+                lambda: Contour([cut_of(part, frame, t)], p, above_bed=True, side_from=side_from(frame, away)),
+                BESIDE_KEPT)
