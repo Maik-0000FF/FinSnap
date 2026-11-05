@@ -1865,7 +1865,8 @@ def check_side_fin_matrix():
 
 def check_known_clear():
     """A fin clear of the part is measured once for its shape; one touching it
-    is never taken as clear, the same shape beside another part is measured."""
+    is never taken as clear, the same shape beside another part or mirrored onto
+    its corners is measured, and an overlap is refused however it came."""
     part = Part.makeBox(MESHED_BOX, MESHED_BOX, MESHED_BOX)
     other = Part.makeBox(MESHED_BOX, MESHED_BOX, 2 * MESHED_BOX)
     off = Part.makeBox(1, 1, 1, V(MESHED_BOX + MESHED_OFF, 0, 0))
@@ -1880,6 +1881,34 @@ def check_known_clear():
     expect(len(geometry._kept_clear) == 3, "each shape measured once: %d" % len(geometry._kept_clear))
     expect(geometry._not_known_clear([above], part) == [] and len(geometry._not_known_clear([above], other)) == 1,
            "the same shape beside another part is measured again")
+    # What is kept is what is answered: said otherwise there, the shape is not measured.
+    geometry._kept_clear[(shapes.shape_key(part), shapes.shape_key(off))] = False
+    expect(len(geometry._not_known_clear([off], part)) == 1, "a shape asked again is not measured again")
+
+    def bulging(x, tip):
+        """A plate with one side an arc, from x, 0 to x, MESHED_BOX, bulging to tip."""
+        far = MESHED_BOX - x
+        edges = [Part.LineSegment(V(far, 0, 0), V(x, 0, 0)).toShape(),
+                 Part.Arc(V(x, 0, 0), V(tip, MESHED_BOX / 2, 0), V(x, MESHED_BOX, 0)).toShape(),
+                 Part.LineSegment(V(x, MESHED_BOX, 0), V(far, MESHED_BOX, 0)).toShape(),
+                 Part.LineSegment(V(far, MESHED_BOX, 0), V(far, 0, 0)).toShape()]
+        return Part.Face(Part.Wire(edges)).extrude(V(0, 0, 1))
+
+    right = bulging(MESHED_BOX, MESHED_BOX + 1)
+    left = bulging(0, -1)
+    expect(shapes.shape_key(left) != shapes.shape_key(right), "mirrored onto the same corners: another key")
+    expect(shapes.shape_key(right) == shapes.shape_key(right.copy()), "the same shape: the same key")
+    expect(shapes.shape_key(Part.Compound([])), "an empty shape has a key too")
+    block = Part.makeBox(1, 2, 1, V(MESHED_BOX + MESHED_OFF, MESHED_BOX / 2 - 1, 0))
+    separate = FinParams(connection=d.CONNECTION_SEPARATE)
+    geometry._kept_clear.clear()
+    geometry.check(separate, block, [left], [])
+    try:
+        geometry.check(separate, block, [right], [])
+        refused = False
+    except face_frame.FinError:
+        refused = True
+    expect(refused, "the overlap of a fin mirrored from one that is clear is refused")
 
 
 def check_meshed_distance():

@@ -136,10 +136,11 @@ NOT_SHAPING_A_FIN = ("placement", "fin_count", "end_inset", "face_length_per_fin
 FLANK_TOP_HAIR = 1e-3
 # Fins beside the lowest line built whole (shapes.keep()), by what they depend on.
 _kept_side_fins = {}
-# Whether a fin, by its shape and that of the part, is clear of it (_not_known_clear()).
-_kept_clear = {}
-CLEAR_KEPT = 64
 SIDE_FINS_KEPT = 32
+# Whether a fin, by its shape and that of the part, is clear of it (_not_known_clear()).
+# Past this the oldest go first, and a run with more fins measures them all again.
+_kept_clear = {}
+CLEAR_KEPT = 1024
 # How a foot and a blade beside the lowest line look for where they keep the gap,
 # see _least_clear(): the first step out and how near it comes (mm).
 FOOT_SEARCH_STEP = 0.5
@@ -880,6 +881,8 @@ def _not_known_clear(pieces, part):
       pieces clear of the part              ->  none
       a piece touching or in it             ->  that piece
       a piece asked again, the same shape   ->  not measured again
+      a piece mirrored onto the corners of
+        one known clear                     ->  measured: shape_key() tells them apart
       the same shape, another part          ->  measured
     """
     part_key = shape_key(part)
