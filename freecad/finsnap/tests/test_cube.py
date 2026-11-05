@@ -1863,6 +1863,25 @@ def check_side_fin_matrix():
            % (sorted(full.touching_z[1])[:2], start))
 
 
+def check_known_clear():
+    """A fin clear of the part is measured once for its shape; one touching it
+    is never taken as clear, the same shape beside another part is measured."""
+    part = Part.makeBox(MESHED_BOX, MESHED_BOX, MESHED_BOX)
+    other = Part.makeBox(MESHED_BOX, MESHED_BOX, 2 * MESHED_BOX)
+    off = Part.makeBox(1, 1, 1, V(MESHED_BOX + MESHED_OFF, 0, 0))
+    touching = Part.makeBox(1, 1, 1, V(MESHED_BOX, 0, 0))
+    inside = Part.makeBox(1, 1, 1, V(1, 1, 1))
+    above = Part.makeBox(1, 1, 1, V(0, 0, MESHED_BOX + MESHED_OFF))
+    geometry._kept_clear.clear()
+    expect(geometry._not_known_clear([off], part) == [], "a fin off the part: clear")
+    unsure = geometry._not_known_clear([off, touching, inside], part)
+    expect(len(unsure) == 2 and unsure[0].isSame(touching) and unsure[1].isSame(inside),
+           "a fin touching or in the part: not clear")
+    expect(len(geometry._kept_clear) == 3, "each shape measured once: %d" % len(geometry._kept_clear))
+    expect(geometry._not_known_clear([above], part) == [] and len(geometry._not_known_clear([above], other)) == 1,
+           "the same shape beside another part is measured again")
+
+
 def check_meshed_distance():
     """The distance on a mesh says what the shape says, leaves the mesh of the
     shape as it was, where the islands and the centres of mass get theirs, and
@@ -2832,6 +2851,7 @@ def main():
     check_stability()
     check_round_side()
     check_contour()
+    check_known_clear()
     check_meshed_distance()
     check_settled_clear()
     check_cut_at_height()

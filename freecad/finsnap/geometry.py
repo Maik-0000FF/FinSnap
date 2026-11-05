@@ -136,6 +136,9 @@ NOT_SHAPING_A_FIN = ("placement", "fin_count", "end_inset", "face_length_per_fin
 FLANK_TOP_HAIR = 1e-3
 # Fins beside the lowest line built whole (shapes.keep()), by what they depend on.
 _kept_side_fins = {}
+# Whether a fin, by its shape and that of the part, is clear of it (_not_known_clear()).
+_kept_clear = {}
+CLEAR_KEPT = 64
 SIDE_FINS_KEPT = 32
 # How a foot and a blade beside the lowest line look for where they keep the gap,
 # see _least_clear(): the first step out and how near it comes (mm).
@@ -868,12 +871,33 @@ def overlap_of(fins, part):
     return 0.0 if found > fins.Volume else found
 
 
-def check(p, part, fins, bodies, slack=0.0):
-    """Fins clear of the part, no closer than their distance from the face,
-    give or take `slack`: along a contour, CONTOUR_TOLERANCE. That every tine
+def _not_known_clear(pieces, part):
+    """Those of `pieces` that are not clear of `part`, each measured once for its
+    shape: a fin moved leaves the others as they are, and measuring them all with
+    every move takes longer than anything else about it.
+
+    INPUTS this has to withstand:
+      pieces clear of the part              ->  none
+      a piece touching or in it             ->  that piece
+      a piece asked again, the same shape   ->  not measured again
+      the same shape, another part          ->  measured
+    """
+    part_key = shape_key(part)
+
+    def clear(piece):
+        return keep(_kept_clear, (part_key, shape_key(piece)),
+                    lambda: piece.distToShape(part)[0] > d.TOLERANCE, CLEAR_KEPT)
+
+    return [piece for piece in pieces if not clear(piece)]
+
+
+def check(p, part, pieces, bodies, slack=0.0):
+    """Fins, of `pieces`, clear of the part, no closer than their distance from the
+    face, give or take `slack`: along a contour, CONTOUR_TOLERANCE. That every tine
     reaches the face is settled when the tines are chosen, by contact_share()."""
     if p.connection == d.CONNECTION_SEPARATE:
-        overlap = overlap_of(fins, part)
+        unsure = _not_known_clear(pieces, part)
+        overlap = overlap_of(Part.makeCompound(unsure), part) if unsure else 0.0
         if overlap > d.TOLERANCE:
             raise FinError(translate("FinSnap", "the fins overlap the part by %.4f mm³") % overlap)
 
@@ -1285,7 +1309,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     fins = Part.makeCompound(pieces)
     # Fins beside the lowest line were measured as they were built.
     measured = [body for fin, body in zip(built_fins, bodies) if fin.number not in frames]
-    check(p, part, fins, measured, 0.0 if frame.contour is None else d.CONTOUR_TOLERANCE)
+    check(p, part, pieces, measured, 0.0 if frame.contour is None else d.CONTOUR_TOLERANCE)
 
     # Each warning with what it is about, as a WarningTarget, in the same order.
     warnings, targets = [], []
