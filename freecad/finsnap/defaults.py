@@ -254,6 +254,11 @@ CONTOUR_SHARE = (CONTOUR_TOLERANCE - CONTOUR_DEFLECTION) / 2
 # point and a triangle the mesh takes longer than the fin and is not asked. They are
 # looked at NEAR_PAIRS_AT_ONCE at a time, which bounds the memory it takes.
 NEAR_MESH_DEFLECTION = 0.01
+# First the mesh is made this coarse (mm), which takes a part of the time: where that
+# already has more triangles than NEAR_MESH_MOST, as on a large freeform surface, it
+# stays as it is, as the fine one would take minutes and gigabytes for a mere guess.
+NEAR_MESH_COARSE = 0.1
+NEAR_MESH_MOST = 100_000
 NEAR_MOST_PAIRS = 30_000_000
 NEAR_PAIRS_AT_ONCE = 200_000
 # The flank of the fin never runs inward up the contour more steeply than

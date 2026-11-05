@@ -1903,6 +1903,8 @@ def check_meshed_distance():
     expect(abs(near.distance(twice, far) - MESHED_OFF) < d.TOLERANCE, "points alike in a ring change nothing")
 
 
+    asked_of = []
+
     class Stub:
         """A shape with the mesh it is given, or none where that is an error."""
 
@@ -1912,7 +1914,8 @@ def check_meshed_distance():
         def copy(self):
             return self
 
-        def tessellate(self, _):
+        def tessellate(self, deflection):
+            asked_of.append(deflection)
             if self.mesh is None:
                 raise Part.OCCError("no mesh")
             return self.mesh
@@ -1924,6 +1927,14 @@ def check_meshed_distance():
     above = [[V(0, 0, 1), V(1, 0, 1), V(0, 1, 1)], [V(0, 0, 2), V(1, 0, 2), V(0, 1, 2)]]
     expect(len(flat.triangles.a) == 1 and abs(flat.distance(above, far) - 1) < d.TOLERANCE,
            "a triangle of the mesh without area is left out, the distance stays a number")
+    expect(asked_of[-2:] == [d.NEAR_MESH_COARSE, d.NEAR_MESH_DEFLECTION], "a small mesh is made fine: %s" % asked_of)
+    most, d.NEAR_MESH_MOST = d.NEAR_MESH_MOST, 1
+    try:
+        Meshed(Stub((corners, [(0, 1, 3), (1, 2, 3)])))
+    finally:
+        d.NEAR_MESH_MOST = most
+    expect(asked_of[-1] == d.NEAR_MESH_COARSE and asked_of[-2] != d.NEAR_MESH_COARSE,
+           "a mesh with very many triangles stays coarse: %s" % asked_of[-2:])
 
     contour.clear_kept()
     for size in range(1, shapes.MESHES_KEPT + 3):

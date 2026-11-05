@@ -200,11 +200,15 @@ class Meshed:
       rings with points alike               ->  the triangles without area left out
       a triangle of the mesh without area   ->  left out, it has no plane
       a shape the kernel cannot mesh        ->  `reach`: nothing seen, for the same caller
+      a shape with very many triangles      ->  the coarse mesh only: a guess a little
+                                                further off, for the same caller
       too many pairs to go through          ->  TooManyPairs
     """
 
     def __init__(self, shape):
-        self.points, triangles = mesh_arrays(shape, d.NEAR_MESH_DEFLECTION, on_copy=True)
+        self.points, triangles = mesh_arrays(shape, d.NEAR_MESH_COARSE, on_copy=True)
+        if len(triangles) <= d.NEAR_MESH_MOST:
+            self.points, triangles = mesh_arrays(shape, d.NEAR_MESH_DEFLECTION, on_copy=True)
         a, b, c = (self.points[triangles[:, k]] for k in range(3))
         kept = numpy.linalg.norm(numpy.cross(b - a, c - a), axis=1) > SMALLEST_AREA
         self.numbers = triangles[kept]
