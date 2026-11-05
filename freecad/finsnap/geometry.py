@@ -885,7 +885,8 @@ def _not_known_clear(pieces, part):
         one known clear                     ->  measured: shape_key() tells them apart
       the same shape, another part          ->  measured
     """
-    part_key = shape_key(part)
+    # Its hash: a part of many corners would be held in full by every entry.
+    part_key = hash(shape_key(part))
 
     def clear(piece):
         return keep(_kept_clear, (part_key, shape_key(piece)),

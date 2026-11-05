@@ -100,6 +100,10 @@ def shape_key(shape):
       the same shape, recomputed            ->  the same key
       a hole moved                          ->  another key, by its corners
       mirrored onto the same corners        ->  another key, by its centre
+      the same, with the same centre too,
+        as a shape symmetric about a point  ->  the same key, by decision: a key never
+                                                proves two shapes alike, and this takes
+                                                exactly such a shape, exactly mirrored
       an empty shape, which has no centre   ->  a key all the same
     """
     corners = tuple(sorted(tuple(round(c, KEY_DIGITS) for c in vertex.Point) for vertex in shape.Vertexes))

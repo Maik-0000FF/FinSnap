@@ -1882,7 +1882,7 @@ def check_known_clear():
     expect(geometry._not_known_clear([above], part) == [] and len(geometry._not_known_clear([above], other)) == 1,
            "the same shape beside another part is measured again")
     # What is kept is what is answered: said otherwise there, the shape is not measured.
-    geometry._kept_clear[(shapes.shape_key(part), shapes.shape_key(off))] = False
+    geometry._kept_clear[(hash(shapes.shape_key(part)), shapes.shape_key(off))] = False
     expect(len(geometry._not_known_clear([off], part)) == 1, "a shape asked again is not measured again")
 
     def bulging(x, tip):
