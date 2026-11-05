@@ -111,6 +111,18 @@ class Frame:
     # The contour of the part the fin under that side follows
     # (contour.Contour), None where it stands under the side alone.
     contour: object = None
+    # Only for a fin beside the lowest line of a whole side, where the side
+    # falls away across the fin: the upright planes around its tines, their
+    # contours (contour.across()), on which they end, and those under the tines
+    # themselves; the curve its flank follows across
+    # its thickness, as (where the lowest line is, the place along the face the
+    # contour is measured at, the radius of the flank); and how far out its
+    # flank stands past the contour and its foot starts past the flank, as
+    # measured on the part.
+    tine_edges: tuple = None
+    flank_curve: tuple = None
+    flank_out: float = 0.0
+    foot_out: float = 0.0
 
     @property
     def round_side(self):
@@ -141,6 +153,29 @@ class Frame:
         ring = [self.point(t, s, z) for s, z in points_sz]
         face = Part.Face(Part.makePolygon(ring + ring[:1]))
         return face.extrude(self.along * width)
+
+
+def beside_lowest(radius, degrees):
+    """How far along the face of a round side of `radius` a line of it lies
+    that is `degrees` round from the lowest line (mm)."""
+    return radius * math.sin(math.radians(degrees))
+
+
+def in_plane(radius, away, distance):
+    """What `distance` off a round side of `radius` round its axis comes to in
+    an upright plane `away` mm along the face from its lowest line: longer, as
+    the side falls away there. Past the side, as for a thinner step of it, it
+    stays `distance`.
+
+    INPUTS this has to withstand:
+      on the lowest line                    ->  `distance`
+      30 degrees round                      ->  a little more
+      at or past the radius                 ->  `distance`
+      a distance of 0                       ->  0
+    """
+    if abs(away) >= radius:
+        return distance
+    return math.sqrt((radius + distance) ** 2 - away ** 2) - math.sqrt(radius ** 2 - away ** 2)
 
 
 def span_along(shape, direction):

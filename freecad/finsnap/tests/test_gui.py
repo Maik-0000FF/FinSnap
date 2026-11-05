@@ -4,7 +4,7 @@
 """The commands as a user runs them, in a FreeCAD with GUI but without a screen.
 
 Run in FreeCAD, with this checkout installed as an addon (see CONTRIBUTING.md):
-    QT_QPA_PLATFORM=offscreen freecad freecad/finsnap/tests/test_gui.py
+    xvfb-run -a freecad freecad/finsnap/tests/test_gui.py
 
 Dialogs that would wait for a click are replaced by fixed answers; everything
 else, from the selection to the written file, runs as in FreeCAD.
@@ -55,6 +55,8 @@ TUBE_RADIUS = 10.0
 TUBE_BORE = 6.0
 TUBE_HEIGHT = 40.0
 TUBE_ANGLE = 30.0  # how far the fin under the side of a tube is turned in the panel, in degrees
+SIDE_ANGLE_STEP = 10.0  # how far each angle typed at the middle of three fins turns the tube, in degrees
+SIDE_FIN_MOVE = 0.5  # how far a side fin is moved by its arrow (mm)
 PLACE_STEP = 1.0  # how far a fin is moved along the face in the panel, in mm
 HELD_REPEATS = 3  # repeats of an arrow key held down
 ZOOM_OUT = 2.0  # how far the view is zoomed out to see the arc keep its size on the screen
@@ -181,6 +183,106 @@ def quick_on_split_tube(doc):
         fins[0].ViewObject.Proxy.panel.reject()
         doc.recompute()
         expect(tube.Placement.isSame(flat, d.TOLERANCE), "Cancel lays the split tube back as it lay")
+    doc.removeObject(tube.Name)
+    doc.recompute()
+
+
+def side_fins_on_tube(doc):
+    """Fins beside the lowest line in their panel: the arc of the one under it
+    turns the part, from where it is turned; the arrow of one beside it moves
+    that fin, with Shift held both; the angle on the part has a field of its own."""
+    from freecad.finsnap import commands, defaults as d, face_frame, feature, handles, orient, quick_stands
+    from freecad.finsnap.params import FinParams
+    shape = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
+    side = [i for i, f in enumerate(shape.Faces)
+            if orient.is_round_side(f) and abs(f.Surface.Radius - TUBE_RADIUS) < d.TOLERANCE][0]
+    plan = quick_stands.quick_plan(shape, [], [(shape.Faces[side], side)], FinParams(), d.TILT_ANGLE)
+    tube = doc.addObject("Part::Feature", "SideFinsTube")
+    tube.Shape = shape
+    tube.Placement = plan.change
+    fins = feature.create(tube, "Face%d" % (side + 1))
+    commands.ViewProviderFinSnap(fins.ViewObject)
+    fins.RoundFins = d.ROUND_FINS_THREE
+    doc.recompute()
+    Gui.ActiveDocument.setEdit(fins)
+    panel = fins.ViewObject.Proxy.panel
+
+    def angle():
+        return panel.part_angle()
+
+    def handle(number):
+        panel.handled = (feature.MAIN, number)
+        panel.place_handles()
+
+    def type_angle(value):
+        panel.fin_fields[handles.ALONG].setValue(value)
+        panel.field_entered(handles.ALONG)
+
+    handle(2)
+    expect(panel.turns_part() and panel.turn_field.isHidden(), "the middle fin of three turns the part")
+    base = angle()
+    for step in (1, 2, 3):
+        type_angle(face_frame.round_angle(base + step * SIDE_ANGLE_STEP))
+        expect(abs(angle() - face_frame.round_angle(base + step * SIDE_ANGLE_STEP)) < d.TOLERANCE,
+               "an angle typed at the middle fin, turn %d: the part stands at it" % step)
+    turned = abs(feature.round_shift(fins))
+    expect(abs(turned - math.radians(3 * SIDE_ANGLE_STEP) * TUBE_RADIUS) < d.TOLERANCE
+           and abs(abs(panel.built_value(handles.ALONG)) - turned) < d.TOLERANCE,
+           "the middle fin starts from the turn of the part, not from none")
+    standing = App.Placement(tube.Placement)
+
+    handle(3)
+    expect(not panel.turns_part() and not panel.turn_field.isHidden(),
+           "a side fin moves itself, the angle on the part has its own field")
+    start = fins.Proxy.results[feature.MAIN].starts[3]
+    expect(panel.set_fin(handles.ALONG, SIDE_FIN_MOVE)
+           and abs(fins.Proxy.results[feature.MAIN].starts[3] - start - SIDE_FIN_MOVE) < d.TOLERANCE
+           and tube.Placement.isSame(standing, d.TOLERANCE),
+           "a side fin moved by its arrow stands there, the part stays")
+    far = face_frame.beside_lowest(TUBE_RADIUS, d.ROUND_FIN_ANGLE_MAX)
+    expect(not panel.set_fin(handles.ALONG, far), "a side fin does not go past the furthest angle")
+    panel.drag_together = True
+    # The other side fin left out for lack of room: the move is refused.
+    side_builder = fins.Proxy.side_builder
+
+    def other_left_out(obj, which):
+        part, build = side_builder(obj, which)
+
+        def built(*changes):
+            result = build(*changes)
+            result.numbers = [number for number in result.numbers if number != 1]
+            return result
+        return part, built
+
+    fins.Proxy.side_builder = other_left_out
+    refused = panel.stand_error(handles.ALONG, 2 * SIDE_FIN_MOVE)
+    del fins.Proxy.side_builder
+    expect(refused is not None, "with Shift held a move that leaves out the other side fin is refused")
+    panel.set_fin(handles.ALONG, 2 * SIDE_FIN_MOVE)
+    panel.drag_together = False
+    shifts = feature.edits(fins, feature.MAIN)[1]
+    expect(abs(shifts[3] - 2 * SIDE_FIN_MOVE) < d.TOLERANCE and abs(shifts[1] + SIDE_FIN_MOVE) < d.TOLERANCE,
+           "with Shift held both side fins move, mirrored: %s" % shifts)
+    panel.turn_field.setValue(face_frame.round_angle(base))
+    panel.turn_entered()
+    expect(abs(angle() - face_frame.round_angle(base)) < d.TOLERANCE and not feature.round_shift(fins),
+           "the field of its own turns the part back")
+    panel.reject()
+    doc.recompute()
+    fins.RoundFins = d.ROUND_FINS_TWO
+    doc.recompute()
+    Gui.ActiveDocument.setEdit(fins)
+    panel = fins.ViewObject.Proxy.panel
+    expect(not panel.turns_part() and not panel.turn_field.isHidden(),
+           "with two fins neither arrow turns the part, the field does, as soon as the panel opens")
+    shown = []
+    panel.show_result = lambda: shown.append(True)
+    panel.turn_field.setValue(face_frame.round_angle(angle() + SIDE_ANGLE_STEP))
+    panel.turn_entered()
+    del panel.show_result
+    expect(shown, "the part turned by its field, the panel shows the new result")
+    panel.reject()
+    doc.removeObject(fins.Name)
     doc.removeObject(tube.Name)
     doc.recompute()
 
@@ -761,6 +863,88 @@ def arrow_field(panel, fins):
         expect(panel.arrow_field is None and abs(box.value() - moved_to) < d.TOLERANCE,
                "a click elsewhere takes the value typed at the arrow: %.2f" % box.value())
     expect(feature.edits(fins, feature.MAIN)[1] == shifts, "typed back, the fin stands where it stood")
+
+    # Its own menu takes the focus too: nothing taken, the field stays. A key let
+    # go after closing it was meant for the menu; another menu takes the value.
+    def popup_focus(kind):
+        QtWidgets.QApplication.sendEvent(panel.arrow_field[2], QtGui.QFocusEvent(kind, QtCore.Qt.PopupFocusReason))
+
+    def let_go(pressed):
+        QtWidgets.QApplication.sendEvent(panel.arrow_field[2], QtGui.QKeyEvent(QtCore.QEvent.KeyRelease, pressed,
+                                                                                QtCore.Qt.NoModifier))
+
+    panel.edit_at_arrow(handles.ALONG)
+    field = panel.arrow_field[2]
+    moved_to = place - FIN_SHIFT
+    field.setValue(moved_to)
+    in_menu = []
+
+    def while_menu_open():
+        menu = QtWidgets.QApplication.activePopupWidget()
+        in_menu.append(type(menu).__name__ if menu else None)
+        popup_focus(QtCore.QEvent.FocusOut)
+        in_menu.append(panel.arrow_field is not None and abs(box.value() - place) < d.TOLERANCE)
+        if menu:
+            menu.close()
+
+    QtCore.QTimer.singleShot(0, while_menu_open)
+    at = QtCore.QPoint(1, 1)
+    QtWidgets.QApplication.sendEvent(field, QtGui.QContextMenuEvent(QtGui.QContextMenuEvent.Mouse, at,
+                                                                    field.mapToGlobal(at)))
+    expect(in_menu == ["QMenu", True], "the menu of the field opens and leaves it open, nothing taken: %s" % in_menu)
+    popup_focus(QtCore.QEvent.FocusIn)
+    for closed_with in (QtCore.Qt.Key_Escape, QtCore.Qt.Key_Return):
+        let_go(closed_with)
+        # Held to close the menu: its repeats arrive in the field before it is let go.
+        QtWidgets.QApplication.sendEvent(field, QtGui.QKeyEvent(QtCore.QEvent.KeyPress, closed_with,
+                                                                QtCore.Qt.NoModifier, "", True))
+        let_go(closed_with)
+        expect(panel.arrow_field is not None and abs(field.value() - moved_to) < d.TOLERANCE
+               and abs(box.value() - place) < d.TOLERANCE,
+               "a key let go closing its menu leaves the field as it was: %s" % closed_with)
+
+    filters = field.findChild(taskpanel.ArrowFieldKeys)
+    inside = QtCore.QPointF(at)
+
+    def filtered(kind, button):
+        return filters.eventFilter(field, QtGui.QMouseEvent(kind, inside, inside, button, button, QtCore.Qt.NoModifier))
+
+    for kind in taskpanel.MOUSE_BUTTON_EVENTS:
+        expect(not filtered(kind, QtCore.Qt.LeftButton), "the left button goes on to the field: %s" % kind)
+        for button in (QtCore.Qt.RightButton, QtCore.Qt.MiddleButton):
+            expect(filtered(kind, button), "another button stays from the view: %s, %s" % (kind, button))
+
+    class Reached(QtCore.QObject):
+        """What of the mouse gets past the field to the view it lies in."""
+
+        def __init__(self):
+            super().__init__()
+            self.events = []
+
+        def eventFilter(self, _, event):  # noqa: N802 - Qt's name
+            if event.type() in taskpanel.MOUSE_BUTTON_EVENTS:
+                self.events.append(event.type())
+            return False
+
+    reached = Reached()
+    field.parentWidget().installEventFilter(reached)
+    for button in (QtCore.Qt.RightButton, QtCore.Qt.MiddleButton):
+        for kind, held in ((QtCore.QEvent.MouseButtonPress, button),
+                           (QtCore.QEvent.MouseButtonRelease, QtCore.Qt.NoButton)):
+            QtWidgets.QApplication.sendEvent(field, QtGui.QMouseEvent(kind, inside, inside, button, held,
+                                                                      QtCore.Qt.NoModifier))
+    field.parentWidget().removeEventFilter(reached)
+    expect(not reached.events, "the right and the middle button in the field do not reach the view: %s"
+           % reached.events)
+
+    popup_focus(QtCore.QEvent.FocusOut)
+    expect(panel.arrow_field is None and abs(box.value() - moved_to) < d.TOLERANCE,
+           "another menu takes the value typed, as what it saves has to have it: %.2f" % box.value())
+    panel.edit_at_arrow(handles.ALONG)
+    panel.arrow_field[2].setValue(place)
+    key(panel.arrow_field[2], QtCore.Qt.Key_Return)
+    expect(feature.edits(fins, feature.MAIN)[1] == shifts and panel.arrow_field is None,
+           "typed back, the fin stands where it stood again")
 
 
 def value_colors():
@@ -2381,6 +2565,7 @@ def main():
         model = archive.read("3D/3dmodel.model").decode()
     expect(model.count("<object ") == 2, "export without a selection takes all fins with their parts")
     turned_tube(doc)
+    side_fins_on_tube(doc)
     added_on_tube(doc)
     quick_on_split_tube(doc)
     moved_beside_groove(doc)

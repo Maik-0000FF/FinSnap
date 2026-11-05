@@ -410,8 +410,10 @@ def warnings_and_old_files(doc):
     doc.recompute()
     lowered = [solid for solid, tag in zip(fins.Shape.Solids, fins.FinTags)
                if feature.tag_fin(tag)[0] == feature.COUNTER][0]
+    feature.note_turn(fins, TUBE_TURN)
     done = feature.remove_fins(fins, every_main)
     doc.recompute()
+    expect(not feature.round_shift(fins), "the counter fin made the main fin, no turn of the part is left noted")
     expect(done == feature.COUNTER_PROMOTED and not fins.CounterFace
            and (fins.Base[0], list(fins.Base[1])) == counter_link and fins.isValid()
            and len(fins.Shape.Solids) == 1 and abs(fins.Shape.Volume - lowered.Volume) < d.TOLERANCE
@@ -490,6 +492,11 @@ def warnings_and_old_files(doc):
     expect(fins.FollowContour is False and FinParams().follow_contour
            and fins.ContourBridge.Value == d.CONTOUR_BRIDGE and fins.ContourGap.Value == d.CONTOUR_GAP,
            "fins saved before the contour existed get it off, built as before; new fins follow it")
+    fins.removeProperty("RoundFins")
+    fins.removeProperty("RoundFinAngle")
+    fins.Proxy.onDocumentRestored(fins)
+    expect(fins.RoundFins == d.ROUND_FINS_ONE and fins.RoundFinAngle == d.ROUND_FIN_ANGLE,
+           "fins saved before three fins under a round side get one, built as before")
     feature.set_fin_height(fins, feature.MAIN, 1, fins.ResultHeight.Value / 2)
     fins.removeProperty(feature.HEIGHTS_GRID[feature.MAIN])
     fins.Proxy.onDocumentRestored(fins)
@@ -751,6 +758,63 @@ def split_tube(doc):
     doc.recompute()
 
 
+def three_fins_on_tube(doc):
+    """Three fins under the side of a tube in a document: each a solid of its
+    own to pick and remove, each holding from its own lowest tine, and the
+    turn of the part kept when the number of fins changes."""
+    tube = Part.makeCylinder(TUBE_RADIUS, TUBE_HEIGHT).cut(Part.makeCylinder(TUBE_BORE, TUBE_HEIGHT))
+    side = [i for i, f in enumerate(tube.Faces)
+            if orient.is_round_side(f) and abs(f.Surface.Radius - TUBE_RADIUS) < d.TOLERANCE][0]
+    plan = quick_stands.quick_plan(tube, [], [(tube.Faces[side], side)], FinParams(), d.TILT_ANGLE)
+    part = doc.addObject("Part::Feature", "ThreeFinsTube")
+    part.Shape = tube
+    part.Placement = plan.change
+    fins = feature.create(part, "Face%d" % (side + 1))
+    fins.RoundFins = d.ROUND_FINS_THREE
+    doc.recompute()
+    expect(fins.ResultFinCount == 3 and len(fins.Shape.Solids) == 3
+           and len(fins.getPropertyByName(feature.FIN_TAGS)) == 3,
+           "three fins under a round side in a document: three solids, each to be picked")
+    supports, _ = feature.supports_of(part, doc)
+    lowest = sorted(height for _, height in supports)
+    expect(len(supports) == 3 and lowest[0] < lowest[1],
+           "each of the three fins holds the part from its own lowest tine: %s" % lowest)
+    feature.remove_fin(fins, feature.MAIN, 1)
+    doc.recompute()
+    expect(len(fins.Shape.Solids) == 2 and fins.ResultFinCount == 2, "a side fin removed, two fins stand")
+    feature.reset_fins(fins)
+
+    standing = App.Placement(part.Placement)
+    fins.RoundFins = d.ROUND_FINS_ONE
+    doc.recompute()
+    feature.set_round_shift(fins, TUBE_TURN)
+    doc.recompute()
+    fins.RoundFins = d.ROUND_FINS_THREE
+    doc.recompute()
+    expect(fins.ResultFinCount == 3 and abs(feature.round_shift(fins) - TUBE_TURN) < d.TOLERANCE
+           and not any("number of fins changed" in w for w in fins.Warnings),
+           "the part turned, three fins asked for: the turn stays known, nothing is said to be undone")
+    feature.remove_fin(fins, feature.MAIN, 1)
+    fins.RoundFins = d.ROUND_FINS_ONE
+    doc.recompute()
+    expect(fins.ResultFinCount == 1 and abs(feature.round_shift(fins) - TUBE_TURN) < d.TOLERANCE
+           and not feature.removed(fins, feature.MAIN),
+           "a fin removed and the part turned, back to one fin: the fin is back, the turn stays known")
+    feature.set_round_shift(fins, 0.0)
+    doc.recompute()
+    expect(part.Placement.isSame(standing, d.TOLERANCE), "turned back, the part stands where it stood")
+    # Saved when the turn was noted as the shift of the one fin.
+    fins.removeProperty(feature.ROUND_TURN)
+    feature.set_fin_shift(fins, feature.MAIN, 1, TUBE_TURN)
+    fins.Proxy.onDocumentRestored(fins)
+    expect(feature.round_shift(fins) == TUBE_TURN and not feature.edits(fins, feature.MAIN)[1],
+           "a turn saved as the shift of the fin is taken over as the turn")
+    feature.note_turn(fins, 0.0)
+    doc.removeObject(fins.Name)
+    doc.removeObject(part.Name)
+    doc.recompute()
+
+
 def turned_tube(doc):
     """A fin under the side of a tube moved by hand turns the tube about its
     axis; the fin stays under the lowest line, and the turn is undone again."""
@@ -838,6 +902,7 @@ def turned_tube(doc):
     feature.set_round_shift(fins, TUBE_TURN)
     # A count of its own, which a build would not give: it has to stay as it is.
     made_for = getattr(fins, feature.PLANNED[feature.MAIN]) + 1
+    feature.hidden_property(fins, feature.EDITED_OF[feature.MAIN], "App::PropertyInteger")
     setattr(fins, feature.EDITED_OF[feature.MAIN], made_for)
     feature.keep_laid_flat(fins, App.Placement())
     expect(not feature.round_shift(fins) and getattr(fins, feature.EDITED_OF[feature.MAIN]) == made_for,
@@ -1209,6 +1274,7 @@ def main():
     marks_without_face(doc)
     edit_fins(doc)
     turned_tube(doc)
+    three_fins_on_tube(doc)
     split_tube(doc)
     halves_kept_beside_fillet(doc)
     counter_under_disc(doc)

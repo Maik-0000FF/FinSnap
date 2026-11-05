@@ -55,7 +55,7 @@ import Part
 
 from . import defaults as d
 from . import overhang
-from .shapes import bounds
+from .shapes import bounds, mesh_arrays
 
 # How often the part is checked before it is checked layer by layer (mm).
 SAMPLE_STEP = 1.0
@@ -197,13 +197,9 @@ class _Below:
     """
 
     def __init__(self, part):
-        try:
-            points, triangles = part.tessellate(d.CENTRE_MESH_DEFLECTION)
-        except Part.OCCError:
-            points, triangles = [], []
-        corners = numpy.array([(point.x, point.y, point.z) for point in points], dtype=float).reshape(-1, 3)
+        corners, triangles = mesh_arrays(part, d.CENTRE_MESH_DEFLECTION)
         # Each triangle as its three corners, in the order of their tops.
-        triangles = corners[numpy.array(triangles, dtype=int).reshape(-1, 3)]
+        triangles = corners[triangles]
         tops = triangles[:, :, 2].max(axis=1)
         order = numpy.argsort(tops, kind="stable")
         self.triangles, self.tops = triangles[order], tops[order]

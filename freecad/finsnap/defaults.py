@@ -202,6 +202,19 @@ TINE_END_TOLERANCE = ROUND_SIDE_MAX_DROP
 # top, as a cut through the lowest line shows it: steps, cones, fillets and
 # curves alike. Off, it stands under the round side alone.
 FOLLOW_CONTOUR = True
+# How many fins stand under a whole round side: one under its lowest line; one
+# parallel to it on each side of it instead, for hold against tipping sideways;
+# or all three. The two beside it follow the contour, as the lines of the side
+# they stand under are no lowest line.
+ROUND_FINS_ONE, ROUND_FINS_TWO, ROUND_FINS_THREE = "one", "two", "three"
+ROUND_FINS_CHOICES = (ROUND_FINS_ONE, ROUND_FINS_TWO, ROUND_FINS_THREE)
+ROUND_FINS = ROUND_FINS_ONE
+# How far round the side from the lowest line those two stand (degrees): at 30
+# they stand a radius apart from each other. Further round the side falls away
+# steeply across a tine and they start to hold the part only higher up.
+ROUND_FIN_ANGLE = 30.0
+ROUND_FIN_ANGLE_MIN = 1.0
+ROUND_FIN_ANGLE_MAX = 45.0
 # Recesses in the contour lower than this (mm), small chamfers, fillets, holes
 # and grooves, the fin bridges straight; its tines there are left out.
 CONTOUR_BRIDGE = 3.0
@@ -236,6 +249,19 @@ CONTOUR_TOLERANCE = 0.005
 # raised, and as much again what the flank may shift as it is drawn with
 # fewer points: together with the curve off its pieces, the tolerance.
 CONTOUR_SHARE = (CONTOUR_TOLERANCE - CONTOUR_DEFLECTION) / 2
+# How closely the mesh follows the part on which it is told quickly where a side
+# fin keeps the gap (mm), which the fin itself then confirms.
+NEAR_MESH_DEFLECTION = 0.01
+# Past this many triangles at NEAR_MESH_COARSE (mm), which is quick to make, the part
+# gets no mesh and the fin is measured all the way: on a wavy freeform surface the fine
+# mesh has up to ten times as many and past this takes a minute and gigabytes, where a
+# coarser one saves nothing over measuring the fin. Under it, it takes a few seconds.
+NEAR_MESH_COARSE = 0.1
+NEAR_MESH_MOST = 20_000
+# Past NEAR_MOST_PAIRS of a point and a triangle the mesh takes longer than the fin and
+# is not asked. They are looked at NEAR_PAIRS_AT_ONCE at a time, which bounds the memory.
+NEAR_MOST_PAIRS = 30_000_000
+NEAR_PAIRS_AT_ONCE = 200_000
 # The flank of the fin never runs inward up the contour more steeply than
 # this angle from the bed allows: the fin itself prints without an overhang.
 FIN_FLANK_ANGLE = OVERHANG_ANGLE
