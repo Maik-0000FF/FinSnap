@@ -109,7 +109,7 @@ from . import defaults as d
 from . import orient
 from .face_frame import UP, FinError, Frame, HandEditError, beside_lowest, frame_of, in_plane, support_of
 from .i18n import QT_TRANSLATE_NOOP, translate
-from .shapes import Meshed, TooManyPairs, between_rings, bounds, keep, shape_key
+from .shapes import TooManyPairs, between_rings, bounds, keep, meshed_of, shape_key
 from .tine_rows import (NARROW_AT_EVERY_TINE, TINE_CUTS_IN, TINE_MISSES, extent_at, face_tines, restarted_tines,
                         flank_bend, round_move, side_foot_start, side_tine, tine_end, tine_end_fault, tine_end_points,
                         tine_start, tines_on_face, touching_at, wide_enough)
@@ -136,8 +136,6 @@ NOT_SHAPING_A_FIN = ("placement", "fin_count", "end_inset", "face_length_per_fin
 FLANK_TOP_HAIR = 1e-3
 # Fins beside the lowest line built whole (shapes.keep()), by what they depend on.
 _kept_side_fins = {}
-# The part as a mesh (shapes.Meshed), to find where a side fin keeps the gap.
-_kept_meshes = {}
 SIDE_FINS_KEPT = 32
 # How a foot and a blade beside the lowest line look for where they keep the gap,
 # see _least_clear(): the first step out and how near it comes (mm).
@@ -531,16 +529,23 @@ def _blade_rings(p, frame, t0, thickness, head, low, high, least=None):
     return [[frame.point(t, s, z) for s, z in head + turned_flank(t)] for t in planes]
 
 
-def _side_blade_rings(p, frame, t0, height, thickness):
-    """The rings of the blade of a fin `height` high beside the lowest line: down
-    to the bed without a foot, to the top of the foot on one, from its start."""
+def _blade_ends(p, frame, t0, height, thickness):
+    """What the blade of a fin `height` high has but its flank: the rest of its
+    outline, the height the flank comes down to and where the foot starts, None
+    without one. Below the top of the foot the slanted flank would only add a thin
+    tip under the part; the blade ends upright there and the foot carries it."""
     zb, top = frame.bed_z, frame.bed_z + height
     s_out = fin_out(p, frame, height)
     if p.foot_shape == d.FOOT_NONE:
-        return _blade_rings(p, frame, t0, thickness, [(s_out, zb), (s_out, top)], zb, top)
-    s_from = side_foot_start(p, frame, t0, thickness)
-    return _blade_rings(p, frame, t0, thickness, [(s_from, zb), (s_out, zb), (s_out, top)], zb + p.foot_height, top,
-                        s_from)
+        return [(s_out, zb), (s_out, top)], zb, None
+    s_from = side_foot_start(p, frame, t0, thickness) if frame.flank_curve else foot_span(p, frame, height)[0]
+    return [(s_from, zb), (s_out, zb), (s_out, top)], zb + p.foot_height, s_from
+
+
+def _side_blade_rings(p, frame, t0, height, thickness):
+    """The rings of the blade of a fin `height` high beside the lowest line."""
+    head, low, s_from = _blade_ends(p, frame, t0, height, thickness)
+    return _blade_rings(p, frame, t0, thickness, head, low, frame.bed_z + height, s_from)
 
 
 def _tine_faults(p, surface, frame, fin, thickness, kept):
@@ -729,7 +734,6 @@ def _clear_of_part(p, part, frame, fin, thickness, half_foot):
     """
     furthest = (d.GAP_MAX - p.gap) / frame.n_out
     needed = p.gap - d.CONTOUR_TOLERANCE
-    near = keep(_kept_meshes, shape_key(part), lambda: Meshed(part))
     while True:
         def placed(out):
             """The frame with the blade `out` further out and its foot where that
@@ -738,33 +742,37 @@ def _clear_of_part(p, part, frame, fin, thickness, half_foot):
             foot_out = _foot_out_for(p, part, moved, fin, thickness, half_foot)
             return None if foot_out is None else replace(moved, foot_out=foot_out)
 
-        def blade_clear(out):
-            moved = placed(out)
-            if moved is None:
-                return False
+        def stays_clear(moved):
             return one_fin(p, moved, fin.t0, fin.height, thickness, half_foot, [])[0].distToShape(part)[0] >= needed
 
-        # For a guess the foot stays as it stands with nothing moved: looking for
-        # its place at every step is what a mesh is there to save.
-        standing = placed(0.0) or frame
+        def blade_clear(out):
+            moved = placed(out)
+            return moved is not None and stays_clear(moved)
 
         def looks_clear(out):
-            """What the mesh says of blade_clear(), in a fraction of its time."""
-            rings = _side_blade_rings(p, replace(standing, flank_out=out), fin.t0, fin.height, thickness)
-            return near.distance(rings, p.gap) > needed
+            """What the mesh says of blade_clear(), in a fraction of its time. For
+            a guess the foot stays as it stands with nothing moved: looking for its
+            place at every step is what a mesh is there to save."""
+            rings = _side_blade_rings(p, replace(standing or frame, flank_out=out), fin.t0, fin.height, thickness)
+            return meshed_of(part).distance(rings, p.gap) > needed
 
-        try:
-            guess = _least_clear(looks_clear, FLANK_SEARCH_STEP, furthest, FLANK_RESOLUTION)
-            out = _settled_clear(blade_clear, furthest if guess is None else guess, furthest, FLANK_RESOLUTION)
-        except TooManyPairs:
-            out = _least_clear(blade_clear, FLANK_SEARCH_STEP, furthest, FLANK_RESOLUTION)
+        # Most fins keep the gap as they stand, and need no mesh to say so.
+        standing = placed(0.0)
+        if standing is not None and stays_clear(standing):
+            out = 0.0
+        else:
+            try:
+                guess = _least_clear(looks_clear, FLANK_SEARCH_STEP, furthest, FLANK_RESOLUTION)
+                out = _settled_clear(blade_clear, furthest if guess is None else guess, furthest, FLANK_RESOLUTION)
+            except (TooManyPairs, MemoryError):
+                out = _least_clear(blade_clear, FLANK_SEARCH_STEP, furthest, FLANK_RESOLUTION)
         if out is not None:
-            moved = placed(out)
+            moved = standing if out == 0.0 else placed(out)
             return (*one_fin(p, moved, fin.t0, fin.height, thickness, half_foot, fin.candidate_z),
                     moved, _on_flank(p, moved, fin, thickness))
         # Where it stays clear with nothing moved but the foot: the gap and a tine
         # below where it is closest, and a tine less if it ends at that one already.
-        moved = placed(0.0) or frame
+        moved = standing or frame
         distance, points, _ = one_fin(p, moved, fin.t0, fin.height, thickness, half_foot, [])[0].distToShape(part)
         lowest_close = points[0][0].z - frame.bed_z - p.gap - p.tine_height
         kept = [(z, whole) for z, whole in zip(fin.candidate_z, fin.on_face) if z <= lowest_close and whole]
@@ -781,22 +789,11 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
     of the upright outer edge of its blade, where the handles go."""
     zb, top = frame.bed_z, frame.bed_z + height
     s_out = fin_out(p, frame, height)
-
-    if p.foot_shape == d.FOOT_NONE:
-        head = [(s_out, zb), (s_out, top)]
-        body = (_ruled(_side_blade_rings(p, frame, t0, height, thickness)) if frame.flank_curve
-                else frame.section(t0, head + flank_outline(p, frame, zb, top), thickness))
-    else:
-        # Below the top of the foot the slanted flank would only add a thin tip
-        # under the part; the blade ends vertically there and the foot carries it.
-        s_from, s_to = foot_span(p, frame, height)
-        foot_top = zb + p.foot_height
-        if frame.flank_curve:
-            s_from = side_foot_start(p, frame, t0, thickness)
-        head = [(s_from, zb), (s_out, zb), (s_out, top)]
-        body = (_ruled(_side_blade_rings(p, frame, t0, height, thickness)) if frame.flank_curve
-                else frame.section(t0, head + flank_outline(p, frame, foot_top, top), thickness))
-        body = body.fuse(foot(p, frame, t0, thickness, s_from, s_to, half_foot))
+    head, low, s_from = _blade_ends(p, frame, t0, height, thickness)
+    body = (_ruled(_blade_rings(p, frame, t0, thickness, head, low, top, s_from)) if frame.flank_curve
+            else frame.section(t0, head + flank_outline(p, frame, low, top), thickness))
+    if s_from is not None:
+        body = body.fuse(foot(p, frame, t0, thickness, s_from, foot_span(p, frame, height)[1], half_foot))
     outer_middle = frame.point(t0 + thickness / 2, s_out, zb + height / 2)
 
     tines = []

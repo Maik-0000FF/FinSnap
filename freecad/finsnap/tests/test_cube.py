@@ -12,7 +12,6 @@ import os
 import re
 import sys
 
-import numpy
 import Part
 
 from freecad.finsnap.tests.support import (HALF_TURN, RECESS_RADIUS, expect, grooved, lower_left_face, run,
@@ -25,7 +24,8 @@ from freecad.finsnap import limits
 from freecad.finsnap import orient
 from freecad.finsnap import overhang
 from freecad.finsnap import stability
-from freecad.finsnap.shapes import Meshed, TooManyPairs
+from freecad.finsnap import shapes
+from freecad.finsnap.shapes import Meshed
 from freecad.finsnap.params import FinParams, ParamError
 
 import FreeCAD as App
@@ -147,6 +147,7 @@ HEIGHT_ACROSS_FIN = 0.02  # how far above the height it says a fin may reach (mm
 LARGE_FILLET_RADIUS = 9.5  # nearly the radius of the rod
 MESHED_BOX, MESHED_OFF = 10.0, 0.5  # a box measured by its mesh, and how far off it (mm)
 MESHED_VOLUME_APART = 0.5  # mm3: found on the mesh and exactly, the fins stand within a resolution
+FLANK_OUT_MOVED = 0.05  # mm: a blade moved out by more than this has really moved
 GROOVE_WIDTH = 4.0     # a groove round a shaft
 TINE_NEAR_START = 6.0  # the first tine above a groove starts within this of the side (mm)
 AIM_TOLERANCE = 1e-3   # how far off the axis a tine beside the lowest line may aim (cross product, mm2)
@@ -1899,34 +1900,75 @@ def check_meshed_distance():
     twice[0].insert(1, twice[0][0])
     twice[1].insert(1, twice[1][0])
     expect(abs(near.distance(twice, far) - MESHED_OFF) < d.TOLERANCE, "points alike in a ring change nothing")
-    expect(all(numpy.linalg.norm(numpy.cross(near.b - near.a, near.c - near.a), axis=1) > 0),
-           "no triangle of the mesh is without area")
 
 
-    rod = cylinder()
-    number = round_side_of(rod)
-    plan = quick_stands.quick_plan(rod, [], [(rod.Faces[number], number)], FinParams(), d.TILT_ANGLE)
-    stood = moved(rod, plan.change)
+    class Stub:
+        """A shape with the mesh it is given, or none where that is an error."""
+
+        def __init__(self, mesh):
+            self.mesh = mesh
+
+        def copy(self):
+            return self
+
+        def tessellate(self, _):
+            if self.mesh is None:
+                raise Part.OCCError("no mesh")
+            return self.mesh
+
+    expect(Meshed(Stub(None)).distance(off_face, MESHED_OFF / 2) == MESHED_OFF / 2,
+           "a shape the kernel cannot mesh: nothing seen")
+    corners = [V(0, 0, 0), V(1, 0, 0), V(2, 0, 0), V(0, 1, 0)]
+    flat = Meshed(Stub((corners, [(0, 1, 2), (0, 1, 3)])))
+    above = [[V(0, 0, 1), V(1, 0, 1), V(0, 1, 1)], [V(0, 0, 2), V(1, 0, 2), V(0, 1, 2)]]
+    expect(len(flat.triangles.a) == 1 and abs(flat.distance(above, far) - 1) < d.TOLERANCE,
+           "a triangle of the mesh without area is left out, the distance stays a number")
+
+    contour.clear_kept()
+    for size in range(1, shapes.MESHES_KEPT + 3):
+        shapes.meshed_of(Part.makeBox(size, size, size))
+    expect(len(shapes._kept_meshes) == shapes.MESHES_KEPT, "only the last meshes stay: %d" % len(shapes._kept_meshes))
+    contour.clear_kept()
+    expect(not shapes._kept_meshes, "the meshes kept go with the contours")
+
+    def no_mesh(shape):
+        raise AssertionError("asked for a mesh of %s" % shape)
+
+    def out_of_memory(_):
+        raise MemoryError
+
+    def side_fins(shape, asked, make):
+        """The fins of `asked` under the round side of `shape`, the mesh coming from `make`."""
+        number = round_side_of(shape)
+        plan = quick_stands.quick_plan(shape, [], [(shape.Faces[number], number)], FinParams(), d.TILT_ANGLE)
+        stood = moved(shape, plan.change)
+        kept, geometry.meshed_of = geometry.meshed_of, make
+        contour.clear_kept()
+        geometry._kept_side_fins.clear()
+        try:
+            return geometry.build(stood, stood.Faces[number], asked)
+        finally:
+            geometry.meshed_of = kept
+
+    plain = FinParams(placement=d.PLACEMENT_CENTER, round_fins=d.ROUND_FINS_TWO, round_fin_angle=30.0)
+    side_fins(cylinder(), plain, no_mesh)
+
     three = FinParams(placement=d.PLACEMENT_CENTER, round_fins=d.ROUND_FINS_THREE, round_fin_angle=45.0,
                       fin_thickness=3.0)
-    by_mesh = geometry.build(stood, stood.Faces[number], three)
+    filleted = matrix_shapes()["fillet"]
+    by_mesh = side_fins(filleted, three, shapes.meshed_of)
+    out = max(frame.flank_out for frame in by_mesh.frames.values())
+    expect(out > FLANK_OUT_MOVED, "a side fin in front of a fillet stands further out: %.3f" % out)
     limit = d.NEAR_MOST_PAIRS
     d.NEAR_MOST_PAIRS = 0
     try:
-        try:
-            near.distance(off_face, far)
-            told = True
-        except TooManyPairs:
-            told = False
-        expect(not told, "too many pairs: not told")
-        contour.clear_kept()
-        geometry._kept_side_fins.clear()
-        exact = geometry.build(stood, stood.Faces[number], three)
+        too_many = side_fins(filleted, three, shapes.meshed_of)
     finally:
         d.NEAR_MOST_PAIRS = limit
-    expect(exact.touching_z == by_mesh.touching_z
-           and abs(exact.fins.Volume - by_mesh.fins.Volume) < MESHED_VOLUME_APART,
-           "too large for the mesh: the same fins, searched exactly")
+    for reason, exact in (("too many pairs", too_many), ("no memory", side_fins(filleted, three, out_of_memory))):
+        expect(exact.touching_z == by_mesh.touching_z
+               and abs(exact.fins.Volume - by_mesh.fins.Volume) < MESHED_VOLUME_APART,
+               "%s: the same fins, searched exactly" % reason)
 
 
 def check_settled_clear():

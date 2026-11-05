@@ -65,7 +65,7 @@ import Part
 
 from . import defaults as d
 from .i18n import translate
-from .shapes import bounds, keep, shape_key
+from .shapes import bounds, clear_meshes, keep, shape_key
 
 # Places to which the ends of the pieces of a cut are compared, to join them.
 JOIN_DECIMALS = 4
@@ -367,6 +367,7 @@ def _lifted(values, near, heights, radius):
     (CONTOUR_SHARE), a corner or the start of a circle between them: both
     raised to the most the part reaches between them, the run then outside
     it. On a smooth contour nothing is raised."""
+    outermost = {piece: _outermost(piece, radius) for piece in {piece for pieces in near for piece in pieces}}
     raised = [-math.inf] * len(values)
     result = list(values)
     for k, pieces in enumerate(near):
@@ -387,7 +388,7 @@ def _lifted(values, near, heights, radius):
         # In the order of _near(): once a piece stays inside both samples by
         # more than the share, so do all after it, and none reaches past the run.
         lowest = min(a, b)
-        reaching = takewhile(lambda piece: _outermost(piece, radius) - lowest > d.CONTOUR_SHARE, pieces)
+        reaching = takewhile(lambda piece: outermost[piece] - lowest > d.CONTOUR_SHARE, pieces)
         past = (_past_chord(piece, low, high, chord, radius) for piece in reaching)
         if any(r is not None and r > d.CONTOUR_SHARE for r in past):
             most = max(r for r in (_reach_between(piece, low, high, radius) for piece in pieces) if r is not None)
@@ -697,6 +698,7 @@ def clear_kept():
     """Forget every contour kept, as if none had been worked out."""
     _kept.clear()
     _kept_beside.clear()
+    clear_meshes()
 
 
 def side_from(frame, away=0.0):
