@@ -451,7 +451,10 @@ def prism_axis(shape, face):
       a side split in halves along the axis ->  its axis, on either half
       a slot along the whole of a side      ->  None: the ring runs into the slot;
                                                 the part lies on the side, as before
-      a corner off by 1 mm                  ->  None: an uneven prism
+      a slanted notch reaching the end of
+        a side                              ->  None: its wall is on the outer wire; the
+                                                part lies on the side, as before
+      a corner off by 1 mm                 ->  None: an uneven prism
       side of a box, a square bar           ->  None: fewer sides than a chamfer has
       side of a triangular prism            ->  None
       chamfer on one edge of a box          ->  None: angles differ

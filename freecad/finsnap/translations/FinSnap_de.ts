@@ -1417,7 +1417,7 @@
         <translation>Wähle eine Kante oder eine Fläche, eine Fläche und die Kante oder die Fase oder Verrundung, auf der sie stehen soll, oder die beiden Flächen neben einer Verrundung.</translation>
     </message>
     <message>
-        <location filename="../quick_stands.py" line="555"/>
+        <location filename="../quick_stands.py" line="558"/>
         <source>the fins do not fit under the selected face standing this way: %s</source>
         <translation>die Finnen passen in dieser Lage nicht unter die gewählte Fläche: %s</translation>
     </message>
