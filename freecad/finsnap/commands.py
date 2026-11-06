@@ -713,9 +713,10 @@ class QuickStands:
 
     def outdated(self):
         """Whether the ways were checked on other layers or another bead than
-        the standard has now, as after another profile was chosen."""
+        the standard has now, as after another profile was chosen; with the
+        checks while editing off, they are not asked to be checked again."""
         params = quick_params()
-        return not self.unrated() and any(
+        return analysis.checks_while_editing() and not self.unrated() and any(
             getattr(way.params, field) != getattr(params, field)
             for way in self.plans for field in analysis.RATING_FIELDS)
 

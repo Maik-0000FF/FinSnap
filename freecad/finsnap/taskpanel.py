@@ -1059,8 +1059,8 @@ class FinSnapTaskPanel:
                                                       "are marked, and their button puts its value back.")))
         save.clicked.connect(self.save_to_profile)
         factory = QtWidgets.QPushButton(translate("FinSnap", "Factory settings"))
-        factory.setToolTip(_wrapped(translate("FinSnap", "Forget the saved standard and set every field to the "
-                                                         "built-in value.")))
+        factory.setToolTip(_wrapped(translate("FinSnap", "Forget what the profile chosen holds and set every "
+                                                         "field to the built-in value.")))
         factory.clicked.connect(self.factory_settings)
         standard_buttons.addWidget(save)
         standard_buttons.addWidget(factory)
@@ -1256,15 +1256,16 @@ class FinSnapTaskPanel:
         self.standard = presets.standard()
         self.update_marks()
         if self.stands is not None and self.stands.outdated():
-            self.rate_stands()
+            # Every way is checked, which takes a moment on a large part.
+            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+            try:
+                self.rate_stands()
+            finally:
+                QtWidgets.QApplication.restoreOverrideCursor()
 
     def save_to_profile(self):
-        try:
-            presets.save(self.field_params())
-        except ValueError as error:
-            self.refuse(error)
-            return
-        self.standard_changed()
+        if self.profile_done(lambda: presets.save(self.field_params())):
+            self.standard_changed()
 
     def factory_settings(self):
         answer = QtWidgets.QMessageBox.question(
@@ -1351,7 +1352,8 @@ class FinSnapTaskPanel:
                                                 translate("FinSnap", "Delete the profile \"%s\"?") % name)
         if answer != QtWidgets.QMessageBox.StandardButton.Yes:
             return
-        presets.delete_profile(name)
+        if not self.profile_done(presets.delete_profile, name):
+            return
         if self.opened_profile == name:
             self.opened_profile = None
         self.show_profiles()

@@ -507,6 +507,11 @@ def profile_choices(doc):
     panel.new_profile()
     expect(panel.notes.text() != refused or not panel.notes.isVisibleTo(panel.form),
            "a name taken then takes that note away")
+    QtWidgets.QInputDialog.getText = staticmethod(lambda *a, **k: ("a/b", True))
+    panel.new_profile()
+    panel.save_to_profile()
+    expect(panel.notes.text() != refused or not panel.notes.isVisibleTo(panel.form),
+           "Save to profile takes the note of a name refused away too")
     QtWidgets.QInputDialog.getText = ask_name
     longest = "x" * presets.PROFILE_NAME_MAX
     presets.add_profile(longest, FinParams())
@@ -551,6 +556,11 @@ def profile_and_ways(doc):
     expect(wanted == other.layer_height and not panel.stands.outdated()
            and all(way.params.layer_height == wanted for way in panel.stands.plans),
            "another profile on other layers rates the table anew")
+    analysis.set_checks_while_editing(False)
+    presets.activate(None)
+    expect(not panel.stands.outdated(), "with the checks while editing off the table is not rated again")
+    analysis.set_checks_while_editing(True)
+    presets.activate("layers")
 
     panel.stand_list.setCurrentCell(1, 0)
     expect(analysis._analysis(box, commands.quick_params()).get(analysis.ISLANDS) == panel.stands.plans[1].islands,
