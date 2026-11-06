@@ -802,6 +802,9 @@ class FinSnapTaskPanel:
         self.obj = obj
         # The profile active as the panel opened, for Cancel; None for the standard one.
         self.opened_profile = presets.active_profile()
+        # Whether the panel is building the fins itself: FreeCAD does not count
+        # the recompute of one object as a recompute of its document.
+        self.building = False
         # Whether the notes say a profile action was refused, until one succeeds.
         self.profile_refused = False
         # Fins just made: Cancel deletes them, then calls on_cancel, if any.
@@ -1474,8 +1477,10 @@ class FinSnapTaskPanel:
         try:
             # A failed build does not raise here; FreeCAD marks the object and
             # keeps the message, which the panel has to show.
+            self.building = True
             built = self.obj.recompute()
         finally:
+            self.building = False
             QtWidgets.QApplication.restoreOverrideCursor()
             bar.clearMessage()
         if not built:
@@ -2041,9 +2046,12 @@ class FinSnapTaskPanel:
         INPUTS this has to withstand:
           no recompute running                  ->  done now
           a recompute of this document running  ->  not done, the timer started again
+          a recompute of another document       ->  the same: rebuild_fins() goes through
+                                                    all of them, and it is one kernel
+          the panel building the fins itself    ->  the same
           several timeouts during a long one    ->  put off each time, done once after
         """
-        if self.obj.Document.Recomputing:
+        if self.building or any(document.Recomputing for document in App.listDocuments().values()):
             timer.start()
             return
         action()

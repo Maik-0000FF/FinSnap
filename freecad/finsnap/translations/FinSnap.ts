@@ -374,7 +374,7 @@
     </message>
     <message>
         <location filename="../commands.py" line="919"/>
-        <location filename="../taskpanel.py" line="971"/>
+        <location filename="../taskpanel.py" line="974"/>
         <source>Add counter fin</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1382,7 +1382,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="893"/>
+        <location filename="../taskpanel.py" line="896"/>
         <source>FinSnap parameters</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1427,27 +1427,27 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="959"/>
+        <location filename="../taskpanel.py" line="962"/>
         <source>To remove one fin, click it in the 3D view and press Remove selected fin, or the Delete key. The counter fin goes under the face leaning the other way, or under a face of the part you select. Drag the two arrows on a fin to move it along the face or to change its height, or type the values below; click another fin, or pick it in the list of fins, to put the arrows there. In the 3D view, the left and right arrow keys move that fin along the face, and Shift with the up or down arrow key steps its height to the next tine. Reset fins undoes every change by hand.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="969"/>
+        <location filename="../taskpanel.py" line="972"/>
         <source>Remove selected fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="970"/>
+        <location filename="../taskpanel.py" line="973"/>
         <source>Reset fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="972"/>
+        <location filename="../taskpanel.py" line="975"/>
         <source>Remove counter fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="980"/>
+        <location filename="../taskpanel.py" line="983"/>
         <source>The fins, the main fins from the left, then the counter fins. Pick one to put the arrows on it and select it.</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1532,171 +1532,171 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="904"/>
+        <location filename="../taskpanel.py" line="907"/>
         <source>Hover over a field for an explanation. Letters in brackets point to the drawings below. A number typed or stepped is taken on Enter or when you leave the field, and then shown in the 3D view. Greyed-out fields have no effect with the current choices; their tooltip says why.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1037"/>
+        <location filename="../taskpanel.py" line="1040"/>
         <source>New</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1038"/>
+        <location filename="../taskpanel.py" line="1041"/>
         <source>Make a profile of the values in the fields.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1040"/>
+        <location filename="../taskpanel.py" line="1043"/>
         <source>Rename</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1041"/>
+        <location filename="../taskpanel.py" line="1044"/>
         <source>Give this profile another name.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1043"/>
+        <location filename="../taskpanel.py" line="1046"/>
         <source>Delete</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1044"/>
+        <location filename="../taskpanel.py" line="1047"/>
         <source>Delete this profile; the fields stay as they are, and the standard profile takes its place.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1047"/>
+        <location filename="../taskpanel.py" line="1050"/>
         <source>Profile</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1061"/>
-        <location filename="../taskpanel.py" line="1272"/>
+        <location filename="../taskpanel.py" line="1064"/>
+        <location filename="../taskpanel.py" line="1275"/>
         <source>Factory settings</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1082"/>
+        <location filename="../taskpanel.py" line="1085"/>
         <source>Check stability</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1174"/>
+        <location filename="../taskpanel.py" line="1177"/>
         <source>Stand another way</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1240"/>
+        <location filename="../taskpanel.py" line="1243"/>
         <source>Back to the standard: %s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1029"/>
+        <location filename="../taskpanel.py" line="1032"/>
         <source>The values of a print profile, nozzle, layers or material: choosing one sets the fields to them, but for the placement and the number of fins, and new fins start with them from then on.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1056"/>
+        <location filename="../taskpanel.py" line="1059"/>
         <source>Save to profile</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1057"/>
+        <location filename="../taskpanel.py" line="1060"/>
         <source>Save the values in the fields to the profile chosen, and new fins start with them. Fields that differ from the profile are marked, and their button puts its value back.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1062"/>
+        <location filename="../taskpanel.py" line="1065"/>
         <source>Forget what the profile chosen holds and set every field to the built-in value.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1273"/>
+        <location filename="../taskpanel.py" line="1276"/>
         <source>Forget what the profile &quot;%s&quot; holds and set every field to the built-in value?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1328"/>
+        <location filename="../taskpanel.py" line="1331"/>
         <source>New profile</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1329"/>
-        <location filename="../taskpanel.py" line="1338"/>
+        <location filename="../taskpanel.py" line="1332"/>
+        <location filename="../taskpanel.py" line="1341"/>
         <source>Name of the profile:</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1337"/>
+        <location filename="../taskpanel.py" line="1340"/>
         <source>Rename profile</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1352"/>
+        <location filename="../taskpanel.py" line="1355"/>
         <source>Delete profile</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1353"/>
+        <location filename="../taskpanel.py" line="1356"/>
         <source>Delete the profile &quot;%s&quot;?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1383"/>
-        <location filename="../taskpanel.py" line="1387"/>
+        <location filename="../taskpanel.py" line="1386"/>
+        <location filename="../taskpanel.py" line="1390"/>
         <source>Nothing removed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1394"/>
+        <location filename="../taskpanel.py" line="1397"/>
         <source>Counter fin kept</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1398"/>
+        <location filename="../taskpanel.py" line="1401"/>
         <source>Delete the fins?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1399"/>
+        <location filename="../taskpanel.py" line="1402"/>
         <source>These are the last fins. Delete the fins object? A part stood on an edge for these fins alone is laid flat again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1415"/>
+        <location filename="../taskpanel.py" line="1418"/>
         <source>Delete fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1434"/>
-        <location filename="../taskpanel.py" line="1438"/>
+        <location filename="../taskpanel.py" line="1437"/>
+        <location filename="../taskpanel.py" line="1441"/>
         <source>No counter fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1588"/>
+        <location filename="../taskpanel.py" line="1593"/>
         <source>%s %d</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1948"/>
+        <location filename="../taskpanel.py" line="1953"/>
         <source>no tine of the fin finds the face there</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="2454"/>
+        <location filename="../taskpanel.py" line="2462"/>
         <source>Not possible</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="2493"/>
+        <location filename="../taskpanel.py" line="2501"/>
         <source>%d fin(s), %.2f mm high, %.2f mm thick</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="2500"/>
+        <location filename="../taskpanel.py" line="2508"/>
         <source>Notes</source>
         <translation type="unfinished"></translation>
     </message>

@@ -17,6 +17,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Fixed
 
+- FreeCAD could freeze when fins were rebuilt with their task panel open, as on switching the checks while editing: a timer of the panel started a build in the middle of the rebuild
 - Quick fins takes the side of a regular prism, such as a hexagon shank, as the face for the fins instead of a chamfer: the part stands on its largest flat end with the fin under that side; laid on the side, as before, stays among the ways in the table
 
 ## [0.15.0] - 2026-11-05

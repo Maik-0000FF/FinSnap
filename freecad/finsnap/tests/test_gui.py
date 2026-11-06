@@ -531,13 +531,19 @@ def profile_choices(doc):
     presets.delete_profile(longest)
 
     # A timer firing during a recompute puts off what it asks for, and starts again.
-    done, built = [], panel.obj
+    done, all_documents = [], App.listDocuments
     panel.ends_timer.stop()
-    panel.obj = types.SimpleNamespace(Document=types.SimpleNamespace(Recomputing=True))
+    App.listDocuments = lambda: {doc.Name: doc, "other": types.SimpleNamespace(Recomputing=True)}
     panel.when_built(panel.ends_timer, lambda: done.append(True))
-    expect(not done and panel.ends_timer.isActive(), "a timer firing during a recompute puts its action off")
+    expect(not done and panel.ends_timer.isActive(),
+           "a timer firing during a recompute, also of another document, puts its action off")
     panel.ends_timer.stop()
-    panel.obj = built
+    App.listDocuments = all_documents
+    panel.building = True
+    panel.when_built(panel.ends_timer, lambda: done.append(True))
+    expect(not done and panel.ends_timer.isActive(), "so does one firing while the panel builds the fins itself")
+    panel.ends_timer.stop()
+    panel.building = False
     panel.when_built(panel.ends_timer, lambda: done.append(True))
     expect(done == [True] and not panel.ends_timer.isActive(), "with no recompute running it is done")
 
