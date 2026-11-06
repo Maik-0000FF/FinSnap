@@ -223,6 +223,9 @@ def quick_plan(shape, edges, faces, p, angle_deg):
         side, or it has no whole side       ->  fins under the largest leaning face
       one planar face                       ->  it leans angle_deg over the bed, on its
                                                 longest edge that works; fins under it
+      one side of a regular prism           ->  stood on the largest flat end that works,
+                                                the right angle of the two; fins under
+                                                the side; else as a chamfer
       one round side (cylinder, tube)       ->  stood on a rim, the side leaning
                                                 angle_deg; one fin under it
       one rounded face (fillet)             ->  the part rests on it; fins under the
@@ -247,7 +250,8 @@ def quick_plans(shape, edges, faces, p, angle_deg):
     """Every way Quick fins can stand `shape` for the elements selected, as
     QuickPlans, one at a time: first the one quick_plan() takes, then the
     others the task panel can step to. A face selected alone stands on each
-    of its edges that works; an edge, a rim or a part laid on a face or
+    of its edges that works; the side of a regular prism stands on one flat
+    end, then lies on the bed; an edge, a rim or a part laid on a face or
     resting between two takes the fins under each face that takes them; a
     face with its edge, chamfer or fillet stands just one way. Raises what
     quick_plan() raises, before the first plan.
@@ -279,6 +283,17 @@ def quick_plans(shape, edges, faces, p, angle_deg):
         return
     if not edges and len(faces) == 1:
         face, number = faces[0]
+        axis = prism_axis(shape, face)
+        if axis is not None:
+            upright = _stood_on_end(shape, face, number, axis, p)
+            if upright is not None:
+                yield upright
+            try:
+                yield from _under_each_face(shape, orient.lay_flat(shape, face), None, (), p)
+            except (orient.OrientError, FinError):
+                if upright is None:
+                    raise
+            return
         if not orient.is_round_side(face) and (face.findPlane() is None or is_chamfer(shape, face)):
             yield from _under_each_face(shape, orient.lay_flat(shape, face), None, (), p)
             return
@@ -312,6 +327,107 @@ def _under_each_face(shape, change, edge, beside, p):
         yield QuickPlan(change, number, edge, beside)
 
 
+def _flat_beside(shape, face):
+    """The planar faces of `shape` sharing an edge with `face`."""
+    return [other for other in shape.Faces
+            if not other.isSame(face) and other.findPlane() is not None
+            and any(edge.isSame(mine) for edge in other.Edges for mine in face.Edges)]
+
+
+def _turn_about(axis, first, second):
+    """The angle from the normal `first` to the normal `second` about `axis`,
+    positive in its sense, in radians."""
+    return math.atan2(first.cross(second).dot(axis), first.dot(second))
+
+
+def _width_across(face, axis):
+    """How wide planar `face` is across `axis`, between its outermost corners."""
+    across = axis.cross(middle_normal(face))
+    reach = [vertex.Point.dot(across) for vertex in face.Vertexes]
+    return max(reach) - min(reach)
+
+
+def _ring_about(shape, face, axis):
+    """The planar faces going round `axis` from `face`, each sharing an edge with
+    the last and turned on from it, `face` first; None where they do not come
+    back to it, or more than one face could come next."""
+    ring = [face]
+    while True:
+        here = middle_normal(ring[-1])
+        onward = [other for other in _flat_beside(shape, ring[-1])
+                  if abs(middle_normal(other).dot(axis)) < d.TOLERANCE
+                  and _turn_about(axis, here, middle_normal(other)) > d.TOLERANCE]
+        if len(onward) != 1:
+            return None
+        if onward[0].isSame(face):
+            return ring
+        if any(onward[0].isSame(seen) for seen in ring):
+            return None
+        ring.append(onward[0])
+
+
+def prism_axis(shape, face):
+    """The axis of the regular prism `face` is a side of: its sides, at least
+    PRISM_LEAST_SIDES, close a ring of faces equally wide at equal angles. None
+    for any other face. A chamfer lies between its neighbours as such a side
+    does, but breaks the ring's equal widths or angles.
+
+    INPUTS this has to withstand:
+      side of a hexagon or octagon prism    ->  its axis
+      side with the prism chamfered at its
+        ends, a groove round it, a bore     ->  its axis
+      recess in one side                    ->  its axis: the corners stay
+      side of a box, a square bar           ->  None: fewer sides than a chamfer has
+      side of a triangular prism            ->  None
+      chamfer on one edge of a box          ->  None: angles differ
+      all four edges of a box chamfered     ->  None: widths differ
+      uneven hexagon                        ->  None
+      side of half a hexagon                ->  None: the ring does not close
+      rounded face, sides with fillets or
+        turned corners between them         ->  None: they stand as any face does
+    """
+    if face.findPlane() is None:
+        return None
+    normal = middle_normal(face)
+    for other in _flat_beside(shape, face):
+        axis = normal.cross(middle_normal(other))
+        if axis.Length < d.TOLERANCE:
+            continue
+        axis.normalize()
+        ring = _ring_about(shape, face, axis)
+        if ring is None or len(ring) < d.PRISM_LEAST_SIDES:
+            continue
+        normals = [middle_normal(side) for side in ring]
+        turns = [_turn_about(axis, one, next_one) for one, next_one in zip(normals, normals[1:] + normals[:1])]
+        widths = [_width_across(side, axis) for side in ring]
+        if (all(abs(turn - 2 * math.pi / len(ring)) < d.TOLERANCE for turn in turns)
+                and max(widths) - min(widths) < d.TOLERANCE):
+            return axis
+    return None
+
+
+def _stood_on_end(shape, face, number, axis, p):
+    """The QuickPlan standing `shape` on what joins the side `face` of a prism to
+    a flat end square to `axis`, the largest that works first, the fins under
+    the side; None where no end carries it or the fins fit on none.
+
+    INPUTS this has to withstand:
+      sharp edge between side and end       ->  stood on that edge
+      chamfer between side and end          ->  stood on the chamfer
+      no flat end, a point at both          ->  None
+      the larger end does not carry it      ->  the next
+      fins that do not fit                  ->  None
+    """
+    ends = [other for other in shape.Faces
+            if other.findPlane() is not None and middle_normal(other).cross(axis).Length < d.TOLERANCE]
+    for end in sorted(ends, key=lambda candidate: -candidate.Area):
+        try:
+            return _checked(shape, QuickPlan(orient.rest_between(shape, face, end), number, None, (face, end)), p)
+        except (orient.OrientError, FinError, Part.OCCError):
+            continue
+    return None
+
+
 def is_chamfer(shape, face):
     """Whether planar `face` sits between two planar faces of `shape` like a
     chamfer: its normal turned part of the way from one neighbour's normal to
@@ -323,17 +439,16 @@ def is_chamfer(shape, face):
       chamfer at another angle than 45      ->  True
       side of a box                         ->  False: no two neighbours with its
                                                 normal between theirs
-      side of an octagon prism              ->  True: it lies between its neighbours
+      side of a regular prism               ->  False: see prism_axis()
+      side of an uneven prism               ->  True: it lies between its neighbours
                                                 too; to put fins under it, select it
                                                 with one of its edges
       rounded face                          ->  False
     """
-    if face.findPlane() is None:
+    if face.findPlane() is None or prism_axis(shape, face) is not None:
         return False
     normal = middle_normal(face)
-    beside = [middle_normal(other) for other in shape.Faces
-              if not other.isSame(face) and other.findPlane() is not None
-              and any(edge.isSame(mine) for edge in other.Edges for mine in face.Edges)]
+    beside = [middle_normal(other) for other in _flat_beside(shape, face)]
     for i, first in enumerate(beside):
         for second in beside[i + 1:]:
             apart = first.getAngle(second)

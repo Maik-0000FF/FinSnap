@@ -133,6 +133,9 @@ TILT_ANGLE = 45.0
 # Two faces count as square to each other within this many degrees, so that an
 # edge alone stands the part. Solids converted from a mesh are rarely exact.
 RIGHT_ANGLE_TOLERANCE = 0.5
+# The fewest sides of a regular prism whose side lies between its neighbours like
+# a chamfer: with four, as on a box, the neighbours point in opposite directions.
+PRISM_LEAST_SIDES = 5
 # The built-in limits of the checks, those of the normal strictness; the user
 # chooses another or sets their own in Edit > Preferences (limits.py). Angles
 # are measured from the bed: 0 degrees is a face lying flat over it, 90 a

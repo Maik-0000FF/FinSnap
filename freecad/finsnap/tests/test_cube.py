@@ -1232,6 +1232,85 @@ def check_quick_plan():
            "the two faces beside a fillet carry the part")
 
 
+def regular_prism(sides, across=20.0, length=60.0):
+    """A regular prism on the XY plane, its axis along Z."""
+    corners = [App.Vector(across * math.cos(2 * math.pi * i / sides), across * math.sin(2 * math.pi * i / sides), 0)
+               for i in range(sides)]
+    return Part.Face(Part.makePolygon(corners + corners[:1])).extrude(App.Vector(0, 0, length))
+
+
+def sides_of(shape):
+    """The numbers of the faces of `shape` standing along Z."""
+    return [i for i, f in enumerate(shape.Faces)
+            if f.findPlane() is not None and abs(f.normalAt(0, 0).z) < d.TOLERANCE]
+
+
+def check_prism_side():
+    """Quick fins with the side of a regular prism selected alone."""
+    p = FinParams()
+    up = App.Vector(0, 0, 1)
+    hexagon = regular_prism(6)
+    axis = quick_stands.prism_axis(hexagon, hexagon.Faces[sides_of(hexagon)[0]])
+    expect(axis is not None and axis.cross(up).Length < d.TOLERANCE, "a side of a hexagon prism: the axis of the prism")
+    octagon = regular_prism(8)
+    expect(all(quick_stands.prism_axis(octagon, octagon.Faces[i]) is not None for i in sides_of(octagon)),
+           "every side of an octagon prism belongs to the prism")
+    expect(not quick_stands.is_chamfer(hexagon, hexagon.Faces[sides_of(hexagon)[0]]),
+           "a side of a regular prism is no chamfer")
+
+    box = Part.makeBox(30, 30, 60)
+    expect(all(quick_stands.prism_axis(box, f) is None for f in box.Faces), "a box is no prism of this kind")
+    triangle = regular_prism(3)
+    expect(all(quick_stands.prism_axis(triangle, f) is None for f in triangle.Faces), "nor is a triangular prism")
+    upright_edges = [e for e in box.Edges if e.BoundBox.ZLength > 1]
+    one_chamfer = box.makeChamfer(5, upright_edges[:1])
+    four_chamfers = box.makeChamfer(5, upright_edges)
+    for shape, what in ((one_chamfer, "one chamfered edge"), (four_chamfers, "four chamfered edges")):
+        expect(all(quick_stands.prism_axis(shape, f) is None for f in shape.Faces), "%s: no prism" % what)
+        expect(any(quick_stands.is_chamfer(shape, f) for f in shape.Faces), "%s: the chamfer stays one" % what)
+    uneven = Part.Face(Part.makePolygon([App.Vector(*c) for c in
+                                         ((30, 0, 0), (20, 20, 0), (-10, 20, 0), (-20, 0, 0),
+                                          (-10, -10, 0), (20, -10, 0), (30, 0, 0))])).extrude(App.Vector(0, 0, 60))
+    expect(all(quick_stands.prism_axis(uneven, f) is None for f in uneven.Faces), "an uneven hexagon: no prism")
+    half = regular_prism(6).cut(Part.makeBox(100, 100, 100, App.Vector(-50, 0, -20)))
+    expect(all(quick_stands.prism_axis(half, f) is None for f in half.Faces), "half a hexagon: the ring does not close")
+
+    def expect_upright(shape, what):
+        """The first way stands `shape` on an end, the side selected leaning 45
+        degrees with the fins under it; the part laid on the side stays a way."""
+        number = sides_of(shape)[0]
+        plans = list(quick_stands.quick_plans(shape, [], [(shape.Faces[number], number)], p, d.TILT_ANGLE))
+        change = plans[0].change
+        expect(plans[0].number == number, "%s: the fins under the side selected" % what)
+        expect(abs(math.degrees(math.acos(abs(change.Rotation.multVec(up).z))) - 45) < 1e-3,
+               "%s: the axis stands 45 degrees from the bed" % what)
+        expect(abs(moved(shape, change).Faces[number].normalAt(0, 0).z + math.sqrt(0.5)) < 1e-6,
+               "%s: the side leans 45 degrees over the bed" % what)
+        expect(len(plans) > 1 and all(plan.number != number for plan in plans[1:]) and all(
+            abs(moved(shape, plan.change).Faces[number].normalAt(0, 0).z + 1) < 1e-6 for plan in plans[1:]),
+               "%s: laid on the side stays a way, the fins under another face" % what)
+
+    expect_upright(hexagon, "sharp hexagon prism")
+    expect_upright(octagon, "octagon prism")
+    turned = hexagon.common(Part.makeCylinder(19, 60))
+    expect(quick_stands.prism_axis(turned, turned.Faces[sides_of(turned)[0]]) is None,
+           "corners turned off along the sides: no ring, stands as any face does")
+    groove = Part.makeCylinder(40, 3, App.Vector(0, 0, 30)).cut(Part.makeCylinder(16, 3, App.Vector(0, 0, 30)))
+    expect_upright(hexagon.cut(groove), "hexagon with a groove round it")
+    round_ended = (Part.makeCone(17, 25, 8).fuse(Part.makeCylinder(25, 44, App.Vector(0, 0, 8)))
+                   .fuse(Part.makeCone(25, 17, 8, App.Vector(0, 0, 52))).removeSplitter())
+    shank = hexagon.common(round_ended)
+    expect_upright(shank, "shank chamfered at both ends, the side with no straight edge there")
+    expect_upright(hexagon.cut(Part.makeCylinder(5, 80, App.Vector(0, 0, -10))), "hexagon with a bore")
+
+    two_points = Part.makeCone(0, 30, 30).fuse(Part.makeCone(30, 0, 30, App.Vector(0, 0, 30))).removeSplitter()
+    pointed = hexagon.common(two_points)
+    number = sides_of(pointed)[0]
+    plans = list(quick_stands.quick_plans(pointed, [], [(pointed.Faces[number], number)], p, d.TILT_ANGLE))
+    expect(plans and all(plan.number != number for plan in plans),
+           "no flat end to stand on: laid on the side, as a chamfer")
+
+
 def check_quick_plans():
     """The other ways Quick fins can stand a part, for the task panel to step to."""
     p = FinParams()
@@ -2872,6 +2951,7 @@ def main():
     check_quick_fins()
     check_quick_plan()
     check_quick_plans()
+    check_prism_side()
     check_islands()
     check_bridges()
     check_no_fragile_calls()
