@@ -13,7 +13,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Added
 
-- Named profiles in the task panel: **Profile** keeps sets of all the values under names of their own, made, renamed, deleted and chosen there. Choosing one sets the fields and is the start of new fins from then on; the standard saved so far is the standard profile (#77)
+- Named profiles in the task panel: **Profile** keeps sets of all the values under names of their own, made, renamed, deleted and chosen there. Choosing one sets the fields, but for the placement and the number of fins, and is the start of new fins from then on, until Cancel; the standard saved so far is the standard profile, and **Save as standard** is now **Save to profile** (#77)
 
 ### Fixed
 

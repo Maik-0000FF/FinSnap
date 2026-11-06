@@ -637,10 +637,11 @@ def quick_plans(obj, edge_names, face_names, change=None):
     # in halves joined: on `obj` the number is another face.
     # Without islands checked while editing, the ways stand in the order found,
     # their islands not known.
-    rated = (analysis.printable_plans(shape, plans, quick_params()) if analysis.checks_while_editing()
+    params = quick_params()
+    rated = (analysis.printable_plans(shape, plans, params) if analysis.checks_while_editing()
              else [analysis.RatedPlan(plan, None, None, None) for plan in plans])
     return [QuickWay(way.plan, name_of(way.plan.number), way.islands, shape.Faces[way.plan.number].Area,
-                     _edge_name(obj, way.plan.edge, change), way.overhangs, way.bridges, shape)
+                     _edge_name(obj, way.plan.edge, change), way.overhangs, way.bridges, shape, params)
             for way in rated]
 
 
@@ -667,9 +668,9 @@ def _edge_name(obj, edge, change=None):
 # face the fins go under, the islands, None where there was only one way and
 # they were not checked, the area of that face (mm2), the name on the part of
 # the edge it stands on, None without one, the levels of its overhangs and its
-# bridges, see analysis.RatedPlan, None where not checked, and the shape the
-# plan stands, the part as Quick fins found it.
-QuickWay = namedtuple("QuickWay", "plan face islands area edge overhangs bridges shape")
+# bridges, see analysis.RatedPlan, None where not checked, the shape the plan
+# stands, the part as Quick fins found it, and the parameters they were checked with.
+QuickWay = namedtuple("QuickWay", "plan face islands area edge overhangs bridges shape params")
 
 
 class QuickStands:
@@ -710,11 +711,21 @@ class QuickStands:
         editing off."""
         return any(way.islands is None for way in self.plans)
 
+    def outdated(self):
+        """Whether the ways were checked on other layers or another bead than
+        the standard has now, as after another profile was chosen."""
+        params = quick_params()
+        return not self.unrated() and any(
+            getattr(way.params, field) != getattr(params, field)
+            for way in self.plans for field in analysis.RATING_FIELDS)
+
     def rate(self):
         """Check every way, in the order listed, as Quick fins does with the
         checks while editing on, and fill its rows."""
-        rated = analysis.rate_plans(self.plans[0].shape, [way.plan for way in self.plans], quick_params())
-        self.plans = [way._replace(islands=entry.islands, overhangs=entry.overhangs, bridges=entry.bridges)
+        params = quick_params()
+        rated = analysis.rate_plans(self.plans[0].shape, [way.plan for way in self.plans], params)
+        self.plans = [way._replace(islands=entry.islands, overhangs=entry.overhangs, bridges=entry.bridges,
+                                   params=params)
                       for way, entry in zip(self.plans, rated)]
         self.rows = self._rows()
 
@@ -802,9 +813,10 @@ def stands_again(fins):
 def _keep_checked(obj, way):
     """Hand the islands Quick fins checked for `way`, the way `obj` stands now,
     to the fins, so their first build does not cut the part for them again.
-    A way not checked, the only one, leaves the fins to work them out."""
+    They are kept for the parameters they were checked with: fins on other layers
+    work theirs out. A way not checked, the only one, leaves the fins to do so."""
     if way.islands is not None:
-        analysis.keep_islands(obj, quick_params(), way.islands)
+        analysis.keep_islands(obj, way.params, way.islands)
 
 
 def _put_back_quick(owner, before, laid_flat, turns):

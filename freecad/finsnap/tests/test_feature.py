@@ -391,7 +391,12 @@ def named_profiles():
     expect(presets.standard() == thin, "the standard profile keeps its values")
     presets.activate(name)
 
-    for bad in ("", "   ", "a/b", "tab\there", "line\nbreak", "x" * (presets.PROFILE_NAME_MAX + 1),
+    joined = "a\u200db\u00a0c\u3000d"
+    expect(presets.add_profile(joined, wide) == joined and joined in presets.profile_names(),
+           "a joiner or a space of another kind inside a name is taken")
+    presets.activate(name)
+    presets.delete_profile(joined)
+    for bad in ("", "   ", "a/b", "tab\there", "line\nbreak", "para\u2029graph", "x" * (presets.PROFILE_NAME_MAX + 1),
                 name.upper(), "standard"):
         try:
             presets.add_profile(bad, thin)

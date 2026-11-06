@@ -39,7 +39,9 @@ INPUTS this has to withstand (the name of a profile, add_profile() and rename_pr
   empty or only spaces                  ->  ProfileError
   a slash                               ->  ProfileError: FreeCAD takes it for a subgroup
   a tab, a line break, other control
-    characters                          ->  ProfileError
+    characters, a line separator        ->  ProfileError
+  a joiner or a space of another kind
+    inside it                           ->  taken as it is
   longer than PROFILE_NAME_MAX          ->  ProfileError
   a name in use, in any case            ->  ProfileError
   the name shown for the standard
@@ -57,6 +59,7 @@ INPUTS this has to withstand (activate(), rename_profile() and delete_profile())
   another profile deleted               ->  the active one stays
 """
 
+import unicodedata
 from dataclasses import fields
 
 import FreeCAD as App
@@ -77,6 +80,8 @@ ACTIVE_PROFILE = "Active"
 PROFILE_NAME_MAX = 64
 # A slash in the name of a parameter group starts a subgroup.
 GROUP_SEPARATOR = "/"
+# Unicode categories no name can hold: control characters and line or paragraph separators.
+NAME_REFUSES = ("Cc", "Zl", "Zp")
 # The name shown for the standard profile.
 STANDARD_PROFILE = QT_TRANSLATE_NOOP("FinSnap", "Standard")
 
@@ -169,8 +174,8 @@ def _free_name(name, renamed=None):
     name = name.strip()
     if not name:
         raise ProfileError(translate("FinSnap", "a profile needs a name"))
-    if GROUP_SEPARATOR in name or not name.isprintable():
-        raise ProfileError(translate("FinSnap", "the name of a profile cannot hold a slash or a line break"))
+    if GROUP_SEPARATOR in name or any(unicodedata.category(character) in NAME_REFUSES for character in name):
+        raise ProfileError(translate("FinSnap", "the name of a profile cannot hold a slash or a control character"))
     if len(name) > PROFILE_NAME_MAX:
         raise ProfileError(translate("FinSnap", "the name of a profile can have %d characters at most")
                            % PROFILE_NAME_MAX)
