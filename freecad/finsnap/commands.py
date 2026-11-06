@@ -538,8 +538,10 @@ class QuickFins:
                     "so that it leans 45 degrees over the bed, on its longest edge, or, for a round face, on "
                     "its lowest point; select one of its "
                     "edges as well to stand on that one, or, after the face, a chamfer or fillet to rest "
-                    "on. A chamfer or fillet alone, or the two faces beside a fillet, carry the part as "
-                    "well. The rim or the curved side of a cylinder or tube stands it on its rim, with one fin "
+                    "on. The side of a regular prism, such as a hexagon shank, stands the part on its "
+                    "largest flat end. A chamfer or fillet alone, or the two faces beside a fillet, carry "
+                    "the part as well. The rim or the curved side of a cylinder or tube stands it on its "
+                    "rim, with one fin "
                     "under its lowest line. A counter fin, where wanted, is added in the panel. Where the "
                     "part can stand on another edge, or the fins can go under another face, a table at the "
                     "top of the panel lists them to choose from; ways where the part would start printing "
@@ -559,7 +561,7 @@ class QuickFins:
         QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
         try:
             plans, refused = quick_plans(obj, [n for _, n in edges], [n for _, n in faces]), None
-        except (orient.OrientError, face_frame.FinError) as error:
+        except (orient.OrientError, face_frame.FinError, Part.OCCError) as error:
             plans, refused = None, error
         finally:
             QtWidgets.QApplication.restoreOverrideCursor()
