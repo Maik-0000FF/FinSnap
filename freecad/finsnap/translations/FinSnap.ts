@@ -1129,7 +1129,7 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../quick_stands.py" line="529"/>
+        <location filename="../quick_stands.py" line="555"/>
         <source>the fins do not fit under the selected face standing this way: %s</source>
         <translation type="unfinished"></translation>
     </message>

@@ -1294,6 +1294,13 @@ def check_prism_side():
            "the side with a pocket in it is a side of the prism")
     expect(whole and all(quick_stands.prism_axis(pocketed, pocketed.Faces[i]) is not None for i in whole),
            "the other sides pass the pocket wall over")
+    # Wide and shallow, so its walls turn on from the side by less than the next side.
+    recess = Part.Face(Part.makePolygon([App.Vector(-6, flat, 25), App.Vector(6, flat, 25), App.Vector(0, flat - 2, 25),
+                                         App.Vector(-6, flat, 25)])).extrude(App.Vector(0, 0, 10))
+    slanted = hexagon.cut(recess)
+    in_slanted = [i for i in sides_of(slanted) if len(slanted.Faces[i].Wires) == 2]
+    expect(len(in_slanted) == 1 and quick_stands.prism_axis(slanted, slanted.Faces[in_slanted[0]]) is not None,
+           "a recess with slanted walls inside a side: the walls are passed over")
     corners = [App.Vector(20 * math.cos(math.pi * i / 3), 20 * math.sin(math.pi * i / 3), 0) for i in range(6)]
     with_halves = corners[:1] + [(corners[0] + corners[1]) * 0.5] + corners[1:]
     halves = Part.Face(Part.makePolygon(with_halves + with_halves[:1])).extrude(App.Vector(0, 0, 60))
@@ -1332,6 +1339,7 @@ def check_prism_side():
     expect_upright(shank, "shank chamfered at both ends, the side with no straight edge there")
     expect_upright(hexagon.cut(Part.makeCylinder(5, 80, App.Vector(0, 0, -10))), "hexagon with a bore")
     expect_upright(pocketed, "the side with a pocket in it", in_pocket[0])
+    expect_upright(slanted, "the side with a slanted recess in it", in_slanted[0])
     expect_upright(halves, "a side split in halves, one half selected")
 
     two_points = Part.makeCone(0, 30, 30).fuse(Part.makeCone(30, 0, 30, App.Vector(0, 0, 30))).removeSplitter()

@@ -561,7 +561,7 @@ class QuickFins:
         QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
         try:
             plans, refused = quick_plans(obj, [n for _, n in edges], [n for _, n in faces]), None
-        except (orient.OrientError, face_frame.FinError) as error:
+        except (orient.OrientError, face_frame.FinError, Part.OCCError) as error:
             plans, refused = None, error
         finally:
             QtWidgets.QApplication.restoreOverrideCursor()

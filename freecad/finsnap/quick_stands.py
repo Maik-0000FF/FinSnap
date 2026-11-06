@@ -331,15 +331,34 @@ def _under_each_face(shape, change, edge, beside, p):
         yield QuickPlan(change, number, edge, beside)
 
 
-def _flat_beside(shape, face):
-    """The planar faces of `shape` sharing an edge with `face`, a face of `shape`."""
+def _flat_by_edge(shape):
+    """The planar faces of `shape` by the edges they have, as (edge, face) by the
+    hash of the edge, made once for many faces: looking each edge up on the shape
+    takes far longer on a part of many faces."""
+    by_edge = {}
+    for face in shape.Faces:
+        if face.findPlane() is not None:
+            for edge in face.Edges:
+                by_edge.setdefault(edge.hashCode(), []).append((edge, face))
+    return by_edge
+
+
+def _flat_beside(by_edge, face, edges):
+    """The planar faces in `by_edge` (_flat_by_edge()) sharing one of `edges` with `face`."""
     beside = []
-    for edge in face.Edges:
-        for other in shape.ancestorsOfType(edge, Part.Face):
-            if (not other.isSame(face) and other.findPlane() is not None
+    for edge in edges:
+        for own, other in by_edge.get(edge.hashCode(), ()):
+            if (own.isSame(edge) and not other.isSame(face)
                     and not any(other.isSame(found) for found in beside)):
                 beside.append(other)
     return beside
+
+
+def _flat_round(by_edge, face):
+    """The planar faces in `by_edge` sharing an edge of the outer wire of `face`:
+    the sides of a prism meet there, what lies inside the side only recesses it,
+    whatever the angle of its walls."""
+    return _flat_beside(by_edge, face, face.OuterWire.Edges)
 
 
 def _turn_about(axis, first, second):
@@ -348,44 +367,44 @@ def _turn_about(axis, first, second):
     return math.atan2(first.cross(second).dot(axis), first.dot(second))
 
 
-def _whole_side(shape, face):
-    """The faces of `shape` that make one flat side with `face`, `face` first:
-    those parallel to it, joined to it edge to edge, as the halves a STEP file
-    splits a side into. A recess or a groove across the side leaves its floor
-    and what lies beyond out: they share no edge with the side."""
+def _whole_side(by_edge, face):
+    """The faces that make one flat side with `face`, `face` first: those parallel
+    to it, joined to it edge to edge, as the halves a STEP file splits a side
+    into. A groove across the side leaves what lies beyond it out: it shares no
+    edge with the side."""
     normal = middle_normal(face)
     side = [face]
     for piece in side:
-        for other in _flat_beside(shape, piece):
+        for other in _flat_round(by_edge, piece):
             if (middle_normal(other).getAngle(normal) < PRISM_ANGLE_TOLERANCE
                     and not any(other.isSame(found) for found in side)):
                 side.append(other)
     return side
 
 
-def _side_after(shape, side, axis):
-    """The whole side next after `side` going round `axis`: of the faces beside
-    it standing along the axis, the one turned on from it by the least, so the
-    wall of a recess, turned on further, is passed over. None where there is none."""
+def _side_after(by_edge, side, axis):
+    """The whole side next after `side` going round `axis`: of the faces round it
+    standing along the axis, the one turned on from it by the least. None where
+    there is none."""
     here = middle_normal(side[0])
     turns = []
     for piece in side:
-        for other in _flat_beside(shape, piece):
+        for other in _flat_round(by_edge, piece):
             normal = middle_normal(other)
             turn = _turn_about(axis, here, normal)
             if abs(normal.dot(axis)) < PRISM_ANGLE_TOLERANCE and turn > PRISM_ANGLE_TOLERANCE:
                 turns.append((turn, other))
     if not turns:
         return None
-    return _whole_side(shape, min(turns, key=lambda found: found[0])[1])
+    return _whole_side(by_edge, min(turns, key=lambda found: found[0])[1])
 
 
-def _ring_about(shape, face, axis):
+def _ring_about(by_edge, face, axis):
     """The whole sides going round `axis` from the one of `face`, that one first;
     None where they do not come back to it."""
-    ring = [_whole_side(shape, face)]
+    ring = [_whole_side(by_edge, face)]
     while True:
-        side = _side_after(shape, ring[-1], axis)
+        side = _side_after(by_edge, ring[-1], axis)
         if side is None:
             return None
         if any(piece.isSame(face) for piece in side):
@@ -424,8 +443,10 @@ def prism_axis(shape, face):
       side of a hexagon or octagon prism    ->  its axis
       prism chamfered at its ends, a bore   ->  its axis
       a groove round the prism              ->  its axis, on either piece of the side
-      a pocket in one side, that side or
-        another selected                    ->  its axis: the pocket wall is passed over
+      a recess inside one side, square or
+        with slanted walls, that side or
+        another selected                    ->  its axis: its walls are not on the outer
+                                                wire of the side
       a corner off by 0.01 mm               ->  its axis, within the tolerances
       a side split in halves along the axis ->  its axis, on either half
       a slot along the whole of a side      ->  None: the ring runs into the slot;
@@ -439,17 +460,19 @@ def prism_axis(shape, face):
       side of half a hexagon                ->  None: the ring does not close
       rounded face, sides with fillets or
         turned corners between them         ->  None: they stand as any face does
+      a large face with thousands of holes  ->  None, its holes not walked through
     """
     if face.findPlane() is None:
         return None
+    by_edge = _flat_by_edge(shape)
     normal = middle_normal(face)
-    for piece in _whole_side(shape, face):
-        for other in _flat_beside(shape, piece):
+    for piece in _whole_side(by_edge, face):
+        for other in _flat_round(by_edge, piece):
             axis = normal.cross(middle_normal(other))
             if axis.Length < PRISM_ANGLE_TOLERANCE:
                 continue
             axis.normalize()
-            ring = _ring_about(shape, face, axis)
+            ring = _ring_about(by_edge, face, axis)
             if ring is not None and _is_regular(ring, axis):
                 return axis
     return None
@@ -475,7 +498,10 @@ def _stood_on_end(shape, face, number, axis, p):
             if other.findPlane() is not None and middle_normal(other).cross(axis).Length < PRISM_ANGLE_TOLERANCE]
     # On the joined shape: the other half of a side reaches the bed as well, and
     # the neighbour beyond it shares no edge with the half selected.
-    whole = orient.joined(shape)
+    try:
+        whole = orient.joined(shape)
+    except Part.OCCError:
+        return None
     for end in sorted(ends, key=lambda candidate: -candidate.Area):
         try:
             change = orient.rest_between(whole, orient.counterpart(face, whole.Faces),
@@ -507,7 +533,7 @@ def is_chamfer(shape, face):
     if face.findPlane() is None:
         return False
     normal = middle_normal(face)
-    beside = [middle_normal(other) for other in _flat_beside(shape, face)]
+    beside = [middle_normal(other) for other in _flat_beside(_flat_by_edge(shape), face, face.Edges)]
     for i, first in enumerate(beside):
         for second in beside[i + 1:]:
             apart = first.getAngle(second)
