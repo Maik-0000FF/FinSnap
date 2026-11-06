@@ -1255,8 +1255,6 @@ def check_prism_side():
     octagon = regular_prism(8)
     expect(all(quick_stands.prism_axis(octagon, octagon.Faces[i]) is not None for i in sides_of(octagon)),
            "every side of an octagon prism belongs to the prism")
-    expect(not quick_stands.is_chamfer(hexagon, hexagon.Faces[sides_of(hexagon)[0]]),
-           "a side of a regular prism is no chamfer")
 
     box = Part.makeBox(30, 30, 60)
     expect(all(quick_stands.prism_axis(box, f) is None for f in box.Faces), "a box is no prism of this kind")
@@ -1275,10 +1273,41 @@ def check_prism_side():
     half = regular_prism(6).cut(Part.makeBox(100, 100, 100, App.Vector(-50, 0, -20)))
     expect(all(quick_stands.prism_axis(half, f) is None for f in half.Faces), "half a hexagon: the ring does not close")
 
-    def expect_upright(shape, what):
+    def corner_off(off):
+        """A hexagon prism with one corner off by `off` mm."""
+        corners = [App.Vector(20 * math.cos(math.pi * i / 3), 20 * math.sin(math.pi * i / 3), 0) for i in range(6)]
+        corners[0] += App.Vector(off, 0, 0)
+        return Part.Face(Part.makePolygon(corners + corners[:1])).extrude(App.Vector(0, 0, 60))
+
+    near = corner_off(0.01)
+    expect(all(quick_stands.prism_axis(near, near.Faces[i]) is not None for i in sides_of(near)),
+           "a corner off by 0.01 mm: still a regular prism")
+    far = corner_off(1.0)
+    expect(all(quick_stands.prism_axis(far, f) is None for f in far.Faces), "a corner off by 1 mm: an uneven prism")
+    # A pocket in the side facing +Y, whose apothem is the flat at y = 20 * sin(60).
+    flat = 20 * math.sin(math.pi / 3)
+    pocketed = hexagon.cut(Part.makeBox(6, 6, 10, App.Vector(-3, flat - 3, 25)))
+    in_pocket = [i for i in sides_of(pocketed) if len(pocketed.Faces[i].Wires) == 2]
+    whole = [i for i in sides_of(pocketed) if abs(pocketed.Faces[i].Area - hexagon.Faces[sides_of(hexagon)[0]].Area)
+             < d.TOLERANCE]
+    expect(len(in_pocket) == 1 and quick_stands.prism_axis(pocketed, pocketed.Faces[in_pocket[0]]) is not None,
+           "the side with a pocket in it is a side of the prism")
+    expect(whole and all(quick_stands.prism_axis(pocketed, pocketed.Faces[i]) is not None for i in whole),
+           "the other sides pass the pocket wall over")
+    corners = [App.Vector(20 * math.cos(math.pi * i / 3), 20 * math.sin(math.pi * i / 3), 0) for i in range(6)]
+    with_halves = corners[:1] + [(corners[0] + corners[1]) * 0.5] + corners[1:]
+    halves = Part.Face(Part.makePolygon(with_halves + with_halves[:1])).extrude(App.Vector(0, 0, 60))
+    expect(len(sides_of(halves)) == 7 and all(quick_stands.prism_axis(halves, halves.Faces[i]) is not None
+                                              for i in sides_of(halves)),
+           "a side split in halves along the axis counts as one, on either half")
+    slotted = hexagon.cut(Part.makeBox(4, 3, 80, App.Vector(-2, flat - 2, -10)))
+    expect(all(quick_stands.prism_axis(slotted, f) is None for f in slotted.Faces),
+           "a slot along the whole of a side: the ring runs into it")
+
+    def expect_upright(shape, what, number=None):
         """The first way stands `shape` on an end, the side selected leaning 45
         degrees with the fins under it; the part laid on the side stays a way."""
-        number = sides_of(shape)[0]
+        number = sides_of(shape)[0] if number is None else number
         plans = list(quick_stands.quick_plans(shape, [], [(shape.Faces[number], number)], p, d.TILT_ANGLE))
         change = plans[0].change
         expect(plans[0].number == number, "%s: the fins under the side selected" % what)
@@ -1302,6 +1331,8 @@ def check_prism_side():
     shank = hexagon.common(round_ended)
     expect_upright(shank, "shank chamfered at both ends, the side with no straight edge there")
     expect_upright(hexagon.cut(Part.makeCylinder(5, 80, App.Vector(0, 0, -10))), "hexagon with a bore")
+    expect_upright(pocketed, "the side with a pocket in it", in_pocket[0])
+    expect_upright(halves, "a side split in halves, one half selected")
 
     two_points = Part.makeCone(0, 30, 30).fuse(Part.makeCone(30, 0, 30, App.Vector(0, 0, 30))).removeSplitter()
     pointed = hexagon.common(two_points)
