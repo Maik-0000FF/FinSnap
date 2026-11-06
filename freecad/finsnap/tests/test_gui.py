@@ -512,6 +512,15 @@ def profile_choices(doc):
     panel.save_to_profile()
     expect(panel.notes.text() != refused or not panel.notes.isVisibleTo(panel.form),
            "Save to profile takes the note of a name refused away too")
+    panel.new_profile()
+    panel.pick_profile(box.findData("many"))
+    expect(panel.notes.text() != refused or not panel.notes.isVisibleTo(panel.form),
+           "so does choosing a profile")
+    panel.new_profile()
+    QtWidgets.QMessageBox.question = staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.Yes)
+    panel.factory_settings()
+    expect(panel.notes.text() != refused or not panel.notes.isVisibleTo(panel.form),
+           "and Factory settings")
     QtWidgets.QInputDialog.getText = ask_name
     longest = "x" * presets.PROFILE_NAME_MAX
     presets.add_profile(longest, FinParams())
@@ -560,7 +569,11 @@ def profile_and_ways(doc):
     presets.activate(None)
     expect(not panel.stands.outdated(), "with the checks while editing off the table is not rated again")
     analysis.set_checks_while_editing(True)
+    expect(panel.stands.outdated(), "with them on again it is out of date")
+    commands._check_now()
+    expect(not panel.stands.outdated(), "and switching them on rates it for the profile chosen meanwhile")
     presets.activate("layers")
+    panel.rate_stands()
 
     panel.stand_list.setCurrentCell(1, 0)
     expect(analysis._analysis(box, commands.quick_params()).get(analysis.ISLANDS) == panel.stands.plans[1].islands,

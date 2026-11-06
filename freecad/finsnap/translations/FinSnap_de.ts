@@ -1091,59 +1091,59 @@
         <translation>Zurück auf den Standard: %s</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1327"/>
+        <location filename="../taskpanel.py" line="1328"/>
         <source>New profile</source>
         <translation>Neues Profil</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1328"/>
-        <location filename="../taskpanel.py" line="1337"/>
+        <location filename="../taskpanel.py" line="1329"/>
+        <location filename="../taskpanel.py" line="1338"/>
         <source>Name of the profile:</source>
         <translation>Name des Profils:</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1336"/>
+        <location filename="../taskpanel.py" line="1337"/>
         <source>Rename profile</source>
         <translation>Profil umbenennen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1351"/>
+        <location filename="../taskpanel.py" line="1352"/>
         <source>Delete profile</source>
         <translation>Profil löschen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1352"/>
+        <location filename="../taskpanel.py" line="1353"/>
         <source>Delete the profile &quot;%s&quot;?</source>
         <translation>Das Profil &quot;%s&quot; löschen?</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1382"/>
-        <location filename="../taskpanel.py" line="1386"/>
+        <location filename="../taskpanel.py" line="1383"/>
+        <location filename="../taskpanel.py" line="1387"/>
         <source>Nothing removed</source>
         <translation>Nichts entfernt</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1393"/>
+        <location filename="../taskpanel.py" line="1394"/>
         <source>Counter fin kept</source>
         <translation>Gegenfinne behalten</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1397"/>
+        <location filename="../taskpanel.py" line="1398"/>
         <source>Delete the fins?</source>
         <translation>Finnen löschen?</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1398"/>
+        <location filename="../taskpanel.py" line="1399"/>
         <source>These are the last fins. Delete the fins object? A part stood on an edge for these fins alone is laid flat again.</source>
         <translation>Das sind die letzten Finnen. Das Finnen-Objekt löschen? Ein Teil, das nur für diese Finnen auf eine Kante gestellt wurde, wird wieder flach gelegt.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1414"/>
+        <location filename="../taskpanel.py" line="1415"/>
         <source>Delete fins</source>
         <translation>Finnen löschen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1587"/>
+        <location filename="../taskpanel.py" line="1588"/>
         <source>%s %d</source>
         <translation>%s %d</translation>
     </message>
@@ -1248,28 +1248,28 @@
         <translation>Den Inhalt des Profils &quot;%s&quot; verwerfen und jedes Feld auf den eingebauten Wert setzen?</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1433"/>
-        <location filename="../taskpanel.py" line="1437"/>
+        <location filename="../taskpanel.py" line="1434"/>
+        <location filename="../taskpanel.py" line="1438"/>
         <source>No counter fin</source>
         <translation>Keine Gegenfinne</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1947"/>
+        <location filename="../taskpanel.py" line="1948"/>
         <source>no tine of the fin finds the face there</source>
         <translation>dort trifft keine Zinke der Finne die Fläche</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="2437"/>
+        <location filename="../taskpanel.py" line="2438"/>
         <source>Not possible</source>
         <translation>Nicht möglich</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="2483"/>
+        <location filename="../taskpanel.py" line="2484"/>
         <source>Notes</source>
         <translation>Hinweise</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="2476"/>
+        <location filename="../taskpanel.py" line="2477"/>
         <source>%d fin(s), %.2f mm high, %.2f mm thick</source>
         <translation>%d Finne(n), %.2f mm hoch, %.2f mm dick</translation>
     </message>
@@ -1910,12 +1910,12 @@
 <context>
     <name>FinSnap_CheckLimits</name>
     <message>
-        <location filename="../commands.py" line="1258"/>
+        <location filename="../commands.py" line="1262"/>
         <source>Check limits...</source>
         <translation>Prüfgrenzen...</translation>
     </message>
     <message>
-        <location filename="../commands.py" line="1259"/>
+        <location filename="../commands.py" line="1263"/>
         <source>Opens the limits the checks rate by, in Edit &gt; Preferences: the strictness, strict or normal, or limits of your own for overhangs, bridges and the tipping margin.</source>
         <translation>Öffnet die Grenzen, nach denen die Prüfungen bewerten, unter Bearbeiten &gt; Einstellungen: die Strenge, streng oder normal, oder eigene Grenzen für Überhänge, Brücken und den Kippabstand.</translation>
     </message>

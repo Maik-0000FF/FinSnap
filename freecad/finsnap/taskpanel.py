@@ -1274,7 +1274,7 @@ class FinSnapTaskPanel:
             % self.profile_box.currentText())
         if answer != QtWidgets.QMessageBox.StandardButton.Yes:
             return
-        presets.reset()
+        self.profile_done(presets.reset)
         self.standard = presets.standard()
         for prop in feature.PROPERTIES:
             self.back_to_standard(prop)
@@ -1299,7 +1299,8 @@ class FinSnapTaskPanel:
         name = self.profile_box.itemData(index)
         if name == presets.active_profile():
             return
-        presets.activate(name)
+        if not self.profile_done(presets.activate, name):
+            return
         self.standard = presets.standard()
         for prop in feature.PROPERTIES:
             if prop.field not in PROFILE_LEAVES:

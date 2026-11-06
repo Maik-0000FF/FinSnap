@@ -1234,7 +1234,11 @@ def _check_now():
       the panel of Quick fins open, its
         ways found unchecked                ->  rated and shown, in their order,
                                                 the row standing marked as before
-      the panel open, its ways checked       ->  left as they are
+      the panel open, its ways checked on
+        the layers of the standard          ->  left as they are
+      the panel open, its ways checked on
+        other layers, a profile chosen with
+        the checks off                      ->  rated anew and shown
       a panel of other fins, no table       ->  nothing more
     """
     QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
