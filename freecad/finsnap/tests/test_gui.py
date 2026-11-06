@@ -2100,6 +2100,38 @@ def main():
     marking.factory_settings()
     expect(presets.standard() == FinParams() and abs(thickness.value() - built_in) < d.TOLERANCE
            and reset.isHidden(), "Factory settings forget the saved standard and reset the fields")
+    profiles = marking.profile_box
+    expect(profiles.count() == 1 and not marking.rename_button.isEnabled() and not marking.delete_button.isEnabled(),
+           "only the standard profile, which cannot be renamed or deleted")
+    ask_name = QtWidgets.QInputDialog.getText
+    QtWidgets.QInputDialog.getText = staticmethod(lambda *a, **k: ("thin", True))
+    thickness.setValue(STANDARD_THICKNESS)
+    marking.new_profile()
+    expect(profiles.currentText() == "thin" and marking.delete_button.isEnabled() and reset.isHidden()
+           and abs(presets.standard().fin_thickness - STANDARD_THICKNESS) < d.TOLERANCE,
+           "New makes a profile of the fields and chooses it, nothing marked")
+    marking.pick_profile(profiles.findData(None))
+    expect(presets.active_profile() is None and abs(thickness.value() - built_in) < d.TOLERANCE and reset.isHidden(),
+           "choosing the standard profile sets the fields to it")
+    marking.preview()
+    expect(abs(marking.obj.FinThickness.Value - built_in) < d.TOLERANCE, "and the fins follow")
+    marking.pick_profile(profiles.findData("thin"))
+    expect(abs(thickness.value() - STANDARD_THICKNESS) < d.TOLERANCE and marking.timer.isActive(),
+           "choosing a named profile sets the fields to it, and the fins are rebuilt")
+    QtWidgets.QInputDialog.getText = staticmethod(lambda *a, **k: ("slim", True))
+    marking.rename_profile()
+    expect(profiles.currentText() == "slim" and presets.profile_names() == ["slim"], "Rename takes the new name")
+    QtWidgets.QInputDialog.getText = staticmethod(lambda *a, **k: ("a/b", True))
+    marking.rename_profile()
+    expect(profiles.currentText() == "slim", "a name refused leaves the profile as it was")
+    QtWidgets.QInputDialog.getText = staticmethod(lambda *a, **k: ("", False))
+    marking.new_profile()
+    expect(profiles.count() == 2, "New cancelled makes no profile")
+    QtWidgets.QInputDialog.getText = ask_name
+    marking.delete_profile()
+    expect(profiles.count() == 1 and presets.active_profile() is None and not reset.isHidden()
+           and abs(thickness.value() - STANDARD_THICKNESS) < d.TOLERANCE,
+           "Delete leaves the fields as they are, what differs from the standard profile marked")
     marking.reject()
 
     # Single fins: the Delete key on a face of one fin removes that fin only;

@@ -1035,74 +1035,140 @@
         <translation>Für eine Erklärung mit der Maus über ein Feld fahren. Buchstaben in Klammern verweisen auf die Zeichnungen unten. Eine getippte oder schrittweise geänderte Zahl wird mit Enter oder beim Verlassen des Feldes übernommen und dann in der 3D-Ansicht gezeigt. Ausgegraute Felder wirken bei der aktuellen Auswahl nicht; ihr Tooltip sagt, warum.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1007"/>
+        <location filename="../taskpanel.py" line="1008"/>
+        <source>The values of a print profile, nozzle, layers or material: choosing one sets every field to them, and new fins start with them from then on.</source>
+        <translation>Die Werte eines Druckprofils, also Düse, Schichten oder Material: Die Auswahl setzt jedes Feld auf diese Werte, und neue Finnen starten ab dann damit.</translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1012"/>
+        <source>New</source>
+        <translation>Neu</translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1013"/>
+        <source>Make a profile of the values in the fields.</source>
+        <translation>Aus den Werten in den Feldern ein Profil anlegen.</translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1015"/>
+        <source>Rename</source>
+        <translation>Umbenennen</translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1016"/>
+        <source>Give this profile another name.</source>
+        <translation>Diesem Profil einen anderen Namen geben.</translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1018"/>
+        <source>Delete</source>
+        <translation>Löschen</translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1019"/>
+        <source>Delete this profile; the fields stay as they are, and the standard profile takes its place.</source>
+        <translation>Dieses Profil löschen; die Felder bleiben, wie sie sind, und das Standardprofil tritt an seine Stelle.</translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1022"/>
+        <source>Profile</source>
+        <translation>Profil</translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1031"/>
         <source>Save as standard</source>
         <translation>Als Standard speichern</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1008"/>
+        <location filename="../taskpanel.py" line="1032"/>
         <source>New fins start with these values. Fields that differ from the standard are marked, and their button puts the standard back.</source>
         <translation>Neue Finnen starten mit diesen Werten. Felder, die vom Standard abweichen, sind markiert, und ihr Knopf stellt den Standard wieder her.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1012"/>
-        <location filename="../taskpanel.py" line="1211"/>
+        <location filename="../taskpanel.py" line="1036"/>
+        <location filename="../taskpanel.py" line="1235"/>
         <source>Factory settings</source>
         <translation>Werkseinstellungen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1013"/>
+        <location filename="../taskpanel.py" line="1037"/>
         <source>Forget the saved standard and set every field to the built-in value.</source>
         <translation>Den gespeicherten Standard verwerfen und jedes Feld auf den eingebauten Wert setzen.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1033"/>
+        <location filename="../taskpanel.py" line="1057"/>
         <source>Check stability</source>
         <translation>Standfestigkeit prüfen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1124"/>
+        <location filename="../taskpanel.py" line="1148"/>
         <source>Stand another way</source>
         <translation>Anders aufstellen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1190"/>
+        <location filename="../taskpanel.py" line="1214"/>
         <source>Back to the standard: %s</source>
         <translation>Zurück auf den Standard: %s</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1212"/>
+        <location filename="../taskpanel.py" line="1236"/>
         <source>Forget the saved standard and set every field to the built-in value?</source>
         <translation>Den gespeicherten Standard verwerfen und jedes Feld auf den eingebauten Wert setzen?</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1241"/>
-        <location filename="../taskpanel.py" line="1245"/>
+        <location filename="../taskpanel.py" line="1268"/>
+        <source>New profile</source>
+        <translation>Neues Profil</translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1269"/>
+        <location filename="../taskpanel.py" line="1286"/>
+        <source>Name of the profile:</source>
+        <translation>Name des Profils:</translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1285"/>
+        <source>Rename profile</source>
+        <translation>Profil umbenennen</translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1300"/>
+        <source>Delete profile</source>
+        <translation>Profil löschen</translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1301"/>
+        <source>Delete the profile &quot;%s&quot;?</source>
+        <translation>Das Profil &quot;%s&quot; löschen?</translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1329"/>
+        <location filename="../taskpanel.py" line="1333"/>
         <source>Nothing removed</source>
         <translation>Nichts entfernt</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1252"/>
+        <location filename="../taskpanel.py" line="1340"/>
         <source>Counter fin kept</source>
         <translation>Gegenfinne behalten</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1256"/>
+        <location filename="../taskpanel.py" line="1344"/>
         <source>Delete the fins?</source>
         <translation>Finnen löschen?</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1257"/>
+        <location filename="../taskpanel.py" line="1345"/>
         <source>These are the last fins. Delete the fins object? A part stood on an edge for these fins alone is laid flat again.</source>
         <translation>Das sind die letzten Finnen. Das Finnen-Objekt löschen? Ein Teil, das nur für diese Finnen auf eine Kante gestellt wurde, wird wieder flach gelegt.</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1273"/>
+        <location filename="../taskpanel.py" line="1361"/>
         <source>Delete fins</source>
         <translation>Finnen löschen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1446"/>
+        <location filename="../taskpanel.py" line="1534"/>
         <source>%s %d</source>
         <translation>%s %d</translation>
     </message>
@@ -1182,28 +1248,28 @@
         <translation>Finnen zurücksetzen</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1292"/>
-        <location filename="../taskpanel.py" line="1296"/>
+        <location filename="../taskpanel.py" line="1380"/>
+        <location filename="../taskpanel.py" line="1384"/>
         <source>No counter fin</source>
         <translation>Keine Gegenfinne</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1806"/>
+        <location filename="../taskpanel.py" line="1894"/>
         <source>no tine of the fin finds the face there</source>
         <translation>dort trifft keine Zinke der Finne die Fläche</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="2296"/>
+        <location filename="../taskpanel.py" line="2384"/>
         <source>Not possible</source>
         <translation>Nicht möglich</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="2342"/>
+        <location filename="../taskpanel.py" line="2430"/>
         <source>Notes</source>
         <translation>Hinweise</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="2335"/>
+        <location filename="../taskpanel.py" line="2423"/>
         <source>%d fin(s), %.2f mm high, %.2f mm thick</source>
         <translation>%d Finne(n), %.2f mm hoch, %.2f mm dick</translation>
     </message>
@@ -1770,6 +1836,36 @@
         <location filename="../contour.py" line="633"/>
         <source>the part does not reach the bed in the plane of the fin</source>
         <translation>das Teil reicht in der Ebene der Finne nicht bis zum Bett</translation>
+    </message>
+    <message>
+        <location filename="../presets.py" line="81"/>
+        <source>Standard</source>
+        <translation>Standard</translation>
+    </message>
+    <message>
+        <location filename="../presets.py" line="154"/>
+        <source>there is no profile &quot;%s&quot;</source>
+        <translation>es gibt kein Profil &quot;%s&quot;</translation>
+    </message>
+    <message>
+        <location filename="../presets.py" line="171"/>
+        <source>a profile needs a name</source>
+        <translation>ein Profil braucht einen Namen</translation>
+    </message>
+    <message>
+        <location filename="../presets.py" line="173"/>
+        <source>the name of a profile cannot hold a slash or a line break</source>
+        <translation>der Name eines Profils darf keinen Schrägstrich und keinen Zeilenumbruch enthalten</translation>
+    </message>
+    <message>
+        <location filename="../presets.py" line="175"/>
+        <source>the name of a profile can have %d characters at most</source>
+        <translation>der Name eines Profils darf höchstens %d Zeichen haben</translation>
+    </message>
+    <message>
+        <location filename="../presets.py" line="180"/>
+        <source>there is a profile &quot;%s&quot; already</source>
+        <translation>es gibt schon ein Profil &quot;%s&quot;</translation>
     </message>
 </context>
 <context>

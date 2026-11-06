@@ -11,6 +11,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- Named profiles in the task panel: **Profile** keeps sets of all the values under names of their own, made, renamed, deleted and chosen there. Choosing one sets the fields and is the start of new fins from then on; the standard saved so far is the standard profile (#77)
+
 ### Fixed
 
 - Quick fins takes the side of a regular prism, such as a hexagon shank, as the face for the fins instead of a chamfer: the part stands on its largest flat end with the fin under that side; laid on the side, as before, stays among the ways in the table

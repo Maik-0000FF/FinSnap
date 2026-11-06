@@ -1003,6 +1003,30 @@ class FinSnapTaskPanel:
         self.turn_label.hide()
         self.turn_field.hide()
 
+        profile_row = QtWidgets.QHBoxLayout()
+        self.profile_box = QtWidgets.QComboBox()
+        self.profile_box.setToolTip(_wrapped(translate("FinSnap", "The values of a print profile, nozzle, layers or "
+                                                                  "material: choosing one sets every field to them, "
+                                                                  "and new fins start with them from then on.")))
+        self.profile_box.activated.connect(self.pick_profile)
+        new_profile = QtWidgets.QPushButton(translate("FinSnap", "New"))
+        new_profile.setToolTip(_wrapped(translate("FinSnap", "Make a profile of the values in the fields.")))
+        new_profile.clicked.connect(self.new_profile)
+        self.rename_button = QtWidgets.QPushButton(translate("FinSnap", "Rename"))
+        self.rename_button.setToolTip(_wrapped(translate("FinSnap", "Give this profile another name.")))
+        self.rename_button.clicked.connect(self.rename_profile)
+        self.delete_button = QtWidgets.QPushButton(translate("FinSnap", "Delete"))
+        self.delete_button.setToolTip(_wrapped(translate("FinSnap", "Delete this profile; the fields stay as they "
+                                                                    "are, and the standard profile takes its place.")))
+        self.delete_button.clicked.connect(self.delete_profile)
+        profile_row.addWidget(QtWidgets.QLabel(translate("FinSnap", "Profile")))
+        profile_row.addWidget(self.profile_box, 1)
+        profile_row.addWidget(new_profile)
+        profile_row.addWidget(self.rename_button)
+        profile_row.addWidget(self.delete_button)
+        layout.addLayout(profile_row)
+        self.show_profiles()
+
         standard_buttons = QtWidgets.QHBoxLayout()
         save = QtWidgets.QPushButton(translate("FinSnap", "Save as standard"))
         save.setToolTip(_wrapped(translate("FinSnap", "New fins start with these values. Fields that differ from "
@@ -1216,6 +1240,70 @@ class FinSnapTaskPanel:
         self.standard = presets.standard()
         for prop in feature.PROPERTIES:
             self.back_to_standard(prop)
+        self.update_marks()
+
+    def show_profiles(self):
+        """List the profiles, the active one chosen; only a named one can be
+        renamed or deleted."""
+        active = presets.active_profile()
+        self.profile_box.clear()
+        self.profile_box.addItem(translate("FinSnap", presets.STANDARD_PROFILE), None)
+        for name in presets.profile_names():
+            self.profile_box.addItem(name, name)
+        self.profile_box.setCurrentIndex(self.profile_box.findData(active))
+        self.rename_button.setEnabled(active is not None)
+        self.delete_button.setEnabled(active is not None)
+
+    def pick_profile(self, index):
+        """Make the profile at `index` the standard and set every field to it."""
+        presets.activate(self.profile_box.itemData(index))
+        self.standard = presets.standard()
+        for prop in feature.PROPERTIES:
+            _write(prop, self.widgets[prop.name], getattr(self.standard, prop.field))
+        self.show_profiles()
+        self.changed()
+
+    def new_profile(self):
+        """Make a profile of the fields, under a name asked for, and activate it."""
+        name, given = QtWidgets.QInputDialog.getText(self.form, translate("FinSnap", "New profile"),
+                                                     translate("FinSnap", "Name of the profile:"))
+        if not given:
+            return
+        values = {prop.field: _read(prop, self.widgets[prop.name]) for prop in feature.PROPERTIES}
+        try:
+            presets.add_profile(name, FinParams(**values))
+        except ValueError as error:
+            self.refuse(error)
+            return
+        self.standard = presets.standard()
+        self.show_profiles()
+        self.update_marks()
+
+    def rename_profile(self):
+        """Give the active profile another name, asked for."""
+        old = presets.active_profile()
+        name, given = QtWidgets.QInputDialog.getText(self.form, translate("FinSnap", "Rename profile"),
+                                                     translate("FinSnap", "Name of the profile:"), text=old)
+        if not given:
+            return
+        try:
+            presets.rename_profile(old, name)
+        except ValueError as error:
+            self.refuse(error)
+            return
+        self.show_profiles()
+
+    def delete_profile(self):
+        """Delete the active profile, once confirmed. The fields stay as they are,
+        so no fins change; what differs from the standard profile is marked."""
+        name = presets.active_profile()
+        answer = QtWidgets.QMessageBox.question(self.form, translate("FinSnap", "Delete profile"),
+                                                translate("FinSnap", "Delete the profile \"%s\"?") % name)
+        if answer != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        presets.delete_profile(name)
+        self.standard = presets.standard()
+        self.show_profiles()
         self.update_marks()
 
     def edited(self):

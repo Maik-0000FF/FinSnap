@@ -1537,100 +1537,166 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1007"/>
-        <source>Save as standard</source>
-        <translation type="unfinished"></translation>
-    </message>
-    <message>
         <location filename="../taskpanel.py" line="1008"/>
-        <source>New fins start with these values. Fields that differ from the standard are marked, and their button puts the standard back.</source>
+        <source>The values of a print profile, nozzle, layers or material: choosing one sets every field to them, and new fins start with them from then on.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../taskpanel.py" line="1012"/>
-        <location filename="../taskpanel.py" line="1211"/>
-        <source>Factory settings</source>
+        <source>New</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
         <location filename="../taskpanel.py" line="1013"/>
+        <source>Make a profile of the values in the fields.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1015"/>
+        <source>Rename</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1016"/>
+        <source>Give this profile another name.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1018"/>
+        <source>Delete</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1019"/>
+        <source>Delete this profile; the fields stay as they are, and the standard profile takes its place.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1022"/>
+        <source>Profile</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1031"/>
+        <source>Save as standard</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1032"/>
+        <source>New fins start with these values. Fields that differ from the standard are marked, and their button puts the standard back.</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1036"/>
+        <location filename="../taskpanel.py" line="1235"/>
+        <source>Factory settings</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1037"/>
         <source>Forget the saved standard and set every field to the built-in value.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1033"/>
+        <location filename="../taskpanel.py" line="1057"/>
         <source>Check stability</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1124"/>
+        <location filename="../taskpanel.py" line="1148"/>
         <source>Stand another way</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1190"/>
+        <location filename="../taskpanel.py" line="1214"/>
         <source>Back to the standard: %s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1212"/>
+        <location filename="../taskpanel.py" line="1236"/>
         <source>Forget the saved standard and set every field to the built-in value?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1241"/>
-        <location filename="../taskpanel.py" line="1245"/>
+        <location filename="../taskpanel.py" line="1268"/>
+        <source>New profile</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1269"/>
+        <location filename="../taskpanel.py" line="1286"/>
+        <source>Name of the profile:</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1285"/>
+        <source>Rename profile</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1300"/>
+        <source>Delete profile</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1301"/>
+        <source>Delete the profile &quot;%s&quot;?</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../taskpanel.py" line="1329"/>
+        <location filename="../taskpanel.py" line="1333"/>
         <source>Nothing removed</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1252"/>
+        <location filename="../taskpanel.py" line="1340"/>
         <source>Counter fin kept</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1256"/>
+        <location filename="../taskpanel.py" line="1344"/>
         <source>Delete the fins?</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1257"/>
+        <location filename="../taskpanel.py" line="1345"/>
         <source>These are the last fins. Delete the fins object? A part stood on an edge for these fins alone is laid flat again.</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1273"/>
+        <location filename="../taskpanel.py" line="1361"/>
         <source>Delete fins</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1292"/>
-        <location filename="../taskpanel.py" line="1296"/>
+        <location filename="../taskpanel.py" line="1380"/>
+        <location filename="../taskpanel.py" line="1384"/>
         <source>No counter fin</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1446"/>
+        <location filename="../taskpanel.py" line="1534"/>
         <source>%s %d</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="1806"/>
+        <location filename="../taskpanel.py" line="1894"/>
         <source>no tine of the fin finds the face there</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="2296"/>
+        <location filename="../taskpanel.py" line="2384"/>
         <source>Not possible</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="2335"/>
+        <location filename="../taskpanel.py" line="2423"/>
         <source>%d fin(s), %.2f mm high, %.2f mm thick</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="2342"/>
+        <location filename="../taskpanel.py" line="2430"/>
         <source>Notes</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1769,6 +1835,36 @@
     <message>
         <location filename="../contour.py" line="633"/>
         <source>the part does not reach the bed in the plane of the fin</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../presets.py" line="81"/>
+        <source>Standard</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../presets.py" line="154"/>
+        <source>there is no profile &quot;%s&quot;</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../presets.py" line="171"/>
+        <source>a profile needs a name</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../presets.py" line="173"/>
+        <source>the name of a profile cannot hold a slash or a line break</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../presets.py" line="175"/>
+        <source>the name of a profile can have %d characters at most</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../presets.py" line="180"/>
+        <source>there is a profile &quot;%s&quot; already</source>
         <translation type="unfinished"></translation>
     </message>
 </context>

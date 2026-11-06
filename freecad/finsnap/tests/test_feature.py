@@ -374,6 +374,73 @@ def saved_standard(doc):
         raise AssertionError("an invalid standard was saved")
     presets.reset()
     expect(presets.standard() == FinParams(), "factory settings bring back the built-in standard")
+    named_profiles()
+
+
+def named_profiles():
+    """Profiles under names of their own: each holds its values, the active one is the standard."""
+    thin = FinParams(fin_thickness=STANDARD_THICKNESS)
+    wide = FinParams(bead_width=0.68, nozzle_diameter=0.6)
+    presets.save(thin)
+    expect(presets.active_profile() is None and not presets.profile_names(), "at first only the standard profile")
+    expect(presets.add_profile("  0.6 mm & PETG, Düse ", wide) == "0.6 mm & PETG, Düse",
+           "a name is taken without the spaces round it")
+    name = "0.6 mm & PETG, Düse"
+    expect(presets.active_profile() == name and presets.standard() == wide, "a new profile is active, and the standard")
+    presets.activate(None)
+    expect(presets.standard() == thin, "the standard profile keeps its values")
+    presets.activate(name)
+
+    for bad in ("", "   ", "a/b", "tab\there", "line\nbreak", "x" * (presets.PROFILE_NAME_MAX + 1),
+                name.upper(), "standard"):
+        try:
+            presets.add_profile(bad, thin)
+        except presets.ProfileError:
+            pass
+        else:
+            raise AssertionError("the name %r was taken for a profile" % bad)
+    expect(presets.profile_names() == [name] and presets.standard() == wide, "a name refused changes nothing")
+    try:
+        presets.add_profile("invalid", FinParams(gap=0.0))
+    except ParamError:
+        pass
+    else:
+        raise AssertionError("a profile of invalid values was made")
+    expect(presets.profile_names() == [name], "invalid values make no profile")
+
+    presets.add_profile("another", thin)
+    expect(presets.profile_names() == [name, "another"], "the profiles are listed by the alphabet")
+    presets.activate(name)
+    expect(presets.rename_profile(name, name.upper()) == name.upper() and presets.active_profile() == name.upper(),
+           "a profile takes its own name in another case, and stays active")
+    expect(presets.rename_profile(name.upper(), "wide") == "wide" and presets.standard() == wide
+           and presets.profile_names() == ["another", "wide"], "renamed, it holds its values")
+    try:
+        presets.rename_profile("wide", "another")
+    except presets.ProfileError:
+        pass
+    else:
+        raise AssertionError("a profile was renamed to a name in use")
+    for call in (presets.activate, presets.delete_profile, lambda gone: presets.rename_profile(gone, "new")):
+        try:
+            call("gone")
+        except presets.ProfileError:
+            pass
+        else:
+            raise AssertionError("a profile that is none was taken")
+    presets.delete_profile("another")
+    expect(presets.active_profile() == "wide", "deleting another profile leaves the active one")
+    presets.reset()
+    expect(presets.standard() == FinParams() and presets.profile_names() == ["wide"],
+           "factory settings empty the active profile only")
+    presets.save(wide)
+    App.ParamGet("%s/%s" % (presets.PREFERENCES, presets.PROFILES_GROUP)).SetString(presets.ACTIVE_PROFILE, "gone")
+    expect(presets.active_profile() is None, "an active name whose profile is gone: the standard profile")
+    presets.activate("wide")
+    presets.delete_profile("wide")
+    expect(presets.active_profile() is None and presets.standard() == thin and not presets.profile_names(),
+           "deleting the active profile makes the standard profile active")
+    presets.reset()
 
 
 def warnings_and_old_files(doc):
