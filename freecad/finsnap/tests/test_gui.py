@@ -517,7 +517,6 @@ def profile_choices(doc):
     expect(panel.notes.text() != refused or not panel.notes.isVisibleTo(panel.form),
            "so does choosing a profile")
     panel.new_profile()
-    QtWidgets.QMessageBox.question = staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.Yes)
     panel.factory_settings()
     expect(panel.notes.text() != refused or not panel.notes.isVisibleTo(panel.form),
            "and Factory settings")
