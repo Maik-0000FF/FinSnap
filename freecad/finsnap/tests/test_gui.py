@@ -15,6 +15,7 @@ import math
 import os
 import sys
 import tempfile
+import types
 import zipfile
 
 import FreeCAD as App
@@ -528,6 +529,17 @@ def profile_choices(doc):
            "the longest name does not widen the list of profiles")
     presets.activate("kept")
     presets.delete_profile(longest)
+
+    # A timer firing during a recompute puts off what it asks for, and starts again.
+    done, built = [], panel.obj
+    panel.ends_timer.stop()
+    panel.obj = types.SimpleNamespace(Document=types.SimpleNamespace(Recomputing=True))
+    panel.when_built(panel.ends_timer, lambda: done.append(True))
+    expect(not done and panel.ends_timer.isActive(), "a timer firing during a recompute puts its action off")
+    panel.ends_timer.stop()
+    panel.obj = built
+    panel.when_built(panel.ends_timer, lambda: done.append(True))
+    expect(done == [True] and not panel.ends_timer.isActive(), "with no recompute running it is done")
 
     panel.reject()
     expect(presets.active_profile() is None and presets.profile_names() == ["kept", "many"],

@@ -837,21 +837,21 @@ class FinSnapTaskPanel:
         self.timer = QtCore.QTimer(self.form)
         self.timer.setSingleShot(True)
         self.timer.setInterval(PREVIEW_DELAY_MS)
-        self.timer.timeout.connect(self.preview)
+        self.timer.timeout.connect(functools.partial(self.when_built, self.timer, self.preview))
         self.drag_timer = QtCore.QTimer(self.form)
         self.drag_timer.setSingleShot(True)
         self.drag_timer.setInterval(DRAG_PREVIEW_MS)
-        self.drag_timer.timeout.connect(self.drag_step)
+        self.drag_timer.timeout.connect(functools.partial(self.when_built, self.drag_timer, self.drag_step))
         # Steps of the arrow keys held, by ALONG or UP, built once their repeats pause.
         self.key_steps = {}
         self.key_timer = QtCore.QTimer(self.form)
         self.key_timer.setSingleShot(True)
         self.key_timer.setInterval(KEY_REPEAT_PAUSE_MS)
-        self.key_timer.timeout.connect(self.take_keys)
+        self.key_timer.timeout.connect(functools.partial(self.when_built, self.key_timer, self.take_keys))
         self.ends_timer = QtCore.QTimer(self.form)
         self.ends_timer.setSingleShot(True)
         self.ends_timer.setInterval(ENDS_DELAY_MS)
-        self.ends_timer.timeout.connect(self.update_ends)
+        self.ends_timer.timeout.connect(functools.partial(self.when_built, self.ends_timer, self.update_ends))
         # The field of the fin with the handles changed, typed into or stepped,
         # and not taken yet: taken on Enter, on leaving it, or before the
         # arrows are grabbed or go to another fin; until then the panel leaves
@@ -2031,6 +2031,22 @@ class FinSnapTaskPanel:
         """Whether the handled fin belongs to fins with some beside a lowest line."""
         return self.handled is not None and self.handled[0] == feature.MAIN and bool(
             geometry.side_numbers(self.obj.RoundFins)) and feature.on_round_side(self.obj)
+
+    def when_built(self, timer, action):
+        """Do `action`, what the timeout of `timer` asks for, once no recompute is
+        running. FreeCAD's progress display lets timers fire during one, from
+        any command, and a build started inside it can stop in the kernel and
+        never return, so FreeCAD freezes.
+
+        INPUTS this has to withstand:
+          no recompute running                  ->  done now
+          a recompute of this document running  ->  not done, the timer started again
+          several timeouts during a long one    ->  put off each time, done once after
+        """
+        if self.obj.Document.Recomputing:
+            timer.start()
+            return
+        action()
 
     def update_ends(self):
         """Leave out each end of an arrow where the handled fin cannot go.

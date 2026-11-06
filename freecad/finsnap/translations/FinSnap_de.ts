@@ -1259,17 +1259,17 @@
         <translation>dort trifft keine Zinke der Finne die Fläche</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="2438"/>
+        <location filename="../taskpanel.py" line="2454"/>
         <source>Not possible</source>
         <translation>Nicht möglich</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="2484"/>
+        <location filename="../taskpanel.py" line="2500"/>
         <source>Notes</source>
         <translation>Hinweise</translation>
     </message>
     <message>
-        <location filename="../taskpanel.py" line="2477"/>
+        <location filename="../taskpanel.py" line="2493"/>
         <source>%d fin(s), %.2f mm high, %.2f mm thick</source>
         <translation>%d Finne(n), %.2f mm hoch, %.2f mm dick</translation>
     </message>
