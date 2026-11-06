@@ -454,7 +454,7 @@ def prism_axis(shape, face):
       a slanted notch reaching the end of
         a side                              ->  None: its wall is on the outer wire; the
                                                 part lies on the side, as before
-      a corner off by 1 mm                 ->  None: an uneven prism
+      a corner off by 1 mm                  ->  None: an uneven prism
       side of a box, a square bar           ->  None: fewer sides than a chamfer has
       side of a triangular prism            ->  None
       chamfer on one edge of a box          ->  None: angles differ
