@@ -101,6 +101,11 @@ PLACEMENT = PLACEMENT_AUTO
 FIN_COUNT = 3               # used by "distributed"
 END_INSET = 0.5             # distance of the outer fins from the face ends
 FACE_LENGTH_PER_FIN = 50.0  # "auto": one fin per this much face length, a single one centred
+# A fin with the tine restart leaves its planned place for one nearby where its
+# tines hold this many times the height of the face. High enough that a fin
+# stays at its planned place for a small gain, and on a short stretch only when
+# nothing nearby is much better.
+BETTER_PLACE_HOLDS = 2.0
 
 # --- Foot ---------------------------------------------------------------------
 FOOT_ELLIPSE = "ellipse"
