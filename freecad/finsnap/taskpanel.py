@@ -1920,9 +1920,9 @@ class FinSnapTaskPanel:
 
     def built_value(self, kind):
         """What the handled fin is built with: its shift along the face (ALONG)
-        from where it was planned, by hand and where it was moved beside a
-        hole, or its height (UP), in mm. Typing and dragging start from here,
-        so a fin moved beside a hole is moved on from where it stands."""
+        from where it was planned, by hand and where it moved by itself,
+        or its height (UP), in mm. Typing and dragging start from here,
+        so a fin that moved by itself is moved on from where it stands."""
         result, _ = self.handled_result()
         number = self.handled[1]
         if kind == handles.ALONG:
