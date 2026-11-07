@@ -7,6 +7,7 @@ The reference cube is the test print: 20 mm, 1 mm chamfer on every edge,
 tilted 45 degrees onto its bottom chamfer.
 """
 
+import faulthandler
 import os
 import sys
 
@@ -94,7 +95,8 @@ def expect(condition, message):
     if not condition:
         raise AssertionError(message)
     # sys.__stdout__: with the GUI running, print() goes to the report view.
-    print("ok  ", message, file=sys.__stdout__)
+    # Flushed: a crash drops what is buffered and hides how far the test got.
+    print("ok  ", message, file=sys.__stdout__, flush=True)
 
 
 def require_checkout(main):
@@ -126,7 +128,9 @@ def run(main, gui=False):
 
     The saved standard for new fins and the limits of the checks are pointed
     at groups of their own while the test runs, and removed afterwards, so a
-    test never reads or changes those of the person running it."""
+    test never reads or changes those of the person running it. A crash in
+    native code prints the Python stack that led to it."""
+    faulthandler.enable(file=sys.__stdout__)
     from freecad.finsnap import limits, presets
     presets.STANDARD_GROUP = TEST_STANDARD_GROUP
     presets.PROFILES_GROUP = TEST_PROFILES_GROUP
