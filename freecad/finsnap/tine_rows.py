@@ -326,6 +326,9 @@ def restarted_tines(p, frame, face, t0, thickness, limit, count):
       a hole under the flank, clear of the
         tine                                ->  no gap: the outermost points count
       the fin past the end of the face      ->  no tine
+      a notch in the end of the face under
+        the flank, at mid height            ->  spread through it, wide_enough() leaves those
+                                                out: only the ends of the face limit the spread
     """
     start = tine_start(p, t0, thickness)
     left, right = _bands_at(frame, face, start), _bands_at(frame, face, start + p.tine_width)
@@ -339,7 +342,9 @@ def restarted_tines(p, frame, face, t0, thickness, limit, count):
     # Spread only as high as the face reaches under the fin as a whole: a tine
     # spread beyond that is left out by wide_enough() and leaves a wider gap.
     first, last = _fin_reach(p, t0, thickness)
-    edges = [_bands_at(frame, face, first), _bands_at(frame, face, last)]
+    # A fin on a corner reaches as far as its tine: those cuts are made already.
+    edges = [left, right] if (first, last) == (start, start + p.tine_width) else [
+        _bands_at(frame, face, first), _bands_at(frame, face, last)]
     if not all(edges):
         return []
     bottom = max(edge[0][0] for edge in edges)

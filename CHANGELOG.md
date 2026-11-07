@@ -20,8 +20,9 @@ All notable changes to FinSnap are listed here. The format follows
 - FreeCAD could freeze when fins were rebuilt with their task panel open, as on switching the checks while editing: a timer of the panel started a build in the middle of the rebuild
 - Quick fins takes the side of a regular prism, such as a hexagon shank, as the face for the fins instead of a chamfer: the part stands on its largest flat end with the fin under that side; laid on the side, as before, stays among the ways in the table
 - With the tine restart on, a fin no longer stays on a short stretch of the face above a recess: it moves to the nearest place where its tines hold at least twice the height of the face. A fin moved or set to a height by hand stays (#109)
-- With the tine restart on, fins on a face that starts above the bed and is narrow there, as the end of a disc, are no longer crowded together, fewer than planned, or refused as not fitting side by side (#109)
+- With the tine restart on, fins on a face that starts above the bed and is narrow there, as the end of a disc, are no longer crowded together, fewer than planned, or refused as not fitting side by side (#109). Saved fins on such a face can shift along it when rebuilt, also those moved by hand, as the place a hand move counts from changes
 - With the tine restart on, tines are spread only as high as the face reaches under the whole fin, so none are left out for a narrow face and leave a wider gap (#109)
+- With the tine restart on, the warning about tines left out on a narrow face names only tines a fin lacks. Fins that moved by themselves keep their feet clear of each other, and a height set by hand no longer sends such a fin back (#109)
 
 ## [0.15.0] - 2026-11-05
 
