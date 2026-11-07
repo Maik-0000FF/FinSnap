@@ -110,7 +110,8 @@ from . import orient
 from .face_frame import UP, FinError, Frame, HandEditError, beside_lowest, frame_of, in_plane, support_of
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .shapes import TooManyPairs, between_rings, bounds, keep, meshed_of, shape_key
-from .tine_rows import (NARROW_AT_EVERY_TINE, TINE_CUTS_IN, TINE_MISSES, extent_at, face_tines, restarted_tines,
+from .tine_rows import (NARROW_AT_EVERY_TINE, TINE_CUTS_IN, TINE_MISSES, extent_at, face_tines, fin_stretch,
+                        restarted_tines,
                         flank_bend, round_move, side_foot_start, side_tine, tine_end, tine_end_fault, tine_end_points,
                         tine_start, tines_on_face, touching_at, wide_enough)
 
@@ -1032,8 +1033,10 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
     if p.tine_width > thickness:
         raise FinError(translate("FinSnap", "tines (%.2f mm) are wider than the fin (%.2f mm)")
                        % (p.tine_width, thickness))
-    tine_z, low, high, gap_z = tines_on_face(support, frame, all_z, p, room_for_one_fin(p, frame, thickness),
-                                             slices)
+    room_needed = room_for_one_fin(p, frame, thickness)
+    tine_z, low, high, gap_z = tines_on_face(support, frame, all_z, p, room_needed, slices)
+    if restart:
+        low, high = fin_stretch(support, frame, p, room_needed, count, low, high, slices)
     # Also with a fixed tine count: tines the narrow face cannot take are left
     # out and named, as over a recess, rather than refusing the whole fin.
     narrow_heights = set(all_z) - set(tine_z) - set(gap_z)
@@ -1124,18 +1127,22 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
             narrow = [z for z, fits in zip(grid, wide) if not fits]
         return planned_z, [z for z in planned_z if own is None or z + p.tine_height <= own + d.TOLERANCE], narrow
 
-    def held_at(t, own):
-        """The height of the face (mm) the tines of the fin starting at t hold,
-        from the bottom of the lowest on it to the top of the highest; 0 for no
-        tine on it. A hole they bridge counts: they hold the fin on both sides."""
-        planned_z, candidate_z, _ = tines_at(t, own)
-        resting = touching_at(frame, support, p, planned_z, t, thickness)
+    def held_by(candidate_z, resting):
+        """The height of the face (mm) that the tines at `candidate_z` lying on it
+        (`resting`) hold, from the bottom of the lowest to the top of the highest;
+        0 for none. A hole they bridge counts: they hold the fin on both sides."""
         held = [z for z in candidate_z if z in resting]
         return max(held) + p.tine_height - min(held) if held else 0.0
 
-    def height_to_move_for(number, t0, own, room):
-        """The height a place has to hold for the fin planned at t0 to go
-        there, None where it stays.
+    def held_at(t, own):
+        """What the tines of the fin starting at t hold (held_by())."""
+        planned_z, candidate_z, _ = tines_at(t, own)
+        return held_by(candidate_z, touching_at(frame, support, p, planned_z, t, thickness))
+
+    def height_to_move_for(number, held, own, room):
+        """The height a place has to hold for a fin holding `held` to go there,
+        None where it stays. Searching costs a cut through the face at every
+        place tried, so none where no place could hold enough.
 
         INPUTS this has to withstand:
           moved by hand                     ->  None: stays where it was put
@@ -1143,20 +1150,24 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
           no tine on the face               ->  one tine's height: any tine on the face
           one grid, tines on the face       ->  None: the fin as it was
           restart, a height set by hand     ->  None: the height was set for this place
-          restart, already holding more
-            than room / BETTER_PLACE_HOLDS  ->  None: no place can hold enough more
+          restart, holding BETTER_PLACE_HOLDS
+            times as much would pass the room,
+            the fin height set or what a fixed
+            tine count can reach            ->  None: no place can hold that
           restart, on a short stretch       ->  BETTER_PLACE_HOLDS times what it holds
           restart, bridging a hole          ->  as any other: both sides count
         """
         if frame.round_side or number in shifts:
             return None
-        held = held_at(t0, own)
         if not held:
             return p.tine_height
         if not restart or own is not None:
             return None
+        most = p.fin_height if p.fin_height > 0 else room
+        if count:
+            most = min(most, (count - 1) * p.tine_spacing + p.tine_height)
         wanted = held * d.BETTER_PLACE_HOLDS
-        return wanted if wanted <= room + d.TOLERANCE else None
+        return wanted if wanted <= most + d.TOLERANCE else None
 
     fins = []
     # Fins planned over a hole and moved beside it, as (number, mm moved).
@@ -1186,7 +1197,7 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
         # Tried at every height planned, also above a height of its own: those
         # are the heights the fin can be given with a tine on top.
         touching = touching_at(own_frame, support, p, planned_z, t0, thickness)
-        wanted = height_to_move_for(number, t0, own, room)
+        wanted = height_to_move_for(number, held_by(candidate_z, touching), own, room)
         if wanted is not None:
             # Planned over a hole or on a short stretch of the face, the fin
             # moves along it to the nearest place its tines hold enough.

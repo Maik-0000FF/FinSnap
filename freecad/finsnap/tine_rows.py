@@ -146,6 +146,30 @@ def tines_on_face(face, frame, tine_z, p, width, slices=None):
     return (*best, gaps)
 
 
+def fin_stretch(face, frame, p, width, count, low, high, slices=None):
+    """The stretch along the face the fins are placed on, with the restart,
+    `low` to `high` being what the tines of the face as a whole share. A face
+    that starts above the bed and is narrow there, as the end of a disc or a
+    slot, has them spread from that narrow edge, and sharing it would crowd
+    the fins together or leave some out. Each fin gets tines of its own where
+    it stands, so it needs no tine of that edge: the stretch of the one grid
+    is taken where that is longer.
+
+    INPUTS this has to withstand:
+      a face from the bed up                ->  the same heights, so the same stretch
+      above the bed, the grid stretch longer->  the stretch of the grid
+      above the bed, the grid stretch shorter
+                                            ->  `low` to `high`
+      no grid tine on the face, or none
+        with room                           ->  `low` to `high`
+    """
+    try:
+        _, grid_low, grid_high, _ = tines_on_face(face, frame, tine_heights(p, frame, count)[0], p, width, slices)
+    except FinError:
+        return low, high
+    return (grid_low, grid_high) if grid_high - grid_low > high - low else (low, high)
+
+
 def tine_start(p, t0, thickness):
     """Where the tines of the fin starting at t0 begin along the face: in the middle of the fin."""
     return t0 + (thickness - p.tine_width) / 2
