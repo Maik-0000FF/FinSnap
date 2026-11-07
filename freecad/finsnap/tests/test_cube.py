@@ -988,6 +988,10 @@ def check_restart_narrow_lower_edge():
            "three fins on a face narrow at its lower edge stand where the one grid has them: %s" % restart.positions)
     expect(restart.touching_z[2][0] < grid.touching_z[2][0],
            "the fin in the middle still reaches the lower edge: %s" % restart.touching_z[2])
+    expect(all(len(restart.touching_z[n]) >= len(grid.touching_z[n])
+               for n in restart.numbers) and not restart.moved,
+           "each of them holds as much as on the one grid, none left out where the face is narrow: %s"
+           % restart.touching_z)
 
 
 def check_restart_short_stretch(cube, face):
@@ -2724,14 +2728,16 @@ def check_part_of_side():
     expect(any(f.isSame(slot.Faces[half]) for f in counter),
            "under the end face, the half round end is offered for the counter fin")
     # The end face narrows to its round ends at the bottom and the top: moved
-    # past the stretch its narrowest tine allows, the fin keeps the tines where
-    # the face is wide enough under it.
+    # past the stretch its narrowest tine allows, the fin keeps tines where
+    # the face is wide enough under it: on one grid some are left out and named,
+    # with the restart they are spread over that height alone.
     for restart in (True, False):
         q = FinParams(placement=d.PLACEMENT_CENTER, tine_restart=restart)
         planned = geometry.build(slot, end[0], q)
         aside = geometry.build(slot, end[0], q, shifts={1: SLOT_ASIDE})
         expect(SLOT_ASIDE > planned.frame.along_max
-               and 0 < len(aside.tines) < len(planned.tines) and any("narrower" in w for w in aside.warnings),
+               and 0 < len(aside.tines) and (restart or len(aside.tines) < len(planned.tines))
+               and any("narrower" in w for w in aside.warnings) != restart,
                "restart %s: a fin moved %.0f mm along the end face of a slot keeps its tines where the face is "
                "wide enough: %s" % (restart, SLOT_ASIDE, aside.warnings))
         try:
