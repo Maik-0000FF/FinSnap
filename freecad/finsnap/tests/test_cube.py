@@ -59,6 +59,8 @@ WIDE_NOZZLE = 0.8
 WIDE_BEAD = 0.9       # two of them are thicker than the 1 mm base
 GROOVE_DEPTH = 2.0     # a groove across the front of a box, splitting it
 SINK_DEPTH = 0.5       # how deep the face is sunk around a stretch of it, so that stretch is a face of its own
+SHORT_STRETCH_RECESS = 4.0  # half the width of a recess from the bed up, wider than a fin, in mm
+SHORT_STRETCH_LEFT = 2.0    # height of the face left above that recess, in mm
 SINK_INSET = 0.5       # how far that stretch ends inside the grid tines below and above it, in mm
 OUT_OF_REACH = 100.0   # a height or a width beyond any test part, in mm
 NOTCH_CLEAR = 1.0      # how far a notch in the end of a face stays from the grid tines, and its depth, in mm
@@ -957,6 +959,40 @@ def check_restart_planned(cube, face):
     expect(gridded.moved and not bridged.moved and bridged.tines and not bridged.dropped,
            "a fin whose grid tines all lie over holes moves on one grid, and bridges them with the restart: %s"
            % bridged.touching_z)
+
+
+def check_restart_short_stretch(cube, face):
+    """With the restart a fin left with a short stretch of the face under it,
+    by a recess from the bed up, goes where its tines hold far more; moved by
+    hand, set to a height by hand or on one grid it stays out of that."""
+    restart, one_grid = FinParams(placement=d.PLACEMENT_CENTER), FinParams(placement=d.PLACEMENT_CENTER,
+                                                                           tine_restart=False)
+    frame = face_frame.frame_of(cube, face)
+    normal = face.normalAt(0, 0)
+    middle = (frame.along_min + frame.along_max) / 2
+    top = frame.face_top_z - frame.bed_z
+    # The recess across the middle of the face, which runs along Y.
+    centre_y = frame.point(middle, frame.s_face(frame.bed_z), frame.bed_z).y
+    box = Part.makeBox(OUT_OF_REACH, 2 * SHORT_STRETCH_RECESS, top - SHORT_STRETCH_LEFT + OUT_OF_REACH,
+                       V(-OUT_OF_REACH / 2, centre_y - SHORT_STRETCH_RECESS, frame.bed_z - OUT_OF_REACH))
+    layer = cube.common(box)
+    part = cube.cut(layer.cut(layer.translated(-normal * SINK_DEPTH)))
+    notched = max((f for f in part.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE), key=lambda f: f.Area)
+
+    def held(result, number):
+        zs = result.touching_z[number]
+        return max(zs) + restart.tine_height - min(zs)
+
+    stayed = geometry.build(part, notched, restart, shifts={1: 0.0})
+    moved_on = geometry.build(part, notched, restart)
+    expect(not stayed.moved and moved_on.moved and held(moved_on, 1) >= d.BETTER_PLACE_HOLDS * held(stayed, 1),
+           "a fin on a short stretch goes where its tines hold far more, from %.2f to %.2f mm, moved by %s"
+           % (held(stayed, 1), held(moved_on, 1), moved_on.moved))
+    own = geometry.build(part, notched, restart, heights={1: stayed.heights[1]})
+    expect(not own.moved, "a fin with a height set by hand stays on its short stretch")
+    plain = geometry.build(cube, face, restart)
+    expect(not plain.moved, "a fin on a face without a recess stays at its planned place")
+    expect(not geometry.build(part, notched, one_grid).moved, "on one grid a fin with a tine on the face stays")
 
 
 def check_restart_narrow(cube, face):
@@ -2981,6 +3017,7 @@ def main():
     check_tine_clearance(cube, face)
     check_shortened(cube, face)
     check_restart(cube, face)
+    check_restart_short_stretch(cube, face)
     check_restart_above_fillet()
     check_restart_planned(cube, face)
     check_restart_narrow(cube, face)

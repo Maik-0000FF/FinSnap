@@ -386,9 +386,9 @@ def _mm_list(values):
 
 
 def beside_hole(frame, rests, t0, thickness, others):
-    """Where along the face the fin planned to start at t0, whose tines find
-    no face there, starts nearest where `rests` finds a tine of it on the
-    face; None if nowhere. It keeps within the face and between its neighbours
+    """Where along the face the fin planned to start at t0 starts nearest
+    where `rests` accepts the place: one where its tines find the face, or find
+    more of it; None if nowhere. It keeps within the face and between its neighbours
     among the fins starting at `others`, clear of them, so the fins keep
     their order from the left; tried a fin thickness at a time, either way
     in turn.
@@ -1124,10 +1124,39 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
             narrow = [z for z, fits in zip(grid, wide) if not fits]
         return planned_z, [z for z in planned_z if own is None or z + p.tine_height <= own + d.TOLERANCE], narrow
 
-    def rests_at(t, own):
-        """Whether a tine of the fin starting at t lies on the face."""
+    def held_at(t, own):
+        """The height of the face (mm) the tines of the fin starting at t hold,
+        from the bottom of the lowest on it to the top of the highest; 0 for no
+        tine on it. A hole they bridge counts: they hold the fin on both sides."""
         planned_z, candidate_z, _ = tines_at(t, own)
-        return any(z in candidate_z for z in touching_at(frame, support, p, planned_z, t, thickness))
+        resting = touching_at(frame, support, p, planned_z, t, thickness)
+        held = [z for z in candidate_z if z in resting]
+        return max(held) + p.tine_height - min(held) if held else 0.0
+
+    def height_to_move_for(number, t0, own, room):
+        """The height a place has to hold for the fin planned at t0 to go
+        there, None where it stays.
+
+        INPUTS this has to withstand:
+          moved by hand                     ->  None: stays where it was put
+          round side                        ->  None: stays under its line
+          no tine on the face               ->  one tine's height: any tine on the face
+          one grid, tines on the face       ->  None: the fin as it was
+          restart, a height set by hand     ->  None: the height was set for this place
+          restart, already holding more
+            than room / BETTER_PLACE_HOLDS  ->  None: no place can hold enough more
+          restart, on a short stretch       ->  BETTER_PLACE_HOLDS times what it holds
+          restart, bridging a hole          ->  as any other: both sides count
+        """
+        if frame.round_side or number in shifts:
+            return None
+        held = held_at(t0, own)
+        if not held:
+            return p.tine_height
+        if not restart or own is not None:
+            return None
+        wanted = held * d.BETTER_PLACE_HOLDS
+        return wanted if wanted <= room + d.TOLERANCE else None
 
     fins = []
     # Fins planned over a hole and moved beside it, as (number, mm moved).
@@ -1157,11 +1186,12 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
         # Tried at every height planned, also above a height of its own: those
         # are the heights the fin can be given with a tine on top.
         touching = touching_at(own_frame, support, p, planned_z, t0, thickness)
-        if not any(z in touching for z in candidate_z) and not frame.round_side and number not in shifts:
-            # Planned over a hole, the fin moves along the face to the nearest
-            # place its tines rest; one moved by hand stays where it was put.
+        wanted = height_to_move_for(number, t0, own, room)
+        if wanted is not None:
+            # Planned over a hole or on a short stretch of the face, the fin
+            # moves along it to the nearest place its tines hold enough.
             others = [starts[n] for n in starts if n != number and n not in left_out]
-            moved_to = beside_hole(frame, partial(rests_at, own=own), t0, thickness, others)
+            moved_to = beside_hole(frame, lambda t: held_at(t, own) >= wanted - d.TOLERANCE, t0, thickness, others)
             if moved_to is not None:
                 moved_fins.append((number, moved_to - t0))
                 t0 = starts[number] = moved_to
