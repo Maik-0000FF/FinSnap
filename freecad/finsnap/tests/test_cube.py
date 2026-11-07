@@ -62,6 +62,7 @@ SINK_DEPTH = 0.5       # how deep the face is sunk around a stretch of it, so th
 SINK_INSET = 0.5       # how far that stretch ends inside the grid tines below and above it, in mm
 SHORT_STRETCH_RECESS = 4.0  # half the width of a recess from the bed up, wider than a fin, in mm
 SHORT_STRETCH_LEFT = 2.0    # height of the face left above that recess, in mm
+CORNER_WALL = 0.1           # the face left at its end beside such a recess, thinner than a tine, in mm
 POINTED_HALF_WIDTH = 30.0   # half the width of a face that tapers towards the bottom, in mm
 POINTED_END_HALF_WIDTH = 2.0  # half its width at its lower edge, room for one fin, in mm
 POINTED_WIDEST_AT = 8.0     # how far up it that width is reached, in mm
@@ -1000,15 +1001,16 @@ def check_restart_narrow_lower_edge():
            % restart.touching_z)
 
 
-def recessed_from_bed(cube, face, half_width, left):
+def recessed_from_bed(cube, face, half_width, left, along=None):
     """`cube` with a recess across the middle of `face`, from the bed up to
-    `left` mm below its top, and the largest piece of that face."""
+    `left` mm below its top, centred at `along` on the face if given, and the
+    largest piece of that face."""
     frame = face_frame.frame_of(cube, face)
     normal = face.normalAt(0, 0)
     middle = (frame.along_min + frame.along_max) / 2
     top = frame.face_top_z - frame.bed_z
     # The face runs along Y.
-    centre_y = frame.point(middle, frame.s_face(frame.bed_z), frame.bed_z).y
+    centre_y = frame.point(middle if along is None else along, frame.s_face(frame.bed_z), frame.bed_z).y
     box = Part.makeBox(OUT_OF_REACH, 2 * half_width, top - left + OUT_OF_REACH,
                        V(-OUT_OF_REACH / 2, centre_y - half_width, frame.bed_z - OUT_OF_REACH))
     layer = cube.common(box)
@@ -1038,6 +1040,22 @@ def check_restart_short_stretch(cube, face):
         own = geometry.build(part, notched, restart, heights={1: tine + restart.tine_height})
         expect(own.starts == moved_on.starts and own.moved == moved_on.moved,
                "a fin that moved by itself stands there with a height of %.2f set by hand" % own.heights[1])
+    # The place found can lie at exactly 0 along the face.
+    shifted = part.translated(V(0, moved_on.starts[1], 0))
+    at_zero = geometry.build(shifted, max((f for f in shifted.Faces if f.normalAt(0, 0).getAngle(face.normalAt(0, 0))
+                                           < d.TOLERANCE), key=lambda f: f.Area), restart)
+    expect(at_zero.moved and abs(at_zero.starts[1]) < d.TOLERANCE and held(at_zero, 1) == held(moved_on, 1),
+           "a fin goes to a place found at 0 along the face as to any other: %s" % at_zero.starts)
+    # A fin on a corner, its tine over a recess up to a short stretch, a thin
+    # wall of the face beside it, with far more to hold further along.
+    corner = FinParams(placement=d.PLACEMENT_CORNER_LEFT)
+    frame = face_frame.frame_of(cube, face)
+    pit, pit_face = recessed_from_bed(cube, face, SHORT_STRETCH_RECESS, SHORT_STRETCH_LEFT,
+                                      frame.along_min + CORNER_WALL + SHORT_STRETCH_RECESS)
+    placed = geometry.build(pit, pit_face, corner)
+    room = frame.face_top_z - frame.bed_z - d.FACE_TOP_MARGIN
+    expect(not placed.moved and held(placed, placed.numbers[0]) * d.BETTER_PLACE_HOLDS <= room,
+           "a fin on a corner stays there on a short stretch: %s" % placed.touching_z)
     plain = geometry.build(cube, face, restart)
     expect(not plain.moved, "a fin on a face without a recess stays at its planned place")
     expect(not geometry.build(part, notched, one_grid).moved, "on one grid a fin with a tine on the face stays")

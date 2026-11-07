@@ -233,7 +233,7 @@ class FinResult:
     # By number, the frames of fins beside the lowest line of a round side,
     # which stand in the plane of their own (side_frames()).
     frames: dict = field(default_factory=dict)
-    # By number, how far a fin planned over a hole was moved beside it (mm, as
+    # By number, how far a fin moved by itself from its planned place (mm, as
     # starts); its start is planned plus its shift by hand plus this.
     moved: dict = field(default_factory=dict)
 
@@ -1023,7 +1023,7 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
     """The fins of the face planned for a fin height of at least `reach`,
     from which their thickness and foot follow. With `restart`, each fin is
     tried on its own tine grid (restarted_tines()), at its planned place and
-    at every place it might move to beside a hole; without, on `all_z`.
+    at every place it might move to; without, on `all_z`.
     `slices` is the dict of extent_at() kept for the build. `frames` holds,
     by number, the frame of a fin that has one of its own (side_frames()), on
     which it gets its own heights of tines."""
@@ -1228,7 +1228,8 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
         # fin standing here, and lowering it does not send the fin elsewhere.
         wanted = worth_moving_for(room, t0) if free else None
         if wanted is not None:
-            t0 = nearest_place(frame, partial(holds, own=None, wanted=wanted), t0, thickness, others) or t0
+            better = nearest_place(frame, partial(holds, own=None, wanted=wanted), t0, thickness, others)
+            t0 = t0 if better is None else better
         planned_z, candidate_z, narrow, touching = at_place(t0, own, own_frame)
         if own is not None and not candidate_z:
             raise refused(translate("FinSnap", "fin %d is lower than its first tine") % number, HandEditError)

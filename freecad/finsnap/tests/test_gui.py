@@ -1868,7 +1868,7 @@ def main():
     picked = [(s.Object, n) for s in Gui.Selection.getSelectionEx() for n in s.SubElementNames]
     expect(linked and picked == [(box, hanging[0])] and Gui.ActiveDocument.ActiveView.getCamera() != camera,
            "a click on the overhang note selects the face and fits the view to it: %s" % picked)
-    # A note naming a fin, as one moved beside a hole names it: its faces are
+    # A note naming a fin, as one that moved by itself names it: its faces are
     # selected, the arrows on it.
     fin = noted.built_fins()[-1]
     marked.Proxy.note_targets[overhang_note] = feature.NoteTarget(fin[0], [fin[1]], [], [], [])
