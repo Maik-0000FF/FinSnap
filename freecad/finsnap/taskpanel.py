@@ -128,6 +128,12 @@ SIDES = {feature.MAIN: QT_TRANSLATE_NOOP("FinSnap", "Main fin"),
          feature.COUNTER: QT_TRANSLATE_NOOP("FinSnap", "Counter fin")}
 # FinParams field of the layer height, the step of the fields on the layer grid.
 LAYER_FIELD = "layer_height"
+# Fields a profile holds but does not set when chosen: they belong to the part,
+# not to a nozzle, layers or material.
+PROFILE_LEAVES = ("placement", "fin_count")
+# How many characters of a profile's name the list of profiles makes room for; a
+# longer name is cut off there rather than widen the panel past its dock.
+PROFILE_BOX_CHARACTERS = 12
 # Notes below the result: warnings in amber, a refusal in red, what was done
 # without a fault in blue, each in a framed box with a sign, so they stand out
 # from the result line above.
@@ -547,6 +553,17 @@ class Section(QtWidgets.QWidget):
         self.header.setStyleSheet(SECTION_HEADER_STYLE + (MODIFIED_HEADER_STYLE if modified else ""))
 
 
+class IgnoresWheel(QtCore.QObject):
+    """Passes the mouse wheel on past a list whose choice sets every field, so
+    scrolling the panel over it does not choose anything."""
+
+    def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
+        if event.type() == QtCore.QEvent.Wheel:
+            event.ignore()
+            return True
+        return False
+
+
 class EnterTakes(QtCore.QObject):
     """Takes Enter in a field as the value typed, by calling `take`, and keeps
     it from the task dialog, which would close the panel on it."""
@@ -783,6 +800,13 @@ def _same_mm(a, b):
 class FinSnapTaskPanel:
     def __init__(self, obj, created=False, on_cancel=None, stands=None, later=None):
         self.obj = obj
+        # The profile active as the panel opened, for Cancel; None for the standard one.
+        self.opened_profile = presets.active_profile()
+        # Whether the panel is building the fins itself: FreeCAD does not count
+        # the recompute of one object as a recompute of its document.
+        self.building = False
+        # Whether the notes say a profile action was refused, until one succeeds.
+        self.profile_refused = False
         # Fins just made: Cancel deletes them, then calls on_cancel, if any.
         self.created = created
         self.on_cancel = on_cancel
@@ -816,21 +840,21 @@ class FinSnapTaskPanel:
         self.timer = QtCore.QTimer(self.form)
         self.timer.setSingleShot(True)
         self.timer.setInterval(PREVIEW_DELAY_MS)
-        self.timer.timeout.connect(self.preview)
+        self.timer.timeout.connect(functools.partial(self.when_built, self.timer, self.preview))
         self.drag_timer = QtCore.QTimer(self.form)
         self.drag_timer.setSingleShot(True)
         self.drag_timer.setInterval(DRAG_PREVIEW_MS)
-        self.drag_timer.timeout.connect(self.drag_step)
+        self.drag_timer.timeout.connect(functools.partial(self.when_built, self.drag_timer, self.drag_step))
         # Steps of the arrow keys held, by ALONG or UP, built once their repeats pause.
         self.key_steps = {}
         self.key_timer = QtCore.QTimer(self.form)
         self.key_timer.setSingleShot(True)
         self.key_timer.setInterval(KEY_REPEAT_PAUSE_MS)
-        self.key_timer.timeout.connect(self.take_keys)
+        self.key_timer.timeout.connect(functools.partial(self.when_built, self.key_timer, self.take_keys))
         self.ends_timer = QtCore.QTimer(self.form)
         self.ends_timer.setSingleShot(True)
         self.ends_timer.setInterval(ENDS_DELAY_MS)
-        self.ends_timer.timeout.connect(self.update_ends)
+        self.ends_timer.timeout.connect(functools.partial(self.when_built, self.ends_timer, self.update_ends))
         # The field of the fin with the handles changed, typed into or stepped,
         # and not taken yet: taken on Enter, on leaving it, or before the
         # arrows are grabbed or go to another fin; until then the panel leaves
@@ -1003,15 +1027,43 @@ class FinSnapTaskPanel:
         self.turn_label.hide()
         self.turn_field.hide()
 
+        profile_row = QtWidgets.QHBoxLayout()
+        self.profile_box = QtWidgets.QComboBox()
+        self.profile_box.setToolTip(_wrapped(translate("FinSnap", "The values of a print profile, nozzle, layers or "
+                                                                  "material: choosing one sets the fields to them, "
+                                                                  "but for the placement and the number of fins, and "
+                                                                  "new fins start with them from then on.")))
+        self.profile_box.setSizeAdjustPolicy(QtWidgets.QComboBox.AdjustToMinimumContentsLengthWithIcon)
+        self.profile_box.setMinimumContentsLength(PROFILE_BOX_CHARACTERS)
+        self.profile_box.installEventFilter(IgnoresWheel(self.profile_box))
+        self.profile_box.activated.connect(self.pick_profile)
+        new_profile = QtWidgets.QPushButton(translate("FinSnap", "New"))
+        new_profile.setToolTip(_wrapped(translate("FinSnap", "Make a profile of the values in the fields.")))
+        new_profile.clicked.connect(self.new_profile)
+        self.rename_button = QtWidgets.QPushButton(translate("FinSnap", "Rename"))
+        self.rename_button.setToolTip(_wrapped(translate("FinSnap", "Give this profile another name.")))
+        self.rename_button.clicked.connect(self.rename_profile)
+        self.delete_button = QtWidgets.QPushButton(translate("FinSnap", "Delete"))
+        self.delete_button.setToolTip(_wrapped(translate("FinSnap", "Delete this profile; the fields stay as they "
+                                                                    "are, and the standard profile takes its place.")))
+        self.delete_button.clicked.connect(self.delete_profile)
+        profile_row.addWidget(QtWidgets.QLabel(translate("FinSnap", "Profile")))
+        profile_row.addWidget(self.profile_box, 1)
+        profile_row.addWidget(new_profile)
+        profile_row.addWidget(self.rename_button)
+        profile_row.addWidget(self.delete_button)
+        layout.addLayout(profile_row)
+        self.show_profiles()
+
         standard_buttons = QtWidgets.QHBoxLayout()
-        save = QtWidgets.QPushButton(translate("FinSnap", "Save as standard"))
-        save.setToolTip(_wrapped(translate("FinSnap", "New fins start with these values. Fields that differ from "
-                                                      "the standard are marked, and their button puts the "
-                                                      "standard back.")))
-        save.clicked.connect(self.save_standard)
+        save = QtWidgets.QPushButton(translate("FinSnap", "Save to profile"))
+        save.setToolTip(_wrapped(translate("FinSnap", "Save the values in the fields to the profile chosen, and new "
+                                                      "fins start with them. Fields that differ from the profile "
+                                                      "are marked, and their button puts its value back.")))
+        save.clicked.connect(self.save_to_profile)
         factory = QtWidgets.QPushButton(translate("FinSnap", "Factory settings"))
-        factory.setToolTip(_wrapped(translate("FinSnap", "Forget the saved standard and set every field to the "
-                                                         "built-in value.")))
+        factory.setToolTip(_wrapped(translate("FinSnap", "Forget what the profile chosen holds and set every "
+                                                         "field to the built-in value.")))
         factory.clicked.connect(self.factory_settings)
         standard_buttons.addWidget(save)
         standard_buttons.addWidget(factory)
@@ -1097,9 +1149,10 @@ class FinSnapTaskPanel:
                 self.stand_list.setItem(row, column, cell)
 
     def rate_stands(self):
-        """Rate the ways of the table where they were found unchecked, and show
-        them; the row the part stands in stays marked."""
-        if self.stands is None or not self.stands.unrated():
+        """Rate the ways of the table where they were found unchecked, or rated on
+        other layers than the standard's, and show them; the row the part stands
+        in stays marked."""
+        if self.stands is None or not (self.stands.unrated() or self.stands.outdated()):
             return
         self.stands.rate()
         self.stand_list.blockSignals(True)
@@ -1196,27 +1249,119 @@ class FinSnapTaskPanel:
         _write(prop, self.widgets[prop.name], getattr(self.standard, prop.field))
         self.changed()
 
-    def save_standard(self):
-        values = {prop.field: _read(prop, self.widgets[prop.name]) for prop in feature.PROPERTIES}
-        try:
-            presets.save(FinParams(**values))
-        except ValueError as error:
-            self.refuse(error)
-            return
+    def field_params(self):
+        """FinParams of the values in the fields; not validated."""
+        return FinParams(**{prop.field: _read(prop, self.widgets[prop.name]) for prop in feature.PROPERTIES})
+
+    def standard_changed(self):
+        """The standard is another now: mark the fields against it, and where the
+        table of ways was rated on other layers or another bead, rate it again."""
         self.standard = presets.standard()
         self.update_marks()
+        if self.stands is not None and self.stands.outdated():
+            # Every way is checked, which takes a moment on a large part.
+            QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
+            try:
+                self.rate_stands()
+            finally:
+                QtWidgets.QApplication.restoreOverrideCursor()
+
+    def save_to_profile(self):
+        if self.profile_done(lambda: presets.save(self.field_params())):
+            self.standard_changed()
 
     def factory_settings(self):
         answer = QtWidgets.QMessageBox.question(
             self.form, translate("FinSnap", "Factory settings"),
-            translate("FinSnap", "Forget the saved standard and set every field to the built-in value?"))
+            translate("FinSnap", "Forget what the profile \"%s\" holds and set every field to the built-in value?")
+            % self.profile_box.currentText())
         if answer != QtWidgets.QMessageBox.StandardButton.Yes:
             return
-        presets.reset()
+        self.profile_done(presets.reset)
         self.standard = presets.standard()
         for prop in feature.PROPERTIES:
             self.back_to_standard(prop)
-        self.update_marks()
+        self.standard_changed()
+
+    def show_profiles(self):
+        """List the profiles, the active one chosen; only a named one can be
+        renamed or deleted."""
+        active = presets.active_profile()
+        self.profile_box.clear()
+        self.profile_box.addItem(translate("FinSnap", presets.STANDARD_PROFILE), None)
+        for name in presets.profile_names():
+            self.profile_box.addItem(name, name)
+        self.profile_box.setCurrentIndex(self.profile_box.findData(active))
+        self.rename_button.setEnabled(active is not None)
+        self.delete_button.setEnabled(active is not None)
+
+    def pick_profile(self, index):
+        """Make the profile at `index` the standard and set the fields to it, but
+        for those in PROFILE_LEAVES. The one active already leaves all as it is,
+        so a click on it loses no value typed."""
+        name = self.profile_box.itemData(index)
+        if name == presets.active_profile():
+            return
+        if not self.profile_done(presets.activate, name):
+            return
+        self.standard = presets.standard()
+        for prop in feature.PROPERTIES:
+            if prop.field not in PROFILE_LEAVES:
+                _write(prop, self.widgets[prop.name], getattr(self.standard, prop.field))
+        self.show_profiles()
+        self.changed()
+        self.standard_changed()
+
+    def profile_done(self, action, *args):
+        """Do `action` on the profiles: True where it was done; where refused, say
+        why. Done after one refused, the notes of the build come back."""
+        try:
+            action(*args)
+        except ValueError as error:
+            self.refuse(error)
+            self.profile_refused = True
+            return False
+        if self.profile_refused:
+            self.profile_refused = False
+            self.preview()
+        return True
+
+    def new_profile(self):
+        """Make a profile of the fields, under a name asked for, and activate it."""
+        name, given = QtWidgets.QInputDialog.getText(self.form, translate("FinSnap", "New profile"),
+                                                     translate("FinSnap", "Name of the profile:"))
+        if given and self.profile_done(presets.add_profile, name, self.field_params()):
+            self.show_profiles()
+            self.standard_changed()
+
+    def rename_profile(self):
+        """Give the active profile another name, asked for."""
+        old = presets.active_profile()
+        name, given = QtWidgets.QInputDialog.getText(self.form, translate("FinSnap", "Rename profile"),
+                                                     translate("FinSnap", "Name of the profile:"), text=old)
+        if given and self.profile_done(self.renamed_profile, old, name):
+            self.show_profiles()
+
+    def renamed_profile(self, old, name):
+        """Rename the profile, Cancel still knowing it as active on opening."""
+        new = presets.rename_profile(old, name)
+        if self.opened_profile == old:
+            self.opened_profile = new
+
+    def delete_profile(self):
+        """Delete the active profile, once confirmed. The fields stay as they are,
+        so no fins change; what differs from the standard profile is marked."""
+        name = presets.active_profile()
+        answer = QtWidgets.QMessageBox.question(self.form, translate("FinSnap", "Delete profile"),
+                                                translate("FinSnap", "Delete the profile \"%s\"?") % name)
+        if answer != QtWidgets.QMessageBox.StandardButton.Yes:
+            return
+        if not self.profile_done(presets.delete_profile, name):
+            return
+        if self.opened_profile == name:
+            self.opened_profile = None
+        self.show_profiles()
+        self.standard_changed()
 
     def edited(self):
         """After a fin or the counter fin was removed or added: rebuild and show it."""
@@ -1332,8 +1477,10 @@ class FinSnapTaskPanel:
         try:
             # A failed build does not raise here; FreeCAD marks the object and
             # keeps the message, which the panel has to show.
+            self.building = True
             built = self.obj.recompute()
         finally:
+            self.building = False
             QtWidgets.QApplication.restoreOverrideCursor()
             bar.clearMessage()
         if not built:
@@ -1773,9 +1920,9 @@ class FinSnapTaskPanel:
 
     def built_value(self, kind):
         """What the handled fin is built with: its shift along the face (ALONG)
-        from where it was planned, by hand and where it was moved beside a
-        hole, or its height (UP), in mm. Typing and dragging start from here,
-        so a fin moved beside a hole is moved on from where it stands."""
+        from where it was planned, by hand and where it moved by itself,
+        or its height (UP), in mm. Typing and dragging start from here,
+        so a fin that moved by itself is moved on from where it stands."""
         result, _ = self.handled_result()
         number = self.handled[1]
         if kind == handles.ALONG:
@@ -1889,6 +2036,25 @@ class FinSnapTaskPanel:
         """Whether the handled fin belongs to fins with some beside a lowest line."""
         return self.handled is not None and self.handled[0] == feature.MAIN and bool(
             geometry.side_numbers(self.obj.RoundFins)) and feature.on_round_side(self.obj)
+
+    def when_built(self, timer, action):
+        """Do `action`, what the timeout of `timer` asks for, once no recompute is
+        running. FreeCAD's progress display lets timers fire during one, from
+        any command, and a build started inside it can stop in the kernel and
+        never return, so FreeCAD freezes.
+
+        INPUTS this has to withstand:
+          no recompute running                  ->  done now
+          a recompute of this document running  ->  not done, the timer started again
+          a recompute of another document       ->  the same: rebuild_fins() goes through
+                                                    all of them, and it is one kernel
+          the panel building the fins itself    ->  the same
+          several timeouts during a long one    ->  put off each time, done once after
+        """
+        if self.building or any(document.Recomputing for document in App.listDocuments().values()):
+            timer.start()
+            return
+        action()
 
     def update_ends(self):
         """Leave out each end of an arrow where the handled fin cannot go.
@@ -2368,8 +2534,12 @@ class FinSnapTaskPanel:
             fins chosen in the table            ->  part, other fins and the face of
                                                     these as when the ways were
                                                     unfolded, then values back
+          another profile chosen or made        ->  the one active on opening again; those
+                                                    made, renamed or deleted stay so
+          the one active on opening deleted     ->  the standard profile
         """
         self.close()
+        presets.activate(self.opened_profile)
         if self.created:
             discard_created(self.obj, self.on_cancel)
             return True

@@ -15,6 +15,7 @@ import math
 import os
 import sys
 import tempfile
+import types
 import zipfile
 
 import FreeCAD as App
@@ -456,6 +457,155 @@ def turned_tube(doc):
     doc.removeObject(fins.Name)
     doc.removeObject(tube.Name)
     doc.recompute()
+
+
+def profile_choices(doc):
+    """What choosing a profile leaves alone: the placement and the number of fins,
+    what was typed where it is chosen again, the mouse wheel; and what Cancel and a
+    name refused do to it."""
+    from PySide import QtCore, QtGui
+    from freecad.finsnap import commands, feature, presets
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap.params import FinParams
+    from freecad.finsnap.taskpanel import FinSnapTaskPanel
+    base = doc.addObject("Part::Feature", "ProfileBox")
+    base.Shape = tilted_cube()
+    fins = feature.create(base, face_name(base, lower_left_face(base.Shape)))
+    commands.ViewProviderFinSnap(fins.ViewObject)
+    presets.add_profile("many", FinParams(fin_thickness=STANDARD_THICKNESS, placement=d.PLACEMENT_DISTRIBUTED,
+                                          fin_count=5))
+    presets.activate(None)
+    panel = FinSnapTaskPanel(fins)
+    box, thickness = panel.profile_box, panel.widgets["FinThickness"]
+    placement, count = panel.widgets["FinPlacement"], panel.widgets["FinCount"]
+    placed, counted = placement.currentIndex(), count.value()
+
+    typed = thickness.value() + 0.5
+    thickness.setValue(typed)
+    panel.pick_profile(box.findData(None))
+    expect(abs(thickness.value() - typed) < d.TOLERANCE, "a click on the active profile keeps what was typed")
+    thickness.setValue(typed - 0.5)
+
+    box.setCurrentIndex(box.findData("many"))
+    box.setCurrentIndex(box.findData(None))
+    wheel = QtGui.QWheelEvent(QtCore.QPointF(1, 1), QtCore.QPointF(1, 1), QtCore.QPoint(0, 0), QtCore.QPoint(0, -120),
+                              QtCore.Qt.NoButton, QtCore.Qt.NoModifier, QtCore.Qt.NoScrollPhase, False)
+    QtWidgets.QApplication.sendEvent(box, wheel)
+    expect(box.currentIndex() == box.findData(None) and presets.active_profile() is None,
+           "the mouse wheel over the list of profiles chooses nothing")
+
+    panel.pick_profile(box.findData("many"))
+    expect(abs(thickness.value() - STANDARD_THICKNESS) < d.TOLERANCE, "choosing a profile sets the fields to it")
+    expect(placement.currentIndex() == placed and count.value() == counted,
+           "but not the placement and the number of fins, which belong to the part")
+
+    ask_name = QtWidgets.QInputDialog.getText
+    QtWidgets.QInputDialog.getText = staticmethod(lambda *a, **k: ("a/b", True))
+    panel.new_profile()
+    expect(panel.notes.isVisibleTo(panel.form) and "a/b" not in presets.profile_names(), "a name refused says why")
+    refused = panel.notes.text()
+    QtWidgets.QInputDialog.getText = staticmethod(lambda *a, **k: ("kept", True))
+    panel.new_profile()
+    expect(panel.notes.text() != refused or not panel.notes.isVisibleTo(panel.form),
+           "a name taken then takes that note away")
+    QtWidgets.QInputDialog.getText = staticmethod(lambda *a, **k: ("a/b", True))
+    panel.new_profile()
+    panel.save_to_profile()
+    expect(panel.notes.text() != refused or not panel.notes.isVisibleTo(panel.form),
+           "Save to profile takes the note of a name refused away too")
+    panel.new_profile()
+    panel.pick_profile(box.findData("many"))
+    expect(panel.notes.text() != refused or not panel.notes.isVisibleTo(panel.form),
+           "so does choosing a profile")
+    panel.new_profile()
+    panel.factory_settings()
+    expect(panel.notes.text() != refused or not panel.notes.isVisibleTo(panel.form),
+           "and Factory settings")
+    QtWidgets.QInputDialog.getText = ask_name
+    longest = "x" * presets.PROFILE_NAME_MAX
+    presets.add_profile(longest, FinParams())
+    panel.show_profiles()
+    expect(box.minimumSizeHint().width() < box.fontMetrics().horizontalAdvance(longest),
+           "the longest name does not widen the list of profiles")
+    presets.activate("kept")
+    presets.delete_profile(longest)
+
+    # A timer firing during a recompute puts off what it asks for, and starts again.
+    done, all_documents = [], App.listDocuments
+    panel.ends_timer.stop()
+    App.listDocuments = lambda: {doc.Name: doc, "other": types.SimpleNamespace(Recomputing=True)}
+    panel.when_built(panel.ends_timer, lambda: done.append(True))
+    expect(not done and panel.ends_timer.isActive(),
+           "a timer firing during a recompute, also of another document, puts its action off")
+    panel.ends_timer.stop()
+    App.listDocuments = all_documents
+    panel.building = True
+    panel.when_built(panel.ends_timer, lambda: done.append(True))
+    expect(not done and panel.ends_timer.isActive(), "so does one firing while the panel builds the fins itself")
+    panel.ends_timer.stop()
+    panel.building = False
+    panel.when_built(panel.ends_timer, lambda: done.append(True))
+    expect(done == [True] and not panel.ends_timer.isActive(), "with no recompute running it is done")
+
+    panel.reject()
+    expect(presets.active_profile() is None and presets.profile_names() == ["kept", "many"],
+           "Cancel brings the profile active on opening back, those made stay")
+    presets.activate("many")
+    presets.delete_profile("many")
+    presets.delete_profile("kept")
+    doc.removeObject(fins.Name)
+    doc.removeObject(base.Name)
+
+
+def profile_and_ways(doc):
+    """Another profile chosen in the panel of Quick fins, on other layers: the table
+    of ways is rated anew, and islands go with the layers they were found on."""
+    from freecad.finsnap import analysis, commands, feature, presets
+    from freecad.finsnap.params import FinParams
+    other = FinParams(layer_height=0.3)
+    presets.add_profile("layers", other)
+    presets.activate(None)
+    box = doc.addObject("Part::Feature", "WaysBox")
+    box.Shape = Part.makeBox(30, 20, 20)
+    doc.recompute()
+    side = next(i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).y < -0.9)
+    select(box, "Face%d" % side)
+    Gui.runCommand("FinSnap_QuickFins")
+    fins = next(o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is box)
+    panel = fins.ViewObject.Proxy.panel
+    found = panel.stands.plans[0]
+    expect(found.islands is not None and not panel.stands.outdated(),
+           "the ways of Quick fins are rated on the layers of the standard")
+    panel.show_profiles()
+    panel.pick_profile(panel.profile_box.findData("layers"))
+    wanted = commands.quick_params().layer_height
+    expect(wanted == other.layer_height and not panel.stands.outdated()
+           and all(way.params.layer_height == wanted for way in panel.stands.plans),
+           "another profile on other layers rates the table anew")
+    analysis.set_checks_while_editing(False)
+    presets.activate(None)
+    expect(not panel.stands.outdated(), "with the checks while editing off the table is not rated again")
+    analysis.set_checks_while_editing(True)
+    expect(panel.stands.outdated(), "with them on again it is out of date")
+    commands._check_now()
+    expect(not panel.stands.outdated(), "and switching them on rates it for the profile chosen meanwhile")
+    presets.activate("layers")
+    panel.rate_stands()
+
+    panel.stand_list.setCurrentCell(1, 0)
+    expect(analysis._analysis(box, commands.quick_params()).get(analysis.ISLANDS) == panel.stands.plans[1].islands,
+           "another way chosen keeps its islands for the layers of the profile")
+    marker = [object()]
+    commands._keep_checked(box, found._replace(islands=marker))
+    expect(analysis._analysis(box, found.params).get(analysis.ISLANDS) == marker
+           and analysis._analysis(box, commands.quick_params()).get(analysis.ISLANDS) != marker,
+           "islands found on other layers are not taken for those of the profile")
+
+    panel.reject()
+    expect(presets.active_profile() is None, "Cancel brings the standard profile back")
+    presets.activate("layers")
+    presets.delete_profile("layers")
+    doc.removeObject(box.Name)
 
 
 def quick_on_pad(doc):
@@ -1718,7 +1868,7 @@ def main():
     picked = [(s.Object, n) for s in Gui.Selection.getSelectionEx() for n in s.SubElementNames]
     expect(linked and picked == [(box, hanging[0])] and Gui.ActiveDocument.ActiveView.getCamera() != camera,
            "a click on the overhang note selects the face and fits the view to it: %s" % picked)
-    # A note naming a fin, as one moved beside a hole names it: its faces are
+    # A note naming a fin, as one that moved by itself names it: its faces are
     # selected, the arrows on it.
     fin = noted.built_fins()[-1]
     marked.Proxy.note_targets[overhang_note] = feature.NoteTarget(fin[0], [fin[1]], [], [], [])
@@ -2093,14 +2243,49 @@ def main():
     expect(abs(thickness.value() - built_in) < d.TOLERANCE and reset.isHidden(),
            "the button puts the standard value back and clears the mark")
     thickness.setValue(STANDARD_THICKNESS)
-    marking.save_standard()
+    marking.save_to_profile()
     expect(abs(presets.standard().fin_thickness - STANDARD_THICKNESS) < d.TOLERANCE and reset.isHidden(),
-           "Save as standard makes the value the standard for new fins and clears the mark")
+           "Save to profile makes the value the standard for new fins and clears the mark")
     QtWidgets.QMessageBox.question = staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.Yes)
     marking.factory_settings()
     expect(presets.standard() == FinParams() and abs(thickness.value() - built_in) < d.TOLERANCE
            and reset.isHidden(), "Factory settings forget the saved standard and reset the fields")
+    profiles = marking.profile_box
+    expect(profiles.count() == 1 and not marking.rename_button.isEnabled() and not marking.delete_button.isEnabled(),
+           "only the standard profile, which cannot be renamed or deleted")
+    ask_name = QtWidgets.QInputDialog.getText
+    QtWidgets.QInputDialog.getText = staticmethod(lambda *a, **k: ("thin", True))
+    thickness.setValue(STANDARD_THICKNESS)
+    marking.new_profile()
+    expect(profiles.currentText() == "thin" and marking.delete_button.isEnabled() and reset.isHidden()
+           and abs(presets.standard().fin_thickness - STANDARD_THICKNESS) < d.TOLERANCE,
+           "New makes a profile of the fields and chooses it, nothing marked")
+    marking.pick_profile(profiles.findData(None))
+    expect(presets.active_profile() is None and abs(thickness.value() - built_in) < d.TOLERANCE and reset.isHidden(),
+           "choosing the standard profile sets the fields to it")
+    marking.preview()
+    expect(abs(marking.obj.FinThickness.Value - built_in) < d.TOLERANCE, "and the fins follow")
+    marking.pick_profile(profiles.findData("thin"))
+    expect(abs(thickness.value() - STANDARD_THICKNESS) < d.TOLERANCE and marking.timer.isActive(),
+           "choosing a named profile sets the fields to it, and the fins are rebuilt")
+    QtWidgets.QInputDialog.getText = staticmethod(lambda *a, **k: ("slim", True))
+    marking.rename_profile()
+    expect(profiles.currentText() == "slim" and presets.profile_names() == ["slim"], "Rename takes the new name")
+    QtWidgets.QInputDialog.getText = staticmethod(lambda *a, **k: ("a/b", True))
+    marking.rename_profile()
+    expect(profiles.currentText() == "slim", "a name refused leaves the profile as it was")
+    QtWidgets.QInputDialog.getText = staticmethod(lambda *a, **k: ("", False))
+    marking.new_profile()
+    expect(profiles.count() == 2, "New cancelled makes no profile")
+    QtWidgets.QInputDialog.getText = ask_name
+    marking.delete_profile()
+    expect(profiles.count() == 1 and presets.active_profile() is None and not reset.isHidden()
+           and abs(thickness.value() - STANDARD_THICKNESS) < d.TOLERANCE,
+           "Delete leaves the fields as they are, what differs from the standard profile marked")
+    thickness.setValue(built_in)
     marking.reject()
+    profile_choices(doc)
+    profile_and_ways(doc)
 
     # Single fins: the Delete key on a face of one fin removes that fin only;
     # the panel removes and brings back fins and the counter fin, and Cancel

@@ -110,9 +110,9 @@ from . import orient
 from .face_frame import UP, FinError, Frame, HandEditError, beside_lowest, frame_of, in_plane, support_of
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .shapes import TooManyPairs, between_rings, bounds, keep, meshed_of, shape_key
-from .tine_rows import (NARROW_AT_EVERY_TINE, TINE_CUTS_IN, TINE_MISSES, extent_at, face_tines, restarted_tines,
-                        flank_bend, round_move, side_foot_start, side_tine, tine_end, tine_end_fault, tine_end_points,
-                        tine_start, tines_on_face, touching_at, wide_enough)
+from .tine_rows import (NARROW_AT_EVERY_TINE, TINE_CUTS_IN, TINE_MISSES, extent_at, face_tines, fin_stretch, flank_bend,
+                        restarted_tines, round_move, side_foot_start, side_tine, tine_end, tine_end_fault,
+                        tine_end_points, tine_start, tines_on_face, touching_at, wide_enough)
 
 NOTE_TOO_CLOSE = QT_TRANSLATE_NOOP("FinSnap", "a fin comes within %.3f mm of the part, closer than the %.3f mm it "
                                               "keeps from the face")
@@ -233,7 +233,7 @@ class FinResult:
     # By number, the frames of fins beside the lowest line of a round side,
     # which stand in the plane of their own (side_frames()).
     frames: dict = field(default_factory=dict)
-    # By number, how far a fin planned over a hole was moved beside it (mm, as
+    # By number, how far a fin moved by itself from its planned place (mm, as
     # starts); its start is planned plus its shift by hand plus this.
     moved: dict = field(default_factory=dict)
 
@@ -385,10 +385,10 @@ def _mm_list(values):
     return ", ".join("%.1f" % value for value in sorted(values))
 
 
-def beside_hole(frame, rests, t0, thickness, others):
-    """Where along the face the fin planned to start at t0, whose tines find
-    no face there, starts nearest where `rests` finds a tine of it on the
-    face; None if nowhere. It keeps within the face and between its neighbours
+def nearest_place(frame, rests, t0, thickness, others):
+    """Where along the face the fin planned to start at t0 starts nearest
+    where `rests` accepts the place: one where its tines find the face, or find
+    more of it; None if nowhere. It keeps within the face and between its neighbours
     among the fins starting at `others`, clear of them, so the fins keep
     their order from the left; tried a fin thickness at a time, either way
     in turn.
@@ -1023,7 +1023,7 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
     """The fins of the face planned for a fin height of at least `reach`,
     from which their thickness and foot follow. With `restart`, each fin is
     tried on its own tine grid (restarted_tines()), at its planned place and
-    at every place it might move to beside a hole; without, on `all_z`.
+    at every place it might move to; without, on `all_z`.
     `slices` is the dict of extent_at() kept for the build. `frames` holds,
     by number, the frame of a fin that has one of its own (side_frames()), on
     which it gets its own heights of tines."""
@@ -1032,15 +1032,19 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
     if p.tine_width > thickness:
         raise FinError(translate("FinSnap", "tines (%.2f mm) are wider than the fin (%.2f mm)")
                        % (p.tine_width, thickness))
-    tine_z, low, high, gap_z = tines_on_face(support, frame, all_z, p, room_for_one_fin(p, frame, thickness),
-                                             slices)
+    room_needed = room_for_one_fin(p, frame, thickness)
+    tine_z, low, high, gap_z = tines_on_face(support, frame, all_z, p, room_needed, slices)
+    if restart:
+        low, high = fin_stretch(support, frame, p, room_needed, count, low, high, slices)
     # Also with a fixed tine count: tines the narrow face cannot take are left
     # out and named, as over a recess, rather than refusing the whole fin.
-    narrow_heights = set(all_z) - set(tine_z) - set(gap_z)
-    if narrow_heights:
+    face_narrow = set(all_z) - set(tine_z) - set(gap_z)
+    if face_narrow:
         # Fewer tines make a lower and so a thinner fin; it still fits where the thicker one did.
         height = max(p.fin_height if p.fin_height > 0 else tine_z[-1] + p.tine_height, reach)
         thickness = thickness_for(p, height)
+    # With the restart each fin has tines of its own: only what a fin lacks is named.
+    narrow_heights = set() if restart else set(face_narrow)
     # Fins left out are named by their distance from this end of the face.
     face_start = frame.along_min
     # The face as a whole, before it is narrowed to the stretch every tine
@@ -1083,8 +1087,10 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
                       HandEditError)
     # The feet under a round side may overlap, and are joined (joined()): one
     # fin keeps the foot it has alone, as wide as it holds best.
-    half_foot = foot_half_width_for(p, (s_to - s_from) / 2, thickness,
-                                    [] if frame.round_side else [t0 for t0, _ in standing])
+    def feet_for(places):
+        return foot_half_width_for(p, (s_to - s_from) / 2, thickness, [] if frame.round_side else places)
+
+    half_foot = feet_for([t0 for t0, _ in standing])
 
     def tines_at(t, own, own_frame=frame):
         """The heights the tines of a fin starting at t are planned at, those
@@ -1122,15 +1128,80 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
             wide = [wide_enough(extent_at(support, whole_face, z, p, slices), p, t, thickness) for z in grid]
             planned_z = [z for z, fits in zip(grid, wide) if fits]
             narrow = [z for z, fits in zip(grid, wide) if not fits]
+            if restart and own_z is None:
+                # On the one grid, what the face as a whole cannot take this fin lacks too.
+                narrow += sorted(face_narrow)
         return planned_z, [z for z in planned_z if own is None or z + p.tine_height <= own + d.TOLERANCE], narrow
 
-    def rests_at(t, own):
-        """Whether a tine of the fin starting at t lies on the face."""
-        planned_z, candidate_z, _ = tines_at(t, own)
-        return any(z in candidate_z for z in touching_at(frame, support, p, planned_z, t, thickness))
+    kept_tines, kept_contact = {}, {}
+
+    def tines_kept(t, own, own_frame=frame):
+        """tines_at(), kept for the plan: a search asks for a place more than once."""
+        key = (t, own, id(own_frame))
+        if key not in kept_tines:
+            kept_tines[key] = tines_at(t, own, own_frame)
+        return kept_tines[key]
+
+    def at_place(t, own, own_frame=frame):
+        """What the fin starting at t has there: the heights of tines_at() and
+        those of the planned ones lying on the face. Kept for the plan, as
+        the contact of a tine takes a cut through the part."""
+        planned_z, candidate_z, narrow = tines_kept(t, own, own_frame)
+        key = (t, tuple(planned_z), id(own_frame))
+        if key not in kept_contact:
+            kept_contact[key] = touching_at(own_frame, support, p, planned_z, t, thickness)
+        return planned_z, candidate_z, narrow, kept_contact[key]
+
+    def height_of(zs):
+        """The height of the face (mm) that tines at `zs` span, from the bottom
+        of the lowest to the top of the highest; 0 for none. A hole they bridge
+        counts: they hold the fin on both sides."""
+        return max(zs) + p.tine_height - min(zs) if zs else 0.0
+
+    def held_by(candidate_z, resting):
+        """The height of the face that the tines at `candidate_z` lying on it hold."""
+        return height_of([z for z in candidate_z if z in resting])
+
+    def holds(t, own, wanted):
+        """Whether the tines of the fin starting at t hold `wanted` mm of the
+        face. A place whose tines could not even span that is rejected before
+        any contact is measured."""
+        if height_of(tines_kept(t, own)[1]) < wanted - d.TOLERANCE:
+            return False
+        _, candidate_z, _, resting = at_place(t, own)
+        return held_by(candidate_z, resting) >= wanted - d.TOLERANCE
+
+    def worth_moving_for(room, t0):
+        """The height a place has to hold for the fin planned at t0 to leave
+        it for that place, None where it stays. Measured without a height of
+        its own. Searching costs a cut through the face at every place tried,
+        so none where no place could hold enough.
+
+        INPUTS this has to withstand:
+          one grid                          ->  None: the fin as it was
+          a fin on a corner                 ->  None: that place was asked for
+          no tine on the face               ->  None: for the search for any tine
+          holding BETTER_PLACE_HOLDS times
+            as much would pass the room, the
+            fin height set or what a fixed
+            tine count can reach            ->  None: no place can hold that
+          on a short stretch                ->  BETTER_PLACE_HOLDS times what it holds
+          bridging a hole                   ->  as any other: both sides count
+        """
+        if not restart or p.placement == d.PLACEMENT_CORNERS or p.placement in d.PLACEMENT_ONE_CORNER:
+            return None
+        _, candidate_z, _, resting = at_place(t0, None)
+        held = held_by(candidate_z, resting)
+        if not held:
+            return None
+        most = p.fin_height if p.fin_height > 0 else room
+        if count:
+            most = min(most, (count - 1) * p.tine_spacing + p.tine_height)
+        wanted = held * d.BETTER_PLACE_HOLDS
+        return wanted if wanted <= most + d.TOLERANCE else None
 
     fins = []
-    # Fins planned over a hole and moved beside it, as (number, mm moved).
+    # Fins that left their planned place by themselves, as (number, mm moved).
     moved_fins = []
     fins_left_out = []
     # Whether every fin left out had no tine where the face is wide enough
@@ -1149,24 +1220,31 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
         if own is not None and own > room + d.TOLERANCE:
             raise refused(translate("FinSnap", "fin %d is %.2f mm high, above the face (%.2f mm)")
                            % (number, own, room), HandEditError)
-        planned_z, candidate_z, narrow = tines_at(t0, own, own_frame)
+        # Only a fin nobody moved and not under a lowest line finds its own place.
+        free = not frame.round_side and number not in shifts
+        others = [starts[n] for n in starts if n != number and n not in left_out]
+        planned_at = t0
+        # The place does not depend on a height of its own: that is set on a
+        # fin standing here, and lowering it does not send the fin elsewhere.
+        wanted = worth_moving_for(room, t0) if free else None
+        if wanted is not None:
+            better = nearest_place(frame, partial(holds, own=None, wanted=wanted), t0, thickness, others)
+            t0 = t0 if better is None else better
+        planned_z, candidate_z, narrow, touching = at_place(t0, own, own_frame)
         if own is not None and not candidate_z:
             raise refused(translate("FinSnap", "fin %d is lower than its first tine") % number, HandEditError)
         # A tine wholly or partly over a recess or a hole in the face would hang
         # free there; it is left out, and a fin without any tine left with it.
         # Tried at every height planned, also above a height of its own: those
         # are the heights the fin can be given with a tine on top.
-        touching = touching_at(own_frame, support, p, planned_z, t0, thickness)
-        if not any(z in touching for z in candidate_z) and not frame.round_side and number not in shifts:
-            # Planned over a hole, the fin moves along the face to the nearest
-            # place its tines rest; one moved by hand stays where it was put.
-            others = [starts[n] for n in starts if n != number and n not in left_out]
-            moved_to = beside_hole(frame, partial(rests_at, own=own), t0, thickness, others)
+        if free and not held_by(candidate_z, touching):
+            moved_to = nearest_place(frame, partial(holds, own=own, wanted=p.tine_height), t0, thickness, others)
             if moved_to is not None:
-                moved_fins.append((number, moved_to - t0))
-                t0 = starts[number] = moved_to
-                planned_z, candidate_z, narrow = tines_at(t0, own)
-                touching = touching_at(frame, support, p, planned_z, t0, thickness)
+                t0 = moved_to
+                planned_z, candidate_z, narrow, touching = at_place(t0, own, own_frame)
+        if t0 != planned_at:
+            moved_fins.append((number, t0 - planned_at))
+            starts[number] = t0
         on_face = [z in touching for z in candidate_z]
         # Tines of its own grid left out where the face is too narrow are named
         # with those of the face, as far as the fin reaches up to them.
@@ -1188,6 +1266,9 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
         raise refused(translate("FinSnap", NARROW_AT_EVERY_TINE) % thickness)
     if not fins:
         raise refused(translate("FinSnap", "no tine finds the face; it has a recess or hole at every tine"))
+    if moved_fins:
+        # The feet stay clear of each other where the fins ended up.
+        half_foot = feet_for([starts[number] for number in sorted(starts) if number not in left_out])
     return FacePlan(frame, height, thickness, tine_z, gap_z, narrow_heights, positions, face_start,
                     starts, half_foot, fins, moved_fins, fins_left_out)
 
@@ -1337,8 +1418,8 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
             warnings.append(translate("FinSnap", note) % ", ".join(str(number) for number in numbers_of))
             targets.append(WarningTarget([number for number in numbers_of if number not in side_missing], [], False))
     if plan.moved:
-        warnings.append(translate("FinSnap", "fins moved along the face to where their tines rest, beside a "
-                                  "hole or recess under their planned place: %s") % ", ".join(
+        warnings.append(translate("FinSnap", "fins moved along the face to where their tines hold better than "
+                                  "at their planned place: %s") % ", ".join(
             translate("FinSnap", "fin %d by %.2f mm") % (number, mm) for number, mm in plan.moved))
         targets.append(WarningTarget([number for number, _ in plan.moved], [], False))
     if plan.fins_left_out:

@@ -86,6 +86,16 @@ def extent_at(face, frame, z, p, slices=None):
     return low, high
 
 
+def _fin_reach(p, t0, thickness):
+    """The stretch along the face that has to lie on it for the fin starting
+    at t0: under the whole fin, or for a fin on a corner, which reaches past
+    the end of the face, under its tine."""
+    if p.placement == d.PLACEMENT_CORNERS or p.placement in d.PLACEMENT_ONE_CORNER:
+        first = tine_start(p, t0, thickness)
+        return first, first + p.tine_width
+    return t0, t0 + thickness
+
+
 def wide_enough(extent, p, t0, thickness):
     """Whether the face, reaching over `extent` along it at the height of a
     tine (extent_at(), None where it misses), is wide enough there for the
@@ -105,11 +115,7 @@ def wide_enough(extent, p, t0, thickness):
     """
     if extent is None:
         return False
-    if p.placement == d.PLACEMENT_CORNERS or p.placement in d.PLACEMENT_ONE_CORNER:
-        first = tine_start(p, t0, thickness)
-        last = first + p.tine_width
-    else:
-        first, last = t0, t0 + thickness
+    first, last = _fin_reach(p, t0, thickness)
     return extent[0] <= first + d.TOLERANCE and last <= extent[1] + d.TOLERANCE
 
 
@@ -144,6 +150,30 @@ def tines_on_face(face, frame, tine_z, p, width, slices=None):
     if best is None:
         raise FinError(translate("FinSnap", NARROW_AT_EVERY_TINE) % width)
     return (*best, gaps)
+
+
+def fin_stretch(face, frame, p, width, count, low, high, slices=None):
+    """The stretch along the face the fins are placed on, with the restart,
+    `low` to `high` being what the tines of the face as a whole share. A face
+    that starts above the bed and is narrow there, as the end of a disc or a
+    slot, has them spread from that narrow edge, and sharing it would crowd
+    the fins together or leave some out. Each fin gets tines of its own where
+    it stands, so it needs no tine of that edge: the stretch of the one grid
+    is taken where that is longer.
+
+    INPUTS this has to withstand:
+      a face from the bed up                ->  the same heights, so the same stretch
+      above the bed, the grid stretch longer->  the stretch of the grid
+      above the bed, the grid stretch shorter
+                                            ->  `low` to `high`
+      no grid tine on the face, or none
+        with room                           ->  `low` to `high`
+    """
+    try:
+        _, grid_low, grid_high, _ = tines_on_face(face, frame, tine_heights(p, frame, count)[0], p, width, slices)
+    except FinError:
+        return low, high
+    return (grid_low, grid_high) if grid_high - grid_low > high - low else (low, high)
 
 
 def tine_start(p, t0, thickness):
@@ -290,6 +320,15 @@ def restarted_tines(p, frame, face, t0, thickness, limit, count):
       a gap narrower than a free layer      ->  the next tine a free layer above the
                                                 one below
       no face under the fin at all          ->  no tine
+      a face narrower than the fin at its
+        lower or upper end                  ->  spread only where it reaches under the fin
+      a fin on a corner, past the end       ->  as far as the face reaches under its tine
+      a hole under the flank, clear of the
+        tine                                ->  no gap: the outermost points count
+      the fin past the end of the face      ->  no tine
+      a notch in the end of the face under
+        the flank, at mid height            ->  spread through it, wide_enough() leaves those
+                                                out: only the ends of the face limit the spread
     """
     start = tine_start(p, t0, thickness)
     left, right = _bands_at(frame, face, start), _bands_at(frame, face, start + p.tine_width)
@@ -300,7 +339,19 @@ def restarted_tines(p, frame, face, t0, thickness, limit, count):
     # without the restart: its fins are as they were.
     if len(bands) == 1 and bands[0][0] <= d.TOLERANCE:
         return None
-    return _spread(p, bands, limit, count)
+    # Spread only as high as the face reaches under the fin as a whole: a tine
+    # spread beyond that is left out by wide_enough() and leaves a wider gap.
+    first, last = _fin_reach(p, t0, thickness)
+    # A fin on a corner reaches as far as its tine: those cuts are made already.
+    edges = [left, right] if (first, last) == (start, start + p.tine_width) else [
+        _bands_at(frame, face, first), _bands_at(frame, face, last)]
+    if not all(edges):
+        return []
+    bottom = max(edge[0][0] for edge in edges)
+    top = min(max(band[1] for band in edge) for edge in edges)
+    within = [(max(low, bottom), min(high, top)) for low, high in bands
+              if min(high, top) - max(low, bottom) > d.TOLERANCE]
+    return _spread(p, within, limit, count)
 
 
 def touching_at(frame, face, p, tine_z, t0, thickness):

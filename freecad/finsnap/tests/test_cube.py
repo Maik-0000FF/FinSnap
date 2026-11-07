@@ -14,7 +14,7 @@ import sys
 
 import Part
 
-from freecad.finsnap.tests.support import (HALF_TURN, RECESS_RADIUS, expect, grooved, lower_left_face, run,
+from freecad.finsnap.tests.support import (CHAMFER, HALF_TURN, RECESS_RADIUS, expect, grooved, lower_left_face, run,
                                            slot_on_end, split_cylinder, tilted_cube)
 from freecad.finsnap import analysis
 from freecad.finsnap import defaults as d
@@ -60,6 +60,21 @@ WIDE_BEAD = 0.9       # two of them are thicker than the 1 mm base
 GROOVE_DEPTH = 2.0     # a groove across the front of a box, splitting it
 SINK_DEPTH = 0.5       # how deep the face is sunk around a stretch of it, so that stretch is a face of its own
 SINK_INSET = 0.5       # how far that stretch ends inside the grid tines below and above it, in mm
+SHORT_STRETCH_RECESS = 4.0  # half the width of a recess from the bed up, wider than a fin, in mm
+SHORT_STRETCH_LEFT = 2.0    # height of the face left above that recess, in mm
+CORNER_WALL = 0.1           # the face left at its end beside such a recess, thinner than a tine, in mm
+POINTED_HALF_WIDTH = 30.0   # half the width of a face that tapers towards the bottom, in mm
+POINTED_END_HALF_WIDTH = 2.0  # half its width at its lower edge, room for one fin, in mm
+POINTED_WIDEST_AT = 8.0     # how far up it that width is reached, in mm
+POINTED_TOP = 30.0          # how far up it the face ends, in mm
+POINTED_DEPTH = 40.0        # how far back the part reaches behind that face, in mm
+POINTED_LIFT = 2.0          # how far its lower edge stands above the bed, above the first grid tine, in mm
+SKEWED_LOW = 3.0            # half the width of a face leaning aside as it rises, at its lower edge, in mm
+SKEWED_WIDE = 28.0          # how far along it reaches higher up, in mm
+SKEWED_WIDEST_AT = 10.0     # how far up it reaches that far, in mm
+FEET_EDGE = 60.0            # a cube long enough for several fins with feet, in mm
+FEET_RECESS = 8.0           # half the width of a recess that sends the middle one of them aside, in mm
+FEET_FINS = 5
 OUT_OF_REACH = 100.0   # a height or a width beyond any test part, in mm
 NOTCH_CLEAR = 1.0      # how far a notch in the end of a face stays from the grid tines, and its depth, in mm
 PIN_HOLE_RADIUS = 0.9  # a hole that splits the face under a tine, small enough to leave the tines beside it
@@ -959,6 +974,126 @@ def check_restart_planned(cube, face):
            % bridged.touching_z)
 
 
+def check_restart_narrow_lower_edge():
+    """With the restart, fins on a face that starts above the bed at a narrow
+    edge stand as far apart as on the one grid: the lowest tines of the face
+    as a whole do not crowd them together. A prism whose end, the face, tapers
+    to a short edge at the bottom, sheared so that its far end stands on the bed."""
+    def on_face(up, along):
+        return V(-up, along, up)
+
+    half, end, widest, top = POINTED_HALF_WIDTH, POINTED_END_HALF_WIDTH, POINTED_WIDEST_AT, POINTED_TOP
+    ring = [on_face(0, end), on_face(widest, half), on_face(top, half), on_face(top, -half), on_face(widest, -half),
+            on_face(0, -end)]
+    stood = Part.Face(Part.makePolygon(ring + ring[:1])).extrude(V(POINTED_DEPTH, 0, -POINTED_LIFT))
+    stood.translate(V(0, 0, -stood.BoundBox.ZMin))
+    face = lower_left_face(stood)
+    three = {"placement": d.PLACEMENT_DISTRIBUTED, "fin_count": 3}
+    restart = geometry.build(stood, face, FinParams(**three))
+    grid = geometry.build(stood, face, FinParams(tine_restart=False, **three))
+    expect(restart.numbers == grid.numbers == [1, 2, 3] and restart.positions == grid.positions,
+           "three fins on a face narrow at its lower edge stand where the one grid has them: %s" % restart.positions)
+    expect(restart.touching_z[2][0] < grid.touching_z[2][0],
+           "the fin in the middle still reaches the lower edge: %s" % restart.touching_z[2])
+    expect(all(len(restart.touching_z[n]) >= len(grid.touching_z[n])
+               for n in restart.numbers) and not restart.moved,
+           "each of them holds as much as on the one grid, none left out where the face is narrow: %s"
+           % restart.touching_z)
+
+
+def recessed_from_bed(cube, face, half_width, left, along=None):
+    """`cube` with a recess across the middle of `face`, from the bed up to
+    `left` mm below its top, centred at `along` on the face if given, and the
+    largest piece of that face."""
+    frame = face_frame.frame_of(cube, face)
+    normal = face.normalAt(0, 0)
+    middle = (frame.along_min + frame.along_max) / 2
+    top = frame.face_top_z - frame.bed_z
+    # The face runs along Y.
+    centre_y = frame.point(middle if along is None else along, frame.s_face(frame.bed_z), frame.bed_z).y
+    box = Part.makeBox(OUT_OF_REACH, 2 * half_width, top - left + OUT_OF_REACH,
+                       V(-OUT_OF_REACH / 2, centre_y - half_width, frame.bed_z - OUT_OF_REACH))
+    layer = cube.common(box)
+    part = cube.cut(layer.cut(layer.translated(-normal * SINK_DEPTH)))
+    return part, max((f for f in part.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE), key=lambda f: f.Area)
+
+
+def check_restart_short_stretch(cube, face):
+    """With the restart a fin left with a short stretch of the face under it,
+    by a recess from the bed up, goes where its tines hold far more; moved by
+    hand or on one grid it stays out of that. A height set by hand changes
+    nothing about where it stands."""
+    restart, one_grid = FinParams(placement=d.PLACEMENT_CENTER), FinParams(placement=d.PLACEMENT_CENTER,
+                                                                           tine_restart=False)
+    part, notched = recessed_from_bed(cube, face, SHORT_STRETCH_RECESS, SHORT_STRETCH_LEFT)
+
+    def held(result, number):
+        zs = result.touching_z[number]
+        return max(zs) + restart.tine_height - min(zs)
+
+    stayed = geometry.build(part, notched, restart, shifts={1: 0.0})
+    moved_on = geometry.build(part, notched, restart)
+    expect(not stayed.moved and moved_on.moved and held(moved_on, 1) >= d.BETTER_PLACE_HOLDS * held(stayed, 1),
+           "a fin on a short stretch goes where its tines hold far more, from %.2f to %.2f mm, moved by %s"
+           % (held(stayed, 1), held(moved_on, 1), moved_on.moved))
+    for tine in moved_on.touching_z[1]:
+        own = geometry.build(part, notched, restart, heights={1: tine + restart.tine_height})
+        expect(own.starts == moved_on.starts and own.moved == moved_on.moved,
+               "a fin that moved by itself stands there with a height of %.2f set by hand" % own.heights[1])
+    # The place found can lie at exactly 0 along the face.
+    shifted = part.translated(V(0, moved_on.starts[1], 0))
+    at_zero = geometry.build(shifted, max((f for f in shifted.Faces if f.normalAt(0, 0).getAngle(face.normalAt(0, 0))
+                                           < d.TOLERANCE), key=lambda f: f.Area), restart)
+    expect(at_zero.moved and abs(at_zero.starts[1]) < d.TOLERANCE and held(at_zero, 1) == held(moved_on, 1),
+           "a fin goes to a place found at 0 along the face as to any other: %s" % at_zero.starts)
+    # A fin on a corner, its tine over a recess up to a short stretch, a thin
+    # wall of the face beside it, with far more to hold further along.
+    corner = FinParams(placement=d.PLACEMENT_CORNER_LEFT)
+    frame = face_frame.frame_of(cube, face)
+    pit, pit_face = recessed_from_bed(cube, face, SHORT_STRETCH_RECESS, SHORT_STRETCH_LEFT,
+                                      frame.along_min + CORNER_WALL + SHORT_STRETCH_RECESS)
+    placed = geometry.build(pit, pit_face, corner)
+    room = frame.face_top_z - frame.bed_z - d.FACE_TOP_MARGIN
+    expect(not placed.moved and held(placed, placed.numbers[0]) * d.BETTER_PLACE_HOLDS <= room,
+           "a fin on a corner stays there on a short stretch: %s" % placed.touching_z)
+    plain = geometry.build(cube, face, restart)
+    expect(not plain.moved, "a fin on a face without a recess stays at its planned place")
+    expect(not geometry.build(part, notched, one_grid).moved, "on one grid a fin with a tine on the face stays")
+
+
+def check_moved_fins_feet():
+    """Feet of fins that moved towards a neighbour stay clear of it: a foot is
+    as wide as the closest fins standing where they ended up allow."""
+    box = Part.makeBox(FEET_EDGE, FEET_EDGE, FEET_EDGE, V(-FEET_EDGE / 2, 0, -FEET_EDGE / 2))
+    large = box.makeChamfer(CHAMFER, box.Edges)
+    large.rotate(V(0, 0, 0), V(0, 1, 0), d.TILT_ANGLE)
+    large.translate(V(0, 0, -large.BoundBox.ZMin))
+    part, notched = recessed_from_bed(large, lower_left_face(large), FEET_RECESS, SHORT_STRETCH_LEFT)
+    result = geometry.build(part, notched, FinParams(placement=d.PLACEMENT_DISTRIBUTED, fin_count=FEET_FINS))
+    places = sorted(result.starts.values())
+    least = min(b - a for a, b in zip(places, places[1:]))
+    overlap = sum(one.common(other).Volume for i, one in enumerate(result.bodies) for other in result.bodies[i + 1:])
+    expect(result.moved and overlap < d.TOLERANCE
+           and 2 * result.foot_half_width + d.FOOT_CLEARANCE <= least + d.TOLERANCE,
+           "fins that moved keep their feet apart: %.2f mm between them, feet %.2f mm wide, overlap %.3f mm3"
+           % (least, 2 * result.foot_half_width, overlap))
+
+
+def check_restart_names_what_fins_lack():
+    """With the restart the warning names the tines a fin lacks, not those of
+    the face as a whole: a face leaning aside as it rises, whose lowest tines
+    share no stretch with the higher ones, under a fin high up on it."""
+    ring = [V(0, -SKEWED_LOW, 0), V(0, SKEWED_LOW, 0), V(-SKEWED_WIDEST_AT, SKEWED_WIDE, SKEWED_WIDEST_AT),
+            V(-POINTED_TOP, SKEWED_WIDE, POINTED_TOP), V(-POINTED_TOP, SKEWED_LOW + 1, POINTED_TOP),
+            V(-SKEWED_WIDEST_AT, -SKEWED_LOW, SKEWED_WIDEST_AT)]
+    part = Part.Face(Part.makePolygon(ring + ring[:1])).extrude(V(POINTED_DEPTH, 0, -POINTED_LIFT))
+    part.translate(V(0, 0, -part.BoundBox.ZMin))
+    face = lower_left_face(part)
+    result = geometry.build(part, face, FinParams(placement=d.PLACEMENT_CENTER))
+    expect(not any("narrower" in warning for warning in result.warnings),
+           "tines no fin lacks are not named as left out: %s, the fin has %s" % (result.warnings, result.touching_z))
+
+
 def check_restart_narrow(cube, face):
     """With the restart a fin on its own grid gets no tine where the face is
     narrower than the fin: a notch in the end of the face, beside the fin
@@ -1230,6 +1365,124 @@ def check_quick_plan():
     plan = quick_stands.quick_plan(filleted, [], [(filleted.Faces[i], i) for i in beside], p, d.TILT_ANGLE)
     expect(len(plan.beside) == 2 and abs(resting_height(moved(filleted, plan.change))) < d.TOLERANCE,
            "the two faces beside a fillet carry the part")
+
+
+def regular_prism(sides, across=20.0, length=60.0):
+    """A regular prism on the XY plane, its axis along Z."""
+    corners = [App.Vector(across * math.cos(2 * math.pi * i / sides), across * math.sin(2 * math.pi * i / sides), 0)
+               for i in range(sides)]
+    return Part.Face(Part.makePolygon(corners + corners[:1])).extrude(App.Vector(0, 0, length))
+
+
+def sides_of(shape):
+    """The numbers of the faces of `shape` standing along Z."""
+    return [i for i, f in enumerate(shape.Faces)
+            if f.findPlane() is not None and abs(f.normalAt(0, 0).z) < d.TOLERANCE]
+
+
+def check_prism_side():
+    """Quick fins with the side of a regular prism selected alone."""
+    p = FinParams()
+    up = App.Vector(0, 0, 1)
+    hexagon = regular_prism(6)
+    axis = quick_stands.prism_axis(hexagon, hexagon.Faces[sides_of(hexagon)[0]])
+    expect(axis is not None and axis.cross(up).Length < d.TOLERANCE, "a side of a hexagon prism: the axis of the prism")
+    octagon = regular_prism(8)
+    expect(all(quick_stands.prism_axis(octagon, octagon.Faces[i]) is not None for i in sides_of(octagon)),
+           "every side of an octagon prism belongs to the prism")
+
+    box = Part.makeBox(30, 30, 60)
+    expect(all(quick_stands.prism_axis(box, f) is None for f in box.Faces), "a box is no prism of this kind")
+    triangle = regular_prism(3)
+    expect(all(quick_stands.prism_axis(triangle, f) is None for f in triangle.Faces), "nor is a triangular prism")
+    upright_edges = [e for e in box.Edges if e.BoundBox.ZLength > 1]
+    one_chamfer = box.makeChamfer(5, upright_edges[:1])
+    four_chamfers = box.makeChamfer(5, upright_edges)
+    for shape, what in ((one_chamfer, "one chamfered edge"), (four_chamfers, "four chamfered edges")):
+        expect(all(quick_stands.prism_axis(shape, f) is None for f in shape.Faces), "%s: no prism" % what)
+        expect(any(quick_stands.is_chamfer(shape, f) for f in shape.Faces), "%s: the chamfer stays one" % what)
+    uneven = Part.Face(Part.makePolygon([App.Vector(*c) for c in
+                                         ((30, 0, 0), (20, 20, 0), (-10, 20, 0), (-20, 0, 0),
+                                          (-10, -10, 0), (20, -10, 0), (30, 0, 0))])).extrude(App.Vector(0, 0, 60))
+    expect(all(quick_stands.prism_axis(uneven, f) is None for f in uneven.Faces), "an uneven hexagon: no prism")
+    half = regular_prism(6).cut(Part.makeBox(100, 100, 100, App.Vector(-50, 0, -20)))
+    expect(all(quick_stands.prism_axis(half, f) is None for f in half.Faces), "half a hexagon: the ring does not close")
+
+    def corner_off(off):
+        """A hexagon prism with one corner off by `off` mm."""
+        corners = [App.Vector(20 * math.cos(math.pi * i / 3), 20 * math.sin(math.pi * i / 3), 0) for i in range(6)]
+        corners[0] += App.Vector(off, 0, 0)
+        return Part.Face(Part.makePolygon(corners + corners[:1])).extrude(App.Vector(0, 0, 60))
+
+    near = corner_off(0.01)
+    expect(all(quick_stands.prism_axis(near, near.Faces[i]) is not None for i in sides_of(near)),
+           "a corner off by 0.01 mm: still a regular prism")
+    far = corner_off(1.0)
+    expect(all(quick_stands.prism_axis(far, f) is None for f in far.Faces), "a corner off by 1 mm: an uneven prism")
+    # A pocket in the side facing +Y, whose apothem is the flat at y = 20 * sin(60).
+    flat = 20 * math.sin(math.pi / 3)
+    pocketed = hexagon.cut(Part.makeBox(6, 6, 10, App.Vector(-3, flat - 3, 25)))
+    in_pocket = [i for i in sides_of(pocketed) if len(pocketed.Faces[i].Wires) == 2]
+    whole = [i for i in sides_of(pocketed) if abs(pocketed.Faces[i].Area - hexagon.Faces[sides_of(hexagon)[0]].Area)
+             < d.TOLERANCE]
+    expect(len(in_pocket) == 1 and quick_stands.prism_axis(pocketed, pocketed.Faces[in_pocket[0]]) is not None,
+           "the side with a pocket in it is a side of the prism")
+    expect(whole and all(quick_stands.prism_axis(pocketed, pocketed.Faces[i]) is not None for i in whole),
+           "the other sides pass the pocket wall over")
+    # Wide and shallow, so its walls turn on from the side by less than the next side.
+    recess = Part.Face(Part.makePolygon([App.Vector(-6, flat, 25), App.Vector(6, flat, 25), App.Vector(0, flat - 2, 25),
+                                         App.Vector(-6, flat, 25)])).extrude(App.Vector(0, 0, 10))
+    slanted = hexagon.cut(recess)
+    in_slanted = [i for i in sides_of(slanted) if len(slanted.Faces[i].Wires) == 2]
+    expect(len(in_slanted) == 1 and quick_stands.prism_axis(slanted, slanted.Faces[in_slanted[0]]) is not None,
+           "a recess with slanted walls inside a side: the walls are passed over")
+    corners = [App.Vector(20 * math.cos(math.pi * i / 3), 20 * math.sin(math.pi * i / 3), 0) for i in range(6)]
+    with_halves = corners[:1] + [(corners[0] + corners[1]) * 0.5] + corners[1:]
+    halves = Part.Face(Part.makePolygon(with_halves + with_halves[:1])).extrude(App.Vector(0, 0, 60))
+    expect(len(sides_of(halves)) == 7 and all(quick_stands.prism_axis(halves, halves.Faces[i]) is not None
+                                              for i in sides_of(halves)),
+           "a side split in halves along the axis counts as one, on either half")
+    slotted = hexagon.cut(Part.makeBox(4, 3, 80, App.Vector(-2, flat - 2, -10)))
+    expect(all(quick_stands.prism_axis(slotted, f) is None for f in slotted.Faces),
+           "a slot along the whole of a side: the ring runs into it")
+
+    def expect_upright(shape, what, number=None):
+        """The first way stands `shape` on an end, the side selected leaning 45
+        degrees with the fins under it; the part laid on the side stays a way."""
+        number = sides_of(shape)[0] if number is None else number
+        plans = list(quick_stands.quick_plans(shape, [], [(shape.Faces[number], number)], p, d.TILT_ANGLE))
+        change = plans[0].change
+        expect(plans[0].number == number, "%s: the fins under the side selected" % what)
+        expect(abs(math.degrees(math.acos(abs(change.Rotation.multVec(up).z))) - 45) < 1e-3,
+               "%s: the axis stands 45 degrees from the bed" % what)
+        expect(abs(moved(shape, change).Faces[number].normalAt(0, 0).z + math.sqrt(0.5)) < 1e-6,
+               "%s: the side leans 45 degrees over the bed" % what)
+        expect(len(plans) > 1 and all(plan.number != number for plan in plans[1:]) and all(
+            abs(moved(shape, plan.change).Faces[number].normalAt(0, 0).z + 1) < 1e-6 for plan in plans[1:]),
+               "%s: laid on the side stays a way, the fins under another face" % what)
+
+    expect_upright(hexagon, "sharp hexagon prism")
+    expect_upright(octagon, "octagon prism")
+    turned = hexagon.common(Part.makeCylinder(19, 60))
+    expect(quick_stands.prism_axis(turned, turned.Faces[sides_of(turned)[0]]) is None,
+           "corners turned off along the sides: no ring, stands as any face does")
+    groove = Part.makeCylinder(40, 3, App.Vector(0, 0, 30)).cut(Part.makeCylinder(16, 3, App.Vector(0, 0, 30)))
+    expect_upright(hexagon.cut(groove), "hexagon with a groove round it")
+    round_ended = (Part.makeCone(17, 25, 8).fuse(Part.makeCylinder(25, 44, App.Vector(0, 0, 8)))
+                   .fuse(Part.makeCone(25, 17, 8, App.Vector(0, 0, 52))).removeSplitter())
+    shank = hexagon.common(round_ended)
+    expect_upright(shank, "shank chamfered at both ends, the side with no straight edge there")
+    expect_upright(hexagon.cut(Part.makeCylinder(5, 80, App.Vector(0, 0, -10))), "hexagon with a bore")
+    expect_upright(pocketed, "the side with a pocket in it", in_pocket[0])
+    expect_upright(slanted, "the side with a slanted recess in it", in_slanted[0])
+    expect_upright(halves, "a side split in halves, one half selected")
+
+    two_points = Part.makeCone(0, 30, 30).fuse(Part.makeCone(30, 0, 30, App.Vector(0, 0, 30))).removeSplitter()
+    pointed = hexagon.common(two_points)
+    number = sides_of(pointed)[0]
+    plans = list(quick_stands.quick_plans(pointed, [], [(pointed.Faces[number], number)], p, d.TILT_ANGLE))
+    expect(plans and all(plan.number != number for plan in plans),
+           "no flat end to stand on: laid on the side, as a chamfer")
 
 
 def check_quick_plans():
@@ -2541,14 +2794,16 @@ def check_part_of_side():
     expect(any(f.isSame(slot.Faces[half]) for f in counter),
            "under the end face, the half round end is offered for the counter fin")
     # The end face narrows to its round ends at the bottom and the top: moved
-    # past the stretch its narrowest tine allows, the fin keeps the tines where
-    # the face is wide enough under it.
+    # past the stretch its narrowest tine allows, the fin keeps tines where
+    # the face is wide enough under it: on one grid some are left out and named,
+    # with the restart they are spread over that height alone.
     for restart in (True, False):
         q = FinParams(placement=d.PLACEMENT_CENTER, tine_restart=restart)
         planned = geometry.build(slot, end[0], q)
         aside = geometry.build(slot, end[0], q, shifts={1: SLOT_ASIDE})
         expect(SLOT_ASIDE > planned.frame.along_max
-               and 0 < len(aside.tines) < len(planned.tines) and any("narrower" in w for w in aside.warnings),
+               and 0 < len(aside.tines) and (restart or len(aside.tines) < len(planned.tines))
+               and any("narrower" in w for w in aside.warnings) != restart,
                "restart %s: a fin moved %.0f mm along the end face of a slot keeps its tines where the face is "
                "wide enough: %s" % (restart, SLOT_ASIDE, aside.warnings))
         try:
@@ -2863,6 +3118,10 @@ def main():
     check_tine_clearance(cube, face)
     check_shortened(cube, face)
     check_restart(cube, face)
+    check_restart_short_stretch(cube, face)
+    check_restart_narrow_lower_edge()
+    check_moved_fins_feet()
+    check_restart_names_what_fins_lack()
     check_restart_above_fillet()
     check_restart_planned(cube, face)
     check_restart_narrow(cube, face)
@@ -2872,6 +3131,7 @@ def main():
     check_quick_fins()
     check_quick_plan()
     check_quick_plans()
+    check_prism_side()
     check_islands()
     check_bridges()
     check_no_fragile_calls()

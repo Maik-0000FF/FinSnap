@@ -101,6 +101,11 @@ PLACEMENT = PLACEMENT_AUTO
 FIN_COUNT = 3               # used by "distributed"
 END_INSET = 0.5             # distance of the outer fins from the face ends
 FACE_LENGTH_PER_FIN = 50.0  # "auto": one fin per this much face length, a single one centred
+# A fin with the tine restart leaves its planned place for one nearby where its
+# tines hold this many times the height of the face. High enough that a fin
+# stays at its planned place for a small gain, and on a short stretch only when
+# nothing nearby is much better.
+BETTER_PLACE_HOLDS = 2.0
 
 # --- Foot ---------------------------------------------------------------------
 FOOT_ELLIPSE = "ellipse"
@@ -133,6 +138,12 @@ TILT_ANGLE = 45.0
 # Two faces count as square to each other within this many degrees, so that an
 # edge alone stands the part. Solids converted from a mesh are rarely exact.
 RIGHT_ANGLE_TOLERANCE = 0.5
+# The fewest sides of a regular prism whose side lies between its neighbours like
+# a chamfer: with four, as on a box, the neighbours point in opposite directions.
+PRISM_LEAST_SIDES = 5
+# The sides of a regular prism count as equally wide within this (mm): more than
+# a part brought in from a mesh or a STEP file is off by, less than can be seen.
+PRISM_WIDTH_TOLERANCE = 0.05
 # The built-in limits of the checks, those of the normal strictness; the user
 # chooses another or sets their own in Edit > Preferences (limits.py). Angles
 # are measured from the bed: 0 degrees is a face lying flat over it, 90 a

@@ -7,6 +7,7 @@ The reference cube is the test print: 20 mm, 1 mm chamfer on every edge,
 tilted 45 degrees onto its bottom chamfer.
 """
 
+import faulthandler
 import os
 import sys
 
@@ -16,6 +17,8 @@ import Part
 EDGE = 20.0
 # Group of FreeCAD's user parameters that stands in for the saved standard of new fins.
 TEST_STANDARD_GROUP = "StandardUnderTest"
+# The same for the named profiles.
+TEST_PROFILES_GROUP = "ProfilesUnderTest"
 # The same for the limits the checks rate by.
 TEST_LIMITS_GROUP = "LimitsUnderTest"
 # A thin fin, as a saved standard for new fins might ask for.
@@ -92,7 +95,8 @@ def expect(condition, message):
     if not condition:
         raise AssertionError(message)
     # sys.__stdout__: with the GUI running, print() goes to the report view.
-    print("ok  ", message, file=sys.__stdout__)
+    # Flushed: a crash drops what is buffered and hides how far the test got.
+    print("ok  ", message, file=sys.__stdout__, flush=True)
 
 
 def require_checkout(main):
@@ -124,9 +128,12 @@ def run(main, gui=False):
 
     The saved standard for new fins and the limits of the checks are pointed
     at groups of their own while the test runs, and removed afterwards, so a
-    test never reads or changes those of the person running it."""
+    test never reads or changes those of the person running it. A crash in
+    native code prints the Python stack that led to it."""
+    faulthandler.enable(file=sys.__stdout__)
     from freecad.finsnap import limits, presets
     presets.STANDARD_GROUP = TEST_STANDARD_GROUP
+    presets.PROFILES_GROUP = TEST_PROFILES_GROUP
     presets.reset()
     limits.LIMITS_GROUP = TEST_LIMITS_GROUP
     limits.reset()
@@ -140,6 +147,7 @@ def run(main, gui=False):
         print("FAILED:", error, file=sys.__stdout__)
         result = 1
     App.ParamGet(presets.PREFERENCES).RemGroup(TEST_STANDARD_GROUP)
+    App.ParamGet(presets.PREFERENCES).RemGroup(TEST_PROFILES_GROUP)
     App.ParamGet(presets.PREFERENCES).RemGroup(TEST_LIMITS_GROUP)
     sys.__stdout__.flush()
     if gui:

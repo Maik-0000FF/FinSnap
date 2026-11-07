@@ -11,6 +11,21 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.16.0] - 2026-11-07
+
+### Added
+
+- Named profiles in the task panel: **Profile** keeps sets of all the values under names of their own, made, renamed, deleted and chosen there. Choosing one sets the fields, but for the placement and the number of fins, and is the start of new fins from then on, until Cancel; the standard saved so far is the standard profile, and **Save as standard** is now **Save to profile** (#77)
+
+### Fixed
+
+- FreeCAD could freeze when fins were rebuilt with their task panel open, as on switching the checks while editing: a timer of the panel started a build in the middle of the rebuild
+- Quick fins takes the side of a regular prism, such as a hexagon shank, as the face for the fins instead of a chamfer: the part stands on its largest flat end with the fin under that side; laid on the side, as before, stays among the ways in the table
+- With the tine restart on, a fin no longer stays on a short stretch of the face above a recess: it moves to the nearest place, within the stretch the fins are planned on, where its tines hold at least twice the height of the face. A fin moved by hand or placed on a corner stays (#109)
+- With the tine restart on, fins on a face that starts above the bed and is narrow there, as the end of a disc, are no longer crowded together, fewer than planned, or refused as not fitting side by side (#109). Saved fins on such a face can shift along it when rebuilt, also those moved by hand, as the place a hand move counts from changes
+- With the tine restart on, tines are spread only as high as the face reaches under the whole fin, so a face narrowing towards its ends no longer costs tines and leaves wider gaps; a notch in its side at mid height still can (#109)
+- With the tine restart on, the warning about tines left out on a narrow face names only tines a fin lacks. Fins that moved by themselves keep their feet clear of each other, and a height set by hand no longer sends such a fin back (#109)
+
 ## [0.15.0] - 2026-11-05
 
 ### Added
@@ -321,7 +336,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.15.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.16.0...HEAD
+[0.16.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.16.0
 [0.15.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.15.0
 [0.14.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.14.0
 [0.13.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.13.0

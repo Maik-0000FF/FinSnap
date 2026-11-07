@@ -320,6 +320,8 @@ def stability(part_obj, p, holders):
 # levels of the faces overhanging without fins, limits.CRITICAL or
 # UNPRINTABLE, and its bridge.Bridges; None each where it was not checked.
 RatedPlan = namedtuple("RatedPlan", "plan islands overhangs bridges")
+# The fields of the parameters a rating depends on: the layers and the bead.
+RATING_FIELDS = ("first_layer_height", "layer_height", "bead_width")
 
 
 def printable_plans(shape, plans, p):
