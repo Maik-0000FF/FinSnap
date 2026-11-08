@@ -891,7 +891,7 @@ def check_restart(cube, face):
     holed_face = lower_left_face(holed)
     spread = geometry.build(holed, holed_face, restart)
     gridded = geometry.build(holed, holed_face, one_grid)
-    room = frame.face_top_z - frame.bed_z - d.FACE_TOP_MARGIN
+    room = frame.room
     expect(not spread.dropped and gridded.dropped and spread.height > room - restart.layer_height - d.TOLERANCE,
            "above a hole the grid starts anew: no tine over it, the top tine at the top of the face: "
            "%.2f mm of %.2f" % (spread.height, room))
@@ -1053,7 +1053,7 @@ def check_restart_short_stretch(cube, face):
     pit, pit_face = recessed_from_bed(cube, face, SHORT_STRETCH_RECESS, SHORT_STRETCH_LEFT,
                                       frame.along_min + CORNER_WALL + SHORT_STRETCH_RECESS)
     placed = geometry.build(pit, pit_face, corner)
-    room = frame.face_top_z - frame.bed_z - d.FACE_TOP_MARGIN
+    room = frame.room
     expect(not placed.moved and held(placed, placed.numbers[0]) * d.BETTER_PLACE_HOLDS <= room,
            "a fin on a corner stays there on a short stretch: %s" % placed.touching_z)
     plain = geometry.build(cube, face, restart)
@@ -2537,8 +2537,8 @@ def check_three_round_fins():
     thin_step = rod.fuse(Part.makeCylinder(THIN_STEP_RADIUS, ROD_HEIGHT, V(0, 0, ROD_HEIGHT))).removeSplitter()
     stood, side = stood_on_free_rim(thin_step)
     free = geometry.build(stood, stood.Faces[side], three)
-    side_top = free.frames[1].face_top_z - free.frames[1].bed_z - d.FACE_TOP_MARGIN
-    middle_top = free.frame.face_top_z - free.frame.bed_z - d.FACE_TOP_MARGIN
+    side_top = free.frames[1].room
+    middle_top = free.frame.room
     expect(side_top < middle_top, "the side fins end lower on a thin step than the fin between them")
     high = (side_top + middle_top) / 2
     capped = geometry.build(stood, stood.Faces[side], FinParams(placement=d.PLACEMENT_CENTER, fin_height=high,
