@@ -385,10 +385,11 @@ def _mm_list(values):
     return ", ".join("%.1f" % value for value in sorted(values))
 
 
-def nearest_place(frame, rests, t0, thickness, others):
+def nearest_place(span, rests, t0, thickness, others):
     """Where along the face the fin planned to start at t0 starts nearest
     where `rests` accepts the place: one where its tines find the face, or find
-    more of it; None if nowhere. It keeps within the face and between its neighbours
+    more of it; None if nowhere. It keeps within `span`, the frame whose
+    stretch along the face is searched, and between its neighbours
     among the fins starting at `others`, clear of them, so the fins keep
     their order from the left; tried a fin thickness at a time, either way
     in turn.
@@ -400,13 +401,13 @@ def nearest_place(frame, rests, t0, thickness, others):
         its neighbours                       ->  None: left out, as before
       a neighbour beside the hole            ->  not passed: the search ends clear
                                                  of it
-      the end of the face reached            ->  that way given up, the other tried on
+      the end of `span` reached              ->  that way given up, the other tried on
     """
     clear = thickness + d.FOOT_CLEARANCE
     before = [other for other in others if other < t0 - d.TOLERANCE]
     after = [other for other in others if other > t0 + d.TOLERANCE]
-    low = max([frame.along_min] + [other + clear for other in before])
-    high = min([frame.along_max - thickness] + [other - clear for other in after])
+    low = max([span.along_min] + [other + clear for other in before])
+    high = min([span.along_max - thickness] + [other - clear for other in after])
     steps = int(max(t0 - low, high - t0) / thickness) + 1
     for step in range(1, steps + 1):
         for t in (t0 - step * thickness, t0 + step * thickness):
@@ -1024,22 +1025,23 @@ class _Places:
     search asks for a place more than once and the contact of a tine takes a
     cut through the part.
 
-    `frame` is the face narrowed to the stretch the fins are planned on,
-    `whole_face` the face as a whole, on which a fin moved past that stretch
-    is measured; `tine_z` the one grid of the face and `face_narrow` its
-    heights the face as a whole cannot take. With `restart`, each fin is
+    `stretch` is the frame of the face narrowed to the stretch the fins are
+    planned on, `whole_face` the face as a whole, on which a fin moved past
+    that stretch is measured and a better place searched for (_better_place());
+    `tine_z` the one grid of the face and `face_narrow` its heights the face
+    as a whole cannot take. With `restart`, each fin is
     measured on its own tine grid (restarted_tines()). `slices` is the dict of
     extent_at() kept for the build."""
 
-    def __init__(self, *, p, support, frame, whole_face, thickness, tine_z, face_narrow, restart, count, slices):
-        self.p, self.support, self.frame, self.whole_face = p, support, frame, whole_face
+    def __init__(self, *, p, support, stretch, whole_face, thickness, tine_z, face_narrow, restart, count, slices):
+        self.p, self.support, self.stretch, self.whole_face = p, support, stretch, whole_face
         self.thickness, self.tine_z, self.face_narrow = thickness, tine_z, face_narrow
         self.restart, self.count, self.slices = restart, count, slices
         self._tines, self._contact = {}, {}
 
     def _frame_for(self, own_frame):
         """`own_frame`, the frame of a fin that has one of its own, or the plan's for None."""
-        return self.frame if own_frame is None else own_frame
+        return self.stretch if own_frame is None else own_frame
 
     def tines(self, t, own, own_frame=None):
         """The heights the tines of a fin starting at t are planned at, those
@@ -1068,7 +1070,7 @@ class _Places:
 
     def _measured_tines(self, t, own, own_frame):
         """tines(), measured."""
-        p, frame = self.p, self.frame
+        p, frame = self.p, self.stretch
         own_z = None
         if self.restart:
             own_z = restarted_tines(p, frame, self.support, t, self.thickness,
@@ -1142,6 +1144,8 @@ def _better_place(places, t0, room, others):
       on a short stretch                ->  the nearest place holding
                                             BETTER_PLACE_HOLDS times as much, t0
                                             if there is none
+      that place past the stretch every
+        tine of the face shares         ->  found there: the whole face is searched
       bridging a hole                   ->  as any other: both sides count
     """
     p = places.p
@@ -1157,8 +1161,10 @@ def _better_place(places, t0, room, others):
     wanted = held * d.BETTER_PLACE_HOLDS
     if wanted > most + d.TOLERANCE:
         return t0
-    better = nearest_place(places.frame, partial(places.holds, own=None, wanted=wanted), t0, places.thickness,
-                           others)
+    # Over the whole face: the stretch every tine shares can be a narrow part
+    # of it, such as the web of a T, where no place holds more.
+    better = nearest_place(places.whole_face, partial(places.holds, own=None, wanted=wanted), t0,
+                           places.thickness, others)
     return t0 if better is None else better
 
 
@@ -1166,7 +1172,7 @@ def _resting_place(places, t0, own, others):
     """The nearest place for the fin planned at t0, free to find its own
     place, where a tine below a height `own` of its own, None for none, lies
     wholly on the face; None if there is none. `others` as for _better_place()."""
-    return nearest_place(places.frame, partial(places.holds, own=own, wanted=places.p.tine_height), t0,
+    return nearest_place(places.stretch, partial(places.holds, own=own, wanted=places.p.tine_height), t0,
                          places.thickness, others)
 
 
@@ -1244,7 +1250,7 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
 
     half_foot = feet_for([t0 for t0, _ in standing])
 
-    places = _Places(p=p, support=support, frame=frame, whole_face=whole_face, thickness=thickness, tine_z=tine_z,
+    places = _Places(p=p, support=support, stretch=frame, whole_face=whole_face, thickness=thickness, tine_z=tine_z,
                      face_narrow=face_narrow, restart=restart, count=count, slices=slices)
 
     fins = []
