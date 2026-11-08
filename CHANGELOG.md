@@ -11,6 +11,12 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.16.1] - 2026-11-08
+
+### Fixed
+
+- A fin that finds its own place, one holding more with the tine restart on, or one where a tine finds the face at all, now searches the whole face instead of only the stretch every tine of the face shares, such as the narrow web of a T it stands on (#168)
+
 ## [0.16.0] - 2026-11-07
 
 ### Added
@@ -336,7 +342,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.16.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.16.1...HEAD
+[0.16.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.16.1
 [0.16.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.16.0
 [0.15.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.15.0
 [0.14.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.14.0
