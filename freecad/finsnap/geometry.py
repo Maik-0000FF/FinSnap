@@ -389,10 +389,9 @@ def nearest_place(span, rests, t0, thickness, others):
     """Where along the face the fin planned to start at t0 starts nearest
     where `rests` accepts the place: one where its tines find the face, or find
     more of it; None if nowhere. It keeps within `span`, the frame whose
-    stretch along the face is searched, and between its neighbours
-    among the fins starting at `others`, clear of them, so the fins keep
-    their order from the left; tried a fin thickness at a time, either way
-    in turn.
+    stretch along the face is searched, and between its neighbours among the
+    fins starting at `others`, clear of them, so the fins keep their order
+    from the left; tried a fin thickness at a time, either way in turn.
 
     INPUTS this has to withstand:
       a hole under the middle of the fin     ->  the nearest start beside it, the
@@ -1027,11 +1026,11 @@ class _Places:
 
     `stretch` is the frame of the face narrowed to the stretch the fins are
     planned on, `whole_face` the face as a whole, on which a fin moved past
-    that stretch is measured and a better place searched for (_better_place());
-    `tine_z` the one grid of the face and `face_narrow` its heights the face
-    as a whole cannot take. With `restart`, each fin is
-    measured on its own tine grid (restarted_tines()). `slices` is the dict of
-    extent_at() kept for the build."""
+    that stretch is measured and a place of its own is searched for
+    (_better_place(), _resting_place()); `tine_z` the one grid of the face and
+    `face_narrow` its heights the face as a whole cannot take. With
+    `restart`, each fin is measured on its own tine grid (restarted_tines()).
+    `slices` is the dict of extent_at() kept for the build."""
 
     def __init__(self, *, p, support, stretch, whole_face, thickness, tine_z, face_narrow, restart, count, slices):
         self.p, self.support, self.stretch, self.whole_face = p, support, stretch, whole_face
@@ -1171,8 +1170,9 @@ def _better_place(places, t0, room, others):
 def _resting_place(places, t0, own, others):
     """The nearest place for the fin planned at t0, free to find its own
     place, where a tine below a height `own` of its own, None for none, lies
-    wholly on the face; None if there is none. `others` as for _better_place()."""
-    return nearest_place(places.stretch, partial(places.holds, own=own, wanted=places.p.tine_height), t0,
+    wholly on the face; None if there is none. Searched over the whole face,
+    as for _better_place(); `others` as there."""
+    return nearest_place(places.whole_face, partial(places.holds, own=own, wanted=places.p.tine_height), t0,
                          places.thickness, others)
 
 
