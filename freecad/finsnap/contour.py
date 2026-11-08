@@ -602,8 +602,11 @@ class Contour(_TineEnds):
         clear = d.CONTOUR_SAMPLES_PER_LAYER + int(math.ceil(distance / step))
         self.resting = [all(touching[max(0, k - clear):k + clear + 1]) for k in range(len(touching))]
         # Only over what the part stands on: above a groove or a thicker part, the
-        # contour looks up on the way, and the fin follows it as anywhere.
-        if side_from is not None and not any(looks_up[:self._index(side_from[0])]):
+        # contour looks up on the way, and the fin follows it as anywhere; a
+        # thinner part below, where tines rest a tine spacing and more, carries
+        # tines of its own, and the fin follows it too.
+        if side_from is not None and not any(looks_up[:self._index(side_from[0])]) \
+                and not self._carries_tines(self._index(side_from[0]), p.tine_spacing):
             start = self._index(side_from[0])
             for k in range(start):
                 self.flank_at[k] = max(self.flank_at[k],
@@ -647,6 +650,24 @@ class Contour(_TineEnds):
 
     def _index(self, z):
         return min(len(self.heights) - 1, max(0, int(round(z / self.step))))
+
+    def _carries_tines(self, below, length):
+        """Whether tines rest on a stretch at least `length` high anywhere
+        below the sample `below`: a part of its own, not a chamfer or a fillet
+        round the rim.
+
+        INPUTS this has to withstand:
+          chamfer or fillet round the rim     ->  False: no stretch that long rests
+          thinner rod or step below the side  ->  True
+          nothing rests below                 ->  False
+          `below` at the bed                  ->  False
+        """
+        run = 0
+        for rest in self.resting[:below]:
+            run = run + 1 if rest else 0
+            if run * self.step >= length - d.TOLERANCE:
+                return True
+        return False
 
     def flank(self, z):
         """Where the flank of the fin stands at height z."""

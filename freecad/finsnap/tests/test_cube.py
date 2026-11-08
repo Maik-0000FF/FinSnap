@@ -2739,6 +2739,22 @@ def check_contour():
     expect(min(body.distToShape(cone)[0] for body in edged.bodies) < p.contour_gap - d.TOLERANCE,
            "along an upright chamfer on the edge of the step the fin keeps the gap, not %.2f mm" % p.contour_gap)
 
+    # Stood on the free rim of the thinner part, fins for the side of the
+    # thicker one: the side starts above the bed, and the fin follows the
+    # thinner part below it, its tines resting there, as on a step above.
+    thin_rim = next(e for e in step.Edges if orient.is_rim(e) and abs(e.Curve.Radius - STEP_RADIUS) < d.TOLERANCE
+                    and e.BoundBox.ZMin > 2 * ROD_HEIGHT - d.TOLERANCE)
+    side = round_side_of(step)
+    plan = next(plan for plan in quick_stands.quick_plans(step, [(thin_rim, None)], [], p, d.TILT_ANGLE)
+                if plan.number == side)
+    stood = moved(step, plan.change)
+    below = geometry.build(stood, stood.Faces[side], p)
+    side_start = below.frame.face_bottom_z - below.frame.bed_z
+    under = [z for z in below.touching_z[1] if z + p.tine_height <= side_start]
+    expect(side_start > ROD_HEIGHT / 2 and len(under) > 1,
+           "on the thinner part below the side the fin follows it, tines resting there: %d below %.1f mm"
+           % (len(under), side_start))
+
     # A groove round the middle of the shaft, lower than the bridge: spanned,
     # unless the bridge is 0.
     middle = ROD_HEIGHT / 2
