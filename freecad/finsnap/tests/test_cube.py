@@ -14,8 +14,8 @@ import sys
 
 import Part
 
-from freecad.finsnap.tests.support import (CHAMFER, HALF_TURN, RECESS_RADIUS, TILT, expect, grooved, lower_left_face,
-                                           run, slot_on_end, split_cylinder, tilted_cube)
+from freecad.finsnap.tests.support import (CHAMFER, HALF_TURN, RECESS_RADIUS, TILT, expect, grooved, largest_facing,
+                                           lower_left_face, run, slot_on_end, split_cylinder, tilted, tilted_cube)
 from freecad.finsnap import analysis
 from freecad.finsnap import defaults as d
 from freecad.finsnap.bridge import bridges as find_bridges
@@ -1022,7 +1022,7 @@ def recessed_from_bed(cube, face, half_width, left, along=None):
                        V(-OUT_OF_REACH / 2, centre_y - half_width, frame.bed_z - OUT_OF_REACH))
     layer = cube.common(box)
     part = cube.cut(layer.cut(layer.translated(-normal * SINK_DEPTH)))
-    return part, max((f for f in part.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE), key=lambda f: f.Area)
+    return part, largest_facing(part, normal)
 
 
 def check_restart_short_stretch(cube, face):
@@ -1049,8 +1049,7 @@ def check_restart_short_stretch(cube, face):
                "a fin that moved by itself stands there with a height of %.2f set by hand" % own.heights[1])
     # The place found can lie at exactly 0 along the face.
     shifted = part.translated(V(0, moved_on.starts[1], 0))
-    at_zero = geometry.build(shifted, max((f for f in shifted.Faces if f.normalAt(0, 0).getAngle(face.normalAt(0, 0))
-                                           < d.TOLERANCE), key=lambda f: f.Area), restart)
+    at_zero = geometry.build(shifted, largest_facing(shifted, face.normalAt(0, 0)), restart)
     expect(at_zero.moved and abs(at_zero.starts[1]) < d.TOLERANCE and held(at_zero, 1) == held(moved_on, 1),
            "a fin goes to a place found at 0 along the face as to any other: %s" % at_zero.starts)
     # A fin on a corner, its tine over a recess up to a short stretch, a thin
@@ -1089,16 +1088,34 @@ def t_beam(sunk=False):
         recesses = [Part.makeBox(OUT_OF_REACH, T_SLOT, OUT_OF_REACH, V(-OUT_OF_REACH / 2, -T_SLOT / 2, slot_from))]
     for recess in recesses:
         part = part.cut(recess)
-    part.rotate(V(0, 0, 0), V(0, 1, 0), TILT)
-    part.translate(V(0, 0, -part.BoundBox.ZMin))
-    normal = App.Rotation(V(0, 1, 0), TILT).multVec(V(1, 0, 0))
-    return part, max((f for f in part.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE), key=lambda f: f.Area)
+    part = tilted(part)
+    return part, largest_facing(part, App.Rotation(V(0, 1, 0), TILT).multVec(V(1, 0, 0)))
 
 
 def beside_slot(result):
     """Whether the one fin of `result` stands wholly beside the slot of t_beam()."""
     start = result.starts[1]
     return start + result.thickness <= -T_SLOT / 2 + d.TOLERANCE or start >= T_SLOT / 2 - d.TOLERANCE
+
+
+def check_search_inset(cube, face):
+    """A fin finding a place of its own keeps the end inset from either end
+    of the face, as the fins planned there, so it does not end on a chamfer:
+    a place only nearer an end than that is not found; with no inset it is."""
+    p = FinParams()
+    frame = face_frame.frame_of(cube, face)
+    step = p.end_inset / 2
+    middle = (frame.along_min + frame.along_max) / 2
+
+    def near_an_end(t):
+        return t < frame.along_min + p.end_inset - d.TOLERANCE or \
+            t + step > frame.along_max - p.end_inset + d.TOLERANCE
+
+    kept = geometry.nearest_place(frame, p.end_inset, near_an_end, middle, step, [])
+    flush = geometry.nearest_place(frame, 0.0, near_an_end, middle, step, [])
+    expect(kept is None and flush is not None,
+           "a fin finding its own place stays %.2f mm from the ends of the face: %s, without the inset %s"
+           % (p.end_inset, kept, flush))
 
 
 def check_places_past_stretch():
@@ -1183,7 +1200,7 @@ def check_restart_narrow(cube, face):
     centre = on_face(start + p.tine_width / 2, hole_z)
     part = cube.cut(notch).cut(Part.makeCylinder(PIN_HOLE_RADIUS, 2 * NOTCH_CLEAR, centre - normal * NOTCH_CLEAR,
                                                  normal))
-    notched = max((f for f in part.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE), key=lambda f: f.Area)
+    notched = largest_facing(part, normal)
     result = geometry.build(part, notched, p)
     first = result.numbers[0]
     beside = [z for z in result.touching_z[first] if z + p.tine_height > low + d.TOLERANCE and z < high - d.TOLERANCE]
@@ -1213,8 +1230,7 @@ def check_restart_flank_hole(cube, face):
     flank = pin_hole(restarted, t0, (grid[1] + grid[2]) / 2, FLANK_HOLE_RADIUS)
 
     def own_grid(part):
-        result = geometry.build(part, max((f for f in part.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE),
-                                          key=lambda f: f.Area), p)
+        result = geometry.build(part, largest_facing(part, normal), p)
         return result.touching_z[result.numbers[0]]
 
     expect(own_grid(flank) == own_grid(restarted),
@@ -3182,6 +3198,7 @@ def main():
     check_shortened(cube, face)
     check_restart(cube, face)
     check_restart_short_stretch(cube, face)
+    check_search_inset(cube, face)
     check_places_past_stretch()
     check_restart_narrow_lower_edge()
     check_moved_fins_feet()
