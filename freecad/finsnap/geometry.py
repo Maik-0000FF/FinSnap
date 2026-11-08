@@ -1322,6 +1322,98 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
                     starts, half_foot, fins, moved_fins, fins_left_out)
 
 
+@dataclass
+class _Found:
+    """What building the fins of a plan found that a warning names (_warnings())."""
+    # Fins beside the lowest line that cannot stand there, by number.
+    side_missing: list
+    # Heights of tines left out over a recess or the gap between two faces in
+    # one plane, and the fins with such tines, by number.
+    gap_heights: set
+    gapped: list = field(default_factory=list)
+    # Every tine left out, wherever.
+    dropped: list = field(default_factory=list)
+    # Along a contour: tines left out where it falls back further than the
+    # flank can follow, and the fins they belong to. Those in a recess the
+    # fin bridges are left out as asked, without a word.
+    receded_heights: set = field(default_factory=set)
+    receded_fins: list = field(default_factory=list)
+    receded_tines: list = field(default_factory=list)
+    # Tines whose end misses the face or reaches into the part, by fault, as
+    # (fin number, height, tine).
+    off_ends: dict = field(default_factory=lambda: {TINE_MISSES: [], TINE_CUTS_IN: []})
+    # Fins beside the lowest line that end below what passes beside them.
+    ended_lower: list = field(default_factory=list)
+    # Fins beside the lowest line that lost tines to a foot standing further out.
+    tines_at_foot: list = field(default_factory=list)
+    # Fins beside the lowest line whose contour ends below the fin height set.
+    below_set_height: list = field(default_factory=list)
+
+
+def _warnings(p, frame, plan, findings):
+    """The warnings of a build of the fins of `plan` on `frame`, from the
+    `findings` of building them (_Found), and with each what it is about, as
+    a WarningTarget, in the same order."""
+    warnings, targets = [], []
+    if findings.gap_heights:
+        warnings.append(translate("FinSnap", "tines at %s mm above the bed left out: a recess or hole in the "
+                                  "face lies under them") % _mm_list(findings.gap_heights))
+        targets.append(WarningTarget(findings.gapped, findings.dropped, False))
+    if findings.receded_heights:
+        warnings.append(translate("FinSnap", NOTE_CONTOUR_RECEDES) % _mm_list(findings.receded_heights))
+        targets.append(WarningTarget(findings.receded_fins, findings.receded_tines, False))
+    for fault, note in ((TINE_MISSES, NOTE_TINES_MISS), (TINE_CUTS_IN, NOTE_TINES_CUT_IN)):
+        ends = findings.off_ends[fault]
+        if ends:
+            warnings.append(translate("FinSnap", note) % (_mm_list({z for _, z, _ in ends}), d.TINE_END_TOLERANCE))
+            targets.append(WarningTarget(sorted({number for number, _, _ in ends}), [tine for _, _, tine in ends],
+                                         False))
+    for note, numbers_of in ((NOTE_ENDED_LOWER, findings.ended_lower),
+                             (NOTE_BELOW_SET_HEIGHT, findings.below_set_height),
+                             (NOTE_TINES_AT_FOOT, findings.tines_at_foot),
+                             (NOTE_SIDE_FIN_LEFT_OUT, findings.side_missing)):
+        if numbers_of:
+            warnings.append(translate("FinSnap", note) % ", ".join(str(number) for number in numbers_of))
+            standing = [number for number in numbers_of if number not in findings.side_missing]
+            targets.append(WarningTarget(standing, [], False))
+    if plan.moved:
+        warnings.append(translate("FinSnap", "fins moved along the face to where their tines hold better than "
+                                  "at their planned place: %s") % ", ".join(
+            translate("FinSnap", "fin %d by %.2f mm") % (number, mm) for number, mm in plan.moved))
+        targets.append(WarningTarget([number for number, _ in plan.moved], [], False))
+    if plan.fins_left_out:
+        warnings.append(translate("FinSnap", "fins at %s mm from the end of the face left out: none of their "
+                                  "tines lies wholly on the face") % _mm_list(plan.fins_left_out))
+        targets.append(WarningTarget([], [], True))
+    if plan.narrow_heights:
+        warnings.append(translate("FinSnap", "tines at %s mm above the bed left out: the face is narrower "
+                                  "there than the fin") % _mm_list(plan.narrow_heights))
+        targets.append(WarningTarget([], [], True))
+    angle = math.degrees(math.acos(min(1.0, -frame.n_z)))
+    if not d.FACE_ANGLE_MIN <= angle <= d.FACE_ANGLE_MAX:
+        warnings.append(translate("FinSnap", "the face is inclined %.0f degrees to the bed, outside "
+                                  "%.0f to %.0f") % (angle, d.FACE_ANGLE_MIN, d.FACE_ANGLE_MAX))
+        targets.append(WarningTarget([], [], True))
+    tine_length = p.tine_length / frame.n_out
+    shortest = d.TINE_MIN_LENGTH_BEADS * p.bead_width
+    if tine_length < shortest:
+        # The gap that makes them as long, along the face normal, the
+        # clearance on top; rounded up to GAP_HINT_STEP.
+        enough = math.ceil((shortest * frame.n_out + p.clearance) / d.GAP_HINT_STEP - d.TOLERANCE) * d.GAP_HINT_STEP
+        if enough <= d.GAP_MAX + d.TOLERANCE:
+            warnings.append(translate("FinSnap", NOTE_TINES_SHORT) % (tine_length, d.TINE_MIN_LENGTH_BEADS, enough))
+        else:
+            # No gap taken makes them long enough: the bead is too wide.
+            warnings.append(translate("FinSnap", NOTE_TINES_TOO_SHORT)
+                            % (tine_length, d.TINE_MIN_LENGTH_BEADS, d.GAP_MAX))
+        targets.append(WarningTarget([fin.number for fin in plan.fins], [], False))
+    if frame.whole_side:
+        warnings.append(translate("FinSnap", "the part stands on one point of its rim: a chamfer on the rim and "
+                                  "a brim in the slicer give it more hold on the bed"))
+        targets.append(WarningTarget([], [], False))
+    return warnings, targets
+
+
 def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     frame = frame_of(part, face, support)
     # The one fin under a whole round side follows the contour of the part up
@@ -1368,26 +1460,10 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
 
     bodies = []
     all_tines = []
-    dropped = []
-    # The fins with tines left out over a recess, by number.
-    gapped = []
     pieces = []
     # Tines over the gap between two faces in one plane are named as over a recess.
-    gap_heights = set(plan.gap_z)
-    # Along a contour: tines left out where it falls back further than the
-    # flank can follow, and the fins they belong to. Those in a recess the
-    # fin bridges are left out as asked, without a word.
-    receded_heights, receded_fins, receded_tines = set(), [], []
+    findings = _Found(gap_heights=set(plan.gap_z), side_missing=side_missing)
     edges = []
-    # Tines whose end misses the face or reaches into the part, by fault, as
-    # (fin number, height, tine).
-    off_ends = {TINE_MISSES: [], TINE_CUTS_IN: []}
-    # Fins beside the lowest line that end below what passes beside them.
-    ended_lower = []
-    # Fins beside the lowest line that lost tines to a foot standing further out.
-    tines_at_foot = []
-    # Fins beside the lowest line whose contour ends below the fin height set.
-    below_set_height = []
     built_fins = []
     for fin in plan.fins:
         own_frame = frames.get(fin.number, frame)
@@ -1396,34 +1472,34 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
             planned_height, planned_tines = fin.height, sum(fin.on_face)
             key = (shape_key(part), _shaping(p), fin.number, fin.t0, fin.height, tuple(fin.candidate_z),
                    tuple(fin.on_face), thickness, plan.half_foot, own_frame.tine_edges[0][0])
-            found = keep(_kept_side_fins, key,
-                         partial(_side_fin, p, part, surface, own_frame, fin, thickness, plan.half_foot),
-                         SIDE_FINS_KEPT)
-            if found is None:
-                side_missing.append(fin.number)
+            side_found = keep(_kept_side_fins, key,
+                              partial(_side_fin, p, part, surface, own_frame, fin, thickness, plan.half_foot),
+                              SIDE_FINS_KEPT)
+            if side_found is None:
+                findings.side_missing.append(fin.number)
                 continue
-            body, tines, edge, own_frame, fin, faults, piece = found
+            body, tines, edge, own_frame, fin, faults, piece = side_found
             frames[fin.number] = own_frame
             if fin.height < planned_height - d.TOLERANCE:
-                ended_lower.append(fin.number)
+                findings.ended_lower.append(fin.number)
             elif sum(fin.on_face) < planned_tines:
-                tines_at_foot.append(fin.number)
+                findings.tines_at_foot.append(fin.number)
             if planned_height < p.fin_height - d.TOLERANCE:
-                below_set_height.append(fin.number)
+                findings.below_set_height.append(fin.number)
         else:
             body, tines, edge = one_fin(p, own_frame, fin.t0, fin.height, thickness, plan.half_foot, fin.candidate_z)
         kept = [tine for tine, whole in zip(tines, fin.on_face) if whole]
         left = [(z, tine) for z, tine, whole in zip(fin.candidate_z, tines, fin.on_face) if not whole]
-        dropped += [tine for _, tine in left]
+        findings.dropped += [tine for _, tine in left]
         if frame.contour is not None:
             receded = [(z, tine) for z, tine in left if frame.contour.receded(z, z + p.tine_height)]
-            receded_heights.update(z for z, _ in receded)
-            receded_tines += [tine for _, tine in receded]
+            findings.receded_heights.update(z for z, _ in receded)
+            findings.receded_tines += [tine for _, tine in receded]
             if receded:
-                receded_fins.append(fin.number)
+                findings.receded_fins.append(fin.number)
         elif left:
-            gap_heights.update(z for z, _ in left)
-            gapped.append(fin.number)
+            findings.gap_heights.update(z for z, _ in left)
+            findings.gapped.append(fin.number)
         built_fins.append(fin)
         edges.append(edge)
         bodies.append(body)
@@ -1432,7 +1508,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         if faults is None:
             faults = _tine_faults(p, surface, own_frame, fin, thickness, kept)
         for fault, z, tine in faults:
-            off_ends[fault].append((fin.number, z, tine))
+            findings.off_ends[fault].append((fin.number, z, tine))
         # One general fuse instead of one tine after the other: the lowest tine
         # sits on the top of the foot, where foot, flank and tine share an edge,
         # and fusing them pairwise fails on that edge.
@@ -1444,63 +1520,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     # Fins beside the lowest line were measured as they were built.
     measured = [body for fin, body in zip(built_fins, bodies) if fin.number not in frames]
     check(p, part, pieces, measured, 0.0 if frame.contour is None else d.CONTOUR_TOLERANCE)
-
-    # Each warning with what it is about, as a WarningTarget, in the same order.
-    warnings, targets = [], []
-    if gap_heights:
-        warnings.append(translate("FinSnap", "tines at %s mm above the bed left out: a recess or hole in the "
-                                  "face lies under them") % _mm_list(gap_heights))
-        targets.append(WarningTarget(gapped, dropped, False))
-    if receded_heights:
-        warnings.append(translate("FinSnap", NOTE_CONTOUR_RECEDES) % _mm_list(receded_heights))
-        targets.append(WarningTarget(receded_fins, receded_tines, False))
-    for fault, note in ((TINE_MISSES, NOTE_TINES_MISS), (TINE_CUTS_IN, NOTE_TINES_CUT_IN)):
-        found = off_ends[fault]
-        if found:
-            warnings.append(translate("FinSnap", note) % (_mm_list({z for _, z, _ in found}), d.TINE_END_TOLERANCE))
-            targets.append(WarningTarget(sorted({number for number, _, _ in found}), [tine for _, _, tine in found],
-                                         False))
-    for note, numbers_of in ((NOTE_ENDED_LOWER, ended_lower), (NOTE_BELOW_SET_HEIGHT, below_set_height),
-                             (NOTE_TINES_AT_FOOT, tines_at_foot),
-                             (NOTE_SIDE_FIN_LEFT_OUT, side_missing)):
-        if numbers_of:
-            warnings.append(translate("FinSnap", note) % ", ".join(str(number) for number in numbers_of))
-            targets.append(WarningTarget([number for number in numbers_of if number not in side_missing], [], False))
-    if plan.moved:
-        warnings.append(translate("FinSnap", "fins moved along the face to where their tines hold better than "
-                                  "at their planned place: %s") % ", ".join(
-            translate("FinSnap", "fin %d by %.2f mm") % (number, mm) for number, mm in plan.moved))
-        targets.append(WarningTarget([number for number, _ in plan.moved], [], False))
-    if plan.fins_left_out:
-        warnings.append(translate("FinSnap", "fins at %s mm from the end of the face left out: none of their "
-                                  "tines lies wholly on the face") % _mm_list(plan.fins_left_out))
-        targets.append(WarningTarget([], [], True))
-    if plan.narrow_heights:
-        warnings.append(translate("FinSnap", "tines at %s mm above the bed left out: the face is narrower "
-                                  "there than the fin") % _mm_list(plan.narrow_heights))
-        targets.append(WarningTarget([], [], True))
-    angle = math.degrees(math.acos(min(1.0, -frame.n_z)))
-    if not d.FACE_ANGLE_MIN <= angle <= d.FACE_ANGLE_MAX:
-        warnings.append(translate("FinSnap", "the face is inclined %.0f degrees to the bed, outside "
-                                  "%.0f to %.0f") % (angle, d.FACE_ANGLE_MIN, d.FACE_ANGLE_MAX))
-        targets.append(WarningTarget([], [], True))
-    tine_length = p.tine_length / frame.n_out
-    shortest = d.TINE_MIN_LENGTH_BEADS * p.bead_width
-    if tine_length < shortest:
-        # The gap that makes them as long, along the face normal, the
-        # clearance on top; rounded up to GAP_HINT_STEP.
-        enough = math.ceil((shortest * frame.n_out + p.clearance) / d.GAP_HINT_STEP - d.TOLERANCE) * d.GAP_HINT_STEP
-        if enough <= d.GAP_MAX + d.TOLERANCE:
-            warnings.append(translate("FinSnap", NOTE_TINES_SHORT) % (tine_length, d.TINE_MIN_LENGTH_BEADS, enough))
-        else:
-            # No gap taken makes them long enough: the bead is too wide.
-            warnings.append(translate("FinSnap", NOTE_TINES_TOO_SHORT)
-                            % (tine_length, d.TINE_MIN_LENGTH_BEADS, d.GAP_MAX))
-        targets.append(WarningTarget([fin.number for fin in plan.fins], [], False))
-    if frame.whole_side:
-        warnings.append(translate("FinSnap", "the part stands on one point of its rim: a chamfer on the rim and "
-                                  "a brim in the slicer give it more hold on the bed"))
-        targets.append(WarningTarget([], [], False))
+    warnings, targets = _warnings(p, frame, plan, findings)
 
     numbers = [fin.number for fin in built_fins]
     fin_heights = [fin.height for fin in built_fins]
@@ -1509,7 +1529,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
                      foot_half_width=plan.half_foot, warnings=warnings, warning_targets=targets,
                      carried=support.Faces,
                      numbers=numbers, planned=len(plan.positions),
-                     dropped=dropped, starts={n: plan.starts[n] for n in numbers}, along=frame.along,
+                     dropped=findings.dropped, starts={n: plan.starts[n] for n in numbers}, along=frame.along,
                      out=frame.out, heights=dict(zip(numbers, fin_heights)), edges=dict(zip(numbers, edges)),
                      touching_z={fin.number: [z for z in fin.touching if z in fin.candidate_z]
                                  if fin.number in frames else fin.touching for fin in built_fins},
