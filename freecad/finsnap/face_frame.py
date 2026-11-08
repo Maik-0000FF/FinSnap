@@ -129,6 +129,12 @@ class Frame:
         return self.radius > 0
 
     @property
+    def room(self):
+        """How high above the bed a fin under the face may reach: up to its
+        top, less the margin kept there."""
+        return self.face_top_z - self.bed_z - d.FACE_TOP_MARGIN
+
+    @property
     def fixed_fin(self):
         """Whether the fin stays where it is planned, under the lowest line of
         a part of a side: it has no place along the face to be moved to, and
