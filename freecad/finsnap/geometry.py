@@ -1031,11 +1031,15 @@ class _Places:
     measured on its own tine grid (restarted_tines()). `slices` is the dict of
     extent_at() kept for the build."""
 
-    def __init__(self, p, support, frame, whole_face, thickness, tine_z, face_narrow, restart, count, slices):
+    def __init__(self, *, p, support, frame, whole_face, thickness, tine_z, face_narrow, restart, count, slices):
         self.p, self.support, self.frame, self.whole_face = p, support, frame, whole_face
         self.thickness, self.tine_z, self.face_narrow = thickness, tine_z, face_narrow
         self.restart, self.count, self.slices = restart, count, slices
         self._tines, self._contact = {}, {}
+
+    def _frame_for(self, own_frame):
+        """`own_frame`, the frame of a fin that has one of its own, or the plan's for None."""
+        return self.frame if own_frame is None else own_frame
 
     def tines(self, t, own, own_frame=None):
         """The heights the tines of a fin starting at t are planned at, those
@@ -1056,7 +1060,7 @@ class _Places:
                                                  than the fin
           fin beside the lowest line         ->  the tines of its own contour
         """
-        own_frame = self.frame if own_frame is None else own_frame
+        own_frame = self._frame_for(own_frame)
         key = (t, own, id(own_frame))
         if key not in self._tines:
             self._tines[key] = self._measured_tines(t, own, own_frame)
@@ -1091,7 +1095,7 @@ class _Places:
     def at(self, t, own, own_frame=None):
         """What the fin starting at t has there: the heights of tines() and
         those of the planned ones lying on the face."""
-        own_frame = self.frame if own_frame is None else own_frame
+        own_frame = self._frame_for(own_frame)
         planned_z, candidate_z, narrow = self.tines(t, own, own_frame)
         key = (t, tuple(planned_z), id(own_frame))
         if key not in self._contact:
@@ -1240,7 +1244,8 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
 
     half_foot = feet_for([t0 for t0, _ in standing])
 
-    places = _Places(p, support, frame, whole_face, thickness, tine_z, face_narrow, restart, count, slices)
+    places = _Places(p=p, support=support, frame=frame, whole_face=whole_face, thickness=thickness, tine_z=tine_z,
+                     face_narrow=face_narrow, restart=restart, count=count, slices=slices)
 
     fins = []
     # Fins that left their planned place by themselves, as (number, mm moved).
