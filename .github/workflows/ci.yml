@@ -110,15 +110,17 @@ jobs:
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
-      # The AppImage is kept in the cache by FreeCAD version, so a run does
-      # not depend on the release download, which fails now and then.
+      # The AppImage is kept in the cache by its file name, which holds the
+      # FreeCAD version, so a run does not depend on the release download,
+      # which fails now and then.
       - name: Name the FreeCAD ${{ env.FREECAD_VERSION }} download
         id: freecad
         run: |
+          appimage="FreeCAD_${FREECAD_VERSION}-Linux-x86_64-py311.AppImage"
           {
-            echo "appimage=FreeCAD_${FREECAD_VERSION}-Linux-x86_64-py311.AppImage"
+            echo "appimage=$appimage"
             echo "dir=$RUNNER_TEMP/freecad-download"
-            echo "key=freecad-appimage-${FREECAD_VERSION}"
+            echo "key=freecad-appimage-$appimage"
           } >> "$GITHUB_OUTPUT"
       - name: Restore FreeCAD from the cache
         id: freecad-cache
@@ -137,7 +139,8 @@ jobs:
           curl -sSfL -o "$DIR/$APPIMAGE" "$base/$APPIMAGE"
           curl -sSfL -o "$DIR/sha256.txt" "$base/$APPIMAGE-SHA256.txt"
       - name: Check FreeCAD against its checksum
-        # Also on a cache hit: only a file that matches the release is run.
+        # Also on a cache hit: only a file that matches the checksum it was
+        # downloaded with is run.
         working-directory: ${{ steps.freecad.outputs.dir }}
         run: sha256sum -c sha256.txt
       - name: Keep FreeCAD in the cache
