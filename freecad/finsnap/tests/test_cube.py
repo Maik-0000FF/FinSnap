@@ -14,8 +14,8 @@ import sys
 
 import Part
 
-from freecad.finsnap.tests.support import (CHAMFER, HALF_TURN, RECESS_RADIUS, expect, grooved, lower_left_face, run,
-                                           slot_on_end, split_cylinder, tilted_cube)
+from freecad.finsnap.tests.support import (CHAMFER, HALF_TURN, RECESS_RADIUS, TILT, expect, grooved, lower_left_face,
+                                           run, slot_on_end, split_cylinder, tilted_cube)
 from freecad.finsnap import analysis
 from freecad.finsnap import defaults as d
 from freecad.finsnap.bridge import bridges as find_bridges
@@ -75,6 +75,13 @@ SKEWED_WIDEST_AT = 10.0     # how far up it reaches that far, in mm
 FEET_EDGE = 60.0            # a cube long enough for several fins with feet, in mm
 FEET_RECESS = 8.0           # half the width of a recess that sends the middle one of them aside, in mm
 FEET_FINS = 5
+# A T standing on its narrow web, tilted TILT so its front overhangs: the web
+# this wide and high, the flange this wide and the T this high and deep, and a
+# slot this wide up the flange above the web, from this far above the web, so
+# the stretch every tine of the face shares is the web (t_beam()).
+T_WEB, T_WEB_HIGH = 10.0, 10.0
+T_FLANGE, T_HIGH, T_DEEP = 70.0, 60.0, 10.0
+T_SLOT, T_SLOT_ABOVE_WEB = 16.0, 2.0
 OUT_OF_REACH = 100.0   # a height or a width beyond any test part, in mm
 NOTCH_CLEAR = 1.0      # how far a notch in the end of a face stays from the grid tines, and its depth, in mm
 PIN_HOLE_RADIUS = 0.9  # a hole that splits the face under a tine, small enough to leave the tines beside it
@@ -1059,6 +1066,62 @@ def check_restart_short_stretch(cube, face):
     plain = geometry.build(cube, face, restart)
     expect(not plain.moved, "a fin on a face without a recess stays at its planned place")
     expect(not geometry.build(part, notched, one_grid).moved, "on one grid a fin with a tine on the face stays")
+
+
+def t_beam(sunk=False):
+    """A T standing on its web, tilted TILT with its front face overhanging,
+    and that face. Above the web a slot T_SLOT wide runs up the flange:
+    through the T to its top, or with `sunk` SINK_DEPTH deep into its front,
+    ending SHORT_STRETCH_LEFT below the top so the face stays one piece, the
+    front of the web sunk with it but for a wall CORNER_WALL thin at either
+    side."""
+    web, flange = T_WEB / 2, T_FLANGE / 2
+    outline = [V(0, -web, 0), V(0, web, 0), V(0, web, T_WEB_HIGH), V(0, flange, T_WEB_HIGH), V(0, flange, T_HIGH),
+               V(0, -flange, T_HIGH), V(0, -flange, T_WEB_HIGH), V(0, -web, T_WEB_HIGH)]
+    part = Part.Face(Part.makePolygon(outline + outline[:1])).extrude(V(T_DEEP, 0, 0))
+    slot_from = T_WEB_HIGH + T_SLOT_ABOVE_WEB
+    if sunk:
+        pocket = web - CORNER_WALL
+        recesses = [Part.makeBox(OUT_OF_REACH, 2 * pocket, slot_from, V(T_DEEP - SINK_DEPTH, -pocket, 0)),
+                    Part.makeBox(OUT_OF_REACH, T_SLOT, T_HIGH - SHORT_STRETCH_LEFT - slot_from,
+                                 V(T_DEEP - SINK_DEPTH, -T_SLOT / 2, slot_from))]
+    else:
+        recesses = [Part.makeBox(OUT_OF_REACH, T_SLOT, OUT_OF_REACH, V(-OUT_OF_REACH / 2, -T_SLOT / 2, slot_from))]
+    for recess in recesses:
+        part = part.cut(recess)
+    part.rotate(V(0, 0, 0), V(0, 1, 0), TILT)
+    part.translate(V(0, 0, -part.BoundBox.ZMin))
+    normal = App.Rotation(V(0, 1, 0), TILT).multVec(V(1, 0, 0))
+    return part, max((f for f in part.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE), key=lambda f: f.Area)
+
+
+def beside_slot(result):
+    """Whether the one fin of `result` stands wholly beside the slot of t_beam()."""
+    start = result.starts[1]
+    return start + result.thickness <= -T_SLOT / 2 + d.TOLERANCE or start >= T_SLOT / 2 - d.TOLERANCE
+
+
+def check_places_past_stretch():
+    """A fin on the web of a T, the stretch every tine of the face shares,
+    finds its place beside the slot above, past that stretch: with the
+    restart one holding far more than its tines on the web, and on one grid,
+    with the web sunk under it, one where a tine finds the face at all."""
+    p = FinParams(placement=d.PLACEMENT_CENTER)
+    part, front = t_beam()
+
+    def held(result):
+        zs = result.touching_z[1]
+        return max(zs) + p.tine_height - min(zs)
+
+    stayed = geometry.build(part, front, p, shifts={1: 0.0})
+    found = geometry.build(part, front, p)
+    expect(found.moved and beside_slot(found) and held(found) >= d.BETTER_PLACE_HOLDS * held(stayed),
+           "a fin on the web of a T goes beside the slot above it, from %.2f to %.2f mm held, moved by %s"
+           % (held(stayed), held(found), found.moved))
+    sunk, sunk_front = t_beam(sunk=True)
+    rested = geometry.build(sunk, sunk_front, FinParams(placement=d.PLACEMENT_CENTER, tine_restart=False))
+    expect(rested.moved and beside_slot(rested) and rested.touching_z[1],
+           "on one grid a fin on a sunk web goes beside the sunk slot above it, moved by %s" % rested.moved)
 
 
 def check_moved_fins_feet():
@@ -3119,6 +3182,7 @@ def main():
     check_shortened(cube, face)
     check_restart(cube, face)
     check_restart_short_stretch(cube, face)
+    check_places_past_stretch()
     check_restart_narrow_lower_edge()
     check_moved_fins_feet()
     check_restart_names_what_fins_lack()
