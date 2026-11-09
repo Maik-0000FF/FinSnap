@@ -18,6 +18,7 @@ All notable changes to FinSnap are listed here. The format follows
 ### Fixed
 
 - A boss or anything else of the part standing out of a planar face where a fin is planned no longer stops the build with "the fins overlap the part": the fin moves along the face to the nearest place clear of it, or is left out with a warning where there is none; a fin moved onto it by hand is refused (#182)
+- A tine left out where the face narrows is named as "narrower there than the fin" only where the face under the fin is; where it is wider than the fin but too narrow for a fin and its end insets, the warning says so and names the width a fin needs (#183)
 
 ## [0.16.1] - 2026-11-09
 

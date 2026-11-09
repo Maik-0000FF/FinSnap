@@ -137,6 +137,14 @@ BOSS_BESIDE = 4.0
 BOSS_SHIFT = 6.0
 BOSS_MIDDLE = 6.0
 BOSS_WIDE = 9.0
+# A face tapering from the bed up (tapered()): its half width at the bed, how
+# deep the part is, and as (half width at the top, height) one wider than a
+# fin at the top tine but too narrow for it and its end insets, and one
+# narrower there than the fin (mm).
+TAPER_BASE_HALF = 10.0
+TAPER_DEPTH = 20.0
+TAPER_SHORT = (0.2, 12.0)
+TAPER_NARROW = (0.0, 11.7)
 FLOOR_SIZE = 1000.0    # a plane under every test part, to measure how high it rests
 FLOOR_DEPTH = 100.0
 FRUSTUM_BASE = 40.0
@@ -3219,6 +3227,33 @@ def check_boss_on_face():
            "the two fins left beside the boss keep the gap, feet and all: %.2f mm" % closest)
 
 
+def tapered(top_half, height):
+    """A part whose face, leaning 45 degrees, tapers from TAPER_BASE_HALF at
+    the bed to `top_half` at `height`, and that face."""
+    def on_face(up, along):
+        return V(-up, along, up)
+
+    ring = [on_face(0, TAPER_BASE_HALF), on_face(height, top_half), on_face(height, -top_half),
+            on_face(0, -TAPER_BASE_HALF)]
+    stood = Part.Face(Part.makePolygon(ring + ring[:1])).extrude(V(TAPER_DEPTH, 0, 0))
+    stood.translate(V(0, 0, -stood.BoundBox.ZMin))
+    return stood, lower_left_face(stood)
+
+
+def check_narrow_reason():
+    """A tine of the one grid left out where the face narrows is named for
+    why: narrower than the fin under it, or only narrower than a fin and its
+    end insets need, with and without the restart."""
+    for restart in (False, True):
+        p = FinParams(placement=d.PLACEMENT_CENTER, tine_restart=restart)
+        for (top_half, height), than_fin in ((TAPER_SHORT, False), (TAPER_NARROW, True)):
+            stood, face = tapered(top_half, height)
+            built = geometry.build(stood, face, p)
+            named = [w for w in built.warnings if "left out: the face is narrower there than the" in w]
+            expect(len(named) == 1 and named[0].endswith("than the fin") == than_fin,
+                   "restart %s, a face tapering to %g mm at %g mm: %s" % (restart, 2 * top_half, height, named))
+
+
 def main():
     cube = tilted_cube()
     face = lower_left_face(cube)
@@ -3354,6 +3389,7 @@ def main():
     check_merged_clearance(cube, face)
     check_fin_at(cube, face)
     check_boss_on_face()
+    check_narrow_reason()
     print("all checks passed", file=sys.__stdout__)
 
 
