@@ -2593,8 +2593,8 @@ def check_three_round_fins():
     plain_plan = quick_stands.quick_plan(filleted, [], [(filleted.Faces[number], number),
                                                         (filleted.Faces[fillet], fillet)], one, d.TILT_ANGLE)
     on_fillet = moved(filleted, plain_plan.change)
-    for kind in (one, three):
-        built = geometry.build(on_fillet, on_fillet.Faces[number], kind)
+    for params in (one, three):
+        built = geometry.build(on_fillet, on_fillet.Faces[number], params)
         line = built.frame.contour
         start = built.frame.face_bottom_z - built.frame.bed_z
         slope = -built.frame.n_z / built.frame.n_out
@@ -2607,19 +2607,19 @@ def check_three_round_fins():
     # short of CONTOUR_OWN_PART: a chamfer still, not a thinner part, and no
     # tine rests on it.
     closest = FinParams(placement=d.PLACEMENT_CENTER, tine_spacing=one.least_tine_spacing)
-    for axial, kind in ((CHAMFER_LONG, closest), (CHAMFER_TALL, one)):
+    for axial, params in ((CHAMFER_LONG, closest), (CHAMFER_TALL, one)):
         chamfered = rod.makeChamfer(axial, CHAMFER_SHORT, bottom_rim)
         cone = next(f for f in chamfered.Faces if isinstance(f.Surface, Part.Cone))
         small = min((e for e in cone.Edges if orient.is_rim(e)), key=lambda e: e.Curve.Radius)
         number = round_side_of(chamfered)
         on_chamfer = moved(chamfered, orient.stand_on_rim(chamfered, small, orient.side_tilt(d.TILT_ANGLE),
                                                           chamfered.Faces[number]))
-        built = geometry.build(on_chamfer, on_chamfer.Faces[number], kind)
+        built = geometry.build(on_chamfer, on_chamfer.Faces[number], params)
         start = built.frame.face_bottom_z - built.frame.bed_z
         lower = [height for height in built.frame.contour.heights if height < start - d.TOLERANCE]
         expect(lower and not any(built.frame.contour.rests(height, height) for height in lower),
                "standing on a chamfer %g mm long, tine spacing %.1f mm: no tine on the chamfer"
-               % (axial, kind.tine_spacing))
+               % (axial, params.tine_spacing))
     # A rib beside the wall of a side fin, high up: moving out gains nothing there.
     stood, side = stood_on_free_rim(rod)
     free = geometry.build(stood, stood.Faces[side], three)
