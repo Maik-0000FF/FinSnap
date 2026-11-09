@@ -185,6 +185,8 @@ NOTE_TINES_TOO_SHORT = QT_TRANSLATE_NOOP("FinSnap", "tines are %.2f mm long, sho
                                                     "makes them long enough: set a narrower bead")
 NOTE_CONTOUR_RECEDES = QT_TRANSLATE_NOOP("FinSnap", "tines at %s mm above the bed left out: the contour falls back "
                                                     "further than the fin can follow without overhanging itself")
+NOTE_FACE_SHORT = QT_TRANSLATE_NOOP("FinSnap", "tines at %s mm above the bed left out: the face is narrower there "
+                                               "than the %.2f mm a fin needs")
 NOTE_MOVED = QT_TRANSLATE_NOOP("FinSnap", "fins moved along the face to where their tines hold better than at "
                                           "their planned place: %s")
 NOTE_FIN_IN_PART = QT_TRANSLATE_NOOP("FinSnap", "fin %d would run into the part, which stands out of the face there; "
@@ -969,7 +971,7 @@ def build(part, face, p, tine_count=None, left_out=(), shifts=None, heights=None
 PlannedFin = namedtuple("PlannedFin", "number t0 height candidate_z on_face touching")
 # The fins of a face as planned, before any is built.
 FacePlan = namedtuple("FacePlan", "frame height thickness tine_z gap_z narrow_heights positions face_start "
-                                  "starts half_foot fins moved fins_left_out cleared blocked")
+                                  "starts half_foot fins moved fins_left_out cleared blocked short_heights room_needed")
 
 
 def side_numbers(round_fins):
@@ -1157,6 +1159,29 @@ class _Places:
                                                  than the fin
           fin beside the lowest line         ->  the tines of its own contour
         """
+        return self._measured(t, own, own_frame)[:3]
+
+    def short(self, t, own, own_frame=None):
+        """The heights of the one grid of the face the fin starting at t lacks
+        where the face is wider than the fin under it, but the stretch every
+        tine of the face shares is shorter there than a fin needs
+        (room_for_one_fin()): tines() names the others, where it is narrower
+        than the fin.
+
+        INPUTS this has to withstand:
+          the face wide enough there for a fin
+            and its end insets                ->  not lacked, not named
+          wider than the fin under it, not
+            wide enough for its end insets    ->  named here
+          narrower than the fin under it, or
+            no face there                     ->  not here: tines() names it narrow
+          a fin on a grid of its own (restart)->  none: its own grid has no such height
+          round side                          ->  none: every tine is planned
+        """
+        return self._measured(t, own, own_frame)[3]
+
+    def _measured(self, t, own, own_frame):
+        """tines() and short(), measured once for each fin, place and frame."""
         own_frame = self._frame_for(own_frame)
         key = (t, own, id(own_frame))
         if key not in self._tines:
@@ -1164,7 +1189,7 @@ class _Places:
         return self._tines[key]
 
     def _measured_tines(self, t, own, own_frame):
-        """tines(), measured."""
+        """tines() and short(), measured."""
         p, frame = self.p, self.stretch
         own_z = None
         if self.restart:
@@ -1175,19 +1200,25 @@ class _Places:
             # contour; the fin under the lowest line keeps the height set.
             own_z = face_tines(_within(p, own_frame.room), own_frame, self.count, False)[0]
         grid = self.tine_z if own_z is None else own_z
+        short = []
         if frame.round_side:
             planned_z, narrow = grid, []
         else:
+            def wide_here(z):
+                return wide_enough(extent_at(self.support, self.whole_face, z, p, self.slices), p, t, self.thickness)
             # Measured on the whole face: a fin moved past the stretch every
             # tine of the face shares keeps the tines where it is wide enough.
-            wide = [wide_enough(extent_at(self.support, self.whole_face, z, p, self.slices), p, t, self.thickness)
-                    for z in grid]
+            wide = [wide_here(z) for z in grid]
             planned_z = [z for z, fits in zip(grid, wide) if fits]
             narrow = [z for z, fits in zip(grid, wide) if not fits]
-            if self.restart and own_z is None:
-                # On the one grid, what the face as a whole cannot take this fin lacks too.
-                narrow += sorted(self.face_narrow)
-        return planned_z, [z for z in planned_z if own is None or z + p.tine_height <= own + d.TOLERANCE], narrow
+            if own_z is None:
+                # On the one grid, what the face as a whole cannot take this fin
+                # lacks too: narrow where the face is narrower than the fin
+                # under it, short where only the stretch shared is too short.
+                for z in sorted(self.face_narrow):
+                    (short if wide_here(z) else narrow).append(z)
+        return (planned_z, [z for z in planned_z if own is None or z + p.tine_height <= own + d.TOLERANCE], narrow,
+                short)
 
     def at(self, t, own, own_frame=None):
         """What the fin starting at t has there: the heights of tines() and
@@ -1298,8 +1329,10 @@ def _plan(part, frame, support, p, all_z, face_height, reach, count, restart, le
         # Fewer tines make a lower and so a thinner fin; it still fits where the thicker one did.
         height = max(p.fin_height if p.fin_height > 0 else tine_z[-1] + p.tine_height, reach)
         thickness = thickness_for(p, height)
-    # With the restart each fin has tines of its own: only what a fin lacks is named.
-    narrow_heights = set() if restart else set(face_narrow)
+    # Each fin names what of the one grid it lacks (_Places.short()), as far as
+    # it reaches up; under a round side, where every tine is planned, the face.
+    narrow_heights = set(face_narrow) if frame.round_side else set()
+    short_heights = set()
     # Fins left out are named by their distance from this end of the face.
     face_start = frame.along_min
     # The face as a whole, before it is narrowed to the stretch every tine
@@ -1420,7 +1453,10 @@ def _plan(part, frame, support, p, all_z, face_height, reach, count, restart, le
         on_face = [z in touching for z in candidate_z]
         # Tines of its own grid left out where the face is too narrow are named
         # with those of the face, as far as the fin reaches up to them.
-        narrow_heights.update(z for z in narrow if own is None or z + p.tine_height <= own + d.TOLERANCE)
+        def reached(zs, own=own):
+            return {z for z in zs if own is None or z + p.tine_height <= own + d.TOLERANCE}
+        narrow_heights.update(reached(narrow))
+        short_heights.update(reached(places.short(t0, own, own_frame)))
         kept_z = [z for z, whole in zip(candidate_z, on_face) if whole]
         if not kept_z:
             fins_left_out.append(t0 + thickness / 2 - face_start)
@@ -1450,7 +1486,8 @@ def _plan(part, frame, support, p, all_z, face_height, reach, count, restart, le
                 places.clear_at(fin.t0, heights.get(fin.number), feet) for fin in fins):
             half_foot = feet
     return FacePlan(frame, height, thickness, tine_z, gap_z, narrow_heights, positions, face_start,
-                    starts, half_foot, fins, moved_fins, fins_left_out, cleared, blocked)
+                    starts, half_foot, fins, moved_fins, fins_left_out, cleared, blocked,
+                    short_heights - narrow_heights, room_needed)
 
 
 @dataclass
@@ -1525,6 +1562,9 @@ def _warnings(p, frame, plan, findings):
     if plan.narrow_heights:
         warnings.append(translate("FinSnap", "tines at %s mm above the bed left out: the face is narrower "
                                   "there than the fin") % _mm_list(plan.narrow_heights))
+        targets.append(WarningTarget([], [], True))
+    if plan.short_heights:
+        warnings.append(translate("FinSnap", NOTE_FACE_SHORT) % (_mm_list(plan.short_heights), plan.room_needed))
         targets.append(WarningTarget([], [], True))
     angle = math.degrees(math.acos(min(1.0, -frame.n_z)))
     if not d.FACE_ANGLE_MIN <= angle <= d.FACE_ANGLE_MAX:
