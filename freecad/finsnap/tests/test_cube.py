@@ -3209,10 +3209,14 @@ def check_boss_on_face():
     else:
         raise AssertionError("fins were built over a boss covering the face")
     bossed = bossed_cube((BOSS_MIDDLE, EDGE / 2))
-    three = geometry.build(bossed, lower_left_face(bossed),
-                           FinParams(placement=d.PLACEMENT_DISTRIBUTED, fin_count=3))
+    spread = FinParams(placement=d.PLACEMENT_DISTRIBUTED, fin_count=3)
+    three = geometry.build(bossed, lower_left_face(bossed), spread)
     expect(len(three.positions) == 2 and any("no place beside it is clear" in w for w in three.warnings),
            "a boss as wide as the middle of the face leaves the middle one of three fins out: %s" % three.warnings)
+    # Their feet, planned again without the fin left out, keep clear of the boss.
+    closest = min(body.distToShape(bossed)[0] for body in three.bodies)
+    expect(closest >= spread.gap - d.TOLERANCE,
+           "the two fins left beside the boss keep the gap, feet and all: %.2f mm" % closest)
 
 
 def main():
