@@ -11,7 +11,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
-## [0.16.1] - 2026-11-08
+## [0.16.1] - 2026-11-09
 
 ### Fixed
 
