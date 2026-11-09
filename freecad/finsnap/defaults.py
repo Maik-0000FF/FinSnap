@@ -232,6 +232,12 @@ CONTOUR_BRIDGE = 3.0
 # Over a face of the contour looking up, where no tine rests, the fin keeps
 # this gap from the part (mm), larger than GAP, so it cannot stick to it there.
 CONTOUR_GAP = 1.0
+# Below a round side that starts above the bed, a stretch the tines rest on at
+# least this high (mm) is a thinner part of its own, and the fin follows it; a
+# lower one is a chamfer or a fillet round the rim, and the fin goes on in the
+# line of the side. Fixed, not the tine spacing: that is the user's to set,
+# down to a tine and a layer, and a chamfer would then count as a part.
+CONTOUR_OWN_PART = 5.0
 # Heights at which the contour is sampled, per layer: finer than a layer, so
 # the fin keeps its distance also across a fillet between two samples.
 CONTOUR_SAMPLES_PER_LAYER = 4

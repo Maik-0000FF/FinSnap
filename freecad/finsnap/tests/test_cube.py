@@ -2596,6 +2596,21 @@ def check_three_round_fins():
                and all(abs(line.flank(height) - (line.flank(start) - (start - height) * slope)) < GAP_ACROSS_FIN
                        for height in lower),
                "standing on a fillet the fin goes on in the line of the side down to its foot, no tine on the fillet")
+    # Standing on a chamfer higher than the closest tine spacing: a chamfer
+    # still, not a thinner part, and no tine rests on it.
+    chamfered = rod.makeChamfer(CHAMFER_LONG, CHAMFER_SHORT, bottom_rim)
+    cone = next(f for f in chamfered.Faces if isinstance(f.Surface, Part.Cone))
+    small = min((e for e in cone.Edges if orient.is_rim(e)), key=lambda e: e.Curve.Radius)
+    number = round_side_of(chamfered)
+    on_chamfer = moved(chamfered, orient.stand_on_rim(chamfered, small, orient.side_tilt(d.TILT_ANGLE),
+                                                      chamfered.Faces[number]))
+    closest = FinParams(placement=d.PLACEMENT_CENTER, tine_spacing=one.least_tine_spacing)
+    built = geometry.build(on_chamfer, on_chamfer.Faces[number], closest)
+    start = built.frame.face_bottom_z - built.frame.bed_z
+    lower = [height for height in built.frame.contour.heights if height < start - d.TOLERANCE]
+    expect(lower and not any(built.frame.contour.rests(height, height) for height in lower),
+           "standing on a chamfer higher than a tine spacing of %.1f mm, no tine on the chamfer"
+           % closest.tine_spacing)
     # A rib beside the wall of a side fin, high up: moving out gains nothing there.
     stood, side = stood_on_free_rim(rod)
     free = geometry.build(stood, stood.Faces[side], three)
