@@ -141,6 +141,12 @@ SIDE_FINS_KEPT = 32
 # Past this the oldest go first, and a run with more fins measures them all again.
 _kept_clear = {}
 CLEAR_KEPT = 1024
+# What of a part stands out in front of the plane of a face (in_front_of()),
+# by part and plane; and how far in front of that plane it is cut from (mm):
+# a hair, so the face itself, lying in the plane, is not taken with it.
+_kept_in_front = {}
+IN_FRONT_KEPT = 32
+IN_FRONT_SKIN = 1e-3
 # How a foot and a blade beside the lowest line look for where they keep the gap,
 # see _least_clear(): the first step out and how near it comes (mm).
 FOOT_SEARCH_STEP = 0.5
@@ -179,6 +185,18 @@ NOTE_TINES_TOO_SHORT = QT_TRANSLATE_NOOP("FinSnap", "tines are %.2f mm long, sho
                                                     "makes them long enough: set a narrower bead")
 NOTE_CONTOUR_RECEDES = QT_TRANSLATE_NOOP("FinSnap", "tines at %s mm above the bed left out: the contour falls back "
                                                     "further than the fin can follow without overhanging itself")
+NOTE_MOVED = QT_TRANSLATE_NOOP("FinSnap", "fins moved along the face to where their tines hold better than at "
+                                          "their planned place: %s")
+NOTE_FIN_IN_PART = QT_TRANSLATE_NOOP("FinSnap", "fin %d would run into the part, which stands out of the face there; "
+                                                 "move it along the face")
+NOTE_CLEARED = QT_TRANSLATE_NOOP("FinSnap", "fins moved along the face clear of the part, which stands out of the "
+                                            "face at their planned place: %s")
+NOTE_BLOCKED = QT_TRANSLATE_NOOP("FinSnap", "fins at %s mm from the end of the face left out: the part stands out "
+                                            "of the face there, and no place beside it is clear of it")
+NOTE_ALL_BLOCKED = QT_TRANSLATE_NOOP("FinSnap", "the part stands out of the face under every fin, and no place "
+                                                "along the face is clear of it")
+NOTE_BLOCKED_OR_BARE = QT_TRANSLATE_NOOP("FinSnap", "no fin is left: the part stands out of the face under some, "
+                                                    "and no tine of the others lies wholly on the face")
 
 
 # What a warning of build() is about, for the task panel to show it: the
@@ -951,7 +969,7 @@ def build(part, face, p, tine_count=None, left_out=(), shifts=None, heights=None
 PlannedFin = namedtuple("PlannedFin", "number t0 height candidate_z on_face touching")
 # The fins of a face as planned, before any is built.
 FacePlan = namedtuple("FacePlan", "frame height thickness tine_z gap_z narrow_heights positions face_start "
-                                  "starts half_foot fins moved fins_left_out")
+                                  "starts half_foot fins moved fins_left_out cleared blocked")
 
 
 def side_numbers(round_fins):
@@ -1021,6 +1039,31 @@ def _within(p, room):
     return replace(p, fin_height=room) if p.fin_height > room else p
 
 
+def in_front_of(part, frame):
+    """What of `part` stands out in front of the plane of the planar face of
+    `frame`, IN_FRONT_SKIN off it, as a boss does; None for nothing. Cut once
+    per part and plane, kept for every plan and build after.
+
+    INPUTS this has to withstand:
+      a plain face                          ->  None: the face lies in the plane
+      a boss on the face                    ->  the boss
+      a chamfer or a corner round the face  ->  None: it lies behind the plane
+      the part reaching out in front of the
+        plane above the face or beside it   ->  that part of it
+    """
+    def cut():
+        box = bounds(part)
+        reach = box.DiagonalLength
+        low, high = box.ZMin, box.ZMax
+        ring = [(frame.s_flank(low, IN_FRONT_SKIN), low), (frame.s_flank(high, IN_FRONT_SKIN), high),
+                (frame.s_flank(high, IN_FRONT_SKIN) + reach, high), (frame.s_flank(low, IN_FRONT_SKIN) + reach, low)]
+        middle = frame.along.dot(box.Center)
+        front = part.common(frame.section(middle - reach, ring, 2 * reach))
+        return front if front.Volume > d.TOLERANCE else None
+    key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.n_out, frame.n_z, frame.c)
+    return keep(_kept_in_front, key, cut, IN_FRONT_KEPT)
+
+
 class _Places:
     """A fin of one plan measured at a place along the face: the heights of
     its tines and which of them lie on the face. Kept for the plan, as a
@@ -1038,11 +1081,58 @@ class _Places:
     own tine grid (restarted_tines()). `slices` is the dict of extent_at()
     kept for the build."""
 
-    def __init__(self, *, p, support, stretch, whole_face, thickness, tine_z, face_narrow, restart, count, slices):
-        self.p, self.support, self.stretch, self.whole_face = p, support, stretch, whole_face
-        self.thickness, self.tine_z, self.face_narrow = thickness, tine_z, face_narrow
+    def __init__(self, *, p, part, support, stretch, whole_face, thickness, half_foot, tine_z, face_narrow, restart,
+                 count, slices):
+        self.p, self.part, self.support, self.stretch, self.whole_face = p, part, support, stretch, whole_face
+        self.thickness, self.half_foot, self.tine_z, self.face_narrow = thickness, half_foot, tine_z, face_narrow
         self.restart, self.count, self.slices = restart, count, slices
-        self._tines, self._contact = {}, {}
+        self._tines, self._contact, self._clear = {}, {}, {}
+
+    def reach(self, t, own):
+        """How high the fin starting at t reaches above the bed: a height of
+        its own, else the fin height set, else the top of its highest tine."""
+        if own is not None:
+            return own
+        if self.p.fin_height > 0:
+            return self.p.fin_height
+        candidate_z = self.tines(t, own)[1]
+        return max(candidate_z) + self.p.tine_height if candidate_z else 0.0
+
+    def clear_at(self, t, own, half_foot=None):
+        """Whether the fin starting at t, without its tines, as one_fin()
+        builds it up to its reach(), keeps its gap from what of the part
+        stands out in front of the face (in_front_of()), such as a boss, as
+        check() measures the fins as built. Behind the plane of the face the
+        part keeps the gap by itself: the flank stands that far in front of
+        it. check() still measures the fins as built, their tines with them.
+
+        `half_foot` is the half width of its foot, the plan's for None.
+
+        INPUTS this has to withstand:
+          plain face, nothing in front of it   ->  True, no fin built for it
+          a boss under the blade               ->  False
+          a boss over the foot, low down       ->  False
+          a boss beside the fin or its foot,
+            within the gap of it               ->  False
+          a boss beside, further off           ->  True
+          a boss above the top of the fin      ->  True
+          a chamfer below the face, where the
+            face starts above the bed          ->  True: behind the plane
+          a fin reaching nowhere, no tine      ->  True: nothing stands there
+        """
+        height = self.reach(t, own)
+        half_foot = self.half_foot if half_foot is None else half_foot
+        key = (t, height, half_foot)
+        if key not in self._clear:
+            front = in_front_of(self.part, self.whole_face)
+            self._clear[key] = front is None or height <= d.TOLERANCE or self._body(t, height, half_foot).distToShape(
+                front)[0] >= self.p.gap - d.TOLERANCE
+        return self._clear[key]
+
+    def _body(self, t, height, half_foot):
+        """The fin starting at t and `height` high, its foot `half_foot` wide to
+        either side, without its tines."""
+        return one_fin(self.p, self.stretch, t, height, self.thickness, half_foot, [])[0]
 
     def _frame_for(self, own_frame):
         """`own_frame`, the frame of a fin that has one of its own, or the plan's for None."""
@@ -1183,7 +1273,7 @@ def _resting_place(places, t0, own, others):
                          places.thickness, others)
 
 
-def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out, shifts, heights, slices,
+def _plan(part, frame, support, p, all_z, face_height, reach, count, restart, left_out, shifts, heights, slices,
           frames):
     """The fins of the face planned for a fin height of at least `reach`,
     from which their thickness and foot follow. With `restart`, each fin is
@@ -1258,13 +1348,20 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
 
     half_foot = feet_for([t0 for t0, _ in standing])
 
-    places = _Places(p=p, support=support, stretch=frame, whole_face=whole_face, thickness=thickness, tine_z=tine_z,
-                     face_narrow=face_narrow, restart=restart, count=count, slices=slices)
+    places = _Places(p=p, part=part, support=support, stretch=frame, whole_face=whole_face, thickness=thickness,
+                     half_foot=half_foot, tine_z=tine_z, face_narrow=face_narrow, restart=restart, count=count,
+                     slices=slices)
 
     fins = []
     # Fins that left their planned place by themselves, as (number, mm moved).
     moved_fins = []
     fins_left_out = []
+    # Fins moved clear of the part standing out of the face, by number, and
+    # where fins with no place clear of it stood, from the end of the face.
+    cleared, blocked = [], []
+    # Fins neither stands, by number: no longer a neighbour to move round or
+    # to keep a foot clear of.
+    gone = set()
     # Whether every fin left out had no tine where the face is wide enough
     # under it, or no face under it at all, rather than its tines over a
     # hole: said so when none is left. Only width leaves no tine planned.
@@ -1283,7 +1380,7 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
                            % (number, own, room), HandEditError)
         # Only a fin nobody moved and not under a lowest line finds its own place.
         free = not frame.round_side and number not in shifts
-        others = [starts[n] for n in starts if n != number and n not in left_out]
+        others = [starts[n] for n in starts if n != number and n not in left_out and n not in gone]
         planned_at = t0
         if free:
             t0 = _better_place(places, t0, room, others)
@@ -1299,6 +1396,24 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
             if moved_to is not None:
                 t0 = moved_to
                 planned_z, candidate_z, narrow, touching = places.at(t0, own, own_frame)
+        # Where the part stands out of a planar face, as a boss, in the way of
+        # the fin, it moves to the nearest place clear of it and with a tine on
+        # the face, or is left out; a fin moved there by hand is refused.
+        if not frame.round_side and not places.clear_at(t0, own):
+            if not free:
+                raise refused(translate("FinSnap", NOTE_FIN_IN_PART) % number, HandEditError)
+
+            def clear_and_resting(t, own=own):
+                return places.holds(t, own, p.tine_height) and places.clear_at(t, own)
+            moved_to = nearest_place(whole_face, p.end_inset, clear_and_resting, t0, thickness, others)
+            if moved_to is None:
+                # Named where it was planned, as the user knows it.
+                blocked.append(planned_at + thickness / 2 - face_start)
+                gone.add(number)
+                continue
+            t0 = moved_to
+            cleared.append(number)
+            planned_z, candidate_z, narrow, touching = places.at(t0, own, own_frame)
         if t0 != planned_at:
             moved_fins.append((number, t0 - planned_at))
             starts[number] = t0
@@ -1310,6 +1425,7 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
         if not kept_z:
             fins_left_out.append(t0 + thickness / 2 - face_start)
             all_too_narrow = all_too_narrow and not planned_z
+            gone.add(number)
             continue
         # An automatic fin ends at its highest tine left, so no part of it
         # stands above the last contact with the face.
@@ -1319,15 +1435,22 @@ def _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out
             set_height = _within(p, room).fin_height if number in frames else p.fin_height
             fin_height = set_height if set_height > 0 else kept_z[-1] + p.tine_height
         fins.append(PlannedFin(number, t0, fin_height, candidate_z, on_face, sorted(touching)))
+    if not fins and blocked:
+        raise refused(translate("FinSnap", NOTE_BLOCKED_OR_BARE if fins_left_out else NOTE_ALL_BLOCKED))
     if not fins and fins_left_out and all_too_narrow:
         raise refused(translate("FinSnap", NARROW_AT_EVERY_TINE) % thickness)
     if not fins:
         raise refused(translate("FinSnap", "no tine finds the face; it has a recess or hole at every tine"))
-    if moved_fins:
-        # The feet stay clear of each other where the fins ended up.
-        half_foot = feet_for([starts[number] for number in sorted(starts) if number not in left_out])
+    if moved_fins or gone:
+        # The feet stay clear of each other where the fins ended up. Wider than
+        # planned, where a fin moved off or is gone, they are taken only clear
+        # of the part too; narrower always, or they would overlap.
+        feet = feet_for([starts[number] for number in sorted(starts) if number not in left_out and number not in gone])
+        if feet <= half_foot + d.TOLERANCE or frame.round_side or all(
+                places.clear_at(fin.t0, heights.get(fin.number), feet) for fin in fins):
+            half_foot = feet
     return FacePlan(frame, height, thickness, tine_z, gap_z, narrow_heights, positions, face_start,
-                    starts, half_foot, fins, moved_fins, fins_left_out)
+                    starts, half_foot, fins, moved_fins, fins_left_out, cleared, blocked)
 
 
 @dataclass
@@ -1384,14 +1507,20 @@ def _warnings(p, frame, plan, findings):
             warnings.append(translate("FinSnap", note) % ", ".join(str(number) for number in numbers_of))
             standing = [number for number in numbers_of if number not in findings.side_missing]
             targets.append(WarningTarget(standing, [], False))
-    if plan.moved:
-        warnings.append(translate("FinSnap", "fins moved along the face to where their tines hold better than "
-                                  "at their planned place: %s") % ", ".join(
-            translate("FinSnap", "fin %d by %.2f mm") % (number, mm) for number, mm in plan.moved))
-        targets.append(WarningTarget([number for number, _ in plan.moved], [], False))
+    # A fin moved clear of the part is named for that alone, also if it moved
+    # for its tines before.
+    for note, moves in ((NOTE_MOVED, [move for move in plan.moved if move[0] not in plan.cleared]),
+                        (NOTE_CLEARED, [move for move in plan.moved if move[0] in plan.cleared])):
+        if moves:
+            warnings.append(translate("FinSnap", note) % ", ".join(
+                translate("FinSnap", "fin %d by %.2f mm") % (number, mm) for number, mm in moves))
+            targets.append(WarningTarget([number for number, _ in moves], [], False))
     if plan.fins_left_out:
         warnings.append(translate("FinSnap", "fins at %s mm from the end of the face left out: none of their "
                                   "tines lies wholly on the face") % _mm_list(plan.fins_left_out))
+        targets.append(WarningTarget([], [], True))
+    if plan.blocked:
+        warnings.append(translate("FinSnap", NOTE_BLOCKED) % _mm_list(plan.blocked))
         targets.append(WarningTarget([], [], True))
     if plan.narrow_heights:
         warnings.append(translate("FinSnap", "tines at %s mm above the bed left out: the face is narrower "
@@ -1450,7 +1579,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     count = p.tine_count if tine_count is None else tine_count
     restart = p.tine_restart and not frame.round_side
     all_z, face_height = face_tines(p, frame, count, restart)
-    plan = _plan(frame, support, p, all_z, face_height, 0.0, count, restart, left_out, shifts, heights,
+    plan = _plan(part, frame, support, p, all_z, face_height, 0.0, count, restart, left_out, shifts, heights,
                  slices, frames)
     # With the restart a fin can reach above the tines of the face as a
     # whole, up to the top of the stretch it stands on; the fins are planned
@@ -1462,7 +1591,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         reach = max(fin.height for fin in plan.fins)
         if reach <= plan.height + d.TOLERANCE:
             break
-        plan = _plan(frame, support, p, all_z, face_height, reach, count, restart, left_out, shifts,
+        plan = _plan(part, frame, support, p, all_z, face_height, reach, count, restart, left_out, shifts,
                      heights, slices, frames)
     frame, thickness = plan.frame, plan.thickness
 
