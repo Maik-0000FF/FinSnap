@@ -195,6 +195,13 @@ NORMAL_DECIMALS = 6    # places to which the directions of faces are compared
 # ROD_HEIGHT, and on it a thinner one, or a body of revolution whose outline
 # runs through SPLINE_RADII, as far up again.
 STEP_RADIUS = 6.0
+# The thinner part only this high, the part stood on its free rim: about 6 mm
+# of it carry tines below the side, past CONTOUR_OWN_PART, or, lower, less.
+THIN_PART_CARRIES = 14.0
+THIN_PART_SHORT = 12.0
+# The long leg of a chamfer round the rim the part stands on, tines resting
+# on about 4 mm of it, just short of CONTOUR_OWN_PART.
+CHAMFER_TALL = 8.0
 SPLINE_RADII = (ROD_RADIUS, 9.5, 8.5, 8.0)
 GROOVE_DEPTH = 1.0     # a groove round the shaft, as deep and,
 GROOVE_LENGTH = 2.0    # along the axis, as long, lower than the bridge
@@ -2586,8 +2593,8 @@ def check_three_round_fins():
     plain_plan = quick_stands.quick_plan(filleted, [], [(filleted.Faces[number], number),
                                                         (filleted.Faces[fillet], fillet)], one, d.TILT_ANGLE)
     on_fillet = moved(filleted, plain_plan.change)
-    for kind in (one, three):
-        built = geometry.build(on_fillet, on_fillet.Faces[number], kind)
+    for params in (one, three):
+        built = geometry.build(on_fillet, on_fillet.Faces[number], params)
         line = built.frame.contour
         start = built.frame.face_bottom_z - built.frame.bed_z
         slope = -built.frame.n_z / built.frame.n_out
@@ -2596,6 +2603,23 @@ def check_three_round_fins():
                and all(abs(line.flank(height) - (line.flank(start) - (start - height) * slope)) < GAP_ACROSS_FIN
                        for height in lower),
                "standing on a fillet the fin goes on in the line of the side down to its foot, no tine on the fillet")
+    # Standing on a chamfer higher than the closest tine spacing, or one just
+    # short of CONTOUR_OWN_PART: a chamfer still, not a thinner part, and no
+    # tine rests on it.
+    closest = FinParams(placement=d.PLACEMENT_CENTER, tine_spacing=one.least_tine_spacing)
+    for axial, params in ((CHAMFER_LONG, closest), (CHAMFER_TALL, one)):
+        chamfered = rod.makeChamfer(axial, CHAMFER_SHORT, bottom_rim)
+        cone = next(f for f in chamfered.Faces if isinstance(f.Surface, Part.Cone))
+        small = min((e for e in cone.Edges if orient.is_rim(e)), key=lambda e: e.Curve.Radius)
+        number = round_side_of(chamfered)
+        on_chamfer = moved(chamfered, orient.stand_on_rim(chamfered, small, orient.side_tilt(d.TILT_ANGLE),
+                                                          chamfered.Faces[number]))
+        built = geometry.build(on_chamfer, on_chamfer.Faces[number], params)
+        start = built.frame.face_bottom_z - built.frame.bed_z
+        lower = [height for height in built.frame.contour.heights if height < start - d.TOLERANCE]
+        expect(lower and not any(built.frame.contour.rests(height, height) for height in lower),
+               "standing on a chamfer %g mm long, tine spacing %.1f mm: no tine on the chamfer"
+               % (axial, params.tine_spacing))
     # A rib beside the wall of a side fin, high up: moving out gains nothing there.
     stood, side = stood_on_free_rim(rod)
     free = geometry.build(stood, stood.Faces[side], three)
@@ -2738,6 +2762,39 @@ def check_contour():
     cone = next(f for f in stood.Faces if isinstance(f.Surface, Part.Cone))
     expect(min(body.distToShape(cone)[0] for body in edged.bodies) < p.contour_gap - d.TOLERANCE,
            "along an upright chamfer on the edge of the step the fin keeps the gap, not %.2f mm" % p.contour_gap)
+
+    # Stood on the free rim of the thinner part, fins for the side of the
+    # thicker one: the side starts above the bed, and the fin follows the
+    # thinner part below it, its tines resting there, as on a step above.
+    thin_rim = next(e for e in step.Edges if orient.is_rim(e) and abs(e.Curve.Radius - STEP_RADIUS) < d.TOLERANCE
+                    and e.BoundBox.ZMin > 2 * ROD_HEIGHT - d.TOLERANCE)
+    side = round_side_of(step)
+    plan = next(plan for plan in quick_stands.quick_plans(step, [(thin_rim, None)], [], p, d.TILT_ANGLE)
+                if plan.number == side)
+    stood = moved(step, plan.change)
+    below = geometry.build(stood, stood.Faces[side], p)
+    side_start = below.frame.face_bottom_z - below.frame.bed_z
+    under = [z for z in below.touching_z[1] if z + p.tine_height <= side_start]
+    expect(side_start > ROD_HEIGHT / 2 and len(under) > 1,
+           "on the thinner part below the side the fin follows it, tines resting there: %d below %.1f mm"
+           % (len(under), side_start))
+    # Just past CONTOUR_OWN_PART of the thinner part carrying tines, the fin
+    # follows it; just short of it, it goes on in the line of the side.
+    for height, follows in ((THIN_PART_CARRIES, True), (THIN_PART_SHORT, False)):
+        short_step = rod.fuse(Part.makeCylinder(STEP_RADIUS, height, V(0, 0, ROD_HEIGHT))).removeSplitter()
+        short_rim = next(e for e in short_step.Edges if orient.is_rim(e)
+                         and abs(e.Curve.Radius - STEP_RADIUS) < d.TOLERANCE
+                         and e.BoundBox.ZMin > ROD_HEIGHT + height - d.TOLERANCE)
+        side = round_side_of(short_step)
+        plan = next(plan for plan in quick_stands.quick_plans(short_step, [(short_rim, None)], [], p, d.TILT_ANGLE)
+                    if plan.number == side)
+        stood = moved(short_step, plan.change)
+        below = geometry.build(stood, stood.Faces[side], p)
+        side_start = below.frame.face_bottom_z - below.frame.bed_z
+        under = [z for z in below.touching_z[1] if z + p.tine_height <= side_start]
+        expect(bool(under) == follows,
+               "a thinner part %g mm high below the side: the fin %s, %d tines below %.1f mm"
+               % (height, "follows it" if follows else "goes on in the line of the side", len(under), side_start))
 
     # A groove round the middle of the shaft, lower than the bridge: spanned,
     # unless the bridge is 0.

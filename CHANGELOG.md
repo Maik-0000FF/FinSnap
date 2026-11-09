@@ -16,6 +16,7 @@ All notable changes to FinSnap are listed here. The format follows
 ### Fixed
 
 - A fin that finds its own place, one holding more with the tine restart on, or one where a tine finds the face at all, now searches the whole face instead of only the stretch every tine of the face shares, such as the narrow web of a T it stands on (#168)
+- The fin under a round side that starts above the bed follows a thinner part the side stands on again, its tines resting there, instead of going on in the line of the side past it, as since 0.15.0
 
 ## [0.16.0] - 2026-11-07
 
