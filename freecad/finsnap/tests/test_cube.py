@@ -14,8 +14,8 @@ import sys
 
 import Part
 
-from freecad.finsnap.tests.support import (CHAMFER, HALF_TURN, RECESS_RADIUS, expect, grooved, lower_left_face, run,
-                                           slot_on_end, split_cylinder, tilted_cube)
+from freecad.finsnap.tests.support import (CHAMFER, HALF_TURN, RECESS_RADIUS, TILT, expect, grooved, largest_facing,
+                                           lower_left_face, run, slot_on_end, split_cylinder, tilted, tilted_cube)
 from freecad.finsnap import analysis
 from freecad.finsnap import defaults as d
 from freecad.finsnap.bridge import bridges as find_bridges
@@ -75,6 +75,13 @@ SKEWED_WIDEST_AT = 10.0     # how far up it reaches that far, in mm
 FEET_EDGE = 60.0            # a cube long enough for several fins with feet, in mm
 FEET_RECESS = 8.0           # half the width of a recess that sends the middle one of them aside, in mm
 FEET_FINS = 5
+# A T standing on its narrow web, tilted TILT so its front overhangs: the web
+# this wide and high, the flange this wide and the T this high and deep, and a
+# slot this wide up the flange above the web, from this far above the web, so
+# the stretch every tine of the face shares is the web (t_beam()).
+T_WEB, T_WEB_HIGH = 10.0, 10.0
+T_FLANGE, T_HIGH, T_DEEP = 70.0, 60.0, 10.0
+T_SLOT, T_SLOT_ABOVE_WEB = 16.0, 2.0
 OUT_OF_REACH = 100.0   # a height or a width beyond any test part, in mm
 NOTCH_CLEAR = 1.0      # how far a notch in the end of a face stays from the grid tines, and its depth, in mm
 PIN_HOLE_RADIUS = 0.9  # a hole that splits the face under a tine, small enough to leave the tines beside it
@@ -188,6 +195,13 @@ NORMAL_DECIMALS = 6    # places to which the directions of faces are compared
 # ROD_HEIGHT, and on it a thinner one, or a body of revolution whose outline
 # runs through SPLINE_RADII, as far up again.
 STEP_RADIUS = 6.0
+# The thinner part only this high, the part stood on its free rim: about 6 mm
+# of it carry tines below the side, past CONTOUR_OWN_PART, or, lower, less.
+THIN_PART_CARRIES = 14.0
+THIN_PART_SHORT = 12.0
+# The long leg of a chamfer round the rim the part stands on, tines resting
+# on about 4 mm of it, just short of CONTOUR_OWN_PART.
+CHAMFER_TALL = 8.0
 SPLINE_RADII = (ROD_RADIUS, 9.5, 8.5, 8.0)
 GROOVE_DEPTH = 1.0     # a groove round the shaft, as deep and,
 GROOVE_LENGTH = 2.0    # along the axis, as long, lower than the bridge
@@ -891,7 +905,7 @@ def check_restart(cube, face):
     holed_face = lower_left_face(holed)
     spread = geometry.build(holed, holed_face, restart)
     gridded = geometry.build(holed, holed_face, one_grid)
-    room = frame.face_top_z - frame.bed_z - d.FACE_TOP_MARGIN
+    room = frame.room
     expect(not spread.dropped and gridded.dropped and spread.height > room - restart.layer_height - d.TOLERANCE,
            "above a hole the grid starts anew: no tine over it, the top tine at the top of the face: "
            "%.2f mm of %.2f" % (spread.height, room))
@@ -1015,7 +1029,7 @@ def recessed_from_bed(cube, face, half_width, left, along=None):
                        V(-OUT_OF_REACH / 2, centre_y - half_width, frame.bed_z - OUT_OF_REACH))
     layer = cube.common(box)
     part = cube.cut(layer.cut(layer.translated(-normal * SINK_DEPTH)))
-    return part, max((f for f in part.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE), key=lambda f: f.Area)
+    return part, largest_facing(part, normal)
 
 
 def check_restart_short_stretch(cube, face):
@@ -1042,8 +1056,7 @@ def check_restart_short_stretch(cube, face):
                "a fin that moved by itself stands there with a height of %.2f set by hand" % own.heights[1])
     # The place found can lie at exactly 0 along the face.
     shifted = part.translated(V(0, moved_on.starts[1], 0))
-    at_zero = geometry.build(shifted, max((f for f in shifted.Faces if f.normalAt(0, 0).getAngle(face.normalAt(0, 0))
-                                           < d.TOLERANCE), key=lambda f: f.Area), restart)
+    at_zero = geometry.build(shifted, largest_facing(shifted, face.normalAt(0, 0)), restart)
     expect(at_zero.moved and abs(at_zero.starts[1]) < d.TOLERANCE and held(at_zero, 1) == held(moved_on, 1),
            "a fin goes to a place found at 0 along the face as to any other: %s" % at_zero.starts)
     # A fin on a corner, its tine over a recess up to a short stretch, a thin
@@ -1053,12 +1066,86 @@ def check_restart_short_stretch(cube, face):
     pit, pit_face = recessed_from_bed(cube, face, SHORT_STRETCH_RECESS, SHORT_STRETCH_LEFT,
                                       frame.along_min + CORNER_WALL + SHORT_STRETCH_RECESS)
     placed = geometry.build(pit, pit_face, corner)
-    room = frame.face_top_z - frame.bed_z - d.FACE_TOP_MARGIN
+    room = frame.room
     expect(not placed.moved and held(placed, placed.numbers[0]) * d.BETTER_PLACE_HOLDS <= room,
            "a fin on a corner stays there on a short stretch: %s" % placed.touching_z)
     plain = geometry.build(cube, face, restart)
     expect(not plain.moved, "a fin on a face without a recess stays at its planned place")
     expect(not geometry.build(part, notched, one_grid).moved, "on one grid a fin with a tine on the face stays")
+
+
+def t_beam(sunk=False):
+    """A T standing on its web, tilted TILT with its front face overhanging,
+    and that face. Above the web a slot T_SLOT wide runs up the flange:
+    through the T to its top, or with `sunk` SINK_DEPTH deep into its front,
+    ending SHORT_STRETCH_LEFT below the top so the face stays one piece, the
+    front of the web sunk with it but for a wall CORNER_WALL thin at either
+    side."""
+    web, flange = T_WEB / 2, T_FLANGE / 2
+    outline = [V(0, -web, 0), V(0, web, 0), V(0, web, T_WEB_HIGH), V(0, flange, T_WEB_HIGH), V(0, flange, T_HIGH),
+               V(0, -flange, T_HIGH), V(0, -flange, T_WEB_HIGH), V(0, -web, T_WEB_HIGH)]
+    part = Part.Face(Part.makePolygon(outline + outline[:1])).extrude(V(T_DEEP, 0, 0))
+    slot_from = T_WEB_HIGH + T_SLOT_ABOVE_WEB
+    if sunk:
+        pocket = web - CORNER_WALL
+        recesses = [Part.makeBox(OUT_OF_REACH, 2 * pocket, slot_from, V(T_DEEP - SINK_DEPTH, -pocket, 0)),
+                    Part.makeBox(OUT_OF_REACH, T_SLOT, T_HIGH - SHORT_STRETCH_LEFT - slot_from,
+                                 V(T_DEEP - SINK_DEPTH, -T_SLOT / 2, slot_from))]
+    else:
+        recesses = [Part.makeBox(OUT_OF_REACH, T_SLOT, OUT_OF_REACH, V(-OUT_OF_REACH / 2, -T_SLOT / 2, slot_from))]
+    for recess in recesses:
+        part = part.cut(recess)
+    part = tilted(part)
+    return part, largest_facing(part, App.Rotation(V(0, 1, 0), TILT).multVec(V(1, 0, 0)))
+
+
+def beside_slot(result):
+    """Whether the one fin of `result` stands wholly beside the slot of t_beam()."""
+    start = result.starts[1]
+    return start + result.thickness <= -T_SLOT / 2 + d.TOLERANCE or start >= T_SLOT / 2 - d.TOLERANCE
+
+
+def check_search_inset(cube, face):
+    """A fin finding a place of its own keeps the end inset from either end
+    of the face, as the fins planned there, so it does not end on a chamfer:
+    a place only nearer an end than that is not found; with no inset it is."""
+    p = FinParams()
+    frame = face_frame.frame_of(cube, face)
+    step = p.end_inset / 2
+    middle = (frame.along_min + frame.along_max) / 2
+
+    def near_an_end(t):
+        return t < frame.along_min + p.end_inset - d.TOLERANCE or \
+            t + step > frame.along_max - p.end_inset + d.TOLERANCE
+
+    kept = geometry.nearest_place(frame, p.end_inset, near_an_end, middle, step, [])
+    flush = geometry.nearest_place(frame, 0.0, near_an_end, middle, step, [])
+    expect(kept is None and flush is not None,
+           "a fin finding its own place stays %.2f mm from the ends of the face: %s, without the inset %s"
+           % (p.end_inset, kept, flush))
+
+
+def check_places_past_stretch():
+    """A fin on the web of a T, the stretch every tine of the face shares,
+    finds its place beside the slot above, past that stretch: with the
+    restart one holding far more than its tines on the web, and on one grid,
+    with the web sunk under it, one where a tine finds the face at all."""
+    p = FinParams(placement=d.PLACEMENT_CENTER)
+    part, front = t_beam()
+
+    def held(result):
+        zs = result.touching_z[1]
+        return max(zs) + p.tine_height - min(zs)
+
+    stayed = geometry.build(part, front, p, shifts={1: 0.0})
+    found = geometry.build(part, front, p)
+    expect(found.moved and beside_slot(found) and held(found) >= d.BETTER_PLACE_HOLDS * held(stayed),
+           "a fin on the web of a T goes beside the slot above it, from %.2f to %.2f mm held, moved by %s"
+           % (held(stayed), held(found), found.moved))
+    sunk, sunk_front = t_beam(sunk=True)
+    rested = geometry.build(sunk, sunk_front, FinParams(placement=d.PLACEMENT_CENTER, tine_restart=False))
+    expect(rested.moved and beside_slot(rested) and rested.touching_z[1],
+           "on one grid a fin on a sunk web goes beside the sunk slot above it, moved by %s" % rested.moved)
 
 
 def check_moved_fins_feet():
@@ -1120,7 +1207,7 @@ def check_restart_narrow(cube, face):
     centre = on_face(start + p.tine_width / 2, hole_z)
     part = cube.cut(notch).cut(Part.makeCylinder(PIN_HOLE_RADIUS, 2 * NOTCH_CLEAR, centre - normal * NOTCH_CLEAR,
                                                  normal))
-    notched = max((f for f in part.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE), key=lambda f: f.Area)
+    notched = largest_facing(part, normal)
     result = geometry.build(part, notched, p)
     first = result.numbers[0]
     beside = [z for z in result.touching_z[first] if z + p.tine_height > low + d.TOLERANCE and z < high - d.TOLERANCE]
@@ -1150,8 +1237,7 @@ def check_restart_flank_hole(cube, face):
     flank = pin_hole(restarted, t0, (grid[1] + grid[2]) / 2, FLANK_HOLE_RADIUS)
 
     def own_grid(part):
-        result = geometry.build(part, max((f for f in part.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE),
-                                          key=lambda f: f.Area), p)
+        result = geometry.build(part, largest_facing(part, normal), p)
         return result.touching_z[result.numbers[0]]
 
     expect(own_grid(flank) == own_grid(restarted),
@@ -2507,8 +2593,8 @@ def check_three_round_fins():
     plain_plan = quick_stands.quick_plan(filleted, [], [(filleted.Faces[number], number),
                                                         (filleted.Faces[fillet], fillet)], one, d.TILT_ANGLE)
     on_fillet = moved(filleted, plain_plan.change)
-    for kind in (one, three):
-        built = geometry.build(on_fillet, on_fillet.Faces[number], kind)
+    for params in (one, three):
+        built = geometry.build(on_fillet, on_fillet.Faces[number], params)
         line = built.frame.contour
         start = built.frame.face_bottom_z - built.frame.bed_z
         slope = -built.frame.n_z / built.frame.n_out
@@ -2517,6 +2603,23 @@ def check_three_round_fins():
                and all(abs(line.flank(height) - (line.flank(start) - (start - height) * slope)) < GAP_ACROSS_FIN
                        for height in lower),
                "standing on a fillet the fin goes on in the line of the side down to its foot, no tine on the fillet")
+    # Standing on a chamfer higher than the closest tine spacing, or one just
+    # short of CONTOUR_OWN_PART: a chamfer still, not a thinner part, and no
+    # tine rests on it.
+    closest = FinParams(placement=d.PLACEMENT_CENTER, tine_spacing=one.least_tine_spacing)
+    for axial, params in ((CHAMFER_LONG, closest), (CHAMFER_TALL, one)):
+        chamfered = rod.makeChamfer(axial, CHAMFER_SHORT, bottom_rim)
+        cone = next(f for f in chamfered.Faces if isinstance(f.Surface, Part.Cone))
+        small = min((e for e in cone.Edges if orient.is_rim(e)), key=lambda e: e.Curve.Radius)
+        number = round_side_of(chamfered)
+        on_chamfer = moved(chamfered, orient.stand_on_rim(chamfered, small, orient.side_tilt(d.TILT_ANGLE),
+                                                          chamfered.Faces[number]))
+        built = geometry.build(on_chamfer, on_chamfer.Faces[number], params)
+        start = built.frame.face_bottom_z - built.frame.bed_z
+        lower = [height for height in built.frame.contour.heights if height < start - d.TOLERANCE]
+        expect(lower and not any(built.frame.contour.rests(height, height) for height in lower),
+               "standing on a chamfer %g mm long, tine spacing %.1f mm: no tine on the chamfer"
+               % (axial, params.tine_spacing))
     # A rib beside the wall of a side fin, high up: moving out gains nothing there.
     stood, side = stood_on_free_rim(rod)
     free = geometry.build(stood, stood.Faces[side], three)
@@ -2537,8 +2640,8 @@ def check_three_round_fins():
     thin_step = rod.fuse(Part.makeCylinder(THIN_STEP_RADIUS, ROD_HEIGHT, V(0, 0, ROD_HEIGHT))).removeSplitter()
     stood, side = stood_on_free_rim(thin_step)
     free = geometry.build(stood, stood.Faces[side], three)
-    side_top = free.frames[1].face_top_z - free.frames[1].bed_z - d.FACE_TOP_MARGIN
-    middle_top = free.frame.face_top_z - free.frame.bed_z - d.FACE_TOP_MARGIN
+    side_top = free.frames[1].room
+    middle_top = free.frame.room
     expect(side_top < middle_top, "the side fins end lower on a thin step than the fin between them")
     high = (side_top + middle_top) / 2
     capped = geometry.build(stood, stood.Faces[side], FinParams(placement=d.PLACEMENT_CENTER, fin_height=high,
@@ -2659,6 +2762,39 @@ def check_contour():
     cone = next(f for f in stood.Faces if isinstance(f.Surface, Part.Cone))
     expect(min(body.distToShape(cone)[0] for body in edged.bodies) < p.contour_gap - d.TOLERANCE,
            "along an upright chamfer on the edge of the step the fin keeps the gap, not %.2f mm" % p.contour_gap)
+
+    # Stood on the free rim of the thinner part, fins for the side of the
+    # thicker one: the side starts above the bed, and the fin follows the
+    # thinner part below it, its tines resting there, as on a step above.
+    thin_rim = next(e for e in step.Edges if orient.is_rim(e) and abs(e.Curve.Radius - STEP_RADIUS) < d.TOLERANCE
+                    and e.BoundBox.ZMin > 2 * ROD_HEIGHT - d.TOLERANCE)
+    side = round_side_of(step)
+    plan = next(plan for plan in quick_stands.quick_plans(step, [(thin_rim, None)], [], p, d.TILT_ANGLE)
+                if plan.number == side)
+    stood = moved(step, plan.change)
+    below = geometry.build(stood, stood.Faces[side], p)
+    side_start = below.frame.face_bottom_z - below.frame.bed_z
+    under = [z for z in below.touching_z[1] if z + p.tine_height <= side_start]
+    expect(side_start > ROD_HEIGHT / 2 and len(under) > 1,
+           "on the thinner part below the side the fin follows it, tines resting there: %d below %.1f mm"
+           % (len(under), side_start))
+    # Just past CONTOUR_OWN_PART of the thinner part carrying tines, the fin
+    # follows it; just short of it, it goes on in the line of the side.
+    for height, follows in ((THIN_PART_CARRIES, True), (THIN_PART_SHORT, False)):
+        short_step = rod.fuse(Part.makeCylinder(STEP_RADIUS, height, V(0, 0, ROD_HEIGHT))).removeSplitter()
+        short_rim = next(e for e in short_step.Edges if orient.is_rim(e)
+                         and abs(e.Curve.Radius - STEP_RADIUS) < d.TOLERANCE
+                         and e.BoundBox.ZMin > ROD_HEIGHT + height - d.TOLERANCE)
+        side = round_side_of(short_step)
+        plan = next(plan for plan in quick_stands.quick_plans(short_step, [(short_rim, None)], [], p, d.TILT_ANGLE)
+                    if plan.number == side)
+        stood = moved(short_step, plan.change)
+        below = geometry.build(stood, stood.Faces[side], p)
+        side_start = below.frame.face_bottom_z - below.frame.bed_z
+        under = [z for z in below.touching_z[1] if z + p.tine_height <= side_start]
+        expect(bool(under) == follows,
+               "a thinner part %g mm high below the side: the fin %s, %d tines below %.1f mm"
+               % (height, "follows it" if follows else "goes on in the line of the side", len(under), side_start))
 
     # A groove round the middle of the shaft, lower than the bridge: spanned,
     # unless the bridge is 0.
@@ -3119,6 +3255,8 @@ def main():
     check_shortened(cube, face)
     check_restart(cube, face)
     check_restart_short_stretch(cube, face)
+    check_search_inset(cube, face)
+    check_places_past_stretch()
     check_restart_narrow_lower_edge()
     check_moved_fins_feet()
     check_restart_names_what_fins_lack()

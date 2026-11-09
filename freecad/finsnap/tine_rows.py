@@ -20,7 +20,7 @@ NARROW_AT_EVERY_TINE = QT_TRANSLATE_NOOP("FinSnap", "the face is narrower than t
 
 def tine_heights(p, frame, tine_count):
     """Bottoms of the tines above the bed, on the layer grid, and the fin height."""
-    room = frame.face_top_z - frame.bed_z - d.FACE_TOP_MARGIN
+    room = frame.room
     limit = p.fin_height if p.fin_height > 0 else room
     if limit > room:
         raise FinError(translate("FinSnap", "fin_height %.2f reaches above the face (%.2f)") % (limit, room))
@@ -90,7 +90,7 @@ def _fin_reach(p, t0, thickness):
     """The stretch along the face that has to lie on it for the fin starting
     at t0: under the whole fin, or for a fin on a corner, which reaches past
     the end of the face, under its tine."""
-    if p.placement == d.PLACEMENT_CORNERS or p.placement in d.PLACEMENT_ONE_CORNER:
+    if p.on_corner:
         first = tine_start(p, t0, thickness)
         return first, first + p.tine_width
     return t0, t0 + thickness
@@ -280,7 +280,7 @@ def face_tines(p, frame, tine_count, restart):
                                                 tines on, lowest first
       contour, tine restart off             ->  tine_heights(): the one grid
     """
-    room = frame.face_top_z - frame.bed_z - d.FACE_TOP_MARGIN
+    room = frame.room
     limit = p.fin_height if p.fin_height > 0 else room
     if frame.contour is not None:
         # `restart` is off for every round side, whose one grid is kept; along

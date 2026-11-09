@@ -183,6 +183,12 @@ class FinParams:
         return 0.0 if self.foot_shape == d.FOOT_NONE else self.snap_to_layer(self.foot_thickness)
 
     @property
+    def on_corner(self):
+        """Whether the fins stand on the corners of the face, on both or on
+        one, reaching past its end, rather than along it."""
+        return self.placement == d.PLACEMENT_CORNERS or self.placement in d.PLACEMENT_ONE_CORNER
+
+    @property
     def first_tine(self):
         """Bottom of the lowest tine above the bed: as given, or on the top of the foot."""
         if self.tine_first > 0:

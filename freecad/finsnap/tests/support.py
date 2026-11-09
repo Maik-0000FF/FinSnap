@@ -35,12 +35,22 @@ SLOT_HEIGHT = 30.0
 V = App.Vector
 
 
+def tilted(shape):
+    """`shape` leaning TILT about the Y axis, set down on the bed."""
+    shape.rotate(V(0, 0, 0), V(0, 1, 0), TILT)
+    shape.translate(V(0, 0, -shape.BoundBox.ZMin))
+    return shape
+
+
+def largest_facing(shape, normal):
+    """The largest face of `shape` facing the way of `normal`."""
+    from freecad.finsnap import defaults as d
+    return max((f for f in shape.Faces if f.normalAt(0, 0).getAngle(normal) < d.TOLERANCE), key=lambda f: f.Area)
+
+
 def tilted_cube():
     box = Part.makeBox(EDGE, EDGE, EDGE, V(-EDGE / 2, 0, -EDGE / 2))
-    cube = box.makeChamfer(CHAMFER, box.Edges)
-    cube.rotate(V(0, 0, 0), V(0, 1, 0), TILT)
-    cube.translate(V(0, 0, -cube.BoundBox.ZMin))
-    return cube
+    return tilted(box.makeChamfer(CHAMFER, box.Edges))
 
 
 def split_cylinder(radius, height, bore=0.0):
@@ -62,10 +72,7 @@ def slot_on_end():
     bed one way, the end face the other."""
     middle = Part.makeBox(SLOT_LENGTH, 2 * SLOT_RADIUS, SLOT_HEIGHT, V(-SLOT_LENGTH / 2, -SLOT_RADIUS, 0))
     ends = [Part.makeCylinder(SLOT_RADIUS, SLOT_HEIGHT, V(x, 0, 0)) for x in (-SLOT_LENGTH / 2, SLOT_LENGTH / 2)]
-    slot = middle.fuse(ends).removeSplitter()
-    slot.rotate(V(0, 0, 0), V(0, 1, 0), TILT)
-    slot.translate(V(0, 0, -slot.BoundBox.ZMin))
-    return slot
+    return tilted(middle.fuse(ends).removeSplitter())
 
 
 def grooved(cube, face, t):
