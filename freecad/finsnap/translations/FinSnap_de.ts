@@ -1291,12 +1291,12 @@
         <translation>%s hat keinen Volumenkörper zum Exportieren</translation>
     </message>
     <message>
-        <location filename="../face_frame.py" line="336"/>
+        <location filename="../face_frame.py" line="342"/>
         <source>the selected face is not planar</source>
         <translation>die gewählte Fläche ist nicht eben</translation>
     </message>
     <message>
-        <location filename="../face_frame.py" line="259"/>
+        <location filename="../face_frame.py" line="265"/>
         <source>the selected face curves inward; fins go under the outside of a cylinder or tube</source>
         <translation>die gewählte Fläche wölbt sich nach innen; Finnen kommen unter die Außenseite eines Zylinders oder Rohrs</translation>
     </message>
@@ -1311,7 +1311,7 @@
         <translation>die gewählte gewölbte Fläche reicht nicht bis zu ihrer untersten Linie, unter der ihre Finne stünde</translation>
     </message>
     <message>
-        <location filename="../face_frame.py" line="265"/>
+        <location filename="../face_frame.py" line="271"/>
         <source>the lowest line of the selected face is cut away</source>
         <translation>die unterste Linie der gewählten Fläche ist weggeschnitten</translation>
     </message>
@@ -1336,43 +1336,43 @@
         <translation>die Fläche ist an jeder Zinke schmaler als die %.2f mm, die eine Finne braucht</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="170"/>
+        <location filename="../geometry.py" line="176"/>
         <source>tines at %s mm above the bed miss the face of the part by more than %.2f mm</source>
         <translation>Zinken bei %s mm über dem Bett verfehlen die Fläche des Teils um mehr als %.2f mm</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="172"/>
+        <location filename="../geometry.py" line="178"/>
         <source>tines at %s mm above the bed reach more than %.2f mm into the part</source>
         <translation>Zinken bei %s mm über dem Bett ragen mehr als %.2f mm in das Teil hinein</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="174"/>
+        <location filename="../geometry.py" line="180"/>
         <source>tines are %.2f mm long, shorter than %.2f bead widths; the slicer may not print them to the face. A gap of %.2f mm makes them long enough</source>
         <translation>die Zinken sind %.2f mm lang, kürzer als %.2f Raupenbreiten; der Slicer druckt sie womöglich nicht bis an die Fläche. Ein Spalt von %.2f mm macht sie lang genug</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="177"/>
+        <location filename="../geometry.py" line="183"/>
         <source>tines are %.2f mm long, shorter than %.2f bead widths; the slicer may not print them to the face. No gap up to %.1f mm makes them long enough: set a narrower bead</source>
         <translation>die Zinken sind %.2f mm lang, kürzer als %.2f Raupenbreiten; der Slicer druckt sie womöglich nicht bis an die Fläche. Kein Spalt bis %.1f mm macht sie lang genug: eine schmalere Raupe einstellen</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="180"/>
+        <location filename="../geometry.py" line="186"/>
         <source>tines at %s mm above the bed left out: the contour falls back further than the fin can follow without overhanging itself</source>
         <translation>Zinken bei %s mm über dem Bett weggelassen: die Kontur weicht weiter zurück, als die Finne folgen kann, ohne selbst überzuhängen</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="287"/>
+        <location filename="../geometry.py" line="303"/>
         <source>the face is too short for a fin on each corner</source>
         <translation>die Fläche ist zu kurz für eine Finne auf jeder Ecke</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="293"/>
+        <location filename="../geometry.py" line="309"/>
         <source>the face is too short for a fin of %.2f mm</source>
         <translation>die Fläche ist zu kurz für eine Finne von %.2f mm</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="274"/>
-        <location filename="../geometry.py" line="311"/>
+        <location filename="../geometry.py" line="290"/>
+        <location filename="../geometry.py" line="327"/>
         <source>%d fins do not fit side by side on this face</source>
         <translation>%d Finnen passen nicht nebeneinander unter diese Fläche</translation>
     </message>
@@ -1387,48 +1387,68 @@
         <translation>Seitenfinnen %s: einige Zinken weggelassen, an einem Fuß, der weiter außen steht, um dem Teil auszuweichen, oder wo sie ins Teil ragen würden</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="161"/>
+        <location filename="../geometry.py" line="167"/>
         <source>fin %d would stand further round the side than %.0f degrees from its lowest line</source>
         <translation>Finne %d stünde weiter um die Seite herum als %.0f Grad von ihrer untersten Linie</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="906"/>
+        <location filename="../geometry.py" line="190"/>
+        <source>fin %d would run into the part, which stands out of the face there; move it along the face</source>
+        <translation>Finne %d würde in das Teil ragen, das dort aus der Fläche heraussteht; verschiebe sie entlang der Fläche</translation>
+    </message>
+    <message>
+        <location filename="../geometry.py" line="192"/>
+        <source>fins moved along the face clear of the part, which stands out of the face at their planned place: %s</source>
+        <translation>Finnen entlang der Fläche vom Teil weggerückt, das an ihrem geplanten Platz aus der Fläche heraussteht: %s</translation>
+    </message>
+    <message>
+        <location filename="../geometry.py" line="194"/>
+        <source>fins at %s mm from the end of the face left out: the part stands out of the face there, and no place beside it is clear of it</source>
+        <translation>Finnen bei %s mm vom Ende der Fläche weggelassen: das Teil steht dort aus der Fläche heraus, und kein Platz daneben ist frei davon</translation>
+    </message>
+    <message>
+        <location filename="../geometry.py" line="196"/>
+        <source>the part stands out of the face under every fin, and no place along the face is clear of it</source>
+        <translation>das Teil steht unter jeder Finne aus der Fläche heraus, und kein Platz entlang der Fläche ist frei davon</translation>
+    </message>
+    <message>
+        <location filename="../geometry.py" line="925"/>
         <source>the fins overlap the part by %.4f mm³</source>
         <translation>die Finnen überschneiden das Teil um %.4f mm³</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="939"/>
+        <location filename="../geometry.py" line="958"/>
         <source>fins under the selected face alone, not reaching over the groove: %s</source>
         <translation>Finnen nur unter der gewählten Fläche, nicht über die Rille hinweg: %s</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1033"/>
+        <location filename="../geometry.py" line="1282"/>
         <location filename="../params.py" line="149"/>
         <source>tines (%.2f mm) are wider than the fin (%.2f mm)</source>
         <translation>die Zinken (%.2f mm) sind breiter als die Finne (%.2f mm)</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1080"/>
+        <location filename="../geometry.py" line="1330"/>
         <source>fin %d would pass fin %d; a fin stays between its neighbours</source>
         <translation>die Finne %d käme an der Finne %d vorbei; eine Finne bleibt zwischen ihren Nachbarinnen</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1083"/>
+        <location filename="../geometry.py" line="1333"/>
         <source>fins %d and %d stand %.2f mm apart, closer than %.2f mm</source>
         <translation>die Finnen %d und %d stehen %.2f mm auseinander, näher als %.2f mm</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1221"/>
+        <location filename="../geometry.py" line="1370"/>
         <source>fin %d is %.2f mm high, above the face (%.2f mm)</source>
         <translation>die Finne %d ist %.2f mm hoch, höher als die Fläche (%.2f mm)</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1235"/>
+        <location filename="../geometry.py" line="1380"/>
         <source>fin %d is lower than its first tine</source>
         <translation>die Finne %d ist niedriger als ihre erste Zinke</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1086"/>
+        <location filename="../geometry.py" line="1336"/>
         <source>every fin is removed; delete the fins instead, or bring them back</source>
         <translation>alle Finnen sind entfernt; lösche stattdessen die Finnen oder hole sie zurück</translation>
     </message>
@@ -1443,22 +1463,22 @@
         <translation>die gewählte Fläche liegt waagerecht; sie liegt auf dem Bett oder braucht normale Stützen</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1423"/>
+        <location filename="../geometry.py" line="1499"/>
         <source>fin %d by %.2f mm</source>
         <translation>Finne %d um %.2f mm</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1430"/>
+        <location filename="../geometry.py" line="1509"/>
         <source>tines at %s mm above the bed left out: the face is narrower there than the fin</source>
         <translation>Zinken bei %s mm über dem Bett weggelassen: die Fläche ist dort schmaler als die Finne</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1435"/>
+        <location filename="../geometry.py" line="1514"/>
         <source>the face is inclined %.0f degrees to the bed, outside %.0f to %.0f</source>
         <translation>die Fläche ist %.0f Grad zur Bettebene geneigt, außerhalb von %.0f bis %.0f</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1452"/>
+        <location filename="../geometry.py" line="1531"/>
         <source>the part stands on one point of its rim: a chamfer on the rim and a brim in the slicer give it more hold on the bed</source>
         <translation>das Teil steht auf einem Punkt seines Rands: eine Fase am Rand und ein Brim im Slicer geben ihm mehr Halt auf dem Bett</translation>
     </message>
@@ -1483,7 +1503,7 @@
         <translation>die Finnen passen in dieser Lage nicht unter die gewählte Fläche: %s</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1268"/>
+        <location filename="../geometry.py" line="1431"/>
         <source>no tine finds the face; it has a recess or hole at every tine</source>
         <translation>keine Zinke trifft die Fläche; sie hat an jeder Zinke eine Aussparung oder ein Loch</translation>
     </message>
@@ -1508,22 +1528,22 @@
         <translation>keine Seitenfinne findet bei diesem Winkel Platz neben dem Teil</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="165"/>
+        <location filename="../geometry.py" line="171"/>
         <source>fins beside the lowest line of a round side stand on its contour: turn on Follow the contour</source>
         <translation>Finnen neben der untersten Linie einer runden Seite stehen auf ihrer Kontur: Kontur folgen einschalten</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1402"/>
+        <location filename="../geometry.py" line="1473"/>
         <source>tines at %s mm above the bed left out: a recess or hole in the face lies under them</source>
         <translation>Zinken bei %s mm über dem Bett weggelassen: unter ihnen liegt eine Aussparung oder ein Loch in der Fläche</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1421"/>
+        <location filename="../geometry.py" line="188"/>
         <source>fins moved along the face to where their tines hold better than at their planned place: %s</source>
         <translation>Finnen entlang der Fläche dorthin gerückt, wo ihre Zinken besser halten als an ihrem geplanten Platz: %s</translation>
     </message>
     <message>
-        <location filename="../geometry.py" line="1426"/>
+        <location filename="../geometry.py" line="1502"/>
         <source>fins at %s mm from the end of the face left out: none of their tines lies wholly on the face</source>
         <translation>Finnen bei %s mm vom Ende der Fläche weggelassen: keine ihrer Zinken liegt ganz auf der Fläche</translation>
     </message>
@@ -1833,7 +1853,7 @@
         <translation>die Ebene der Finne schneidet das Teil nicht</translation>
     </message>
     <message>
-        <location filename="../contour.py" line="633"/>
+        <location filename="../contour.py" line="635"/>
         <source>the part does not reach the bed in the plane of the fin</source>
         <translation>das Teil reicht in der Ebene der Finne nicht bis zum Bett</translation>
     </message>

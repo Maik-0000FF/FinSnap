@@ -14,8 +14,9 @@ import sys
 
 import Part
 
-from freecad.finsnap.tests.support import (CHAMFER, HALF_TURN, RECESS_RADIUS, TILT, expect, grooved, largest_facing,
-                                           lower_left_face, run, slot_on_end, split_cylinder, tilted, tilted_cube)
+from freecad.finsnap.tests.support import (CHAMFER, EDGE, HALF_TURN, RECESS_RADIUS, TILT, expect, grooved,
+                                           largest_facing, lower_left_face, run, slot_on_end, split_cylinder, tilted,
+                                           tilted_cube)
 from freecad.finsnap import analysis
 from freecad.finsnap import defaults as d
 from freecad.finsnap.bridge import bridges as find_bridges
@@ -127,6 +128,15 @@ BOX_SIDE = 20.0
 EDGE_ROUND = 3.0       # size of the chamfer or radius of the fillet on a box edge
 CHAMFER_LONG = 3.0     # the long leg of a chamfer of unequal widths on a rim, in mm
 CHAMFER_SHORT = 1.0    # its short leg
+# Bosses on the face of the tilted cube (bossed_cube()): how high they stand
+# out, the radii one fin moves aside from, one beside the fin, the shift by
+# hand onto it, one over the middle of the face, one over all of it (mm).
+BOSS_HEIGHT = 3.0
+BOSS_RADII = (1.5, 3.0)
+BOSS_BESIDE = 4.0
+BOSS_SHIFT = 6.0
+BOSS_MIDDLE = 6.0
+BOSS_WIDE = 9.0
 FLOOR_SIZE = 1000.0    # a plane under every test part, to measure how high it rests
 FLOOR_DEPTH = 100.0
 FRUSTUM_BASE = 40.0
@@ -3156,6 +3166,55 @@ def check_overhangs(cube, face):
            "with a fin under the base the tilted pyramid has no overhang")
 
 
+def bossed_cube(*bosses):
+    """The tilted cube with upright bosses BOSS_HEIGHT high standing out of the
+    face the fins go under, in its middle, as (radius, mm along the cube)."""
+    plain = Part.makeBox(EDGE, EDGE, EDGE, V(-EDGE / 2, 0, -EDGE / 2))
+    shape = plain.makeChamfer(CHAMFER, plain.Edges)
+    for radius, along in bosses:
+        shape = shape.fuse(Part.makeCylinder(radius, BOSS_HEIGHT, V(0, along, -EDGE / 2), V(0, 0, -1)))
+    return tilted(shape.removeSplitter())
+
+
+def check_boss_on_face():
+    """A boss standing out of the face where a fin is planned sends it aside
+    to the nearest place clear of it, or leaves it out where none is; a fin
+    moved onto it by hand is refused; a plain face has nothing in front."""
+    cube = tilted_cube()
+    expect(geometry.in_front_of(cube, face_frame.frame_of(cube, lower_left_face(cube))) is None,
+           "nothing of the plain cube stands out in front of its face")
+    one = FinParams(placement=d.PLACEMENT_CENTER)
+    for restart in (False, True):
+        for radius in BOSS_RADII:
+            bossed = bossed_cube((radius, EDGE / 2))
+            params = FinParams(placement=d.PLACEMENT_CENTER, tine_restart=restart)
+            built = geometry.build(bossed, lower_left_face(bossed), params)
+            closest = min(body.distToShape(bossed)[0] for body in built.bodies)
+            expect(built.moved and any("clear of the part" in w for w in built.warnings)
+                   and closest >= params.gap - d.TOLERANCE,
+                   "restart %s, a boss of %g mm: the fin moves aside by %.1f mm, %.2f mm off the part"
+                   % (restart, radius, list(built.moved.values())[0], closest))
+    bossed = bossed_cube((BOSS_RADII[0], BOSS_BESIDE))
+    try:
+        geometry.build(bossed, lower_left_face(bossed), one, shifts={1: BOSS_SHIFT})
+    except face_frame.HandEditError as error:
+        expect("run into the part" in str(error), "a fin moved by hand onto a boss is refused: %s" % error)
+    else:
+        raise AssertionError("a fin moved by hand onto a boss was built")
+    bossed = bossed_cube((BOSS_WIDE, EDGE / 2))
+    try:
+        geometry.build(bossed, lower_left_face(bossed), one)
+    except face_frame.FinError as error:
+        expect("under every fin" in str(error), "a boss over the whole face leaves no place: %s" % error)
+    else:
+        raise AssertionError("fins were built over a boss covering the face")
+    bossed = bossed_cube((BOSS_MIDDLE, EDGE / 2))
+    three = geometry.build(bossed, lower_left_face(bossed),
+                           FinParams(placement=d.PLACEMENT_DISTRIBUTED, fin_count=3))
+    expect(len(three.positions) == 2 and any("no place beside it is clear" in w for w in three.warnings),
+           "a boss as wide as the middle of the face leaves the middle one of three fins out: %s" % three.warnings)
+
+
 def main():
     cube = tilted_cube()
     face = lower_left_face(cube)
@@ -3290,6 +3349,7 @@ def main():
     check_moved_fins(cube, face)
     check_merged_clearance(cube, face)
     check_fin_at(cube, face)
+    check_boss_on_face()
     print("all checks passed", file=sys.__stdout__)
 
 
