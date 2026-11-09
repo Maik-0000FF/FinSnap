@@ -13,7 +13,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Changed
 
-- A fin left out, over a hole or by a boss, no longer counts as a neighbour: the fins beside it may move into its place and their feet grow as wide as they hold clear of the part
+- A fin left out, over a hole or by a boss, no longer counts as a neighbour: the fins planned after it may move into its place, and the feet of the fins beside it grow as wide as they hold clear of the part
 
 ### Fixed
 
