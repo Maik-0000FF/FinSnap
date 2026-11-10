@@ -11,9 +11,11 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-10
+
 ### Changed
 
-- A fin left out, over a hole or by a boss, no longer counts as a neighbour: the fins planned after it may move into its place, and the feet of the fins beside it grow as wide as they hold clear of the part
+- A fin left out, over a hole or by a boss, no longer counts as a neighbour: the fins planned after it may move into its place, and the feet of the fins beside it grow as wide as they hold clear of the part (#182)
 
 ### Fixed
 
@@ -352,7 +354,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.16.1...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.17.0
 [0.16.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.16.1
 [0.16.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.16.0
 [0.15.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.15.0
