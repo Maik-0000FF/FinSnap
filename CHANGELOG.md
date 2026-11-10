@@ -11,6 +11,17 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.17.0] - 2026-11-10
+
+### Changed
+
+- A fin left out, over a hole or by a boss, no longer counts as a neighbour: the fins planned after it may move into its place, and the feet of the fins beside it grow as wide as they hold clear of the part (#182)
+
+### Fixed
+
+- A boss or anything else of the part standing out of a planar face where a fin is planned no longer stops the build with "the fins overlap the part": the fin moves along the face to the nearest place clear of it, or is left out with a warning where there is none; a fin moved onto it by hand is refused (#182)
+- A tine left out where the face narrows is named as "narrower there than the fin" only where the face under the fin is; where it is wider than the fin but too narrow for a fin and its end insets, the warning says so and names the width a fin needs (#183)
+
 ## [0.16.1] - 2026-11-09
 
 ### Fixed
@@ -343,7 +354,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.16.1...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.17.0...HEAD
+[0.17.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.17.0
 [0.16.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.16.1
 [0.16.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.16.0
 [0.15.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.15.0
