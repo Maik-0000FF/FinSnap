@@ -1050,9 +1050,9 @@ def stood_again_after_laid_flat(doc):
 
 
 def checks_share_starts(doc):
-    """The bridges and the islands of a part as it stands, asked one after
-    the other as a build asks them, share what starts in it: its faces are
-    sampled once and it is meshed once."""
+    """The overhangs, the bridges and the islands of a part as it stands, asked
+    one after the other as a build asks them, share what starts in it: its
+    faces are sampled once and it is meshed once, and no shape is kept."""
     length, depth, height = BOX
     pier = length / SHARED_PIERS
     slab = Part.makeBox(length, depth, height / SHARED_PIERS, V(0, 0, height))
@@ -1073,14 +1073,18 @@ def checks_share_starts(doc):
         setattr(overhang, name, counted(name))
     try:
         p = FinParams()
-        spans = analysis.bridges(part, global_shape(part), (), p)
+        shape = global_shape(part)
+        rated = analysis.overhangs(part, shape, (), p)
+        spans = analysis.bridges(part, shape, (), p)
         found = analysis.islands(part, p)
     finally:
         for name in calls:
             setattr(overhang, name, real[name])
-    expect(len(spans) == 1 and found == [] and calls == {"_lowest_points": 1, "facing_down": 1},
-           "the bridges and the islands of a slab on piers, asked one after the other, sample its faces once "
-           "and mesh it once: %s" % calls)
+    kept = analysis._analysis(part, p)[analysis.STARTS]
+    expect(len(spans) == 1 and rated == [] and found == [] and calls == {"_lowest_points": 1, "facing_down": 1}
+           and kept._shape is None,
+           "the overhangs, the bridges and the islands of a slab on piers, asked one after the other, sample "
+           "its faces once and mesh it once, and the Starts kept hold no shape: %s" % calls)
 
 
 def kept_islands(doc):

@@ -56,7 +56,6 @@ import Part
 
 from . import defaults as d
 from . import overhang
-from .shapes import bounds
 
 # The directions lines are laid across a free region in, over half a turn, a
 # line having no sense: this far apart (degrees) first, then this far round
@@ -133,7 +132,7 @@ def bridges(shape, first_layer, layer, bead, rating, supported=(), starts=None):
             span, lines, spacing = bridged
             under = [n for n in numbers if _lies_over(shape.Faces[n - 1], region, bead)]
             if under:
-                ceiling = min(bounds(shape.Faces[n - 1]).ZMin for n in under)
+                ceiling = bed + min(starts.lowest[n] for n in under)
                 covered = [n for n in under if _covered(shape.Faces[n - 1], lines, spacing)]
                 found.append(Bridge(under, covered, region.translated(App.Vector(0, 0, ceiling)), span,
                                     rating.bridge_level(span)))

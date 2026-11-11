@@ -119,14 +119,21 @@ def _analysis(part_obj, p):
     return keep(_kept, stand_key(part_obj, p), lambda: {ISLANDS: None, BRIDGES: {}, CENTRES: {}, STARTS: None})
 
 
-def _starts(kept, shape):
-    """Where something of `shape` starts to print (overhang.Starts), kept in
-    `kept`, the entry of its part as it stands (_analysis()): one for the part
-    as it stands, so its islands and its bridges are cut at the same heights,
-    its faces are sampled once and it is meshed once."""
+def _with_starts(kept, shape, check):
+    """What `check` returns, called with where something of `shape` starts to
+    print (overhang.Starts), kept in `kept`, the entry of its part as it
+    stands (_analysis()): one for the part as it stands, so its overhangs,
+    its islands and its bridges are cut at the same heights, its faces are
+    sampled once and it is meshed once. The shape is lent to it for the check
+    and let go of after it, so no shape is kept."""
     if kept[STARTS] is None:
         kept[STARTS] = overhang.Starts(shape)
-    return kept[STARTS]
+    starts = kept[STARTS]
+    starts.lend(shape)
+    try:
+        return check(starts)
+    finally:
+        starts.let_go()
 
 
 def checks_while_editing():
@@ -147,8 +154,8 @@ def islands(part_obj, p):
     kept = _analysis(part_obj, p)
     if kept[ISLANDS] is None:
         shape = global_shape(part_obj)
-        kept[ISLANDS] = overhang.islands(shape, p.first_layer_height, p.layer_height,
-                                         _starts(kept, shape))
+        kept[ISLANDS] = _with_starts(kept, shape, lambda starts: overhang.islands(
+            shape, p.first_layer_height, p.layer_height, starts))
     return list(kept[ISLANDS])
 
 
@@ -164,13 +171,17 @@ def bridges(part_obj, shape, supported, p):
     preferences; faces in `supported`, carried by fins, span nothing. Worked
     out once for the part as it stands, the bead, the limits and the faces
     carried, at most KEPT combinations of them."""
+    return _bridges(_analysis(part_obj, p), shape, supported, p)
+
+
+def _bridges(kept, shape, supported, p):
+    """bridges() for `kept`, the entry of the part as it stands."""
     rating = limits.current()
     carried = tuple(number for number, face in enumerate(shape.Faces, 1)
                     if any(face.isSame(other) for other in supported))
-    kept = _analysis(part_obj, p)
     found = keep(kept[BRIDGES], (p.bead_width, rating, carried),
-                  lambda: bridge.bridges(shape, p.first_layer_height, p.layer_height, p.bead_width, rating, supported,
-                                         _starts(kept, shape)))
+                  lambda: _with_starts(kept, shape, lambda starts: bridge.bridges(
+                      shape, p.first_layer_height, p.layer_height, p.bead_width, rating, supported, starts)))
     return list(found)
 
 
@@ -182,10 +193,11 @@ def overhangs(part_obj, shape, supported, p, with_bridges=True):
     overhangs: their risk is their span. A face the bridge covers in part
     still overhangs where it does not. Without `with_bridges` no bridge is
     looked for, and every face is rated."""
-    spanned = ({number for found in bridges(part_obj, shape, supported, p) for number in found.covered}
+    kept = _analysis(part_obj, p)
+    spanned = ({number for found in _bridges(kept, shape, supported, p) for number in found.covered}
                if with_bridges else set())
-    return [(face_name(number), level) for number, level in overhang.rated(shape, supported, limits.current())
-            if number not in spanned]
+    rated = _with_starts(kept, shape, lambda starts: overhang.rated(shape, supported, limits.current(), starts.down))
+    return [(face_name(number), level) for number, level in rated if number not in spanned]
 
 
 def bridge_notes(part_obj, found):

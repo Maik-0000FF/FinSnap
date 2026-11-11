@@ -91,19 +91,21 @@ def _normals_above(face, bed_z):
     return normals
 
 
-def facing_down(shape):
+def facing_down(shape, wanted=None):
     """(number, how steeply its normal points down) of each face of `shape`
     whose normal points down somewhere above the bed, as the cosine of the
     angle of the face from the bed at its flattest sample: 1 for a face
-    lying flat over the bed, 0 for a vertical one. Faces resting on the bed
-    are left out."""
+    lying flat over the bed, 0 for a vertical one, which is left out, as is
+    one a rounding off the vertical. Faces resting on the bed are left out,
+    and those `wanted`, called with the face, turns away, before they are
+    sampled."""
     bed_z = bounds(shape).ZMin
     found = []
     for number, face in enumerate(shape.Faces, 1):
-        if bounds(face).ZMax <= bed_z + d.TOLERANCE:
+        if bounds(face).ZMax <= bed_z + d.TOLERANCE or (wanted is not None and not wanted(face)):
             continue
         down = max((-n.z for n in _normals_above(face, bed_z)), default=0.0)
-        if down > 0:
+        if down > d.TOLERANCE:
             found.append((number, down))
     return found
 
@@ -113,9 +115,13 @@ def steepest_down(shape, supported, min_area, down=None):
     those carried by fins (`supported`) or smaller than `min_area` (mm2).
     `down` is facing_down() of the shape as it stands, where it was worked
     out before (Starts.down), so the faces are not sampled again."""
-    return [(number, steep) for number, steep in (facing_down(shape) if down is None else down)
-            if shape.Faces[number - 1].Area >= min_area
-            and not any(shape.Faces[number - 1].isSame(carried) for carried in supported)]
+    def wanted(face):
+        return face.Area >= min_area and not any(face.isSame(carried) for carried in supported)
+
+    if down is None:
+        return facing_down(shape, wanted)
+    faces = shape.Faces
+    return [(number, steep) for number, steep in down if wanted(faces[number - 1])]
 
 
 def flatter(down, limit_deg):
@@ -124,16 +130,16 @@ def flatter(down, limit_deg):
     return down > math.cos(math.radians(limit_deg)) + d.TOLERANCE
 
 
-def rated(shape, supported, rating):
+def rated(shape, supported, rating, down=None):
     """(number, level), numbers from 1, of the faces of `shape` lying flatter over the bed
     than `rating`, a limits.Limits, allows: limits.UNPRINTABLE flatter than
     its overhang_unprintable, limits.CRITICAL flatter than its
-    overhang_critical only."""
+    overhang_critical only. `down` as for steepest_down()."""
     found = []
-    for number, down in steepest_down(shape, supported, rating.overhang_min_area):
-        if flatter(down, rating.overhang_unprintable):
+    for number, steep in steepest_down(shape, supported, rating.overhang_min_area, down):
+        if flatter(steep, rating.overhang_unprintable):
             found.append((number, limits.UNPRINTABLE))
-        elif flatter(down, rating.overhang_critical):
+        elif flatter(steep, rating.overhang_critical):
             found.append((number, limits.CRITICAL))
     return found
 
@@ -257,11 +263,12 @@ def layer_of(height, first_layer, layer):
 
 
 class Starts:
-    """Where something of a shape starts to print, for islands() and
+    """Where something of a shape starts to print, for rated(), islands() and
     bridge.bridges() of the same shape to share: plain numbers and points,
-    each worked out once and only when asked for. The shape is let go of
-    once all is worked out, so a Starts kept holds no shape, and serves any
-    copy of the part as it stands.
+    each worked out once and only when asked for. Kept with a part as it
+    stands, it holds no shape: the shape is lent for a check (lend()) and
+    let go of after it (let_go()), and what was worked out serves any copy
+    of the part as it stands.
 
     INPUTS this has to withstand:
       an empty shape                        ->  no bed (None), no points, no faces, no
@@ -277,12 +284,20 @@ class Starts:
       nothing asked for                     ->  the shape neither meshed nor its faces
                                                 sampled
       the faces asked for alone             ->  the shape not meshed
-      all asked for                         ->  each worked out once, the shape let go of
-      another copy of the same part as it
-        stands                              ->  the same Starts serve it
+      the same asked for again              ->  not worked out again, with or without a
+                                                shape
+      let go of, then something asked for
+        that was not worked out yet         ->  ValueError: lend() it a shape first
+      lent another copy of the same part
+        as it stands                        ->  what is left is worked out on that one;
+                                                what was worked out before serves it
+      a face the kernel cannot measure      ->  the error passes on, nothing half kept:
+                                                asked again, it is worked out again
       the part changed into one its key
-        does not tell apart (stand_key())   ->  the Starts kept serve it, as the islands
-                                                and bridges kept do
+        does not tell apart (stand_key()),
+        also where its bridges are worked
+        out anew, as for another bead       ->  the Starts kept serve it, as decided: the
+                                                islands and bridges kept do the same
     """
 
     def __init__(self, shape):
@@ -291,25 +306,37 @@ class Starts:
         self.bed = None if shape.isNull() else bounds(shape).ZMin
         self._points = self._down = self._lowest = None
 
-    def _let_go(self):
-        """Forget the shape once nothing of it is left to work out."""
-        if self._points is not None and self._down is not None:
-            self._shape = None
+    def lend(self, shape):
+        """Take `shape`, the part as it stands, for what is still to be worked out."""
+        self._shape = shape
+
+    def let_go(self):
+        """Forget the shape; what was worked out stays."""
+        self._shape = None
+
+    def _asked(self):
+        if self._shape is None:
+            raise ValueError("these Starts hold no shape to work out what is asked of them: lend() one")
+        return self._shape
 
     @property
     def points(self):
         """The lowest points of the shape, where an island can start."""
         if self._points is None:
-            self._points = [] if self.bed is None else _lowest_points(self._shape)
-            self._let_go()
+            self._points = [] if self.bed is None else _lowest_points(self._asked())
         return self._points
 
     def _faces(self):
         if self._down is None:
-            self._down = [] if self.bed is None else facing_down(self._shape)
-            self._lowest = {number: bounds(self._shape.Faces[number - 1]).ZMin - self.bed
-                            for number, _ in self._down}
-            self._let_go()
+            if self.bed is None:
+                down, lowest = [], {}
+            else:
+                shape = self._asked()
+                faces = shape.Faces
+                down = facing_down(shape)
+                lowest = {number: bounds(faces[number - 1]).ZMin - self.bed for number, _ in down}
+            # Both at once, so neither is kept without the other.
+            self._down, self._lowest = down, lowest
 
     @property
     def down(self):
@@ -358,6 +385,10 @@ class LayerCuts:
       a start within the tolerance below
         that middle, or less than
         NEAR_MIDDLE above it                ->  the same
+      a start right at NEAR_MIDDLE above
+        a middle                            ->  the layer lowered or not, as the rounding
+                                                falls: both hold, the start lies that far
+                                                above either cut
       a start right where the layer
         changes, the tolerance below the
         middle, seen by another copy on
@@ -386,8 +417,10 @@ class LayerCuts:
             number = layer_of(height, first_layer, layer)
             if number == 0:
                 continue
-            # Near the middle below its layer, or right below where the next begins.
-            if number > 1 and height < layer_middle(number - 1, first_layer, layer) + NEAR_MIDDLE:
+            # Near the middle below its layer, which in layer 1 nothing is: what
+            # starts that near the middle of the first layer lies in it. Or right
+            # below where the next layer begins.
+            if height < layer_middle(number - 1, first_layer, layer) + NEAR_MIDDLE:
                 self.lowered.add(number)
             if height >= layer_middle(number, first_layer, layer) - d.TOLERANCE - LAYER_EDGE:
                 self.lowered.add(number + 1)

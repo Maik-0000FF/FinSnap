@@ -1841,10 +1841,22 @@ def check_starts():
            "height, its top starts nothing: %s" % lowest)
     sampled, (meshed, heights) = calls_counted("facing_down", lambda: calls_counted(
         "_lowest_points", lambda: (starts.heights, starts.points, starts.down, starts.heights)[0]))
-    expect(not sampled and len(meshed) == 1 and starts._shape is None
-           and any(abs(height - PIER[2]) < d.TOLERANCE for height in heights),
-           "asked for all, it meshes once, samples no face again and lets go of the shape; the height of the "
-           "underside, which holds no lowest point, is among its heights: %d meshes" % len(meshed))
+    expect(not sampled and len(meshed) == 1 and any(abs(height - PIER[2]) < d.TOLERANCE for height in heights),
+           "asked for all, it meshes once and samples no face again; the height of the underside, which "
+           "holds no lowest point, is among its heights: %d meshes" % len(meshed))
+    starts.let_go()
+    expect(starts.heights == heights, "let go of its shape, it still tells what it worked out")
+    unasked = overhang.Starts(table)
+    unasked.let_go()
+    try:
+        unasked.points
+    except ValueError as error:
+        expect("lend" in str(error), "let go of before it was asked, it says it needs a shape: %s" % error)
+    else:
+        raise AssertionError("Starts without a shape gave points")
+    unasked.lend(table.copy())
+    expect(len(unasked.points) == len(starts.points) and unasked.lowest == lowest,
+           "lent another copy of the shape, it works out on that what it was not asked before")
 
 
 def check_islands():
