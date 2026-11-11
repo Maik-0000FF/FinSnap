@@ -121,12 +121,16 @@ def bridges(shape, first_layer, layer, bead, rating, supported=(), starts=None):
         if at is not None:
             starting.setdefault(at, []).append(number)
     found = []
-    # Each height cut once: the cut of one layer is mostly what carries the next.
+    # The heights of the layers something hangs in and of what carries them, cut
+    # together, each once: the cut of one layer is mostly what carries the next.
+    # Read once: the kernel makes the list of the faces anew each time it is asked for.
+    part_faces = shape.Faces
+    faces = overhang.faces_at(shape, {bed + z for at in starting for z in (at.here, at.below)}, len(part_faces))
     made = {}
 
     def cut(z):
         if z not in made:
-            made[z] = _cut(shape, z)
+            made[z] = _flat(faces[z], z)
         return made[z]
 
     for at, numbers in sorted(starting.items()):
@@ -144,23 +148,23 @@ def bridges(shape, first_layer, layer, bead, rating, supported=(), starts=None):
             if bridged is None:
                 continue
             span, lines, spacing = bridged
-            under = [n for n in numbers if _lies_over(shape.Faces[n - 1], region, bead)]
+            under = [n for n in numbers if _lies_over(part_faces[n - 1], region, bead)]
             if under:
                 ceiling = bed + min(starts.lowest[n] for n in under)
-                covered = [n for n in under if _covered(shape.Faces[n - 1], lines, spacing)]
+                covered = [n for n in under if _covered(part_faces[n - 1], lines, spacing)]
                 found.append(Bridge(under, covered, region.translated(App.Vector(0, 0, ceiling)), span,
                                     rating.bridge_level(span)))
     return found
 
 
-def _cut(shape, z):
-    """The faces where the plane at height `z` cuts `shape`, moved down into
-    the plane of the bed, z 0, so faces of different layers can be compared;
-    None where the kernel cannot make them."""
-    cut = overhang.sections(shape, z, 0.0)
-    if cut is None:
+def _flat(faces, z):
+    """`faces`, where the plane at height `z` cuts a shape
+    (overhang.faces_at()), moved down into the plane of the bed, z 0, so
+    faces of different layers can be compared; None where there are none to
+    tell, as the kernel could not cut."""
+    if faces is None:
         return None
-    return [face.translated(App.Vector(0, 0, -z)) for _, _, face in cut]
+    return [face.translated(App.Vector(0, 0, -z)) for face in faces]
 
 
 def _free(here, below):
