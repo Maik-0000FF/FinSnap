@@ -56,6 +56,10 @@ SECTION_SLAB = 1.0
 # no more than this many faces times heights.
 CUTS_MOST = 8
 CUT_FACES_MOST = 4000
+# The faces of the cuts of a part are kept for its checks to share (Starts.cuts())
+# while they hold no more edges than this between them: measured, an edge kept
+# takes two to four thousand bytes, so some forty to eighty million in all.
+CUT_EDGES_KEPT = 20000
 # What carries a point is seen in a cut of the layer below its own, at the
 # middle of that layer. Where a point starts near that middle, the cut is made
 # this far under it (mm), more than the tolerance by which a point below the
@@ -203,10 +207,10 @@ def islands(part, first_layer, layer, starts=None):
     cuts = LayerCuts(starts.heights, first_layer, layer)
     # The points above the first layer, each with the heights its layer and
     # what carries it are cut at; all those heights cut together, and no
-    # others.
+    # others, and none that another check of the part has cut before.
     placed = [(point, at) for point, at in ((point, cuts.at(point.z - bed)) for point in starts.points)
               if at is not None]
-    faces = faces_at(part, {bed + z for _, at in placed for z in (at.here, at.below)})
+    faces = starts.cuts({bed + z for _, at in placed for z in (at.here, at.below)})
     for point, at in placed:
         here, below = bed + at.here, bed + at.below
         for z in (here, below):
@@ -281,6 +285,10 @@ class Starts:
     let go of after it (let_go()), and what was worked out serves any copy
     of the part as it stands.
 
+    It also keeps the faces where its layers are cut (cuts()), which are
+    shapes of their own, no part of the shape lent: they stay when it is let
+    go of, until drop_cuts().
+
     INPUTS this has to withstand:
       an empty shape                        ->  no bed (None), no points, no faces, no
                                                 heights; nothing raised
@@ -316,6 +324,10 @@ class Starts:
         # Height of the bed: the lowest of the shape.
         self.bed = None if shape.isNull() else bounds(shape).ZMin
         self._points = self._down = self._lowest = None
+        # How many faces the shape has, counted once; the faces of its cuts, by
+        # height, and how many edges they hold between them.
+        self._face_count = None
+        self._cuts, self._edges_kept = {}, 0
 
     def lend(self, shape):
         """Take `shape`, the part as it stands, for what is still to be worked out."""
@@ -344,6 +356,7 @@ class Starts:
             else:
                 shape = self._asked()
                 faces = shape.Faces
+                self._face_count = len(faces)
                 down = facing_down(shape)
                 lowest = {number: bounds(faces[number - 1]).ZMin - self.bed for number, _ in down}
             # Both at once, so neither is kept without the other.
@@ -367,6 +380,63 @@ class Starts:
         """The heights over the bed at which something starts: those of the
         lowest points and of the lowest lines of the faces facing down."""
         return [point.z - self.bed for point in self.points] + list(self.lowest.values())
+
+    def cuts(self, heights):
+        """The faces where the planes at `heights` cut the shape (faces_at()),
+        by height, None for a height the kernel cannot cut at. They are kept,
+        so every check of the part as it stands cuts a height once between
+        them, and a check asked again, as the bridges are when fins change
+        which faces are carried, cuts nothing anew.
+
+        The heights are to be bed + what LayerCuts of these Starts gives: the
+        same numbers for every check that takes them from here. The faces
+        given are not to be changed in place: they are kept for the next
+        check.
+
+        Kept faces hold memory, a few thousand bytes an edge: once more than
+        CUT_EDGES_KEPT edges are kept, heights cut after that are given and
+        not kept, cut anew each time as without a stock.
+
+        INPUTS this has to withstand:
+          heights never asked before            ->  cut together (faces_at()), kept and given
+          heights asked before                  ->  given as kept, the kernel not asked
+          some asked before, some not           ->  those not kept cut together, the others
+                                                    given as kept
+          no heights                            ->  {}, nothing asked of the shape
+          a height the kernel could not cut     ->  None for it, kept so and given again:
+                                                    not tried anew
+          the same heights from another check
+            of the part, the very same numbers  ->  as kept
+          a height a rounding off one kept, as
+            from another reading of the bed     ->  cut for itself: a cut more, no harm
+          more edges kept than CUT_EDGES_KEPT   ->  what is cut from then on given, not kept
+          let go of, then heights asked that
+            are all kept                        ->  given
+          let go of, then a height asked that
+            is not kept                         ->  ValueError: lend() it a shape first
+          lent another copy of the part as it
+            stands                              ->  what is missing cut on that one; what was
+                                                    kept serves it
+          drop_cuts(), then heights asked       ->  cut anew
+        """
+        wanted = sorted(set(heights))
+        missing = [z for z in wanted if z not in self._cuts]
+        found = {}
+        if missing:
+            shape = self._asked()
+            if self._face_count is None:
+                self._face_count = len(shape.Faces)
+            found = faces_at(shape, missing, self._face_count)
+            for z in missing:
+                if self._edges_kept > CUT_EDGES_KEPT:
+                    break
+                self._cuts[z] = found[z]
+                self._edges_kept += sum(len(face.Edges) for face in found[z] or [])
+        return {z: self._cuts[z] if z in self._cuts else found[z] for z in wanted}
+
+    def drop_cuts(self):
+        """Forget the cuts kept, and with them the memory they hold."""
+        self._cuts, self._edges_kept = {}, 0
 
 
 class LayerCuts:

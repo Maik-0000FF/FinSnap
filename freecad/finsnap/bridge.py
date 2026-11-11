@@ -122,10 +122,11 @@ def bridges(shape, first_layer, layer, bead, rating, supported=(), starts=None):
             starting.setdefault(at, []).append(number)
     found = []
     # The heights of the layers something hangs in and of what carries them, cut
-    # together, each once: the cut of one layer is mostly what carries the next.
+    # together, each once: the cut of one layer is mostly what carries the next,
+    # and what the islands of the part have cut before is not cut again.
     # Read once: the kernel makes the list of the faces anew each time it is asked for.
     part_faces = shape.Faces
-    faces = overhang.faces_at(shape, {bed + z for at in starting for z in (at.here, at.below)}, len(part_faces))
+    faces = starts.cuts({bed + z for at in starting for z in (at.here, at.below)})
     made = {}
 
     def cut(z):

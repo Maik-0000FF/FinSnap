@@ -45,6 +45,10 @@ from .shapes import FACE_PREFIX, face_name, global_shape, keep, moved, shape_key
 # for, which its islands and its bridges share.
 ISLANDS, BRIDGES, CENTRES, STARTS = "islands", "bridges", "centres", "starts"
 _kept = {}
+# The Starts whose cuts are kept (overhang.Starts.cuts()): those of the one
+# part as it stands that was checked last, as cuts hold memory. A part
+# being edited is checked again and again as it stands, and keeps them.
+_stocked = None
 # Whether islands and bridges are checked while fins are made and edited, in
 # FinSnap's preferences: on a slow computer they can be left to Check part.
 # Named for islands alone, as it was before bridges: the setting saved holds.
@@ -124,11 +128,18 @@ def _with_starts(kept, shape, check):
     print (overhang.Starts), kept in `kept`, the entry of its part as it
     stands (_analysis()): one for the part as it stands, so its overhangs,
     its islands and its bridges are cut at the same heights, its faces are
-    sampled once and it is meshed once. The shape is lent to it for the check
-    and let go of after it, so no shape is kept."""
+    sampled once, it is meshed once and a layer is cut once. The shape is
+    lent to it for the check and let go of after it, so no shape is kept;
+    the cuts it keeps are dropped once another part, or this one standing
+    otherwise, is checked."""
+    global _stocked
     if kept[STARTS] is None:
         kept[STARTS] = overhang.Starts(shape)
     starts = kept[STARTS]
+    if _stocked is not starts:
+        if _stocked is not None:
+            _stocked.drop_cuts()
+        _stocked = starts
     starts.lend(shape)
     try:
         return check(starts)
