@@ -91,7 +91,8 @@ ISLAND_DEPTH = 10.0    # depth of the bridge and of what hangs from it
 ISLAND_TOP = 30.0      # height of the top of the bridge
 ISLAND_BEAM = 5.0      # thickness of its beam, and of the cap of a mushroom
 ISLAND_LOW = 10.0      # height of the bottom of what hangs from it, well above the bed
-ISLAND_STEM = 3.0      # radius of the stem of a mushroom, and of a hole through a box
+ISLAND_LAYER = 50      # a layer on whose middle the bottom of a hanging block or a slab is put
+ISLAND_STEM = 3.0     # radius of the stem of a mushroom, and of a hole through a box
 ISLAND_CAP = 10.0      # radius of the cap of a mushroom
 STABLE_TOLERANCE = 0.05  # how far a plumb line or a margin may be off what is reckoned, in mm
 STABLE_BASE = 10.0     # side of a column on the bed, and of the arm out of its top
@@ -528,10 +529,11 @@ def check_limits():
            "an unprintable limit of 0 degrees: critical at most")
 
 
-def piers(gap, depth=PIER[1], slab_depth=None):
-    """A slab on two piers `gap` apart, `depth` deep, the slab across the gap,
-    as deep as the piers or `slab_depth`, reaching past them at the back."""
-    width, _, height = PIER
+def piers(gap, depth=PIER[1], slab_depth=None, height=PIER[2]):
+    """A slab on two piers `gap` apart, `depth` deep and `height` high, the
+    slab across the gap, as deep as the piers or `slab_depth`, reaching past
+    them at the back."""
+    width = PIER[0]
     first = Part.makeBox(width, depth, height)
     second = Part.makeBox(width, depth, height, V(width + gap, 0, 0))
     slab = Part.makeBox(2 * width + gap, slab_depth or depth, SLAB, V(0, 0, height))
@@ -552,6 +554,14 @@ def check_bridges():
         expect(len(spans) == 1 and abs(spans[0].span - gap) < SPAN_TOLERANCE and spans[0].level == level,
                "a slab across a %.1f mm gap between piers spans it, %s: %s"
                % (gap, level, [(s.span, s.level) for s in spans]))
+    # The underside of the slab right on the middle of a layer, where the
+    # layers are cut, and beside it.
+    middle = overhang.layer_middle(ISLAND_LAYER, first, layer)
+    for height in (middle - layer / 4, middle, middle + layer / 4):
+        spans = found(piers(GAP_CRITICAL, height=height))
+        expect(len(spans) == 1 and abs(spans[0].span - GAP_CRITICAL) < SPAN_TOLERANCE,
+               "a slab with its underside at %.2f mm, the middle of a layer at %.2f mm, spans the gap: %s"
+               % (height, middle, [s.span for s in spans]))
     deep = found(piers(GAP_CRITICAL, DEEP_SLAB))
     expect(len(deep) == 1 and abs(deep[0].span - GAP_CRITICAL) < SPAN_TOLERANCE,
            "a slab deeper than the gap spans across the gap, not along it: %s" % [s.span for s in deep])
@@ -1648,6 +1658,15 @@ def check_islands():
     expect(piece is not None and abs(piece.XLength - ISLAND_SPAN / 4) < d.TOLERANCE
            and abs(piece.ZMin - ISLAND_LOW) < d.TOLERANCE and piece.ZLength <= first + layer,
            "its first layer in the air is the whole bottom of the block, a layer thick: %s" % piece)
+    # The layers are cut at their middles: a bottom right on one, or beside
+    # it, is found all the same.
+    middle = overhang.layer_middle(ISLAND_LAYER, first, layer)
+    for low in (middle - layer / 4, middle, middle + layer / 4):
+        hanging = Part.makeBox(ISLAND_SPAN / 4, ISLAND_DEPTH, ISLAND_TOP - ISLAND_BEAM - low, V(block_x, 0, low))
+        found = overhang.islands(bridge(hanging), first, layer)
+        expect(len(found) == 1 and abs(found[0].point.z - low) < d.TOLERANCE,
+               "a block hanging with its bottom at %.2f mm, the middle of a layer at %.2f mm, is one island: %s"
+               % (low, middle, [i.point for i in found]))
     second = Part.makeBox(ISLAND_SPAN / 8, ISLAND_DEPTH, ISLAND_TOP - ISLAND_BEAM - ISLAND_LOW,
                           V(ISLAND_SPAN * 3 / 8, 0, ISLAND_LOW))
     expect(len(overhang.islands(bridge(block.fuse(second)), first, layer)) == 2,
@@ -3014,6 +3033,16 @@ def check_fin_at(cube, face):
                and abs(low.BoundBox.ZMax - (cube.BoundBox.ZMin + p.foot_height)) < d.TOLERANCE,
                "drawn %.2f mm high, below the top of its foot, the fin is a whole solid as high as its foot"
                % height)
+    # Built lower than its foot, by a set height or by its only tine lying
+    # within the foot: as high as the foot as well.
+    first_tine = p.first_layer_height
+    for low, why in ((FinParams(tine_first=first_tine, fin_height=first_tine + 2 * p.tine_height),
+                      "set lower than its foot"),
+                     (FinParams(tine_first=first_tine, tine_count=1), "with one tine within its foot")):
+        fins = geometry.build(cube, face, low)
+        expect(first_tine + 2 * p.tine_height < p.foot_height and fins.fins.isValid() and fins.fins.Volume > 0
+               and abs(fins.height - p.foot_height) < d.TOLERANCE,
+               "built %s, the fin is a valid solid as high as its foot: %.2f mm" % (why, fins.height))
 
 
 def check_merged_clearance(cube, face):

@@ -974,6 +974,10 @@ class FinSnapFeature:
         tags = [fin_tag(MAIN, n) for n in result.numbers]
         if counter is not None:
             tags += [fin_tag(COUNTER, n) for n in counter.numbers]
+        # The fins are built where they stand: a placement left on the object,
+        # by the shape kept while laid flat or set by hand, would move them
+        # off the part.
+        obj.Placement = App.Placement()
         if p.connection == d.CONNECTION_MERGED:
             obj.Shape = geometry.merged(part, *shapes)
             tags = []

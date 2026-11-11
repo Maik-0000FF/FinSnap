@@ -202,10 +202,22 @@ def layer_middle(number, first_layer, layer):
 
 def layer_holding(height, first_layer, layer):
     """The layer (from 0) a point `height` over the bed is printed in first:
-    the lowest one whose middle lies no lower than the point."""
+    the lowest one whose middle lies above the point. The layers are cut at
+    their middles (layer_faces()), and a cut holds only what lies below its
+    plane: a face starting right on a middle shows in the cut of the layer
+    above, not in that one.
+
+    INPUTS this has to withstand (first layer 0.2, layers 0.2):
+      on the bed, or up to the middle of
+        the first layer                     ->  0, the bed carries it
+      between two middles, 0.25             ->  1
+      right on the middle of a layer, 0.3   ->  2, the layer above
+      within the tolerance below a middle   ->  the layer above, as on it
+      just above a middle, 0.31             ->  2
+    """
     if height <= first_layer / 2 + d.TOLERANCE:
         return 0
-    return max(1, math.ceil((height - first_layer) / layer + 0.5 - d.TOLERANCE / layer))
+    return max(1, math.floor((height - first_layer + d.TOLERANCE) / layer + 0.5) + 1)
 
 
 def _lowest_points(shape):

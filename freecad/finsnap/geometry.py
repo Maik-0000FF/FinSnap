@@ -46,6 +46,10 @@ INPUTS this has to withstand (build()):
     face (narrow face or recess)        ->  those tines left out, warning
   face ending above the bed             ->  no tines below it
   manual fin_height below the first tine ->  FinError
+  fin lower than its foot, by a set
+    height, a height of its own or its
+    only tine lying within the foot     ->  the fin as high as its foot: lower, its
+                                            outline would cross itself
   fins standing closer than they are
     thick plus FOOT_CLEARANCE           ->  FinError: they would collide
   fin collides with other geometry of
@@ -1470,6 +1474,8 @@ def _plan(part, frame, support, p, all_z, face_height, reach, count, restart, le
         else:
             set_height = _within(p, room).fin_height if number in frames else p.fin_height
             fin_height = set_height if set_height > 0 else kept_z[-1] + p.tine_height
+        # Never lower than its foot, as fin_at(): its outline would cross itself.
+        fin_height = max(fin_height, p.foot_height)
         fins.append(PlannedFin(number, t0, fin_height, candidate_z, on_face, sorted(touching)))
     if not fins and blocked:
         raise refused(translate("FinSnap", NOTE_BLOCKED_OR_BARE if fins_left_out else NOTE_ALL_BLOCKED))
