@@ -11,6 +11,10 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- Bridges are found much faster: the lines across a free region are laid by arithmetic on its outline instead of a cut for every direction tried. Stairs of 40 steps under a slab take 0.8 s instead of 5.0 s, a round table in 500 flat sides, as a part from a mesh has them, 2.5 s instead of 10.4 s. A line touching the tip of a hole is no longer cut in two there, which gave too short a span. A span under a curved outline may differ by hundredths of a millimetre
+
 ### Fixed
 
 - Fins kept while their part is laid flat again are rebuilt at the part once it stands again, instead of turned off it and reaching below the bed; a placement set on the fins by hand no longer moves them off the part either, and one held by an expression is named in a warning
