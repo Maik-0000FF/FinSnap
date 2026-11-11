@@ -998,10 +998,10 @@ def stood_again_after_laid_flat(doc):
         doc.recompute()
 
     def at_the_part():
-        """Whether the fins stand on the bed, the gap less the clearance from the part."""
+        """Whether the fins stand on the bed, their tines the clearance from the part."""
         p = feature.params_of(fins)
         apart = fins.Shape.distToShape(global_shape(part))[0]
-        return (abs(apart - (p.gap - p.clearance)) < d.TOLERANCE
+        return (abs(apart - p.clearance) < d.TOLERANCE
                 and abs(fins.Shape.BoundBox.ZMin - global_shape(part).BoundBox.ZMin) < d.TOLERANCE)
 
     stand_up()
