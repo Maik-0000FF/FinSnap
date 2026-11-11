@@ -57,6 +57,10 @@ SECTION_SLAB = 1.0
 # middle still counts to the layer above: the cut holds nothing of what starts
 # in the layer above (cut_heights()).
 SUPPORT_CUT_DROP = 2 * d.TOLERANCE
+# A point starting less than this above a middle (mm) counts as near it, with
+# those starting below it: a margin, as right on a middle rounding decides
+# whether a slice of the point shows in the cut there.
+NEAR_MIDDLE = d.TOLERANCE
 # A point over the bed in layers: the layer it starts to print in and the
 # heights over the bed its section and what carries it are cut at.
 CutHeights = namedtuple("CutHeights", "number here below")
@@ -167,7 +171,9 @@ def islands(part, first_layer, layer):
     resting = {}
     found = []
     points = _lowest_points(part)
-    for point, at in zip(points, cut_heights([point.z - bed for point in points], first_layer, layer)):
+    cuts = cut_heights([point.z - bed for point in points], first_layer, layer)
+    for point in points:
+        at = cuts.get(layer_of(point.z - bed, first_layer, layer))
         if at is None:
             continue
         here, below = bed + at.here, bed + at.below
@@ -212,66 +218,89 @@ def layer_middle(number, first_layer, layer):
     return first_layer / 2 if number == 0 else first_layer + (number - 0.5) * layer
 
 
-def cut_heights(heights, first_layer, layer):
-    """Where each of the points `heights` over the bed starts to print, in
-    their order, as a CutHeights: the layer (from 0, the first), the height
-    over the bed its section is cut at, `here`, and the height the layer below
-    is cut at to see what carries the point, `below`. None in the place of a
-    point in the first layer: the bed carries it.
-
-    A cut holds what lies below its plane (layer_faces()). `here` is the
-    middle of the layer; a point counts to a layer from the tolerance below
-    the middle before it. `below` is the middle of the layer below, the cut
-    that layer is cut at itself, so one cut serves both. Only where a point
-    of the layer starts near that middle, less than the tolerance above it,
-    the cut there could hold a slice of it and it would carry itself: then
-    `below` lies SUPPORT_CUT_DROP under the middle, for every point of the
-    layer, as all that starts in one layer is cut at the same two heights.
-
-    The first layer alone is told apart the other way: what starts up to its
-    middle, the tolerance above it included, lies in it and on the bed, as
-    there is no layer below to carry it; a point on any other middle counts
-    to the layer above.
+def layer_of(height, first_layer, layer):
+    """The layer (from 0, the first) a point `height` over the bed starts to
+    print in: it counts to a layer from the tolerance below the middle of the
+    layer before. The first layer alone is told apart the other way: what
+    starts up to its middle, the tolerance above it included, lies in it and
+    on the bed, as there is no layer below to carry it.
 
     INPUTS this has to withstand (first layer 0.2, layers 0.2):
-      no heights                            ->  []
-      a height in the first layer, up to
-        its middle and the tolerance more   ->  None in its place, the bed carries it
-      one height well above the middle
-        below it, 0.45                      ->  layer 2, here 0.5, below 0.3: the cut
+      on the bed, up to the middle of the
+        first layer and the tolerance more  ->  0
+      between two middles, 0.25             ->  1
+      right on the middle of layer 1, 0.3   ->  2
+      within the tolerance below it         ->  2
+      right at the tolerance below it       ->  1 or 2, as the rounding falls: both
+                                                hold (cut_heights())
+      more than the tolerance below it      ->  1
+      just above it, 0.31                   ->  2
+    """
+    if height <= first_layer / 2 + d.TOLERANCE:
+        return 0
+    return max(1, math.floor((height - first_layer + d.TOLERANCE) / layer + 0.5) + 1)
+
+
+def starting_heights(shape, bed):
+    """The heights over `bed` (mm, the height of the bed) at which something
+    of `shape` starts to print: those of its lowest points."""
+    return [point.z - bed for point in _lowest_points(shape)]
+
+
+def cut_heights(starts, first_layer, layer):
+    """The heights the layers are cut at in which the points `starts` over
+    the bed start to print, by layer (layer_of()), as a CutHeights each: the
+    layer, the height over the bed its section is cut at, `here`, and the
+    height the layer below is cut at to see what carries it, `below`. The
+    first layer has none: the bed carries it. `starts` has to hold every
+    start of the part (starting_heights()), not only those asked about: what
+    starts in a layer decides how its support is cut.
+
+    A cut holds what lies below its plane (layer_faces()). `here` is the
+    middle of the layer. `below` is the middle of the layer below, the cut
+    that layer is cut at itself, so one cut serves both. Only where a point
+    of the layer starts below that middle, the cut there holds a slice of it
+    and it would carry itself; so with a point starting less than NEAR_MIDDLE
+    above the middle, `below` lies SUPPORT_CUT_DROP under it, for the whole
+    layer: all that starts in one layer is cut at the same two heights.
+
+    INPUTS this has to withstand (first layer 0.2, layers 0.2):
+      no starts                             ->  {}
+      starts in the first layer only        ->  {}
+      one start well above the middle
+        below it, 0.45                      ->  layer 2: here 0.5, below 0.3, the cut
                                                 layer 1 is cut at as well
-      right on the middle below it, 0.3     ->  layer 2, below 0.3 less the drop
-      within the tolerance below or above
-        that middle                         ->  the same, below less the drop
-      right at the tolerance above it       ->  below at the middle or the drop under it,
+      right on the middle below it, 0.3     ->  layer 2: below 0.3 less the drop
+      within the tolerance below that
+        middle, or less than NEAR_MIDDLE
+        above it                            ->  the same, below less the drop
+      right at NEAR_MIDDLE above it         ->  below at the middle or the drop under it,
                                                 as the rounding falls: both hold, the
-                                                height starts the tolerance above either
+                                                start lies that far above either
       right at the tolerance below it       ->  layer 1 or 2, as the rounding falls: both
                                                 hold, its slice at 0.3 is as thick as the
                                                 tolerance, and the drop is more
-      two heights in one layer, one near
-        the middle below, one well above    ->  both below less the drop: one decision
+      two starts in one layer, one near
+        the middle below, one well above    ->  below less the drop: one decision
                                                 for the layer
-      heights in neighbouring layers, none
+      starts in neighbouring layers, none
         near a middle                       ->  below of the upper is here of the lower,
                                                 the very same number, so one cut serves both
-      heights in layer 1                    ->  below is the middle of the first layer,
+      starts in layer 1                     ->  below is the middle of the first layer,
                                                 never lower: what starts within the
                                                 tolerance of it lies in the first layer
     """
-    numbers = [None if height <= first_layer / 2 + d.TOLERANCE
-               else max(1, math.floor((height - first_layer + d.TOLERANCE) / layer + 0.5) + 1)
-               for height in heights]
-    # The layers with a point starting near the middle of the layer below.
-    near = {number for number, height in zip(numbers, heights)
-            if number is not None and height < layer_middle(number - 1, first_layer, layer) + d.TOLERANCE}
-
-    def cuts(number):
+    cuts = {}
+    for height in starts:
+        number = layer_of(height, first_layer, layer)
+        if number == 0:
+            continue
         support = layer_middle(number - 1, first_layer, layer)
-        return CutHeights(number, layer_middle(number, first_layer, layer),
-                          support - SUPPORT_CUT_DROP if number in near else support)
-
-    return [None if number is None else cuts(number) for number in numbers]
+        near = height < support + NEAR_MIDDLE
+        if number not in cuts or (near and cuts[number].below == support):
+            cuts[number] = CutHeights(number, layer_middle(number, first_layer, layer),
+                                      support - SUPPORT_CUT_DROP if near else support)
+    return cuts
 
 
 def _lowest_points(shape):
