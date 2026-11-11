@@ -122,7 +122,8 @@ RIDGE_INTO_SLAB = SLAB / 2  # how far a ridge hanging from a slab reaches up int
 CLEAR_OF_MIDDLE = d.LAYER_HEIGHT / 4
 CUTS_LOW = 10.0  # the lowest of some heights to cut a part at together, in mm
 CUTS_FEW = 3  # heights cut together where fewer are to be than as many as can
-CUTS_DIGITS = 4  # places the area of a cut is compared to
+CUTS_DIGITS = 4  # places the area of a cut, a point or a span is compared to
+CUTS_AS_SET = overhang.CUTS_MOST  # how many heights are cut together, to put back after a test changed it
 # How far from that middle it is put (mm): well below and above, right on it, within the tolerance of it,
 # where it counts to the layer above, just beside the tolerance below, on either side of where the layer
 # changes, and one to two tolerances below, where it counts to that layer.
@@ -788,16 +789,13 @@ def check_bridges():
         # Steps under the slab, side by side across the gap, each a layer
         # higher than the last and clear of the middles: every layer is cut
         # once, and the layer below the lowest.
-        bottoms = stacked_bottoms(first_height, layer_height)
-        width, height = GAP_CRITICAL / COMB_TEETH, bottoms[-1] + SLAB
-        steps = [Part.makeBox(width, PIER[1], height - bottom, V(PIER[0] + step * width, 0, bottom))
-                 for step, bottom in enumerate(bottoms)]
-        stairs = piers(GAP_CRITICAL, height=height).fuse(steps).removeSplitter()
-        cut_at, spans = cuts_counted(lambda: found_here(stairs))
-        expect(spans and len(cut_at) == COMB_TEETH + 1,
+        stairs = stairs_under_slab(first_height, layer_height)
+        kernel, (cut_at, spans) = kernel_cuts(lambda: cuts_counted(lambda: found_here(stairs)))
+        expect(spans and len(cut_at) == COMB_TEETH + 1 and kernel < len(cut_at),
                "first layer %.2f mm: %d steps under a slab in layers one above the other are bridged, found "
-               "with one cut a layer and one below the lowest: %d cuts, spans %s"
-               % (first_height, COMB_TEETH, len(cut_at), [s.span for s in spans]))
+               "with each layer asked for once and the one below the lowest, in fewer cuts of the kernel: %d "
+               "heights, %d cuts, spans %s"
+               % (first_height, COMB_TEETH, len(cut_at), kernel, [s.span for s in spans]))
         # A slab whose underside, the ceiling of the gap, starts near a middle,
         # beside a block hanging in the same layer: no lowest point lies on the
         # ceiling, yet islands and bridges cut that layer's support at the same
@@ -1931,9 +1929,16 @@ def calls_counted(name, run):
 def cuts_counted(run):
     """The heights overhang.faces_at() is asked to cut at while `run` runs,
     each once for each time it is asked, in rising order, and what `run`
-    returns."""
+    returns. How often the kernel cuts for them tells kernel_cuts()."""
     calls, result = calls_counted("faces_at", run)
-    return [z for _, heights in calls for z in sorted(set(heights))], result
+    return [z for _, heights, *_ in calls for z in sorted(set(heights))], result
+
+
+def kernel_cuts(run):
+    """How many cuts the kernel makes for the layers of a part while `run`
+    runs (overhang._cut_out()), and what `run` returns."""
+    calls, result = calls_counted("_cut_out", run)
+    return len(calls), result
 
 
 def check_faces_at():
@@ -1982,24 +1987,75 @@ def check_faces_at():
     expect(len(single) == 1 and told(one[middles[0]]) == alone[middles[0]], "one height is cut alone")
 
     most = overhang.CUT_FACES_MOST
-    make = Part.makeCompound
+    expect([overhang.cuts_together(count) for count in (1, most // overhang.CUTS_MOST, most // 2, most // 2 + 1, most)]
+           == [overhang.CUTS_MOST, overhang.CUTS_MOST, 2, 1, 1],
+           "a shape is cut at as many heights at a time as can be, at fewer with more faces, at two up to "
+           "half the most faces times heights, and one by one past that")
+    cut_out = overhang._cut_out
+
+    def without(compounds):
+        """overhang._cut_out() that gives `compounds`, called with what it is
+        asked of, for the cutters of several heights, and cuts a single one."""
+        def cut(shape, cutters):
+            return compounds(shape, cutters) if cutters.ShapeType == "Compound" else cut_out(shape, cutters)
+        return cut
+
+    def raising(shape, cutters):
+        raise Part.OCCError("no cut of several")
+
     try:
+        overhang.CUT_FACES_MOST = 2 * len(comb.Faces)
+        kernel, by_two = kernel_cuts(lambda: overhang.faces_at(comb, middles))
+        expect(kernel == math.ceil(len(middles) / 2) and all(told(by_two[z]) == alone[z] for z in middles),
+               "on a shape of half as many faces as a cut may take, two heights are cut at a time: %d cuts of "
+               "the kernel for %d heights" % (kernel, len(middles)))
         overhang.CUT_FACES_MOST = len(comb.Faces) - 1
-        single, each = calls_counted("layer_faces", lambda: overhang.faces_at(comb, middles))
-        expect(len(single) == len(middles) and all(told(each[z]) == alone[z] for z in middles),
+        kernel, each = kernel_cuts(lambda: overhang.faces_at(comb, middles))
+        expect(kernel == len(middles) and all(told(each[z]) == alone[z] for z in middles),
                "on a shape of more faces than a cut of several is worth, every height is cut alone")
         overhang.CUT_FACES_MOST = most
-
-        def failing(*args):
-            raise Part.OCCError("no cut of several")
-
-        Part.makeCompound = failing
-        single, each = calls_counted("layer_faces", lambda: overhang.faces_at(comb, middles))
+        for failing, why in ((raising, "the kernel cannot make"), (lambda shape, cutters: None, "comes out null")):
+            overhang._cut_out = without(failing)
+            single, each = calls_counted("layer_faces", lambda: overhang.faces_at(comb, middles))
+            expect(len(single) == len(middles) and all(told(each[z]) == alone[z] for z in middles),
+                   "a cut of several that %s has its heights cut one by one" % why)
     finally:
         overhang.CUT_FACES_MOST = most
-        Part.makeCompound = make
-    expect(len(single) == len(middles) and all(told(each[z]) == alone[z] for z in middles),
-           "a cut of several the kernel cannot make has its heights cut one by one")
+        overhang._cut_out = cut_out
+
+    # One height at a time and several together find the same.
+    stairs = stairs_under_slab(first, layer)
+    together = (overhang.islands(comb, first, layer),
+                find_bridges(stairs, first, layer, d.BEAD_WIDTH, limits.Limits()))
+    try:
+        overhang.CUTS_MOST = 1
+        kernel, alone_found = kernel_cuts(lambda: (
+            overhang.islands(comb, first, layer), find_bridges(stairs, first, layer, d.BEAD_WIDTH, limits.Limits())))
+    finally:
+        overhang.CUTS_MOST = CUTS_AS_SET
+
+    def island_points(found):
+        return sorted(tuple(round(value, CUTS_DIGITS) for value in island.point) for island in found)
+
+    def bridge_spans(found):
+        return [(spanning.faces, spanning.covered, round(spanning.span, CUTS_DIGITS), spanning.level)
+                for spanning in found]
+
+    expect(island_points(together[0]) == island_points(alone_found[0]) and len(together[0]) == COMB_TEETH
+           and bridge_spans(together[1]) == bridge_spans(alone_found[1]) and together[1],
+           "cut one height at a time or several together, the islands lie at the same points and the bridges "
+           "span the same faces as far: %s, %s" % (island_points(together[0]), bridge_spans(together[1])))
+
+
+def stairs_under_slab(first_layer, layer):
+    """A slab on two piers with COMB_TEETH steps under it, side by side
+    across the gap, each a layer higher than the last and clear of the
+    middles of the layers."""
+    bottoms = stacked_bottoms(first_layer, layer)
+    width, height = GAP_CRITICAL / COMB_TEETH, bottoms[-1] + SLAB
+    steps = [Part.makeBox(width, PIER[1], height - bottom, V(PIER[0] + step * width, 0, bottom))
+             for step, bottom in enumerate(bottoms)]
+    return piers(GAP_CRITICAL, height=height).fuse(steps).removeSplitter()
 
 
 def check_cut_heights():
@@ -2153,12 +2209,14 @@ def check_islands():
                               V(ISLAND_PILLAR + COMB_TOOTH * (1 + 2 * step), 0, bottom))
                  for step, bottom in enumerate(bottoms)]
         comb = bridge(teeth[0].fuse(teeth[1:]))
-        cut_at, hanging = cuts_counted(lambda: overhang.islands(comb, first_height, layer_height))
+        kernel, (cut_at, hanging) = kernel_cuts(
+            lambda: cuts_counted(lambda: overhang.islands(comb, first_height, layer_height)))
         for_teeth = [z for z in cut_at if z < ISLAND_UNDER - layer_height]
-        expect(len(hanging) == COMB_TEETH and len(for_teeth) == COMB_TEETH + 1,
+        expect(len(hanging) == COMB_TEETH and len(for_teeth) == COMB_TEETH + 1 and kernel < len(cut_at),
                "first layer %.2f mm: %d blocks hanging in layers one above the other are %d islands, found with "
-               "one cut a layer and one below the lowest: %d cuts for them"
-               % (first_height, COMB_TEETH, len(hanging), len(for_teeth)))
+               "each of their layers asked for once and the one below the lowest, in fewer cuts of the kernel: "
+               "%d heights for them, %d cuts in all"
+               % (first_height, COMB_TEETH, len(hanging), len(for_teeth), kernel))
 
     under = ISLAND_UNDER
     corners = [V(block_x, 0, under), V(ISLAND_SPAN, 0, under), V(block_x + ISLAND_SPAN / 8, 0, ISLAND_LOW)]

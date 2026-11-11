@@ -497,6 +497,20 @@ def _on_top(face, z):
     return abs(face.BoundBox.ZMin - z) < d.TOLERANCE and _flat_up(face)
 
 
+def _cut_out(shape, cutters):
+    """What `cutters`, a cutter or several in one compound, cut out of
+    `shape`: one cut of the kernel. None where it gives nothing at all, a
+    null shape; what it raises passes on.
+
+    Whether what it gives is valid is not looked at: that takes a fifth to a
+    quarter of the time of the cut itself, and would undo most of what
+    cutting several heights together saves. A cut that comes out wrong
+    without being null goes unnoticed, as it did when each height was cut
+    alone. Decided so."""
+    cut_out = shape.common(cutters)
+    return None if cut_out.isNull() else cut_out
+
+
 def layer_faces(shape, z):
     """The faces where the plane at height `z` cuts `shape`, holes and all:
     the top of a thin cut-out of it ending at the plane, see
@@ -515,12 +529,14 @@ def layer_faces(shape, z):
                                                 the plane, and are no part of the cut
       a part that is a shell, no solid      ->  [], as it has no inside to cut
       the plane above or below the part     ->  []
-      a cut the kernel cannot make          ->  None
+      a cut the kernel cannot make, or gives
+        nothing of                          ->  None
     """
     try:
-        return [face for face in shape.common(_cutter(bounds(shape), z)).Faces if _on_top(face, z)]
+        cut_out = _cut_out(shape, _cutter(bounds(shape), z))
     except Part.OCCError:
         return None
+    return None if cut_out is None else [face for face in cut_out.Faces if _on_top(face, z)]
 
 
 def _batches(heights, most):
@@ -551,19 +567,27 @@ def _batches(heights, most):
         waiting = later
 
 
-def faces_at(shape, heights):
+def cuts_together(faces):
+    """How many heights a shape of `faces` faces is cut at in one cut of the
+    kernel: as many as CUTS_MOST, and fewer on a shape of many faces, where a
+    cut of several takes longer than its parts, no more than CUT_FACES_MOST
+    faces times heights; 1, each height alone, on a shape of more than half
+    that many faces."""
+    return max(1, min(CUTS_MOST, CUT_FACES_MOST // max(1, faces)))
+
+
+def faces_at(shape, heights, faces=None):
     """The faces where the planes at `heights` cut `shape` (layer_faces()),
     by height; None for a height the kernel cannot cut at. Several heights
-    are cut in one cut of the kernel, which takes less than a cut each: as
-    many as CUTS_MOST, and fewer on a shape of many faces, where a cut of
-    several takes longer than its parts, no more than CUT_FACES_MOST faces
-    times heights; on a shape of more faces than that each height alone.
+    are cut in one cut of the kernel, which takes less than a cut each:
+    cuts_together() of them, by the number of faces of the shape, `faces`
+    where the caller has counted them already.
 
     The heights are to be those a check asks for and no others: the layers
     something starts in and what carries them (LayerCuts).
 
     INPUTS this has to withstand:
-      no heights                            ->  {}
+      no heights                            ->  {}, nothing asked of the shape
       one height                            ->  cut alone, as layer_faces()
       several heights, each at least the
         height of a cutter from the next    ->  up to as many as said in one cut; the
@@ -571,9 +595,10 @@ def faces_at(shape, heights):
       more heights than that                ->  several cuts, none of more
       two heights nearer than a cutter is
         high, as a middle and the cut
-        lowered under it                    ->  never in one cut, their cutters would
-                                                overlap: each in a cut with others
-      two heights a rounding apart          ->  each cut, in a cut of its own: no harm
+        lowered under it, or two a
+        rounding apart                      ->  never in one cut, their cutters would
+                                                overlap: the upper in a later cut,
+                                                with the others that wait
       the same height twice                 ->  cut once
       a face of a cut of several            ->  to the height whose plane it lies in,
                                                 within the tolerance, facing up; the
@@ -584,25 +609,27 @@ def faces_at(shape, heights):
         of one height                       ->  cut whole, among the faces of that height
       a height above or below the part      ->  [] for it
       a cut of several the kernel cannot
-        make                                ->  its heights cut one by one; None for one
+        make, or gives nothing of           ->  its heights cut one by one; None for one
                                                 it cannot cut alone either
     """
+    heights = sorted(set(heights))
+    if not heights:
+        return {}
     box = bounds(shape)
-    most = max(1, min(CUTS_MOST, CUT_FACES_MOST // max(1, len(shape.Faces))))
     found = {}
-    for batch in _batches(sorted(set(heights)), most):
-        tops = None
+    for batch in _batches(heights, cuts_together(len(shape.Faces) if faces is None else faces)):
+        cut_out = None
         if len(batch) > 1:
             try:
-                cut_out = shape.common(Part.makeCompound([_cutter(box, z) for z in batch]))
-                # Each face looked at once, whichever of the heights it belongs to.
-                tops = [(face.BoundBox.ZMin, face) for face in cut_out.Faces if _flat_up(face)]
+                cut_out = _cut_out(shape, Part.makeCompound([_cutter(box, z) for z in batch]))
             except Part.OCCError:
-                tops = None
-        if tops is None:
+                cut_out = None
+        if cut_out is None:
             found.update((z, layer_faces(shape, z)) for z in batch)
-        else:
-            found.update((z, [face for low, face in tops if abs(low - z) < d.TOLERANCE]) for z in batch)
+            continue
+        # Each face looked at once, whichever of the heights it belongs to.
+        tops = [(face.BoundBox.ZMin, face) for face in cut_out.Faces if _flat_up(face)]
+        found.update((z, [face for low, face in tops if abs(low - z) < d.TOLERANCE]) for z in batch)
     return found
 
 
