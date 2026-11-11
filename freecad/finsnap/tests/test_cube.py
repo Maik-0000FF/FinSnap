@@ -1971,6 +1971,10 @@ def check_printable_plans():
             overhang.rated = real_rated
     finally:
         overhang.islands = real
+    sampled, rated = calls_counted("facing_down", lambda: analysis.rate_plans(box, alike, p))
+    expect(len(rated) == len(alike) > 1 and len(sampled) == 1,
+           "ways standing the part alike have its faces sampled once for all of them: %d ways, %d samplings"
+           % (len(alike), len(sampled)))
 
 
 def cut_centre(shape, height):

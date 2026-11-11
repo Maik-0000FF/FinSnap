@@ -401,10 +401,13 @@ def rate_plans(shape, plans, p):
         key = tuple(plan.change.toMatrix().A)
         if key not in checked:
             starts = overhang.Starts(stood)
+            # The faces facing down are the same for every plan standing so: sampled
+            # once, with the islands and the bridges, and the shape let go of.
             checked[key] = (overhang.islands(stood, p.first_layer_height, p.layer_height, starts),
                             bridge.bridges(stood, p.first_layer_height, p.layer_height, p.bead_width, rating,
-                                           starts=starts))
-        found_islands, every = checked[key]
+                                           starts=starts), starts.down)
+            starts.let_go()
+        found_islands, every, down = checked[key]
         # The face under the fins spans nothing: it leaves the bridges it
         # alone lies under, the others lie under it no longer.
         carried = plan.number + 1
@@ -412,7 +415,7 @@ def rate_plans(shape, plans, p):
                                 covered=[n for n in found.covered if n != carried])
                  for found in every if any(n != carried for n in found.faces)]
         spanned = {number for found in spans for number in found.covered}
-        levels = [level for number, level in overhang.rated(stood, (stood.Faces[plan.number],), rating)
+        levels = [level for number, level in overhang.rated(stood, (stood.Faces[plan.number],), rating, down)
                   if number not in spanned]
         rated.append(RatedPlan(plan, found_islands, levels, spans))
     return rated

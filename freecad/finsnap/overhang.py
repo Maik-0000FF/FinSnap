@@ -71,6 +71,9 @@ CutHeights = namedtuple("CutHeights", "number here below")
 # The top of a cut-out faces straight up, its sides sideways and its bottom
 # down: a face whose normal rises more than this is one of the top.
 FACING_UP = 0.5
+# A face faces down where its normal sinks more than this, the cosine of its
+# angle from the bed: less is an upright wall a rounding off the vertical.
+FACING_DOWN = 1e-4
 
 
 def _normals_above(face, bed_z):
@@ -105,7 +108,7 @@ def facing_down(shape, wanted=None):
         if bounds(face).ZMax <= bed_z + d.TOLERANCE or (wanted is not None and not wanted(face)):
             continue
         down = max((-n.z for n in _normals_above(face, bed_z)), default=0.0)
-        if down > d.TOLERANCE:
+        if down > FACING_DOWN:
             found.append((number, down))
     return found
 
