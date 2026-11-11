@@ -86,16 +86,24 @@ def bridges(shape, first_layer, layer, bead, rating, supported=()):
     if shape.isNull():
         return []
     bed = bounds(shape).ZMin
+    hanging = [number for number, down in overhang.steepest_down(shape, supported, rating.overhang_min_area)
+               if overhang.flatter(down, rating.overhang_critical)]
+    lowest = [bounds(shape.Faces[number - 1]).ZMin - bed for number in hanging]
     starting = {}
-    for number, down in overhang.steepest_down(shape, supported, rating.overhang_min_area):
-        if not overhang.flatter(down, rating.overhang_critical):
-            continue
-        at = overhang.cut_heights(bounds(shape.Faces[number - 1]).ZMin - bed, first_layer, layer)
+    for number, at in zip(hanging, overhang.cut_heights(lowest, first_layer, layer)):
         if at is not None:
             starting.setdefault(at, []).append(number)
     found = []
+    # Each height cut once: the cut of one layer is mostly what carries the next.
+    cuts = {}
+
+    def cut(z):
+        if z not in cuts:
+            cuts[z] = _cut(shape, z)
+        return cuts[z]
+
     for at, numbers in sorted(starting.items()):
-        here, below = _cut(shape, bed + at.here), _cut(shape, bed + at.below)
+        here, below = cut(bed + at.here), cut(bed + at.below)
         if not here or not below:
             continue
         for region in _free(here, below):
