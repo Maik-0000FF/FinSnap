@@ -981,6 +981,73 @@ def turned_tube(doc):
            "laid flat, the fin keeps no turn of the tube, and the count its changes were made for")
 
 
+def stood_again_after_laid_flat(doc):
+    """Fins kept while their part is laid flat are moved with it; once the
+    part stands again they are rebuilt where it stands, and a placement left
+    on the fins, by the shape kept or set by hand, does not move them off."""
+    part = doc.addObject("Part::Feature", "LaidFlatBox")
+    part.Shape = Part.makeBox(*BOX)
+    doc.recompute()
+    shape = global_shape(part)
+    edge = next(e for e in shape.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE)
+    stand = orient.stand(shape, edge, d.TILT_ANGLE)
+
+    def stand_up():
+        orient.remember_flat(part)
+        part.Placement = stand.multiply(part.Placement)
+        doc.recompute()
+
+    def at_the_part():
+        """Whether the fins stand on the bed, their tines the clearance from the part."""
+        p = feature.params_of(fins)
+        apart = fins.Shape.distToShape(global_shape(part))[0]
+        return (abs(apart - p.clearance) < d.TOLERANCE
+                and abs(fins.Shape.BoundBox.ZMin - global_shape(part).BoundBox.ZMin) < d.TOLERANCE)
+
+    stand_up()
+    fins = feature.create(part, "Face%d" % (quick_stands.best_face(global_shape(part), FinParams()) + 1))
+    doc.recompute()
+    expect(fins.isValid() and at_the_part(), "fins of a part stood on its edge stand at it, on the bed")
+    feature.keep_laid_flat(fins, orient.back_to_flat(part))
+    orient.lay_back(part)
+    doc.recompute()
+    expect(feature.is_laid_flat(fins) and not fins.Placement.isIdentity(),
+           "laid flat with the fins kept, they are moved with the part")
+    stand_up()
+    expect(not feature.is_laid_flat(fins) and fins.isValid() and fins.Placement.isIdentity() and at_the_part(),
+           "the part stood again, the fins are rebuilt at it, not turned by the shape they kept")
+    fins.Placement = App.Placement(V(0, 0, BOX[2]), App.Rotation())
+    fins.touch()
+    doc.recompute()
+    expect(fins.Placement.isIdentity() and at_the_part(),
+           "a placement set on the fins by hand is dropped by the next build, they stay at the part")
+    layer_height = fins.LayerHeight.Value
+    fins.LayerHeight = 0.0
+    doc.recompute()
+    expect(not fins.isValid() and not fins.Warnings, "fins that fail to build keep no warning of an earlier build")
+    fins.setExpression("Placement.Base.z", str(BOX[2]))
+    doc.recompute()
+    expect(not fins.isValid() and list(fins.Warnings) == [feature.NOTE_PLACEMENT_HELD],
+           "fins that fail to build still say that an expression holds their placement")
+    fins.LayerHeight = layer_height
+    doc.recompute()
+    raised = fins.Shape.BoundBox.ZMin - global_shape(part).BoundBox.ZMin
+    expect(fins.isValid() and not feature.is_laid_flat(fins) and abs(fins.Placement.Base.z - BOX[2]) < d.TOLERANCE
+           and abs(raised - BOX[2]) < d.TOLERANCE and feature.NOTE_PLACEMENT_HELD in fins.Warnings,
+           "a placement held by an expression is left to it, the fins stand moved by it and say so: %s"
+           % list(fins.Warnings))
+    fins.setExpression("Placement.Base.z", None)
+    fins.LayerHeight = 0.0
+    doc.recompute()
+    expect(not fins.isValid() and not fins.Warnings,
+           "the expression removed and the build failing, the warning of the placement held does not stay")
+    fins.LayerHeight = layer_height
+    fins.touch()
+    doc.recompute()
+    expect(fins.Placement.isIdentity() and at_the_part() and feature.NOTE_PLACEMENT_HELD not in fins.Warnings,
+           "the expression removed, the placement is dropped and the fins stand at the part again")
+
+
 def kept_islands(doc):
     """Islands handed to the fins, as Quick fins does, are taken as they are
     while the part stands so; moved, it is cut for them anew. A part whose
@@ -1356,6 +1423,7 @@ def main():
     counter_under_slot_end(doc)
     tapered_pad(doc)
     warnings_and_old_files(doc)
+    stood_again_after_laid_flat(doc)
     kept_islands(doc)
     stability_raised_and_counter(doc)
     check_objects(doc)
