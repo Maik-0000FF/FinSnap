@@ -77,9 +77,6 @@ OUTLINE_FINENESS = 50
 
 # What the kernel raises where it cannot cut or clip a region.
 KERNEL_ERRORS = (Part.OCCError, App.Base.CADKernelError)
-# What taking the outline of a face raises where it cannot: the kernel, or a
-# face without a ring.
-OUTLINE_ERRORS = KERNEL_ERRORS + (ValueError,)
 # A bridge: the numbers (from 1) of the faces of the part it lies under, those
 # of them it covers whole, the free region of its first layer at the height of
 # the lowest of them, where it shows on the underside of the part, its span
@@ -139,6 +136,8 @@ def bridges(shape, first_layer, layer, bead, rating, supported=(), starts=None):
         # The outlines of what carries the layer, taken once for all its regions.
         supports = None
         for region in _free(here, below):
+            if _strip(region, bead):
+                continue
             if supports is None:
                 supports = _supports(below, bead)
             bridged = _span(region, supports, bead)
@@ -186,7 +185,8 @@ def _outline(face, bead):
     straight pieces. Curved sides are taken in pieces no farther off than
     _deflection(). Each ring is closed on its first point: the kernel gives
     the last a rounding beside it, and a line through that gap would cross
-    nothing there. What the kernel raises passes on (OUTLINE_ERRORS).
+    nothing there. None for a face without a ring; what the kernel raises
+    passes on (KERNEL_ERRORS).
 
     INPUTS this has to withstand:
       a face with straight sides            ->  its corners
@@ -198,8 +198,10 @@ def _outline(face, bead):
         first by a rounding                 ->  closed on the first
       a ring the kernel gives open, its
         ends apart                          ->  closed by a piece from the last to the first
-      a face without a ring                 ->  ValueError
+      a face without a ring                 ->  None
     """
+    if not face.Wires:
+        return None
     starts, ends = [], []
     for wire in face.Wires:
         ring = numpy.array([(point.x, point.y) for point in wire.discretize(Deflection=_deflection(bead))])
@@ -228,7 +230,9 @@ def _supports(below, bead):
     for face in below:
         try:
             outline = _outline(face, bead)
-        except OUTLINE_ERRORS:
+        except KERNEL_ERRORS:
+            continue
+        if outline is None:
             continue
         corners = numpy.vstack(outline)
         found.append((outline, (corners.min(axis=0), corners.max(axis=0))))
@@ -346,6 +350,12 @@ def _pieces(outline, centre, reach, spacing, degrees):
     return numpy.array(pieces).reshape(-1, 3), along, across
 
 
+def _strip(region, bead):
+    """Whether `region` is a strip narrower than a bead throughout, twice its
+    area by its outline: no line across it is longer than a bead."""
+    return 2 * region.Area <= bead * region.Length
+
+
 def _span(region, supports, bead):
     """(span, lines, spacing) of `region` bridged from `supports`, the
     outlines of the faces below it (_supports()): the longest line across it
@@ -353,15 +363,15 @@ def _span(region, supports, bead):
     on the supports, all lines anchored so in that direction, as (m, 2, 2),
     the two ends of each, what the slicer bridges, and how far apart they
     lie; None where no line crossing more than a bead of it is anchored so
-    at both ends, where the region is a strip narrower than a bead
-    throughout, twice its area by its outline, or where its outline cannot
-    be taken. The directions are tried in coarse steps first, then in fine
-    ones round the best of them."""
-    if 2 * region.Area <= bead * region.Length:
-        return None
+    at both ends, or where its outline cannot be taken. A strip narrower
+    than a bead (_strip()) is for the caller to leave out before. The
+    directions are tried in coarse steps first, then in fine ones round the
+    best of them."""
     try:
         outline = _outline(region, bead)
-    except OUTLINE_ERRORS:
+    except KERNEL_ERRORS:
+        return None
+    if outline is None:
         return None
     box = region.BoundBox
     centre = (box.Center.x, box.Center.y)
