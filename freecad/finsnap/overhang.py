@@ -51,6 +51,14 @@ SECTION_CUT_MARGIN = 1.0
 # Sections are compared as slabs this thick around the plane of the bed (mm):
 # solids overlap reliably, faces only when they lie in one plane exactly.
 SECTION_SLAB = 1.0
+# What a point rests on is seen in the cut of the layer below its own. Where
+# the point lies within the tolerance of the middle of that layer, the cut
+# there could hold a sliver of what starts at the point; it is made this far
+# lower (mm), clear of it.
+SUPPORT_CUT_DROP = 2 * d.TOLERANCE
+# The top of a cut-out faces straight up, its sides sideways and its bottom
+# down: a face whose normal rises more than this is one of the top.
+FACING_UP = 0.5
 
 
 def _normals_above(face, bed_z):
@@ -158,14 +166,16 @@ def islands(part, first_layer, layer):
         number = layer_holding(point.z - bed, first_layer, layer)
         if number == 0:
             continue
-        for key in (number, number - 1):
-            if key not in cut:
-                cut[key] = sections(part, bed + layer_middle(key, first_layer, layer), layer)
-        if cut[number] is None or cut[number - 1] is None:
+        here = bed + layer_middle(number, first_layer, layer)
+        below = bed + support_height(number - 1, point.z - bed, first_layer, layer)
+        for z in (here, below):
+            if z not in cut:
+                cut[z] = sections(part, z, layer)
+        if cut[here] is None or cut[below] is None:
             continue
         # The sections lie in the plane of the bed, see sections().
         middle = Part.Vertex(App.Vector(point.x, point.y, 0))
-        for index, (section, reach, outline) in enumerate(cut[number]):
+        for index, (section, reach, outline) in enumerate(cut[here]):
             key = (number, index)
             # A section decided before is passed over, and the box around one
             # turns most points away before the distance to it is measured.
@@ -174,7 +184,7 @@ def islands(part, first_layer, layer):
             try:
                 if section.distToShape(middle)[0] > layer:
                     continue
-                resting[key] = any(_overlap(section, other) for other, _, _ in cut[number - 1])
+                resting[key] = any(_overlap(section, other) for other, _, _ in cut[below])
             except Part.OCCError:
                 resting[key] = True
             if not resting[key]:
@@ -205,7 +215,8 @@ def layer_holding(height, first_layer, layer):
     the lowest one whose middle lies above the point. The layers are cut at
     their middles (layer_faces()), and a cut holds only what lies below its
     plane: a face starting right on a middle shows in the cut of the layer
-    above, not in that one.
+    above, not in that one. What carries the point is seen in the layer
+    below, cut at support_height().
 
     INPUTS this has to withstand (first layer 0.2, layers 0.2):
       on the bed, or up to the middle of
@@ -218,6 +229,24 @@ def layer_holding(height, first_layer, layer):
     if height <= first_layer / 2 + d.TOLERANCE:
         return 0
     return max(1, math.floor((height - first_layer + d.TOLERANCE) / layer + 0.5) + 1)
+
+
+def support_height(number, height, first_layer, layer):
+    """The height over the bed at which layer `number` is cut to see what
+    carries a point `height` high that starts in the layer above it
+    (layer_holding()): its middle, or SUPPORT_CUT_DROP lower where the point
+    lies within the tolerance of that middle. Cut right there, what starts at
+    the point could show as a sliver, be it a piece of its own or one with
+    what stands beside it, and carry itself.
+
+    INPUTS this has to withstand:
+      point well above the middle           ->  the middle
+      point right on the middle             ->  SUPPORT_CUT_DROP below it
+      point within the tolerance of the
+        middle, below or above it           ->  SUPPORT_CUT_DROP below it
+    """
+    middle = layer_middle(number, first_layer, layer)
+    return middle - SUPPORT_CUT_DROP if abs(height - middle) <= SUPPORT_CUT_DROP else middle
 
 
 def _lowest_points(shape):
@@ -239,14 +268,35 @@ def layer_faces(shape, z):
     """The faces where the plane at height `z` cuts `shape`, holes and all:
     the top of a thin cut-out of it ending at the plane, see
     SECTION_CUT_HEIGHT. A face of the part lying in the plane is cut whole.
-    None where the kernel cannot make them."""
+    None where the kernel cannot make them.
+
+    INPUTS this has to withstand:
+      the plane through the part            ->  the faces of the cut, holes and all
+      a face of the part lying in the plane ->  cut whole
+      a piece of the part starting right on
+        the plane, or above it              ->  not in the cut
+      a piece of its own starting less than
+        the tolerance below the plane       ->  not in the cut either: its sliver has
+                                                faces the kernel cannot use
+      a step that deep in a piece reaching
+        further down                        ->  in the cut, with the piece it belongs
+                                                to, its top alone: neither its sides
+                                                nor its underside
+      the plane above or below the part     ->  []
+      a cut the kernel cannot make          ->  None
+    """
     box = bounds(shape)
+
+    def on_top(face):
+        return (abs(face.BoundBox.ZMin - z) < d.TOLERANCE and face.BoundBox.ZLength < d.TOLERANCE
+                and middle_normal(face).z > FACING_UP)
+
     try:
         cutter = Part.makeBox(box.XLength + 2 * SECTION_CUT_MARGIN, box.YLength + 2 * SECTION_CUT_MARGIN,
                               SECTION_CUT_HEIGHT, App.Vector(box.XMin - SECTION_CUT_MARGIN,
                                                              box.YMin - SECTION_CUT_MARGIN, z - SECTION_CUT_HEIGHT))
-        return [face for face in shape.common(cutter).Faces
-                if abs(face.BoundBox.ZMin - z) < d.TOLERANCE and face.BoundBox.ZLength < d.TOLERANCE]
+        return [face for piece in shape.common(cutter).Solids if piece.BoundBox.ZLength > d.TOLERANCE
+                for face in piece.Faces if on_top(face)]
     except Part.OCCError:
         return None
 

@@ -14,8 +14,8 @@ All notable changes to FinSnap are listed here. The format follows
 ### Fixed
 
 - Fins kept while their part is laid flat again are rebuilt at the part once it stands again, instead of turned off it and reaching below the bed; a placement set on the fins by hand no longer moves them off the part either
-- Islands and bridges are found when the underside lies right on the middle of a layer, which they were not for every second tenth of a millimetre with 0.2 mm layers
-- A fin lower than its foot, by a set height or with its only tine within the foot, is built as high as its foot instead of as an invalid solid
+- Islands and bridges are found when the underside lies right on the middle of a layer, which they were not for every second tenth of a millimetre with 0.2 mm layers; just below a middle the check of the islands failed with "Null shape"
+- A fin lower than its foot, by a set height, a height of its own or with its only tine within the foot, is built as high as its foot, with a warning, instead of as an invalid solid; side fins as well
 
 ## [0.17.0] - 2026-11-10
 

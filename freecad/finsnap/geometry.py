@@ -48,7 +48,7 @@ INPUTS this has to withstand (build()):
   manual fin_height below the first tine ->  FinError
   fin lower than its foot, by a set
     height, a height of its own or its
-    only tine lying within the foot     ->  the fin as high as its foot: lower, its
+    only tine lying within the foot     ->  the fin as high as its foot, warning: lower, its
                                             outline would cross itself
   fins standing closer than they are
     thick plus FOOT_CLEARANCE           ->  FinError: they would collide
@@ -125,6 +125,10 @@ NOTE_ENDED_LOWER = QT_TRANSLATE_NOOP("FinSnap", "side fins %s end lower: above, 
 # Said where side fins end at the top of their contour, below the fin height set: their numbers.
 NOTE_BELOW_SET_HEIGHT = QT_TRANSLATE_NOOP("FinSnap", "side fins %s end below the fin height set: the part does not "
                                                      "reach that high beside the lowest line")
+# Said where fins are lower than their foot, by a height set, one of their own or their only tine
+# lying within the foot, and built as high as the foot: their numbers.
+NOTE_AS_HIGH_AS_FOOT = QT_TRANSLATE_NOOP("FinSnap", "fins %s are built as high as their foot: a fin is never "
+                                                    "lower than its foot")
 # Said where a foot further out or the part itself leaves out tines of side fins: their numbers.
 NOTE_TINES_AT_FOOT = QT_TRANSLATE_NOOP("FinSnap", "side fins %s: some tines left out, at a foot standing further out "
                                                   "to clear the part, or where they would reach into it")
@@ -825,9 +829,17 @@ def _clear_of_part(p, part, frame, fin, thickness, half_foot):
                            height=kept[-1][0] + p.tine_height)
 
 
+def standing_height(p, height):
+    """The height a fin `height` high is built with: never lower than its
+    foot, below whose top its outline would cross itself."""
+    return max(height, p.foot_height)
+
+
 def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
     """A fin without tines, its tines, which end on the face, and the middle
-    of the upright outer edge of its blade, where the handles go."""
+    of the upright outer edge of its blade, where the handles go. Lower than
+    its foot, it is built as high as the foot (standing_height())."""
+    height = standing_height(p, height)
     zb, top = frame.bed_z, frame.bed_z + height
     s_out = fin_out(p, frame, height)
     head, low, s_from = _blade_ends(p, frame, t0, height, thickness)
@@ -873,7 +885,6 @@ def fin_at(p, result, number, height):
                                                 outline would cross itself
       no foot, height above 0               ->  the fin as high
     """
-    height = max(height, p.foot_height)
     index = result.numbers.index(number)
     tine_z = [z for z in result.touching_z.get(number, []) if z + p.tine_height <= height + d.TOLERANCE]
     body, tines, _ = one_fin(p, result.frames.get(number, result.frame), result.positions[index], height,
@@ -1474,8 +1485,6 @@ def _plan(part, frame, support, p, all_z, face_height, reach, count, restart, le
         else:
             set_height = _within(p, room).fin_height if number in frames else p.fin_height
             fin_height = set_height if set_height > 0 else kept_z[-1] + p.tine_height
-        # Never lower than its foot, as fin_at(): its outline would cross itself.
-        fin_height = max(fin_height, p.foot_height)
         fins.append(PlannedFin(number, t0, fin_height, candidate_z, on_face, sorted(touching)))
     if not fins and blocked:
         raise refused(translate("FinSnap", NOTE_BLOCKED_OR_BARE if fins_left_out else NOTE_ALL_BLOCKED))
@@ -1522,6 +1531,8 @@ class _Found:
     tines_at_foot: list = field(default_factory=list)
     # Fins beside the lowest line whose contour ends below the fin height set.
     below_set_height: list = field(default_factory=list)
+    # Fins lower than their foot, built as high as it (standing_height()).
+    as_high_as_foot: list = field(default_factory=list)
 
 
 def _warnings(p, frame, plan, findings):
@@ -1545,6 +1556,7 @@ def _warnings(p, frame, plan, findings):
     for note, numbers_of in ((NOTE_ENDED_LOWER, findings.ended_lower),
                              (NOTE_BELOW_SET_HEIGHT, findings.below_set_height),
                              (NOTE_TINES_AT_FOOT, findings.tines_at_foot),
+                             (NOTE_AS_HIGH_AS_FOOT, findings.as_high_as_foot),
                              (NOTE_SIDE_FIN_LEFT_OUT, findings.side_missing)):
         if numbers_of:
             warnings.append(translate("FinSnap", note) % ", ".join(str(number) for number in numbers_of))
@@ -1684,6 +1696,8 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
             findings.gap_heights.update(z for z, _ in left)
             findings.gapped.append(fin.number)
         built_fins.append(fin)
+        if fin.height < p.foot_height - d.TOLERANCE:
+            findings.as_high_as_foot.append(fin.number)
         edges.append(edge)
         bodies.append(body)
         all_tines.extend(kept)
@@ -1706,7 +1720,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     warnings, targets = _warnings(p, frame, plan, findings)
 
     numbers = [fin.number for fin in built_fins]
-    fin_heights = [fin.height for fin in built_fins]
+    fin_heights = [standing_height(p, fin.height) for fin in built_fins]
     return FinResult(fins=fins, bodies=bodies, tines=all_tines, height=max(fin_heights),
                      thickness=thickness, tine_z=plan.tine_z, positions=[fin.t0 for fin in built_fins],
                      foot_half_width=plan.half_foot, warnings=warnings, warning_targets=targets,
