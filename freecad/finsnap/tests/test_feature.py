@@ -1051,16 +1051,21 @@ def stood_again_after_laid_flat(doc):
 
 def checks_share_starts(doc):
     """The overhangs, the bridges and the islands of a part as it stands, asked
-    one after the other as a build asks them, share what starts in it: its
-    faces are sampled once and it is meshed once, and no shape is kept."""
+    one after the other as a build asks them, share what starts in it and the
+    cuts of its layers: its faces are sampled once, it is meshed once, no
+    height is cut twice, and no shape is kept. The bridges asked again, as for
+    other fins, cut nothing anew; the cuts go once another part is checked."""
     length, depth, height = BOX
     pier = length / SHARED_PIERS
     slab = Part.makeBox(length, depth, height / SHARED_PIERS, V(0, 0, height))
-    part = doc.addObject("Part::Feature", "SharedStarts")
-    part.Shape = Part.makeBox(pier, depth, height).fuse(
+    table = Part.makeBox(pier, depth, height).fuse(
         [Part.makeBox(pier, depth, height, V(length - pier, 0, 0)), slab]).removeSplitter()
+    part = doc.addObject("Part::Feature", "SharedStarts")
+    part.Shape = table
+    other = doc.addObject("Part::Feature", "SharedStartsBeside")
+    other.Shape = table.translated(V(0, 2 * depth, 0))
     doc.recompute()
-    calls = {"_lowest_points": 0, "facing_down": 0}
+    calls = {"_lowest_points": 0, "facing_down": 0, "_cut_out": 0}
     real = {name: getattr(overhang, name) for name in calls}
 
     def counted(name):
@@ -1077,14 +1082,38 @@ def checks_share_starts(doc):
         rated = analysis.overhangs(part, shape, (), p)
         spans = analysis.bridges(part, shape, (), p)
         found = analysis.islands(part, p)
+        once = dict(calls)
+        kept = analysis._analysis(part, p)[analysis.STARTS]
+        wider = dataclasses.replace(p, bead_width=p.bead_width + BEAD_STEP)
+        again = analysis.bridges(part, shape, (), wider)
+        after = dict(calls)
+        held = len(kept._cuts)
+        analysis.islands(other, p)
     finally:
         for name in calls:
             setattr(overhang, name, real[name])
-    kept = analysis._analysis(part, p)[analysis.STARTS]
-    expect(len(spans) == 1 and rated == [] and found == [] and calls == {"_lowest_points": 1, "facing_down": 1}
-           and kept._shape is None,
+    expect(len(spans) == 1 and rated == [] and found == [] and once["_lowest_points"] == once["facing_down"] == 1
+           and once["_cut_out"] == 1 and kept._shape is None,
            "the overhangs, the bridges and the islands of a slab on piers, asked one after the other, sample "
-           "its faces once and mesh it once, and the Starts kept hold no shape: %s" % calls)
+           "its faces once, mesh it once and cut its layers in one cut, and the Starts kept hold no shape: %s"
+           % once)
+    expect(len(again) == 1 and after == once and held > 0 and kept._cuts == {},
+           "its bridges asked again, for another bead, cut nothing anew; the cuts kept go once another part "
+           "is checked: %d heights held, then %d" % (held, len(kept._cuts)))
+    # Other layers are another entry with cuts of its own; a document closed drops what is kept.
+    analysis.bridges(part, shape, (), dataclasses.replace(p, bead_width=p.bead_width + 2 * BEAD_STEP))
+    back = len(kept._cuts)
+    thicker = dataclasses.replace(p, layer_height=p.layer_height + BEAD_STEP)
+    analysis.bridges(part, shape, (), thicker)
+    layered = analysis._analysis(part, thicker)[analysis.STARTS]
+    expect(back > 0 and layered is not kept and kept._cuts == {} and len(layered._cuts) > 0,
+           "the part checked again has its cuts back; on other layers it is cut for those, in a stock of its "
+           "own, and the cuts of the layers before are dropped")
+    scratch = App.newDocument("ClosedBeside")
+    App.closeDocument(scratch.Name)
+    App.setActiveDocument(doc.Name)
+    expect(layered._cuts == {} and analysis._stocked is None,
+           "a document closed drops the cuts kept")
 
 
 def kept_islands(doc):

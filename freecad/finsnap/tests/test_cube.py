@@ -122,6 +122,7 @@ RIDGE_INTO_SLAB = SLAB / 2  # how far a ridge hanging from a slab reaches up int
 CLEAR_OF_MIDDLE = d.LAYER_HEIGHT / 4
 CUTS_LOW = 10.0  # the lowest of some heights to cut a part at together, in mm
 CUTS_FEW = 3  # heights cut together where fewer are to be than as many as can
+STOCK_LAYERS = (10, 20, 30)  # layers through the piers of a slab on piers, to cut it at their middles
 CUTS_DIGITS = 4  # places the area of a cut, a point or a span is compared to
 CUTS_AS_SET = overhang.CUTS_MOST  # how many heights are cut together, to put back after a test changed it
 # How far from that middle it is put (mm): well below and above, right on it, within the tolerance of it,
@@ -799,8 +800,9 @@ def check_bridges():
                % (first_height, COMB_TEETH, len(cut_at), kernel, [s.span for s in spans]))
         # A slab whose underside, the ceiling of the gap, starts near a middle,
         # beside a block hanging in the same layer: no lowest point lies on the
-        # ceiling, yet islands and bridges cut that layer's support at the same
-        # height, lowered, and with one Starts the part is meshed once.
+        # ceiling, yet what carries that layer is cut lowered for the islands, and
+        # the bridges take that cut from the same Starts: the part is meshed once
+        # and no height is cut twice.
         near = below - d.TOLERANCE / 2
         hanging = Part.makeBox(ISLAND_PILLAR, ISLAND_DEPTH, ISLAND_UNDER - under,
                                V(ISLAND_SPAN - ISLAND_PILLAR, 0, under))
@@ -815,11 +817,12 @@ def check_bridges():
                     for cut_at, _ in (for_islands, for_bridges)]
         over_gap = [found for found in for_bridges[1] if abs(found.span - GAP_CRITICAL) < SPAN_TOLERANCE]
         expect(len(for_islands[1]) == 1 and len(over_gap) == 1 and len(meshed) == 1 and len(sampled) == 1
-               and supports[0] == supports[1] and len(supports[0]) == 1
+               and len(supports[0]) == 1 and supports[1] == [] and not set(for_islands[0]) & set(for_bridges[0])
                and abs(supports[0][0] - (below - overhang.SUPPORT_CUT_DROP)) < BESIDE,
                "first layer %.2f mm: a ceiling starting near a middle beside a block hanging in its layer, an "
                "island, the ceiling a bridge across the gap: islands "
-               "and bridges cut what carries that layer at the same height, the drop under the middle, the part "
+               "cut what carries that layer the drop under the middle, the bridges take that cut and cut no "
+               "height again, the part "
                "meshed once and its faces sampled once: %s, %d meshes, %d samplings"
                % (first_height, supports, len(meshed), len(sampled)))
     plain = Part.makeBox(*PIER)
@@ -2172,6 +2175,90 @@ def check_starts():
     unasked.lend(table.copy())
     expect(len(unasked.points) == len(starts.points) and unasked.lowest == lowest,
            "lent another copy of the shape, it works out on that what it was not asked before")
+
+    # The cuts of its layers, kept for the checks of the part to share.
+    apart = [overhang.layer_middle(number, d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT) for number in STOCK_LAYERS]
+    stock = overhang.Starts(table)
+    first_cuts, cut = kernel_cuts(lambda: stock.cuts(apart[:2]))
+    kept_cuts, kept = kernel_cuts(lambda: stock.cuts(apart[:2]))
+    more_cuts, more = kernel_cuts(lambda: stock.cuts(apart))
+
+    def same_faces(given, as_before):
+        return len(given) == len(as_before) and all(face.isSame(before) for face, before in zip(given, as_before))
+
+    expect(first_cuts == 1 and kept_cuts == 0 and more_cuts == 1 and stock.cuts([]) == {}
+           and all(same_faces(kept[z], cut[z]) and same_faces(more[z], cut[z]) for z in apart[:2])
+           and len(more) == len(apart) and all(len(more[z]) == 2 for z in apart),
+           "heights are cut together the first time they are asked, given as kept after, and of heights asked "
+           "in part before only the others are cut: %d, %d and %d cuts of the kernel"
+           % (first_cuts, kept_cuts, more_cuts))
+    more[apart[0]].append(None)
+    more[apart[1]].reverse()
+    expect(all(kept[z] is not cut[z] and same_faces(stock.cuts([z])[z], cut[z]) for z in apart[:2]),
+           "the lists of faces given are each its own: changed by a caller, what is kept stays as it was")
+    stock.let_go()
+    from_stock, _ = kernel_cuts(lambda: stock.cuts(apart))
+    try:
+        stock.cuts([apart[-1] + d.LAYER_HEIGHT])
+    except ValueError as error:
+        expect(from_stock == 0 and "lend" in str(error),
+               "let go of its shape, it still gives the cuts it keeps, and says it needs a shape for another: "
+               "%s" % error)
+    else:
+        raise AssertionError("Starts without a shape cut a height it did not keep")
+    stock.lend(table.copy())
+    on_copy, _ = kernel_cuts(lambda: stock.cuts([apart[-1] + d.LAYER_HEIGHT]))
+    stock.drop_cuts()
+    anew, _ = kernel_cuts(lambda: stock.cuts(apart))
+    expect(on_copy == 1 and anew == 1,
+           "lent another copy of the shape, it cuts what it lacks on that; its cuts dropped, it cuts anew")
+    most = overhang.CUT_EDGES_KEPT
+    one_height = sum(len(face.Edges) for face in cut[apart[0]])
+    try:
+        # Room for the faces of one height, not of two; then for none at all.
+        overhang.CUT_EDGES_KEPT = one_height
+        full = overhang.Starts(table)
+        full.cuts(apart)
+        beyond = [kernel_cuts(lambda: full.cuts(apart))[0] for _ in range(2)]
+        lowest_kept, _ = kernel_cuts(lambda: full.cuts(apart[:1]))
+        overhang.CUT_EDGES_KEPT = one_height - 1
+        none = overhang.Starts(table)
+        none.cuts(apart)
+        nothing_kept = (none._cuts, none._edges_kept)
+        # Without room, each check still cuts a height once: the islands, then the
+        # bridges, of a block hanging from a beam, which is an island and carries a bridge.
+        hung = bridge(Part.makeBox(ISLAND_BLOCK, ISLAND_DEPTH, ISLAND_UNDER - ISLAND_LOW,
+                                   V(ISLAND_SPAN - ISLAND_BLOCK, 0, ISLAND_LOW)))
+        bare = overhang.Starts(hung)
+        first_check, (asked, _) = kernel_cuts(lambda: cuts_counted(
+            lambda: overhang.islands(hung, d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, bare)))
+        second_check, (asked_again, spans) = kernel_cuts(lambda: cuts_counted(lambda: find_bridges(
+            hung, d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, d.BEAD_WIDTH, limits.Limits(), starts=bare)))
+    finally:
+        overhang.CUT_EDGES_KEPT = most
+    expect(beyond == [1, 1] and lowest_kept == 0 and nothing_kept == ({}, 0),
+           "a height whose faces would take what is kept past the most edges it may keep is given and not "
+           "kept, cut anew each time, be it the first; what fitted before is still given")
+    expect(len(spans) == 1 and first_check == cuts_due(hung, asked) > 0 and second_check == cuts_due(hung, asked_again)
+           and len(asked_again) == len(set(asked_again)) > 0,
+           "with no room to keep cuts, each check cuts the heights it asks for once: %d cuts for %d heights of "
+           "the islands, %d for %d of the bridges" % (first_check, len(asked), second_check, len(asked_again)))
+
+    # Faces kept are as they were cut once the islands and the bridges took them.
+    shared = overhang.Starts(hung)
+    overhang.islands(hung, d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, shared)
+
+    def as_cut(starts):
+        return {z: None if faces is None else [(face.hashCode(), round(face.Area, CUTS_DIGITS), face.BoundBox.ZMin)
+                                               for face in faces] for z, faces in starts._cuts.items()}
+
+    before = as_cut(shared)
+    spans = find_bridges(hung, d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, d.BEAD_WIDTH, limits.Limits(), starts=shared)
+    overhang.islands(hung, d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, shared)
+    after = as_cut(shared)
+    expect(len(spans) == 1 and all(after[z] == before[z] for z in before) and len(after) >= len(before) > 0,
+           "the faces kept are as they were cut after the islands and the bridges took them: %d heights kept"
+           % len(after))
 
 
 def check_islands():
