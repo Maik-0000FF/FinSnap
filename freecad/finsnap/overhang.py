@@ -51,6 +51,11 @@ SECTION_CUT_MARGIN = 1.0
 # Sections are compared as slabs this thick around the plane of the bed (mm):
 # solids overlap reliably, faces only when they lie in one plane exactly.
 SECTION_SLAB = 1.0
+# Several heights are cut in one cut of the kernel: at most this many, and on
+# a shape of many faces, where a cut of several takes longer than its parts,
+# no more than this many faces times heights.
+CUTS_MOST = 8
+CUT_FACES_MOST = 4000
 # What carries a point is seen in a cut of the layer below its own, at the
 # middle of that layer. Where a point starts near that middle, the cut is made
 # this far under it (mm), more than the tolerance by which a point below the
@@ -196,14 +201,17 @@ def islands(part, first_layer, layer, starts=None):
     resting = {}
     found = []
     cuts = LayerCuts(starts.heights, first_layer, layer)
-    for point in starts.points:
-        at = cuts.at(point.z - bed)
-        if at is None:
-            continue
+    # The points above the first layer, each with the heights its layer and
+    # what carries it are cut at; all those heights cut together, and no
+    # others.
+    placed = [(point, at) for point, at in ((point, cuts.at(point.z - bed)) for point in starts.points)
+              if at is not None]
+    faces = faces_at(part, {bed + z for _, at in placed for z in (at.here, at.below)})
+    for point, at in placed:
         here, below = bed + at.here, bed + at.below
         for z in (here, below):
             if z not in cut:
-                cut[z] = sections(part, z, layer)
+                cut[z] = sections(faces[z], z, layer)
         if cut[here] is None or cut[below] is None:
             continue
         # The sections lie in the plane of the bed, see sections().
@@ -467,11 +475,34 @@ def _lowest_points(shape):
             if all(points[other].z >= point.z for other in neighbours[corner])]
 
 
+def _cutter(box, z):
+    """The thin box whose top, at height `z`, cuts a shape with the bounding
+    box `box`: SECTION_CUT_HEIGHT high, SECTION_CUT_MARGIN past it all round."""
+    return Part.makeBox(box.XLength + 2 * SECTION_CUT_MARGIN, box.YLength + 2 * SECTION_CUT_MARGIN,
+                        SECTION_CUT_HEIGHT, App.Vector(box.XMin - SECTION_CUT_MARGIN,
+                                                       box.YMin - SECTION_CUT_MARGIN, z - SECTION_CUT_HEIGHT))
+
+
+def _flat_up(face):
+    """Whether `face`, of what cutters cut out of a shape, is flat and faces
+    up, as the top of a cut does, and neither the sides nor the underside of
+    a thin slice."""
+    return face.BoundBox.ZLength < d.TOLERANCE and middle_normal(face).z > FACING_UP
+
+
+def _on_top(face, z):
+    """Whether `face`, of what a cutter cut out of a shape, is of the top of
+    the cut at height `z`: in that plane within the tolerance, flat and
+    facing up (_flat_up())."""
+    return abs(face.BoundBox.ZMin - z) < d.TOLERANCE and _flat_up(face)
+
+
 def layer_faces(shape, z):
     """The faces where the plane at height `z` cuts `shape`, holes and all:
     the top of a thin cut-out of it ending at the plane, see
     SECTION_CUT_HEIGHT. A face of the part lying in the plane is cut whole.
-    None where the kernel cannot make them.
+    None where the kernel cannot make them. Several heights are cut faster
+    together (faces_at()).
 
     INPUTS this has to withstand:
       the plane through the part            ->  the faces of the cut, holes and all
@@ -486,28 +517,102 @@ def layer_faces(shape, z):
       the plane above or below the part     ->  []
       a cut the kernel cannot make          ->  None
     """
-    box = bounds(shape)
-
-    def on_top(face):
-        return (abs(face.BoundBox.ZMin - z) < d.TOLERANCE and face.BoundBox.ZLength < d.TOLERANCE
-                and middle_normal(face).z > FACING_UP)
-
     try:
-        cutter = Part.makeBox(box.XLength + 2 * SECTION_CUT_MARGIN, box.YLength + 2 * SECTION_CUT_MARGIN,
-                              SECTION_CUT_HEIGHT, App.Vector(box.XMin - SECTION_CUT_MARGIN,
-                                                             box.YMin - SECTION_CUT_MARGIN, z - SECTION_CUT_HEIGHT))
-        return [face for face in shape.common(cutter).Faces if on_top(face)]
+        return [face for face in shape.common(_cutter(bounds(shape), z)).Faces if _on_top(face, z)]
     except Part.OCCError:
         return None
 
 
-def sections(shape, z, reach):
-    """Where the plane at height `z` cuts `shape` (layer_faces()), one slab
-    SECTION_SLAB thick for each face of the cut, around the plane of the bed,
-    z 0, so sections of different layers can be overlapped, each with its
+def _batches(heights, most):
+    """`heights`, sorted, each once, in batches to cut together: lists of at
+    most `most`, in each of which a height lies at least the height of a
+    cutter and the tolerance above the one before, so their cutters do not
+    overlap. A height too near the last of a batch waits for a later one.
+
+    INPUTS this has to withstand:
+      no heights                            ->  no batch
+      heights far enough apart, no more
+        than `most`                         ->  one batch
+      more of them                          ->  several, none of more than `most`
+      two heights nearer than a cutter is
+        high, as a middle and the cut
+        lowered under it, or two a
+        rounding apart                      ->  in different batches
+    """
+    waiting = list(heights)
+    while waiting:
+        batch, later = [], []
+        for z in waiting:
+            if len(batch) < most and (not batch or z - batch[-1] >= SECTION_CUT_HEIGHT + d.TOLERANCE):
+                batch.append(z)
+            else:
+                later.append(z)
+        yield batch
+        waiting = later
+
+
+def faces_at(shape, heights):
+    """The faces where the planes at `heights` cut `shape` (layer_faces()),
+    by height; None for a height the kernel cannot cut at. Several heights
+    are cut in one cut of the kernel, which takes less than a cut each: as
+    many as CUTS_MOST, and fewer on a shape of many faces, where a cut of
+    several takes longer than its parts, no more than CUT_FACES_MOST faces
+    times heights; on a shape of more faces than that each height alone.
+
+    The heights are to be those a check asks for and no others: the layers
+    something starts in and what carries them (LayerCuts).
+
+    INPUTS this has to withstand:
+      no heights                            ->  {}
+      one height                            ->  cut alone, as layer_faces()
+      several heights, each at least the
+        height of a cutter from the next    ->  up to as many as said in one cut; the
+                                                faces of each as cut alone
+      more heights than that                ->  several cuts, none of more
+      two heights nearer than a cutter is
+        high, as a middle and the cut
+        lowered under it                    ->  never in one cut, their cutters would
+                                                overlap: each in a cut with others
+      two heights a rounding apart          ->  each cut, in a cut of its own: no harm
+      the same height twice                 ->  cut once
+      a face of a cut of several            ->  to the height whose plane it lies in,
+                                                within the tolerance, facing up; the
+                                                sides and undersides of what the cutters
+                                                cut out, and a top of the part lying
+                                                within a cutter, to none
+      a face of the part lying in the plane
+        of one height                       ->  cut whole, among the faces of that height
+      a height above or below the part      ->  [] for it
+      a cut of several the kernel cannot
+        make                                ->  its heights cut one by one; None for one
+                                                it cannot cut alone either
+    """
+    box = bounds(shape)
+    most = max(1, min(CUTS_MOST, CUT_FACES_MOST // max(1, len(shape.Faces))))
+    found = {}
+    for batch in _batches(sorted(set(heights)), most):
+        tops = None
+        if len(batch) > 1:
+            try:
+                cut_out = shape.common(Part.makeCompound([_cutter(box, z) for z in batch]))
+                # Each face looked at once, whichever of the heights it belongs to.
+                tops = [(face.BoundBox.ZMin, face) for face in cut_out.Faces if _flat_up(face)]
+            except Part.OCCError:
+                tops = None
+        if tops is None:
+            found.update((z, layer_faces(shape, z)) for z in batch)
+        else:
+            found.update((z, [face for low, face in tops if abs(low - z) < d.TOLERANCE]) for z in batch)
+    return found
+
+
+def sections(faces, z, reach):
+    """`faces`, where the plane at height `z` cuts a shape (layer_faces()),
+    as one slab SECTION_SLAB thick for each, around the plane of the bed, z
+    0, so sections of different layers can be overlapped, each with its
     bounding box grown by `reach` (mm) and the face of the cut where it lies;
-    None where the kernel cannot make them."""
-    faces = layer_faces(shape, z)
+    None where there are no faces to tell, the kernel could not cut, or
+    where it cannot make the slabs."""
     if not faces:
         return faces
     try:

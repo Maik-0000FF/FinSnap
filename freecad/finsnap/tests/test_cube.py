@@ -120,6 +120,9 @@ ISLAND_UNDER = ISLAND_TOP - ISLAND_BEAM  # height of the underside of its beam, 
 RIDGE_INTO_SLAB = SLAB / 2  # how far a ridge hanging from a slab reaches up into it, in mm
 # How far above the middle of a layer something starts that is to lie clear of it, and below it, in mm.
 CLEAR_OF_MIDDLE = d.LAYER_HEIGHT / 4
+CUTS_LOW = 10.0  # the lowest of some heights to cut a part at together, in mm
+CUTS_FEW = 3  # heights cut together where fewer are to be than as many as can
+CUTS_DIGITS = 4  # places the area of a cut is compared to
 # How far from that middle it is put (mm): well below and above, right on it, within the tolerance of it,
 # where it counts to the layer above, just beside the tolerance below, on either side of where the layer
 # changes, and one to two tolerances below, where it counts to that layer.
@@ -1926,10 +1929,77 @@ def calls_counted(name, run):
 
 
 def cuts_counted(run):
-    """The heights overhang.layer_faces() cuts at while `run` runs, in their
-    order, and what `run` returns."""
-    calls, result = calls_counted("layer_faces", run)
-    return [z for _, z in calls], result
+    """The heights overhang.faces_at() is asked to cut at while `run` runs,
+    each once for each time it is asked, in rising order, and what `run`
+    returns."""
+    calls, result = calls_counted("faces_at", run)
+    return [z for _, heights in calls for z in sorted(set(heights))], result
+
+
+def check_faces_at():
+    """The faces where several planes cut a shape, cut a few heights at a
+    time: every kind of heights the tables of overhang._batches() and
+    overhang.faces_at() name."""
+    first, layer = d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT
+    cutter = overhang.SECTION_CUT_HEIGHT
+    apart = [CUTS_LOW + step * layer for step in range(overhang.CUTS_MOST)]
+    lowered = apart[1] - overhang.SUPPORT_CUT_DROP
+
+    def batches(heights, most=overhang.CUTS_MOST):
+        return list(overhang._batches(sorted(heights), most))
+
+    expect(batches([]) == [] and batches(apart) == [apart]
+           and batches(apart + [apart[-1] + layer]) == [apart, [apart[-1] + layer]]
+           and batches(apart, CUTS_FEW) == [apart[start:start + CUTS_FEW] for start in range(0, len(apart), CUTS_FEW)],
+           "heights a cutter and more apart are cut together, as many at a time as said and no more")
+    near = batches(apart[:2] + [lowered, apart[0] + BESIDE])
+    gaps = [later - earlier for batch in near for earlier, later in zip(batch, batch[1:])]
+    expect(len(near) == 2 and all(gap >= cutter for gap in gaps),
+           "two heights nearer than a cutter is high, as a middle and the cut lowered under it, or two a "
+           "rounding apart, are never cut together: %s" % near)
+
+    bottoms = stacked_bottoms(first, layer)
+    teeth = [Part.makeBox(COMB_TOOTH, ISLAND_DEPTH, ISLAND_UNDER - ISLAND_LOW,
+                          V(ISLAND_PILLAR + COMB_TOOTH * (1 + 2 * step), 0, bottom))
+             for step, bottom in enumerate(bottoms)]
+    comb = bridge(teeth[0].fuse(teeth[1:]))
+    middles = [overhang.layer_middle(ISLAND_LAYER + step, first, layer) for step in range(COMB_TEETH + 1)]
+    under_beam = ISLAND_UNDER
+    asked = middles + [middles[1] - overhang.SUPPORT_CUT_DROP, under_beam, ISLAND_TOP + layer, middles[0]]
+
+    def told(faces):
+        return None if faces is None else (len(faces), round(sum(face.Area for face in faces), CUTS_DIGITS))
+
+    alone = {z: told(overhang.layer_faces(comb, z)) for z in asked}
+    single, together = calls_counted("layer_faces", lambda: overhang.faces_at(comb, asked))
+    expect(overhang.faces_at(comb, []) == {} and sorted(together) == sorted(set(asked)) and len(single) == 1
+           and all(told(together[z]) == alone[z] for z in asked) and told(together[ISLAND_TOP + layer]) == (0, 0.0)
+           and told(together[under_beam])[0] == 1 + COMB_TEETH,
+           "the faces of several heights cut together are those of each cut alone, each height once, the one "
+           "too near another cut by itself, none "
+           "above the part, and a face of the part lying in the plane of a height among those of that height")
+    single, one = calls_counted("layer_faces", lambda: overhang.faces_at(comb, middles[:1]))
+    expect(len(single) == 1 and told(one[middles[0]]) == alone[middles[0]], "one height is cut alone")
+
+    most = overhang.CUT_FACES_MOST
+    make = Part.makeCompound
+    try:
+        overhang.CUT_FACES_MOST = len(comb.Faces) - 1
+        single, each = calls_counted("layer_faces", lambda: overhang.faces_at(comb, middles))
+        expect(len(single) == len(middles) and all(told(each[z]) == alone[z] for z in middles),
+               "on a shape of more faces than a cut of several is worth, every height is cut alone")
+        overhang.CUT_FACES_MOST = most
+
+        def failing(*args):
+            raise Part.OCCError("no cut of several")
+
+        Part.makeCompound = failing
+        single, each = calls_counted("layer_faces", lambda: overhang.faces_at(comb, middles))
+    finally:
+        overhang.CUT_FACES_MOST = most
+        Part.makeCompound = make
+    expect(len(single) == len(middles) and all(told(each[z]) == alone[z] for z in middles),
+           "a cut of several the kernel cannot make has its heights cut one by one")
 
 
 def check_cut_heights():
@@ -3810,6 +3880,7 @@ def main():
     check_quick_plans()
     check_prism_side()
     check_cut_heights()
+    check_faces_at()
     check_starts()
     check_islands()
     check_bridge_lines()
