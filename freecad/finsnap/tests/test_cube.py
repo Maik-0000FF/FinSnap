@@ -93,8 +93,9 @@ ISLAND_BEAM = 5.0      # thickness of its beam, and of the cap of a mushroom
 ISLAND_LOW = 10.0      # height of the bottom of what hangs from it, well above the bed
 ISLAND_LAYER = 50      # a layer on whose middle the bottom of a hanging block or a slab is put
 # How far from that middle it is put (mm): well below and above, right on it, within the tolerance of it,
-# where it counts to the layer above, and one to two tolerances below, where it counts to that layer.
-MIDDLE_OFFSETS = (-d.LAYER_HEIGHT / 4, -1.5 * d.TOLERANCE, -d.TOLERANCE / 2, 0.0, d.TOLERANCE / 2,
+# where it counts to the layer above, right at the tolerance below, where rounding decides the layer,
+# and one to two tolerances below, where it counts to that layer.
+MIDDLE_OFFSETS = (-d.LAYER_HEIGHT / 4, -1.5 * d.TOLERANCE, -d.TOLERANCE, -d.TOLERANCE / 2, 0.0, d.TOLERANCE / 2,
                   1.5 * d.TOLERANCE, d.LAYER_HEIGHT / 4)
 ISLAND_STEM = 3.0      # radius of the stem of a mushroom, and of a hole through a box
 ISLAND_CAP = 10.0      # radius of the cap of a mushroom
@@ -3037,22 +3038,6 @@ def check_fin_at(cube, face):
                and abs(low.BoundBox.ZMax - (cube.BoundBox.ZMin + p.foot_height)) < d.TOLERANCE,
                "drawn %.2f mm high, below the top of its foot, the fin is a whole solid as high as its foot"
                % height)
-    # Built lower than its foot, by a set height or by its only tine lying
-    # within the foot: as high as the foot as well.
-    first_tine = p.first_layer_height
-    for low, why in ((FinParams(tine_first=first_tine, fin_height=first_tine + 2 * p.tine_height),
-                      "set lower than its foot"),
-                     (FinParams(tine_first=first_tine, tine_count=1), "with one tine within its foot")):
-        fins = geometry.build(cube, face, low)
-        expect(first_tine + 2 * p.tine_height < p.foot_height and fins.fins.isValid() and fins.fins.Volume > 0
-               and geometry.NOTE_AS_HIGH_AS_FOOT % ", ".join(str(n) for n in fins.numbers) in fins.warnings
-               and abs(fins.height - p.foot_height) < d.TOLERANCE,
-               "built %s, the fin is a valid solid as high as its foot, and says so: %.2f mm, %s"
-               % (why, fins.height, fins.warnings))
-        drawn = geometry.fin_at(low, fins, fins.numbers[0], 0.0)
-        expect(fins.tines and len(drawn) == 1 + len(fins.tines),
-               "drawn below its foot, the fin built %s keeps the tines that lie within the foot: %d"
-               % (why, len(drawn) - 1))
 
 
 def check_merged_clearance(cube, face):

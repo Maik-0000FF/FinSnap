@@ -232,6 +232,9 @@ def layer_cut(height, first_layer, layer):
       right on the middle of layer 1, 0.3   ->  layer 2, here 0.5, below 0.3 less the drop
       within the tolerance below it         ->  layer 2 as well: it reaches the tolerance
                                                 at most below 0.3, the drop is more
+      right at the tolerance below it       ->  layer 1 or 2, as the rounding falls: both
+                                                hold, its slice at 0.3 is as thick as the
+                                                tolerance, and the drop is more
       more than the tolerance below it,
         as one and a half times             ->  layer 1: its section at 0.3 holds a slice
                                                 of it thicker than the tolerance
