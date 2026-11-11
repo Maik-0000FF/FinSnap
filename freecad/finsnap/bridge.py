@@ -294,6 +294,22 @@ def _resting(points, supports, slack):
     return rests
 
 
+def _laying(diagonal, bead):
+    """(reach, spacing) of the lines laid across a region whose box measures
+    `diagonal` from corner to corner, in beads `bead` wide: how far to each
+    side of the middle of the box they are laid, a bead past its corners,
+    and how far apart, a bead, or farther on a large region, which needs no
+    more than LINES_MOST lines to tell its directions apart."""
+    reach = diagonal / 2 + bead
+    return reach, max(bead, 2 * reach / LINES_MOST)
+
+
+def _offsets(reach, spacing):
+    """How far across from the middle each of the lines `spacing` apart lies
+    that are laid from `reach` to one side of it to as far on the other."""
+    return numpy.arange(int(2 * reach / spacing) + 1) * spacing - reach
+
+
 def _pieces(outline, centre, reach, spacing, degrees):
     """The pieces inside the region outlined by `outline` of the lines
     `spacing` apart across it at `degrees`, laid from `reach` to one side of
@@ -329,8 +345,7 @@ def _pieces(outline, centre, reach, spacing, degrees):
     turn = math.radians(degrees)
     along = numpy.array((math.cos(turn), math.sin(turn)))
     across = numpy.array((-along[1], along[0]))
-    count = int(2 * reach / spacing) + 1
-    offsets = numpy.arange(count) * spacing - reach + numpy.dot(centre, across)
+    offsets = _offsets(reach, spacing) + numpy.dot(centre, across)
     starts, ends = outline
     above_start = starts.dot(across)[None, :] - offsets[:, None]
     above_end = ends.dot(across)[None, :] - offsets[:, None]
@@ -339,7 +354,7 @@ def _pieces(outline, centre, reach, spacing, degrees):
     with numpy.errstate(divide="ignore", invalid="ignore"):
         at = from_start[None, :] + (to_end - from_start)[None, :] * above_start / (above_start - above_end)
     pieces = []
-    for line in range(count):
+    for line in range(len(offsets)):
         crossings = numpy.sort(at[line][crossed[line]])
         first_of_line = len(pieces)
         for first, last in zip(crossings[0::2], crossings[1::2]):
@@ -375,10 +390,7 @@ def _span(region, supports, bead):
         return None
     box = region.BoundBox
     centre = (box.Center.x, box.Center.y)
-    reach = box.DiagonalLength / 2 + bead
-    # A bead apart, or farther on a large region, which needs no more lines
-    # to tell its directions apart.
-    spacing = max(bead, 2 * reach / LINES_MOST)
+    reach, spacing = _laying(box.DiagonalLength, bead)
     measured = {}
 
     def measure(degrees):

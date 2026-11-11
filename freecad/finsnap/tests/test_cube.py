@@ -62,6 +62,7 @@ ROUND_TABLE = 20.0  # radius of a disc on a ring wall, in mm
 ROUND_POST = 3.0  # radius of a post in the middle of it, in mm
 LINES_SPACING = 1.0  # how far apart the lines are laid across that square, in mm
 LINES_PAST = 1.0  # how far past the square they are laid, in mm
+LINES_BESIDE = 1.0  # how far beside the square a point is put that lies outside it, in mm
 LINES_DIGITS = 6  # places the ends of their pieces are compared to
 LINES_FACETS = 200  # flat sides of a round outline as a part from a mesh has it
 ODD_TILT = 30.0        # any angle but 45, at which a right-angled edge needs its face
@@ -628,7 +629,7 @@ def check_bridge_lines():
     def inside(outline, *points, slack=d.TOLERANCE):
         return list(bridging._inside(numpy.array(points, dtype=float), outline, slack))
 
-    beside = LINES_PAST
+    beside = LINES_BESIDE
     expect(inside(square, (half, half), (side + beside, half), (side + d.TOLERANCE / 2, half), (-beside, 0),
                   (-beside, side)) == [True, False, True, False, False],
            "a point lies in a face inside its outline or within the slack of it, not outside, nor on the line "
@@ -724,12 +725,10 @@ def check_bridge_lines():
            "a disc on a ring wall spans the whole hole, the line through the seam of its round outline "
            "kept: %s" % plain)
     # With a post in the middle the longest line is the first that passes
-    # beside the post: the lines lie as bridge._span() lays them across the
-    # box of the hole, and a line at the post ends on it.
-    reach = math.hypot(across, across) / 2 + bead
-    spacing = max(bead, 2 * reach / bridging.LINES_MOST)
-    past_post = min(offset for offset in (step * spacing - reach for step in range(int(2 * reach / spacing) + 1))
-                    if offset > ROUND_POST)
+    # beside the post: the lines lie as they are laid across the box of the
+    # hole (bridge._laying()), and a line at the post ends on it.
+    reach, spacing = bridging._laying(math.hypot(across, across), bead)
+    past_post = min(offset for offset in bridging._offsets(reach, spacing) if offset > ROUND_POST)
     chord = 2 * math.sqrt((across / 2) ** 2 - past_post ** 2)
     expect(len(posted) == 1 and abs(posted[0] - chord) < SPAN_TOLERANCE,
            "the same with a post in its middle spans beside the post, the chord of the first line past it, "
