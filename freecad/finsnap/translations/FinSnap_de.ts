@@ -684,7 +684,7 @@
         <translation>Fußüberstand</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="1681"/>
+        <location filename="../feature.py" line="1680"/>
         <source>The main fins are removed; the counter fin is the main fin now, with its changes by hand.</source>
         <translation>Die Hauptfinnen sind entfernt; die Gegenfinne ist jetzt die Hauptfinne, mit ihren Änderungen von Hand.</translation>
     </message>
@@ -869,13 +869,13 @@
         <translation>Farben nach Höhe: grün steht sicher, gelb ist kippgefährdet (Kippwinkel unter %.0f Grad), rot kippt ab dort.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="958"/>
+        <location filename="../feature.py" line="957"/>
         <source>Main fin: %s</source>
         <translation>Hauptfinne: %s</translation>
     </message>
     <message>
         <location filename="../feature.py" line="913"/>
-        <location filename="../feature.py" line="962"/>
+        <location filename="../feature.py" line="961"/>
         <source>Counter fin: %s</source>
         <translation>Gegenfinne: %s</translation>
     </message>

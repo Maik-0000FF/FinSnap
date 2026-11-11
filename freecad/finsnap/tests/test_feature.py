@@ -1021,19 +1021,21 @@ def stood_again_after_laid_flat(doc):
     doc.recompute()
     expect(fins.Placement.isIdentity() and at_the_part(),
            "a placement set on the fins by hand is dropped by the next build, they stay at the part")
-    fins.setExpression("Placement.Base.z", str(BOX[2]))
-    doc.recompute()
-    raised = fins.Shape.BoundBox.ZMin - global_shape(part).BoundBox.ZMin
-    expect(abs(fins.Placement.Base.z - BOX[2]) < d.TOLERANCE and abs(raised - BOX[2]) < d.TOLERANCE
-           and feature.NOTE_PLACEMENT_HELD in fins.Warnings,
-           "a placement held by an expression is left to it, the fins stand moved by it and say so: %s"
-           % list(fins.Warnings))
     layer_height = fins.LayerHeight.Value
     fins.LayerHeight = 0.0
+    doc.recompute()
+    expect(not fins.isValid() and not fins.Warnings, "fins that fail to build keep no warning of an earlier build")
+    fins.setExpression("Placement.Base.z", str(BOX[2]))
     doc.recompute()
     expect(not fins.isValid() and list(fins.Warnings) == [feature.NOTE_PLACEMENT_HELD],
            "fins that fail to build still say that an expression holds their placement")
     fins.LayerHeight = layer_height
+    doc.recompute()
+    raised = fins.Shape.BoundBox.ZMin - global_shape(part).BoundBox.ZMin
+    expect(fins.isValid() and not feature.is_laid_flat(fins) and abs(fins.Placement.Base.z - BOX[2]) < d.TOLERANCE
+           and abs(raised - BOX[2]) < d.TOLERANCE and feature.NOTE_PLACEMENT_HELD in fins.Warnings,
+           "a placement held by an expression is left to it, the fins stand moved by it and say so: %s"
+           % list(fins.Warnings))
     fins.setExpression("Placement.Base.z", None)
     fins.touch()
     doc.recompute()

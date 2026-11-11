@@ -252,7 +252,7 @@ def cut_heights(height, first_layer, layer):
         return None
     number = max(1, math.floor((height - first_layer + d.TOLERANCE) / layer + 0.5) + 1)
     return CutHeights(number, layer_middle(number, first_layer, layer),
-                    layer_middle(number - 1, first_layer, layer) - SUPPORT_CUT_DROP)
+                      layer_middle(number - 1, first_layer, layer) - SUPPORT_CUT_DROP)
 
 
 def _lowest_points(shape):

@@ -93,11 +93,12 @@ ISLAND_BEAM = 5.0      # thickness of its beam, and of the cap of a mushroom
 ISLAND_LOW = 10.0      # height of the bottom of what hangs from it, well above the bed
 ISLAND_LAYER = 50      # a layer on whose middle the bottom of a hanging block or a slab is put
 # How far beside a height where the layer changes a point is put to fall clearly on one side of it (mm):
-# far more than rounding moves it, far less than the tolerance.
-BESIDE = d.TOLERANCE / 100
+# far more than rounding or the kernel moves it, well less than the tolerance.
+BESIDE = d.TOLERANCE / 10
 # First layer and layer heights the cut heights are checked with (mm): the first as high as the others, and
-# higher; and the layers whose middles they are checked at, the lowest among them.
-LAYERINGS = ((d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT), (1.5 * d.LAYER_HEIGHT, d.LAYER_HEIGHT))
+# higher and lower; and the layers whose middles they are checked at, the lowest among them.
+LAYERINGS = ((d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT), (1.5 * d.LAYER_HEIGHT, d.LAYER_HEIGHT),
+             (d.LAYER_HEIGHT / 2, d.LAYER_HEIGHT))
 CUT_LAYERS = (1, 2, ISLAND_LAYER)
 # How far from that middle it is put (mm): well below and above, right on it, within the tolerance of it,
 # where it counts to the layer above, just beside the tolerance below, on either side of where the layer

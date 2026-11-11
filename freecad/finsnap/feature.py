@@ -915,10 +915,9 @@ class FinSnapFeature:
                     _, build_counter = counter_side
                     counter = build_keeping_edits(obj, COUNTER, build_counter, notes)
         except Exception:
-            # A placement held is said all the same: the fins shown are the last
-            # built, moved by it.
-            if held:
-                obj.Warnings = held
+            # No warning of an earlier build is left on fins that failed; a placement
+            # held is said all the same: the fins shown are the last built, moved by it.
+            obj.Warnings = held
             # Built nothing, the fins carry no face; the overhang marks still
             # follow the part.
             hidden_property(obj, CARRIED, "App::PropertyStringList")
