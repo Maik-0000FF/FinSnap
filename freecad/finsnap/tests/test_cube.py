@@ -791,9 +791,10 @@ def check_bridges():
         # once, and the layer below the lowest.
         stairs = stairs_under_slab(first_height, layer_height)
         kernel, (cut_at, spans) = kernel_cuts(lambda: cuts_counted(lambda: found_here(stairs)))
-        expect(spans and len(cut_at) == COMB_TEETH + 1 and kernel < len(cut_at),
+        expect(spans and len(cut_at) == COMB_TEETH + 1 and kernel == cuts_due(stairs, cut_at) < len(cut_at),
                "first layer %.2f mm: %d steps under a slab in layers one above the other are bridged, found "
-               "with each layer asked for once and the one below the lowest, in fewer cuts of the kernel: %d "
+               "with each layer asked for once and the one below the lowest, in a cut of the kernel for each "
+               "batch of them and no more: %d "
                "heights, %d cuts, spans %s"
                % (first_height, COMB_TEETH, len(cut_at), kernel, [s.span for s in spans]))
         # A slab whose underside, the ceiling of the gap, starts near a middle,
@@ -1941,6 +1942,13 @@ def kernel_cuts(run):
     return len(calls), result
 
 
+def cuts_due(shape, heights):
+    """How many cuts the kernel is to make of `shape` for `heights`: one for
+    each batch they are cut in (overhang._batches()), of as many as its
+    faces allow (overhang.cuts_together())."""
+    return len(list(overhang._batches(sorted(set(heights)), overhang.cuts_together(len(shape.Faces)))))
+
+
 def check_faces_at():
     """The faces where several planes cut a shape, cut a few heights at a
     time: every kind of heights the tables of overhang._batches() and
@@ -2212,9 +2220,11 @@ def check_islands():
         kernel, (cut_at, hanging) = kernel_cuts(
             lambda: cuts_counted(lambda: overhang.islands(comb, first_height, layer_height)))
         for_teeth = [z for z in cut_at if z < ISLAND_UNDER - layer_height]
-        expect(len(hanging) == COMB_TEETH and len(for_teeth) == COMB_TEETH + 1 and kernel < len(cut_at),
+        expect(len(hanging) == COMB_TEETH and len(for_teeth) == COMB_TEETH + 1
+               and kernel == cuts_due(comb, cut_at) < len(cut_at),
                "first layer %.2f mm: %d blocks hanging in layers one above the other are %d islands, found with "
-               "each of their layers asked for once and the one below the lowest, in fewer cuts of the kernel: "
+               "each of their layers asked for once and the one below the lowest, in a cut of the kernel for "
+               "each batch of them and no more: "
                "%d heights for them, %d cuts in all"
                % (first_height, COMB_TEETH, len(hanging), len(for_teeth), kernel))
 
