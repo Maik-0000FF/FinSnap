@@ -34,6 +34,7 @@ INPUTS this has to withstand (rated()):
 
 import math
 from collections import namedtuple
+from functools import cached_property
 
 import FreeCAD as App
 import Part
@@ -132,7 +133,7 @@ def rated(shape, supported, rating):
 Island = namedtuple("Island", "point first")
 
 
-def islands(part, first_layer, layer):
+def islands(part, first_layer, layer, starts=None):
     """The Islands of `part` as it stands: where it would start printing in the
     air, as a slicer finds them. The layers are cut at their middles, the first
     `first_layer` high on the bed, every other `layer` high. A section of a
@@ -141,6 +142,9 @@ def islands(part, first_layer, layer):
     another of its layer, on a foundation of its own, is no island, joined to
     it in that layer or not. Fins are no foundation: they only keep the part
     from tipping over, and a layer printed in the air does not stick to them.
+    `starts`, a Starts of the part, is what bridge.bridges() of the same part
+    took or will take, so both cut it at the same heights and it is meshed
+    once; left out, it is worked out here.
 
     Only the layers holding a lowest point of the part are cut, a point of
     its mesh with no neighbour lower: an island can only start at one. A
@@ -164,16 +168,16 @@ def islands(part, first_layer, layer):
     """
     if part.isNull():
         return []
-    bed = bounds(part).ZMin
+    starts = starts or Starts(part)
+    bed = starts.bed
     cut = {}
     # Whether each section, by layer and number, rests on the layer below;
     # one that does not is an island, reported once, at its first lowest point.
     resting = {}
     found = []
-    points = _lowest_points(part)
-    cuts = cut_heights([point.z - bed for point in points], first_layer, layer)
-    for point in points:
-        at = cuts.get(layer_of(point.z - bed, first_layer, layer))
+    cuts = cut_heights(starts.heights, first_layer, layer)
+    for point in starts.points:
+        at = cuts[point.z - bed]
         if at is None:
             continue
         here, below = bed + at.here, bed + at.below
@@ -241,20 +245,52 @@ def layer_of(height, first_layer, layer):
     return max(1, math.floor((height - first_layer + d.TOLERANCE) / layer + 0.5) + 1)
 
 
-def starting_heights(shape, bed):
-    """The heights over `bed` (mm, the height of the bed) at which something
-    of `shape` starts to print: those of its lowest points."""
-    return [point.z - bed for point in _lowest_points(shape)]
+class Starts:
+    """Where something of a shape starts to print: worked out once, and only
+    when asked for, so islands() and bridges() of the same shape share it and
+    cut its layers at the same heights.
+
+    INPUTS this has to withstand:
+      a shape with lowest points            ->  its points, and their heights among
+                                                the heights
+      a face whose lowest line is no lowest
+        point, as the ceiling of a pocket
+        open downwards                      ->  its height among the heights as well
+      a shape the kernel cannot mesh        ->  no points; the heights of its faces
+      heights asked for, the points never   ->  the shape is meshed all the same: what
+                                                starts in a layer decides how it is cut
+      nothing asked for                     ->  nothing worked out but the bed
+    """
+
+    def __init__(self, shape):
+        self.shape = shape
+        # Height of the bed: the lowest of the shape.
+        self.bed = bounds(shape).ZMin
+
+    @cached_property
+    def points(self):
+        """The lowest points of the shape, where an island can start."""
+        return _lowest_points(self.shape)
+
+    @cached_property
+    def heights(self):
+        """The heights over the bed at which something starts: those of the
+        lowest points and of the lowest line of every face. A face that ends
+        there instead, as a top, is one too many and does no harm: it may
+        only have a layer cut lower than it had to be."""
+        return ([point.z - self.bed for point in self.points]
+                + [bounds(face).ZMin - self.bed for face in self.shape.Faces])
 
 
 def cut_heights(starts, first_layer, layer):
     """The heights the layers are cut at in which the points `starts` over
-    the bed start to print, by layer (layer_of()), as a CutHeights each: the
-    layer, the height over the bed its section is cut at, `here`, and the
-    height the layer below is cut at to see what carries it, `below`. The
-    first layer has none: the bed carries it. `starts` has to hold every
-    start of the part (starting_heights()), not only those asked about: what
-    starts in a layer decides how its support is cut.
+    the bed start to print, by each of those heights, as a CutHeights: the
+    layer (layer_of()), the height over the bed its section is cut at,
+    `here`, and the height the layer below is cut at to see what carries it,
+    `below`; None for a height in the first layer, which the bed carries.
+    `starts` has to hold every start of the part (Starts.heights): what
+    starts in a layer decides how its support is cut, and a height not among
+    them is not answered.
 
     A cut holds what lies below its plane (layer_faces()). `here` is the
     middle of the layer. `below` is the middle of the layer below, the cut
@@ -266,7 +302,7 @@ def cut_heights(starts, first_layer, layer):
 
     INPUTS this has to withstand (first layer 0.2, layers 0.2):
       no starts                             ->  {}
-      starts in the first layer only        ->  {}
+      a start in the first layer            ->  None for it
       one start well above the middle
         below it, 0.45                      ->  layer 2: here 0.5, below 0.3, the cut
                                                 layer 1 is cut at as well
@@ -281,8 +317,9 @@ def cut_heights(starts, first_layer, layer):
                                                 hold, its slice at 0.3 is as thick as the
                                                 tolerance, and the drop is more
       two starts in one layer, one near
-        the middle below, one well above    ->  below less the drop: one decision
-                                                for the layer
+        the middle below, one well above    ->  both the same, below less the drop: one
+                                                decision for the layer
+      the same height twice                 ->  answered once
       starts in neighbouring layers, none
         near a middle                       ->  below of the upper is here of the lower,
                                                 the very same number, so one cut serves both
@@ -290,17 +327,18 @@ def cut_heights(starts, first_layer, layer):
                                                 never lower: what starts within the
                                                 tolerance of it lies in the first layer
     """
-    cuts = {}
-    for height in starts:
-        number = layer_of(height, first_layer, layer)
-        if number == 0:
-            continue
+    # Each height's layer worked out once, so a height is in one layer throughout.
+    layers = {height: layer_of(height, first_layer, layer) for height in starts}
+    near = {number for height, number in layers.items()
+            if number and height < layer_middle(number - 1, first_layer, layer) + NEAR_MIDDLE}
+
+    def cuts(number):
         support = layer_middle(number - 1, first_layer, layer)
-        near = height < support + NEAR_MIDDLE
-        if number not in cuts or (near and cuts[number].below == support):
-            cuts[number] = CutHeights(number, layer_middle(number, first_layer, layer),
-                                      support - SUPPORT_CUT_DROP if near else support)
-    return cuts
+        return CutHeights(number, layer_middle(number, first_layer, layer),
+                          support - SUPPORT_CUT_DROP if number in near else support)
+
+    by_layer = {number: cuts(number) for number in set(layers.values()) if number}
+    return {height: by_layer.get(number) for height, number in layers.items()}
 
 
 def _lowest_points(shape):

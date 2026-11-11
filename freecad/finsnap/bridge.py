@@ -78,32 +78,44 @@ KERNEL_ERRORS = (Part.OCCError, App.Base.CADKernelError)
 Bridge = namedtuple("Bridge", "faces covered region span level")
 
 
-def bridges(shape, first_layer, layer, bead, rating, supported=()):
+def bridges(shape, first_layer, layer, bead, rating, supported=(), starts=None):
     """The Bridges of `shape` as it stands, printed in layers `first_layer`
     high on the bed, every other `layer` high, in beads `bead` wide, rated by
     `rating`, a limits.Limits. Faces in `supported`, carried by fins, span
-    nothing."""
+    nothing. `starts`, an overhang.Starts of the shape, is what islands() of
+    the same shape took or will take, so both cut it at the same heights and
+    it is meshed once; left out, it is worked out here.
+
+    INPUTS this has to withstand:
+      an empty shape                        ->  []
+      no face hanging flatter than the
+        critical angle                      ->  [], the shape neither meshed nor cut
+      faces hanging in several layers       ->  each layer and what carries it cut once
+      a layer the kernel cannot cut         ->  no bridge said there
+    """
     if shape.isNull():
         return []
-    bed = bounds(shape).ZMin
     hanging = [number for number, down in overhang.steepest_down(shape, supported, rating.overhang_min_area)
                if overhang.flatter(down, rating.overhang_critical)]
-    lowest = [bounds(shape.Faces[number - 1]).ZMin - bed for number in hanging]
+    if not hanging:
+        return []
+    starts = starts or overhang.Starts(shape)
+    bed = starts.bed
     # How a layer is cut depends on all that starts in it, not on these faces alone.
-    cuts = overhang.cut_heights(lowest + overhang.starting_heights(shape, bed), first_layer, layer)
+    cut_at = overhang.cut_heights(starts.heights, first_layer, layer)
     starting = {}
-    for number, height in zip(hanging, lowest):
-        at = cuts.get(overhang.layer_of(height, first_layer, layer))
+    for number in hanging:
+        at = cut_at[bounds(shape.Faces[number - 1]).ZMin - bed]
         if at is not None:
             starting.setdefault(at, []).append(number)
     found = []
     # Each height cut once: the cut of one layer is mostly what carries the next.
-    cuts = {}
+    made = {}
 
     def cut(z):
-        if z not in cuts:
-            cuts[z] = _cut(shape, z)
-        return cuts[z]
+        if z not in made:
+            made[z] = _cut(shape, z)
+        return made[z]
 
     for at, numbers in sorted(starting.items()):
         here, below = cut(bed + at.here), cut(bed + at.below)
