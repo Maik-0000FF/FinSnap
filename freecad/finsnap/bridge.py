@@ -77,6 +77,9 @@ OUTLINE_FINENESS = 50
 
 # What the kernel raises where it cannot cut or clip a region.
 KERNEL_ERRORS = (Part.OCCError, App.Base.CADKernelError)
+# What taking the outline of a face raises where it cannot: the kernel, or a
+# face without a ring.
+OUTLINE_ERRORS = KERNEL_ERRORS + (ValueError,)
 # A bridge: the numbers (from 1) of the faces of the part it lies under, those
 # of them it covers whole, the free region of its first layer at the height of
 # the lowest of them, where it shows on the underside of the part, its span
@@ -133,8 +136,12 @@ def bridges(shape, first_layer, layer, bead, rating, supported=(), starts=None):
         here, below = cut(bed + at.here), cut(bed + at.below)
         if not here or not below:
             continue
+        # The outlines of what carries the layer, taken once for all its regions.
+        supports = None
         for region in _free(here, below):
-            bridged = _span(region, below, bead)
+            if supports is None:
+                supports = _supports(below, bead)
+            bridged = _span(region, supports, bead)
             if bridged is None:
                 continue
             span, lines, spacing = bridged
@@ -167,26 +174,35 @@ def _free(here, below):
         return []
 
 
+def _deflection(bead):
+    """How far off a curved side the straight pieces of an outline may lie
+    (mm), for beads `bead` wide."""
+    return bead / OUTLINE_FINENESS
+
+
 def _outline(face, bead):
     """The outline of `face`, a face in the plane of the bed, its outer ring
     and its holes, as (starts, ends), an (n, 2) array each of the ends of its
     straight pieces. Curved sides are taken in pieces no farther off than
-    the bead by OUTLINE_FINENESS. Each ring is closed on its first point: the
-    kernel gives the last a rounding beside it, and a line through that gap
-    would cross nothing there. What the kernel raises passes on.
+    _deflection(). Each ring is closed on its first point: the kernel gives
+    the last a rounding beside it, and a line through that gap would cross
+    nothing there. What the kernel raises passes on (OUTLINE_ERRORS).
 
     INPUTS this has to withstand:
       a face with straight sides            ->  its corners
       a face with curved sides              ->  points on them, no farther off than said
+      a face of many short straight sides,
+        as a part from a mesh has them      ->  its corners, as many pieces
       a face with holes                     ->  the pieces of every ring, all in one
       a ring whose last point misses its
         first by a rounding                 ->  closed on the first
       a ring the kernel gives open, its
         ends apart                          ->  closed by a piece from the last to the first
+      a face without a ring                 ->  ValueError
     """
     starts, ends = [], []
     for wire in face.Wires:
-        ring = numpy.array([(point.x, point.y) for point in wire.discretize(Deflection=bead / OUTLINE_FINENESS)])
+        ring = numpy.array([(point.x, point.y) for point in wire.discretize(Deflection=_deflection(bead))])
         if numpy.hypot(*(ring[-1] - ring[0])) <= d.TOLERANCE:
             ring[-1] = ring[0]
         else:
@@ -194,6 +210,29 @@ def _outline(face, bead):
         starts.append(ring[:-1])
         ends.append(ring[1:])
     return numpy.concatenate(starts), numpy.concatenate(ends)
+
+
+def _supports(below, bead):
+    """The outlines of the faces `below` (_outline()), each with the box
+    around it as (lowest x and y, highest x and y), for _resting(). A face
+    whose outline cannot be taken is left out: nothing rests on it, the
+    others still carry.
+
+    INPUTS this has to withstand:
+      faces with outlines                   ->  one entry each
+      a face the kernel gives no outline
+        of, or one without a ring           ->  left out, the others kept
+      no face                               ->  []
+    """
+    found = []
+    for face in below:
+        try:
+            outline = _outline(face, bead)
+        except OUTLINE_ERRORS:
+            continue
+        corners = numpy.vstack(outline)
+        found.append((outline, (corners.min(axis=0), corners.max(axis=0))))
+    return found
 
 
 def _inside(points, outline, slack):
@@ -231,6 +270,26 @@ def _inside(points, outline, slack):
     return odd | near
 
 
+def _resting(points, supports, slack):
+    """Whether each of `points`, (k, 2), rests on one of `supports`
+    (_supports()): lies in it, or within `slack` (mm) of its outline. A
+    support whose box, grown by the slack, holds none of the points is not
+    looked at closer.
+
+    INPUTS this has to withstand:
+      a point in one of several supports    ->  True
+      a point in none, or in a hole of one  ->  False
+      a point within the slack of one       ->  True
+      no support, or no point               ->  all False
+    """
+    rests = numpy.zeros(len(points), dtype=bool)
+    for outline, (lowest, highest) in supports:
+        near = ((points >= lowest - slack) & (points <= highest + slack)).all(axis=1) & ~rests
+        if near.any():
+            rests[near] = _inside(points[near], outline, slack)
+    return rests
+
+
 def _pieces(outline, centre, reach, spacing, degrees):
     """The pieces inside the region outlined by `outline` of the lines
     `spacing` apart across it at `degrees`, laid from `reach` to one side of
@@ -241,7 +300,8 @@ def _pieces(outline, centre, reach, spacing, degrees):
     A line is inside the region between its first and second crossing of
     the outline, its third and fourth, and so on. A piece of the outline
     counts as crossed where one of its ends lies above the line and the
-    other on it or below.
+    other on it or below. Two pieces of a line with no room between them,
+    as where it touches the tip of a hole, are one.
 
     INPUTS this has to withstand:
       a region with straight sides          ->  the pieces of the lines inside it
@@ -252,13 +312,14 @@ def _pieces(outline, centre, reach, spacing, degrees):
       a line through a corner of the
         outline, the outline going on
         across it                           ->  the corner one crossing
-      a line touching the outline at a
-        corner only                         ->  no crossing, or two at one place: a piece
+      a line touching the tip of a hole,
+        from below or from above            ->  one piece past the tip: counted twice
+                                                there or not at all, it is not cut in two
+      a line touching the outline at an
+        outer corner only                   ->  no crossing, or two at one place: a piece
                                                 of no length, which no caller keeps
       a line lying along a side             ->  that side no crossing: a piece along it
-                                                or none, as the rounding of the line
-                                                falls, either way no longer than the
-                                                pieces of the lines beside it
+                                                or none, as the rounding of the line falls
       a line past the region                ->  no piece of it
     """
     turn = math.radians(degrees)
@@ -276,26 +337,31 @@ def _pieces(outline, centre, reach, spacing, degrees):
     pieces = []
     for line in range(count):
         crossings = numpy.sort(at[line][crossed[line]])
-        pieces.extend((offsets[line], first, last) for first, last in zip(crossings[0::2], crossings[1::2]))
+        first_of_line = len(pieces)
+        for first, last in zip(crossings[0::2], crossings[1::2]):
+            if len(pieces) > first_of_line and first - pieces[-1][2] <= d.TOLERANCE:
+                pieces[-1][2] = last
+            else:
+                pieces.append([offsets[line], first, last])
     return numpy.array(pieces).reshape(-1, 3), along, across
 
 
-def _span(region, below, bead):
-    """(span, lines, spacing) of `region` bridged from `below`: the longest
-    line across it in the direction a slicer bridges in, anchored half a bead
-    past each end on the supports, all lines anchored so in that direction,
-    as (m, 2, 2), the two ends of each, what the slicer bridges, and how far
-    apart they lie; None where no line crossing more than a bead of it is
-    anchored so at both ends, where the region is a strip narrower than a
-    bead throughout, twice its area by its outline, or where the kernel
-    cannot give an outline. The directions are tried in coarse steps first,
-    then in fine ones round the best of them."""
+def _span(region, supports, bead):
+    """(span, lines, spacing) of `region` bridged from `supports`, the
+    outlines of the faces below it (_supports()): the longest line across it
+    in the direction a slicer bridges in, anchored half a bead past each end
+    on the supports, all lines anchored so in that direction, as (m, 2, 2),
+    the two ends of each, what the slicer bridges, and how far apart they
+    lie; None where no line crossing more than a bead of it is anchored so
+    at both ends, where the region is a strip narrower than a bead
+    throughout, twice its area by its outline, or where its outline cannot
+    be taken. The directions are tried in coarse steps first, then in fine
+    ones round the best of them."""
     if 2 * region.Area <= bead * region.Length:
         return None
     try:
         outline = _outline(region, bead)
-        supports = [_outline(face, bead) for face in below]
-    except KERNEL_ERRORS:
+    except OUTLINE_ERRORS:
         return None
     box = region.BoundBox
     centre = (box.Center.x, box.Center.y)
@@ -333,15 +399,14 @@ def _span(region, below, bead):
 def _anchored(outline, supports, bead, centre, reach, spacing, degrees):
     """(coverage, longest, degrees, lines) of the lines `spacing` apart
     across the region outlined by `outline` at `degrees` (_pieces()) that
-    rest on `supports`, the outlines of the faces below, half a bead past
-    both ends and cross more than a bead of it: their summed and their
-    longest length (mm), and they, as (m, 2, 2), the two ends of each; None
-    where none does.
+    rest on `supports` (_supports()) half a bead past both ends and cross
+    more than a bead of it: their summed and their longest length (mm), and
+    they, as (m, 2, 2), the two ends of each; None where none does.
 
     An end rests where the point half a bead past it lies in one of the
     supports, or within the tolerance of its outline and, as the outlines
     of region and support are taken in pieces each on its own, as much more
-    as a curved one may be off.
+    as a curved one may be off (_deflection()).
 
     INPUTS this has to withstand:
       a piece no longer than a bead         ->  left out
@@ -362,12 +427,9 @@ def _anchored(outline, supports, bead, centre, reach, spacing, degrees):
     if not len(pieces) or not supports:
         return None
     foot = pieces[:, 0:1] * across[None, :]
-    ends = (foot + (pieces[:, 1:2] - bead / 2) * along[None, :], foot + (pieces[:, 2:3] + bead / 2) * along[None, :])
-    slack = d.TOLERANCE + bead / OUTLINE_FINENESS
-    rests = [numpy.zeros(len(pieces), dtype=bool) for _ in ends]
-    for support in supports:
-        for at_end, points in zip(rests, ends):
-            at_end |= _inside(points, support, slack)
+    past_ends = numpy.vstack([foot + (pieces[:, 1:2] - bead / 2) * along[None, :],
+                              foot + (pieces[:, 2:3] + bead / 2) * along[None, :]])
+    rests = _resting(past_ends, supports, d.TOLERANCE + _deflection(bead)).reshape(2, -1)
     pieces = pieces[rests[0] & rests[1]]
     if not len(pieces):
         return None

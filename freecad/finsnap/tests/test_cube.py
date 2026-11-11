@@ -59,6 +59,12 @@ SPAN_TOLERANCE = 0.1
 LINES_SIDE = 10.0  # side of a square the lines of a bridge are laid across, in whole mm
 LINES_HOLE = (4.0, 4.0, 6.0, 6.0)  # a hole in it, from corner to corner, in whole mm
 ROUND_TABLE = 20.0  # radius of a disc on a ring wall, in mm
+ROUND_POST = 3.0  # radius of a post in the middle of it, in mm
+ROUND_POST_SPAN = 29.29  # the span of that disc beside the post, in mm, as measured
+LINES_SPACING = 1.0  # how far apart the lines are laid across that square, in mm
+LINES_PAST = 1.0  # how far past the square they are laid, in mm
+LINES_DIGITS = 6  # places the ends of their pieces are compared to
+LINES_FACETS = 200  # flat sides of a round outline as a part from a mesh has it
 ODD_TILT = 30.0        # any angle but 45, at which a right-angled edge needs its face
 # First tines half a layer (0.1 mm) off the grid of 0.2 mm layers.
 HALF_LAYER_STARTS = (1.1, 1.3, 1.5, 1.7)
@@ -580,25 +586,45 @@ def plate(x0, y0, x1, y1, hole=None):
 def check_bridge_lines():
     """The lines a bridge lays across a free region, by arithmetic on its
     outline: every kind of outline, point and line the tables of
-    bridging._outline(), _inside(), _pieces(), _anchored() and _covered() name."""
-    bead, side = d.BEAD_WIDTH, LINES_SIDE
+    bridge._outline(), _supports(), _inside(), _resting(), _pieces(),
+    _anchored() and _covered() name."""
+    bead, side, half = d.BEAD_WIDTH, LINES_SIDE, LINES_SIDE / 2
+    lo, hi = LINES_HOLE[0], LINES_HOLE[2]
+    slack = d.TOLERANCE + bridging._deflection(bead)
+
+    def diamond_of(x0, y0, x1, y1):
+        """A square stood on a corner, its corners in the middles of the sides of the box given."""
+        mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+        corners = [V(x0, my, 0), V(mx, y0, 0), V(x1, my, 0), V(mx, y1, 0)]
+        return Part.Face(Part.makePolygon(corners + corners[:1]))
+
     square = bridging._outline(plate(0, 0, side, side), bead)
     holed = bridging._outline(plate(0, 0, side, side, LINES_HOLE), bead)
-    half = side / 2
-    corners = [V(0, half, 0), V(half, 0, 0), V(side, half, 0), V(half, side, 0)]
-    diamond = bridging._outline(Part.Face(Part.makePolygon(corners + corners[:1])), bead)
+    diamond = bridging._outline(diamond_of(0, 0, side, side), bead)
+    tipped = bridging._outline(plate(0, 0, side, side).cut(diamond_of(*LINES_HOLE)).Faces[0], bead)
     disc = Part.Face(Part.Wire(Part.makeCircle(half, V(half, half, 0))))
-    round_starts, round_ends = bridging._outline(disc, bead)
-    off = numpy.abs(numpy.hypot(*((round_starts + round_ends) / 2 - half).T) - half).max()
-    expect(len(square[0]) == 4 and len(holed[0]) == 8 and (square[0][0] == square[1][-1]).all()
-           and (round_starts[0] == round_ends[-1]).all() and 0 < off <= bead / bridging.OUTLINE_FINENESS + d.TOLERANCE,
-           "the outline of a face is its corners, its holes with it, each ring closed on its first point; a "
-           "round one in pieces no farther off than a bead by the fineness: %.4f mm" % off)
+    round_outline = bridging._outline(disc, bead)
+    off = numpy.abs(numpy.hypot(*((round_outline[0] + round_outline[1]) / 2 - half).T) - half).max()
+    turns = [2 * math.pi * k / LINES_FACETS for k in range(LINES_FACETS + 1)]
+    faceted = Part.Face(Part.makePolygon(
+        [V(half + half * math.cos(turn), half + half * math.sin(turn), 0) for turn in turns]))
+    expect(len(square[0]) == 4 and len(holed[0]) == 8 and len(bridging._outline(faceted, bead)[0]) == LINES_FACETS
+           and (square[0][0] == square[1][-1]).all() and (round_outline[0][0] == round_outline[1][-1]).all()
+           and 0 < off <= bridging._deflection(bead) + d.TOLERANCE,
+           "the outline of a face is its corners, its holes with it, those of a face of many flat sides as "
+           "many, each ring closed on its first point; a round one in pieces no farther off than the "
+           "deflection: %.4f mm" % off)
+    opened = Part.Wire(Part.makePolygon([V(0, 0, 0), V(side, 0, 0), V(side, side, 0)]))
+    unclosed = bridging._outline(type("OpenRing", (), {"Wires": [opened]})(), bead)
+    expect(len(unclosed[0]) == 3 and (unclosed[1][-1] == unclosed[0][0]).all(),
+           "a ring the kernel gives open is closed by a piece from its last point to its first")
+    carrying = bridging._supports([plate(0, 0, side, side), Part.Shape(), plate(side, 0, 2 * side, side)], bead)
+    expect(len(carrying) == 2 and bridging._supports([], bead) == [],
+           "a face no outline can be taken of is left out of the supports, the others are kept")
 
     def inside(outline, *points, slack=d.TOLERANCE):
         return list(bridging._inside(numpy.array(points, dtype=float), outline, slack))
 
-    lo, hi = LINES_HOLE[0], LINES_HOLE[2]
     expect(inside(square, (half, half), (side + 1, half), (side + d.TOLERANCE / 2, half), (-1, 0), (-1, side))
            == [True, False, True, False, False],
            "a point lies in a face inside its outline or within the slack of it, not outside, nor on the line "
@@ -608,17 +634,25 @@ def check_bridge_lines():
            "a point in a hole of a face lies in no face, one beside the hole or on its rim does")
     expect(inside(diamond, (-1, half), (half, half), (half / 2, half)) == [False, True, True],
            "a ray through a corner of the outline counts the corner once, one touching it not at all")
+    rim = half + half
+    expect(inside(round_outline, (rim + d.TOLERANCE, half), (rim - bead, half), (rim + 2 * slack, half), slack=slack)
+           == [True, True, False],
+           "a point within the tolerance of a round outline rests on it with the slack for its straight "
+           "pieces, one twice the slack off does not")
+    resting = list(bridging._resting(numpy.array([(half, half), (side + half, half), (-1.0, half)]), carrying, slack))
+    expect(resting == [True, True, False]
+           and not bridging._resting(numpy.array([(half, half)]), [], slack).any(),
+           "a point rests where it lies in any of the supports, and on nothing without one")
 
     def pieces(outline, degrees):
-        found, along, across = bridging._pieces(outline, (half, half), half + 1, 1.0, degrees)
-        return [(round(float(row[0]), 6), round(float(row[1]), 6), round(float(row[2]), 6)) for row in found]
+        found, _, _ = bridging._pieces(outline, (half, half), half + LINES_PAST, LINES_SPACING, degrees)
+        return [tuple(round(float(value), LINES_DIGITS) for value in row) for row in found]
 
     for degrees in (0, 90):
         found = pieces(square, degrees)
         inner = [piece for piece in found if 0 < abs(piece[0]) < side]
-        on_side = [piece for piece in found if piece not in inner]
         expect(len(inner) == int(side) - 1 and all(piece[1:] == (0.0, float(side)) for piece in found)
-               and len(on_side) <= 2,
+               and len(found) - len(inner) <= 2,
                "lines across a square a millimetre apart at %d degrees: one piece each from side to side; a "
                "line along a side has one or none: %s" % (degrees, found))
     through = [piece for piece in pieces(diamond, 0) if piece[0] == half]
@@ -629,27 +663,29 @@ def check_bridge_lines():
     past = [piece for piece in pieces(holed, 0) if piece[0] == half]
     expect(past == [(half, 0.0, float(lo)), (half, float(hi), float(side))],
            "a line across a hole stops at it and goes on past it: %s" % past)
+    at_tips = [piece for piece in pieces(tipped, 0) if piece[0] in (float(lo), float(hi))]
+    expect(at_tips == [(float(lo), 0.0, float(side)), (float(hi), 0.0, float(side))],
+           "a line touching the tip of a hole, from below or from above, is one piece past the tip: %s" % at_tips)
 
     gap = (PIER[0], 0, PIER[0] + GAP_CRITICAL, PIER[1])
     region = bridging._outline(plate(*gap), bead)
     left, right = (0, 0, PIER[0], PIER[1]), (PIER[0] + GAP_CRITICAL, 0, 2 * PIER[0] + GAP_CRITICAL, PIER[1])
     centre, reach = (PIER[0] + GAP_CRITICAL / 2, PIER[1] / 2), GAP_CRITICAL
 
-    def anchored(supports, degrees=0):
-        return bridging._anchored(region, [bridging._outline(plate(*support), bead) for support in supports], bead,
-                                centre, reach, bead, degrees)
+    def anchored(supports, degrees=0, across=region):
+        return bridging._anchored(across, bridging._supports(supports, bead), bead, centre, reach, bead, degrees)
 
-    held = anchored([left, right])
+    held = anchored([plate(*left), plate(*right)])
     expect(held is not None and abs(held[1] - GAP_CRITICAL) < d.TOLERANCE and held[3].shape[1:] == (2, 2)
-           and anchored([left, right], 90) is None and anchored([left]) is None and anchored([]) is None,
+           and anchored([plate(*left), plate(*right)], 90) is None and anchored([plate(*left)]) is None
+           and anchored([]) is None,
            "lines across a gap rest on a support at each end, on two of them; along the gap, with one "
            "support or with none, nothing is anchored")
     open_left = (PIER[0] - bead, 0, PIER[0], PIER[1])
-    expect(bridging._anchored(region, [bridging._outline(plate(*left, hole=open_left), bead),
-                                     bridging._outline(plate(*right), bead)], bead, centre, reach, bead, 0) is None,
+    expect(anchored([plate(*left, hole=open_left), plate(*right)]) is None,
            "ends that come to lie over a hole of a support rest on nothing")
     short = bridging._outline(plate(PIER[0], 0, PIER[0] + bead / 2, PIER[1]), bead)
-    expect(bridging._anchored(short, [bridging._outline(plate(*left), bead)], bead, centre, reach, bead, 0) is None,
+    expect(anchored([plate(*left), plate(*right)], across=short) is None,
            "pieces no longer than a bead are left out")
 
     lines = numpy.array([[(0.0, 0.0), (float(side), 0.0)]])
@@ -659,13 +695,26 @@ def check_bridge_lines():
            "a face is covered where all of it lies within a spacing of a line, not where it reaches farther, "
            "nor without a line")
 
-    table = Part.makeCylinder(ROUND_TABLE, PIER[2]).cut(Part.makeCylinder(ROUND_TABLE - PIER[0], PIER[2])).fuse(
-        [Part.makeCylinder(ROUND_TABLE, SLAB, V(0, 0, PIER[2]))]).removeSplitter()
-    spans = find_bridges(table, d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, bead, limits.Limits())
+    def table(post=0.0):
+        """A disc on a ring wall, with a post in its middle `post` in radius."""
+        wall = Part.makeCylinder(ROUND_TABLE, PIER[2]).cut(Part.makeCylinder(ROUND_TABLE - PIER[0], PIER[2]))
+        parts = [Part.makeCylinder(ROUND_TABLE, SLAB, V(0, 0, PIER[2]))]
+        if post:
+            parts.append(Part.makeCylinder(post, PIER[2]))
+        return wall.fuse(parts).removeSplitter()
+
+    def spans_of(shape):
+        found = find_bridges(shape, d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, bead, limits.Limits())
+        return [bridged.span for bridged in found]
+
     across = 2 * (ROUND_TABLE - PIER[0])
-    expect(len(spans) == 1 and abs(spans[0].span - across) < SPAN_TOLERANCE,
+    plain, posted = spans_of(table()), spans_of(table(ROUND_POST))
+    expect(len(plain) == 1 and abs(plain[0] - across) < SPAN_TOLERANCE,
            "a disc on a ring wall spans the whole hole, the line through the seam of its round outline "
-           "kept: %s" % [s.span for s in spans])
+           "kept: %s" % plain)
+    expect(len(posted) == 1 and abs(posted[0] - ROUND_POST_SPAN) < SPAN_TOLERANCE,
+           "the same with a post in its middle spans beside the post, as far as measured when its lines "
+           "were cut out by the kernel: %s" % posted)
 
 
 def check_bridges():
