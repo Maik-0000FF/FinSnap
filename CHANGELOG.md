@@ -15,7 +15,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 - Bridges are found much faster: the lines across a free region are laid by arithmetic on its outline instead of a cut for every direction tried. Stairs of 40 steps under a slab take 0.8 s instead of 5.0 s, a round table in 500 flat sides, as a part from a mesh has them, 2.5 s instead of 10.4 s. A line touching the tip of a hole is no longer cut in two there, which gave too short a span. A span under a curved outline may differ by hundredths of a millimetre
 - The layers of a part are cut several at a time for its islands and bridges, at most eight, fewer on a part of many faces. With the faces of the part read once, the bridges of stairs of 40 steps take 0.5 s instead of 1.0 s, those of a comb of 40 teeth 5.4 s instead of 11.5 s, its islands 3.8 s instead of 4.4 s
-- The islands and the bridges of a part share the cuts of its layers, and the bridges worked out again, as when fins are changed, take them as they were cut: for stairs of 40 steps under a slab both checks take 0.8 s instead of 1.2 s and the bridges again 0.2 s instead of 0.5 s. The cuts are kept for the part as it stands that was checked last, up to 20000 edges, some forty to eighty megabytes
+- The islands and the bridges of a part share the cuts of its layers, and the bridges worked out again, as when fins are changed, take them as they were cut: for stairs of 40 steps under a slab both checks take 0.8 s instead of 1.2 s and the bridges again 0.2 s instead of 0.5 s. The cuts are kept for the part as it stands that was checked last, up to 20000 edges, some forty to eighty megabytes, and dropped when a document is closed
 
 ### Fixed
 

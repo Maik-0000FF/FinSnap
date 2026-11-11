@@ -430,3 +430,24 @@ def rate_plans(shape, plans, p):
                   if number not in spanned]
         rated.append(RatedPlan(plan, found_islands, levels, spans))
     return rated
+
+
+def drop_stock():
+    """Forget the cuts kept for the part checked last (_with_starts()), and
+    with them the memory they hold."""
+    global _stocked
+    if _stocked is not None:
+        _stocked.drop_cuts()
+        _stocked = None
+
+
+class DocumentClosed:
+    """Drops the cuts kept once a document is closed: they are those of a
+    part of some document, and are not to outlive it holding memory. Any
+    document closed drops them; cut anew, they are back with the next check."""
+
+    def slotDeletedDocument(self, document):  # noqa: N802 - FreeCAD API
+        drop_stock()
+
+
+App.addDocumentObserver(DocumentClosed())

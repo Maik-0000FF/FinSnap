@@ -1100,6 +1100,20 @@ def checks_share_starts(doc):
     expect(len(again) == 1 and after == once and held > 0 and kept._cuts == {},
            "its bridges asked again, for another bead, cut nothing anew; the cuts kept go once another part "
            "is checked: %d heights held, then %d" % (held, len(kept._cuts)))
+    # Other layers are another entry with cuts of its own; a document closed drops what is kept.
+    analysis.bridges(part, shape, (), dataclasses.replace(p, bead_width=p.bead_width + 2 * BEAD_STEP))
+    back = len(kept._cuts)
+    thicker = dataclasses.replace(p, layer_height=p.layer_height + BEAD_STEP)
+    analysis.bridges(part, shape, (), thicker)
+    layered = analysis._analysis(part, thicker)[analysis.STARTS]
+    expect(back > 0 and layered is not kept and kept._cuts == {} and len(layered._cuts) > 0,
+           "the part checked again has its cuts back; on other layers it is cut for those, in a stock of its "
+           "own, and the cuts of the layers before are dropped")
+    scratch = App.newDocument("ClosedBeside")
+    App.closeDocument(scratch.Name)
+    App.setActiveDocument(doc.Name)
+    expect(layered._cuts == {} and analysis._stocked is None,
+           "a document closed drops the cuts kept")
 
 
 def kept_islands(doc):

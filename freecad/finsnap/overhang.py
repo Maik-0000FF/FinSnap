@@ -57,7 +57,7 @@ SECTION_SLAB = 1.0
 CUTS_MOST = 8
 CUT_FACES_MOST = 4000
 # The faces of the cuts of a part are kept for its checks to share (Starts.cuts())
-# while they hold no more edges than this between them: measured, an edge kept
+# as long as they hold no more edges than this between them: measured, an edge kept
 # takes two to four thousand bytes, so some forty to eighty million in all.
 CUT_EDGES_KEPT = 20000
 # What carries a point is seen in a cut of the layer below its own, at the
@@ -393,8 +393,8 @@ class Starts:
         given are not to be changed in place: they are kept for the next
         check.
 
-        Kept faces hold memory, a few thousand bytes an edge: once more than
-        CUT_EDGES_KEPT edges are kept, heights cut after that are given and
+        Kept faces hold memory, a few thousand bytes an edge: a height whose
+        faces would take what is kept past CUT_EDGES_KEPT edges is given and
         not kept, cut anew each time as without a stock.
 
         INPUTS this has to withstand:
@@ -409,7 +409,12 @@ class Starts:
             of the part, the very same numbers  ->  as kept
           a height a rounding off one kept, as
             from another reading of the bed     ->  cut for itself: a cut more, no harm
-          more edges kept than CUT_EDGES_KEPT   ->  what is cut from then on given, not kept
+          a height whose faces would take what
+            is kept past CUT_EDGES_KEPT edges,
+            be it alone                         ->  given, not kept; one after it that still
+                                                    fits is kept
+          the lists given changed by a caller   ->  what is kept is not: each is a list of
+                                                    its own, of the same faces
           let go of, then heights asked that
             are all kept                        ->  given
           let go of, then a height asked that
@@ -428,11 +433,13 @@ class Starts:
                 self._face_count = len(shape.Faces)
             found = faces_at(shape, missing, self._face_count)
             for z in missing:
-                if self._edges_kept > CUT_EDGES_KEPT:
-                    break
-                self._cuts[z] = found[z]
-                self._edges_kept += sum(len(face.Edges) for face in found[z] or [])
-        return {z: self._cuts[z] if z in self._cuts else found[z] for z in wanted}
+                edges = sum(len(face.Edges) for face in found[z] or [])
+                if self._edges_kept + edges <= CUT_EDGES_KEPT:
+                    self._cuts[z] = found[z]
+                    self._edges_kept += edges
+        # Lists of their own, so no caller changes those kept.
+        given = {z: self._cuts[z] if z in self._cuts else found[z] for z in wanted}
+        return {z: None if faces is None else list(faces) for z, faces in given.items()}
 
     def drop_cuts(self):
         """Forget the cuts kept, and with them the memory they hold."""
