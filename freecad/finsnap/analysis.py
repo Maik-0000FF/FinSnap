@@ -40,8 +40,10 @@ from .shapes import FACE_PREFIX, face_name, global_shape, keep, moved, shape_key
 # Parts as they stand are kept by stand_key(), at most KEPT of them (shapes.keep()).
 # What an entry keeps: the islands, None until worked out; the bridges, by
 # the bead, the limits and the faces carried; the centres of mass of the
-# part printed up to each layer, as standing.check() works them out.
-ISLANDS, BRIDGES, CENTRES = "islands", "bridges", "centres"
+# part printed up to each layer, as standing.check() works them out; and where
+# something of the part starts to print (overhang.Starts), None until asked
+# for, which its islands and its bridges share.
+ISLANDS, BRIDGES, CENTRES, STARTS = "islands", "bridges", "centres", "starts"
 _kept = {}
 # Whether islands and bridges are checked while fins are made and edited, in
 # FinSnap's preferences: on a slow computer they can be left to Check part.
@@ -114,7 +116,24 @@ def stand_key(part_obj, p):
 def _analysis(part_obj, p):
     """The entry kept for `part_obj` as it stands on the layers of `p`, made
     empty where there is none yet."""
-    return keep(_kept, stand_key(part_obj, p), lambda: {ISLANDS: None, BRIDGES: {}, CENTRES: {}})
+    return keep(_kept, stand_key(part_obj, p), lambda: {ISLANDS: None, BRIDGES: {}, CENTRES: {}, STARTS: None})
+
+
+def _with_starts(kept, shape, check):
+    """What `check` returns, called with where something of `shape` starts to
+    print (overhang.Starts), kept in `kept`, the entry of its part as it
+    stands (_analysis()): one for the part as it stands, so its overhangs,
+    its islands and its bridges are cut at the same heights, its faces are
+    sampled once and it is meshed once. The shape is lent to it for the check
+    and let go of after it, so no shape is kept."""
+    if kept[STARTS] is None:
+        kept[STARTS] = overhang.Starts(shape)
+    starts = kept[STARTS]
+    starts.lend(shape)
+    try:
+        return check(starts)
+    finally:
+        starts.let_go()
 
 
 def checks_while_editing():
@@ -134,7 +153,9 @@ def islands(part_obj, p):
     stands, unless keep_islands() was told them before."""
     kept = _analysis(part_obj, p)
     if kept[ISLANDS] is None:
-        kept[ISLANDS] = overhang.islands(global_shape(part_obj), p.first_layer_height, p.layer_height)
+        shape = global_shape(part_obj)
+        kept[ISLANDS] = _with_starts(kept, shape, lambda starts: overhang.islands(
+            shape, p.first_layer_height, p.layer_height, starts))
     return list(kept[ISLANDS])
 
 
@@ -150,11 +171,17 @@ def bridges(part_obj, shape, supported, p):
     preferences; faces in `supported`, carried by fins, span nothing. Worked
     out once for the part as it stands, the bead, the limits and the faces
     carried, at most KEPT combinations of them."""
+    return _bridges(_analysis(part_obj, p), shape, supported, p)
+
+
+def _bridges(kept, shape, supported, p):
+    """bridges() for `kept`, the entry of the part as it stands."""
     rating = limits.current()
     carried = tuple(number for number, face in enumerate(shape.Faces, 1)
                     if any(face.isSame(other) for other in supported))
-    found = keep(_analysis(part_obj, p)[BRIDGES], (p.bead_width, rating, carried),
-                  lambda: bridge.bridges(shape, p.first_layer_height, p.layer_height, p.bead_width, rating, supported))
+    found = keep(kept[BRIDGES], (p.bead_width, rating, carried),
+                  lambda: _with_starts(kept, shape, lambda starts: bridge.bridges(
+                      shape, p.first_layer_height, p.layer_height, p.bead_width, rating, supported, starts)))
     return list(found)
 
 
@@ -166,10 +193,11 @@ def overhangs(part_obj, shape, supported, p, with_bridges=True):
     overhangs: their risk is their span. A face the bridge covers in part
     still overhangs where it does not. Without `with_bridges` no bridge is
     looked for, and every face is rated."""
-    spanned = ({number for found in bridges(part_obj, shape, supported, p) for number in found.covered}
+    kept = _analysis(part_obj, p)
+    spanned = ({number for found in _bridges(kept, shape, supported, p) for number in found.covered}
                if with_bridges else set())
-    return [(face_name(number), level) for number, level in overhang.rated(shape, supported, limits.current())
-            if number not in spanned]
+    rated = _with_starts(kept, shape, lambda starts: overhang.rated(shape, supported, limits.current(), starts.down))
+    return [(face_name(number), level) for number, level in rated if number not in spanned]
 
 
 def bridge_notes(part_obj, found):
@@ -372,9 +400,14 @@ def rate_plans(shape, plans, p):
         stood = moved(shape, plan.change)
         key = tuple(plan.change.toMatrix().A)
         if key not in checked:
-            checked[key] = (overhang.islands(stood, p.first_layer_height, p.layer_height),
-                            bridge.bridges(stood, p.first_layer_height, p.layer_height, p.bead_width, rating))
-        found_islands, every = checked[key]
+            starts = overhang.Starts(stood)
+            # The faces facing down are the same for every plan standing so: sampled
+            # once, with the islands and the bridges, and the shape let go of.
+            checked[key] = (overhang.islands(stood, p.first_layer_height, p.layer_height, starts),
+                            bridge.bridges(stood, p.first_layer_height, p.layer_height, p.bead_width, rating,
+                                           starts=starts), starts.down)
+            starts.let_go()
+        found_islands, every, down = checked[key]
         # The face under the fins spans nothing: it leaves the bridges it
         # alone lies under, the others lie under it no longer.
         carried = plan.number + 1
@@ -382,7 +415,7 @@ def rate_plans(shape, plans, p):
                                 covered=[n for n in found.covered if n != carried])
                  for found in every if any(n != carried for n in found.faces)]
         spanned = {number for found in spans for number in found.covered}
-        levels = [level for number, level in overhang.rated(stood, (stood.Faces[plan.number],), rating)
+        levels = [level for number, level in overhang.rated(stood, (stood.Faces[plan.number],), rating, down)
                   if number not in spanned]
         rated.append(RatedPlan(plan, found_islands, levels, spans))
     return rated

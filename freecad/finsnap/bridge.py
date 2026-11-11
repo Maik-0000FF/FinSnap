@@ -56,7 +56,6 @@ import Part
 
 from . import defaults as d
 from . import overhang
-from .shapes import bounds
 
 # The directions lines are laid across a free region in, over half a turn, a
 # line having no sense: this far apart (degrees) first, then this far round
@@ -78,24 +77,52 @@ KERNEL_ERRORS = (Part.OCCError, App.Base.CADKernelError)
 Bridge = namedtuple("Bridge", "faces covered region span level")
 
 
-def bridges(shape, first_layer, layer, bead, rating, supported=()):
+def bridges(shape, first_layer, layer, bead, rating, supported=(), starts=None):
     """The Bridges of `shape` as it stands, printed in layers `first_layer`
     high on the bed, every other `layer` high, in beads `bead` wide, rated by
     `rating`, a limits.Limits. Faces in `supported`, carried by fins, span
-    nothing."""
+    nothing. `starts`, an overhang.Starts of the shape as it stands, is what
+    islands() of it took or will take, so both cut it at the same heights,
+    its faces are sampled once and it is meshed once; left out, it is worked
+    out here.
+
+    INPUTS this has to withstand:
+      an empty shape                        ->  [], nothing asked of it
+      no face hanging flatter than the
+        critical angle                      ->  [], the shape neither meshed nor cut
+      faces hanging in several layers       ->  each layer and what carries it cut once
+      a layer the kernel cannot cut         ->  no bridge said there
+      `starts` of another copy of the
+        shape as it stands                  ->  as of this one: its faces by number, its
+                                                heights by layer
+    """
     if shape.isNull():
         return []
-    bed = bounds(shape).ZMin
+    starts = starts or overhang.Starts(shape)
+    hanging = [number for number, down in
+               overhang.steepest_down(shape, supported, rating.overhang_min_area, starts.down)
+               if overhang.flatter(down, rating.overhang_critical)]
+    if not hanging:
+        return []
+    bed = starts.bed
+    # How a layer is cut depends on all that starts in it, not on these faces alone.
+    cuts = overhang.LayerCuts(starts.heights, first_layer, layer)
     starting = {}
-    for number, down in overhang.steepest_down(shape, supported, rating.overhang_min_area):
-        if not overhang.flatter(down, rating.overhang_critical):
-            continue
-        at = overhang.cut_heights(bounds(shape.Faces[number - 1]).ZMin - bed, first_layer, layer)
+    for number in hanging:
+        at = cuts.at(starts.lowest[number])
         if at is not None:
             starting.setdefault(at, []).append(number)
     found = []
+    # Each height cut once: the cut of one layer is mostly what carries the next.
+    made = {}
+
+    def cut(z):
+        if z not in made:
+            made[z] = _cut(shape, z)
+        return made[z]
+
     for at, numbers in sorted(starting.items()):
-        here, below = _cut(shape, bed + at.here), _cut(shape, bed + at.below)
+        here, below = cut(bed + at.here), cut(bed + at.below)
         if not here or not below:
             continue
         for region in _free(here, below):
@@ -105,7 +132,7 @@ def bridges(shape, first_layer, layer, bead, rating, supported=()):
             span, lines, spacing = bridged
             under = [n for n in numbers if _lies_over(shape.Faces[n - 1], region, bead)]
             if under:
-                ceiling = min(bounds(shape.Faces[n - 1]).ZMin for n in under)
+                ceiling = bed + min(starts.lowest[n] for n in under)
                 covered = [n for n in under if _covered(shape.Faces[n - 1], lines, spacing)]
                 found.append(Bridge(under, covered, region.translated(App.Vector(0, 0, ceiling)), span,
                                     rating.bridge_level(span)))

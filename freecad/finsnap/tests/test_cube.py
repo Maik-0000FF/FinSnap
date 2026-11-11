@@ -100,11 +100,19 @@ BESIDE = d.TOLERANCE / 10
 LAYERINGS = ((d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT), (1.5 * d.LAYER_HEIGHT, d.LAYER_HEIGHT),
              (d.LAYER_HEIGHT / 2, d.LAYER_HEIGHT))
 CUT_LAYERS = (1, 2, ISLAND_LAYER)
+COMB_TEETH = 4         # blocks or steps in layers one above the other, to count the cuts of them
+COMB_TOOTH = ISLAND_SPAN / 16  # width of such a block and of the room between two, in mm
+ISLAND_PILLAR = ISLAND_SPAN / 4  # width of the pillar of the bridge islands hang from, in mm
+ISLAND_BLOCK = ISLAND_PILLAR  # width of a block hanging from its beam, in mm
+ISLAND_UNDER = ISLAND_TOP - ISLAND_BEAM  # height of the underside of its beam, in mm
+RIDGE_INTO_SLAB = SLAB / 2  # how far a ridge hanging from a slab reaches up into it, in mm
+# How far above the middle of a layer something starts that is to lie clear of it, and below it, in mm.
+CLEAR_OF_MIDDLE = d.LAYER_HEIGHT / 4
 # How far from that middle it is put (mm): well below and above, right on it, within the tolerance of it,
 # where it counts to the layer above, just beside the tolerance below, on either side of where the layer
 # changes, and one to two tolerances below, where it counts to that layer.
-MIDDLE_OFFSETS = (-d.LAYER_HEIGHT / 4, -1.5 * d.TOLERANCE, -d.TOLERANCE - BESIDE, -d.TOLERANCE + BESIDE,
-                  -d.TOLERANCE / 2, 0.0, d.TOLERANCE / 2, 1.5 * d.TOLERANCE, d.LAYER_HEIGHT / 4)
+MIDDLE_OFFSETS = (-CLEAR_OF_MIDDLE, -1.5 * d.TOLERANCE, -d.TOLERANCE - BESIDE, -d.TOLERANCE + BESIDE,
+                  -d.TOLERANCE / 2, 0.0, d.TOLERANCE / 2, 1.5 * d.TOLERANCE, CLEAR_OF_MIDDLE)
 ISLAND_STEM = 3.0      # radius of the stem of a mushroom, and of a hole through a box
 ISLAND_CAP = 10.0      # radius of the cap of a mushroom
 STABLE_TOLERANCE = 0.05  # how far a plumb line or a margin may be off what is reckoned, in mm
@@ -575,6 +583,66 @@ def check_bridges():
         expect(len(spans) == 1 and abs(spans[0].span - GAP_CRITICAL) < SPAN_TOLERANCE,
                "a slab with its underside at %.5f mm, the middle of a layer at %.2f mm, spans the gap: %s"
                % (height, middle, [s.span for s in spans]))
+    for first_height, layer_height in LAYERINGS:
+        def found_here(shape, starts=None):
+            return find_bridges(shape, first_height, layer_height, bead, rating, starts=starts)
+
+        # A ridge hanging from the slab across the whole gap, its sides too
+        # steep to overhang, its edge just below the middle of the layer under
+        # the slab's: it starts in the layer of the slab and carries nothing.
+        below = overhang.layer_middle(ISLAND_LAYER, first_height, layer_height)
+        under = below + CLEAR_OF_MIDDLE
+        edge, top = below - d.TOLERANCE + BESIDE, under + RIDGE_INTO_SLAB
+        centre = PIER[0] + GAP_CRITICAL / 2
+        corners = [V(centre - (top - edge) / 2, 0, top), V(centre + (top - edge) / 2, 0, top), V(centre, 0, edge)]
+        ridge = Part.Face(Part.makePolygon(corners + corners[:1])).extrude(V(0, PIER[1], 0))
+        spans = found_here(piers(GAP_CRITICAL, height=under).fuse(ridge).removeSplitter())
+        expect(len(spans) == 1 and abs(spans[0].span - GAP_CRITICAL) < SPAN_TOLERANCE,
+               "first layer %.2f mm: a ridge hanging in the gap, starting just below the middle of the layer "
+               "under the slab, carries nothing: the slab spans the whole gap: %s"
+               % (first_height, [s.span for s in spans]))
+        # Steps under the slab, side by side across the gap, each a layer
+        # higher than the last and clear of the middles: every layer is cut
+        # once, and the layer below the lowest.
+        bottoms = stacked_bottoms(first_height, layer_height)
+        width, height = GAP_CRITICAL / COMB_TEETH, bottoms[-1] + SLAB
+        steps = [Part.makeBox(width, PIER[1], height - bottom, V(PIER[0] + step * width, 0, bottom))
+                 for step, bottom in enumerate(bottoms)]
+        stairs = piers(GAP_CRITICAL, height=height).fuse(steps).removeSplitter()
+        cut_at, spans = cuts_counted(lambda: found_here(stairs))
+        expect(spans and len(cut_at) == COMB_TEETH + 1,
+               "first layer %.2f mm: %d steps under a slab in layers one above the other are bridged, found "
+               "with one cut a layer and one below the lowest: %d cuts, spans %s"
+               % (first_height, COMB_TEETH, len(cut_at), [s.span for s in spans]))
+        # A slab whose underside, the ceiling of the gap, starts near a middle,
+        # beside a block hanging in the same layer: no lowest point lies on the
+        # ceiling, yet islands and bridges cut that layer's support at the same
+        # height, lowered, and with one Starts the part is meshed once.
+        near = below - d.TOLERANCE / 2
+        hanging = Part.makeBox(ISLAND_PILLAR, ISLAND_DEPTH, ISLAND_UNDER - under,
+                               V(ISLAND_SPAN - ISLAND_PILLAR, 0, under))
+        beside = bridge(hanging).translated(V(2 * PIER[0] + GAP_CRITICAL + ISLAND_PILLAR, 0, 0))
+        both = Part.makeCompound([piers(GAP_CRITICAL, height=near), beside])
+        starts = overhang.Starts(both)
+        sampled, (meshed, (for_islands, for_bridges)) = calls_counted("facing_down", lambda: calls_counted(
+            "_lowest_points", lambda: (
+                cuts_counted(lambda: overhang.islands(both, first_height, layer_height, starts)),
+                cuts_counted(lambda: found_here(both, starts)))))
+        supports = [sorted(z for z in cut_at if abs(z - below) < CLEAR_OF_MIDDLE)
+                    for cut_at, _ in (for_islands, for_bridges)]
+        over_gap = [found for found in for_bridges[1] if abs(found.span - GAP_CRITICAL) < SPAN_TOLERANCE]
+        expect(len(for_islands[1]) == 1 and len(over_gap) == 1 and len(meshed) == 1 and len(sampled) == 1
+               and supports[0] == supports[1] and len(supports[0]) == 1
+               and abs(supports[0][0] - (below - overhang.SUPPORT_CUT_DROP)) < BESIDE,
+               "first layer %.2f mm: a ceiling starting near a middle beside a block hanging in its layer, an "
+               "island, the ceiling a bridge across the gap: islands "
+               "and bridges cut what carries that layer at the same height, the drop under the middle, the part "
+               "meshed once and its faces sampled once: %s, %d meshes, %d samplings"
+               % (first_height, supports, len(meshed), len(sampled)))
+    plain = Part.makeBox(*PIER)
+    meshed, (cut_at, spans) = calls_counted("_lowest_points", lambda: cuts_counted(lambda: found(plain)))
+    expect(spans == [] and not cut_at and not meshed,
+           "a box with no face hanging is neither meshed nor cut for bridges")
     deep = found(piers(GAP_CRITICAL, DEEP_SLAB))
     expect(len(deep) == 1 and abs(deep[0].span - GAP_CRITICAL) < SPAN_TOLERANCE,
            "a slab deeper than the gap spans across the gap, not along it: %s" % [s.span for s in deep])
@@ -1646,42 +1714,149 @@ def check_quick_plans():
 def bridge(hanging):
     """A pillar on the bed with a beam across its top and `hanging`, a solid
     under the far end of the beam: a bridge for islands to hang from."""
-    pillar = Part.makeBox(ISLAND_SPAN / 4, ISLAND_DEPTH, ISLAND_TOP)
-    beam = Part.makeBox(ISLAND_SPAN, ISLAND_DEPTH, ISLAND_BEAM, V(0, 0, ISLAND_TOP - ISLAND_BEAM))
+    pillar = Part.makeBox(ISLAND_PILLAR, ISLAND_DEPTH, ISLAND_TOP)
+    beam = Part.makeBox(ISLAND_SPAN, ISLAND_DEPTH, ISLAND_BEAM, V(0, 0, ISLAND_UNDER))
     return pillar.fuse([beam, hanging]).removeSplitter()
 
 
+def stacked_bottoms(first_layer, layer):
+    """The heights of COMB_TEETH bottoms in layers one above the other, each
+    clear of the middles of the layers."""
+    return [overhang.layer_middle(ISLAND_LAYER + step, first_layer, layer) + CLEAR_OF_MIDDLE
+            for step in range(COMB_TEETH)]
+
+
+def calls_counted(name, run):
+    """What overhang.<name>() is called with while `run` runs, a tuple for
+    each call, in their order, and what `run` returns."""
+    calls = []
+    real = getattr(overhang, name)
+
+    def counted(*args):
+        calls.append(args)
+        return real(*args)
+
+    setattr(overhang, name, counted)
+    try:
+        result = run()
+    finally:
+        setattr(overhang, name, real)
+    return calls, result
+
+
+def cuts_counted(run):
+    """The heights overhang.layer_faces() cuts at while `run` runs, in their
+    order, and what `run` returns."""
+    calls, result = calls_counted("layer_faces", run)
+    return [z for _, z in calls], result
+
+
 def check_cut_heights():
-    """The layer a point starts to print in and the heights it is cut at, at
-    every kind of height the table of overhang.cut_heights() names, with the
-    first layer as high as the others and higher."""
+    """The layer a point starts to print in and the heights the layers are cut
+    at, at every kind of height the tables of overhang.layer_of() and
+    overhang.LayerCuts name, with the first layer as high as the others,
+    higher and lower."""
     for first, layer in LAYERINGS:
+        def cuts_of(*starts):
+            return overhang.LayerCuts(list(starts), first, layer)
+
         def layer_of(height):
-            at = overhang.cut_heights(height, first, layer)
-            return None if at is None else at.number
+            return overhang.layer_of(height, first, layer)
 
         bed_most = first / 2 + d.TOLERANCE
-        expect(all(layer_of(height) is None for height in (0.0, first / 2, bed_most - BESIDE)),
-               "first layer %.2f mm: up to its middle and the tolerance above, the bed carries a point" % first)
-        lowest = overhang.cut_heights(bed_most + BESIDE, first, layer)
-        expect(lowest is not None and lowest.number == 1
-               and abs(lowest.here - overhang.layer_middle(1, first, layer)) < BESIDE
-               and abs(lowest.below - (first / 2 - overhang.SUPPORT_CUT_DROP)) < BESIDE,
-               "first layer %.2f mm: just above that, a point starts in layer 1, carried by the first: %s"
-               % (first, lowest))
+        on_bed = (0.0, first / 2, bed_most - BESIDE)
+        expect(all(layer_of(height) == 0 and cuts_of(*on_bed).at(height) is None for height in on_bed),
+               "first layer %.2f mm: up to its middle and the tolerance above, the bed carries a point, and "
+               "nothing is cut for it" % first)
+        lowest = cuts_of(bed_most + BESIDE).at(bed_most + BESIDE)
+        expect(lowest.number == 1 and lowest.here == overhang.layer_middle(1, first, layer)
+               and lowest.below == first / 2,
+               "first layer %.2f mm: just above that, a point starts in layer 1, carried by the first, which "
+               "is cut at its middle, never lower: %s" % (first, lowest))
         for number in CUT_LAYERS:
             middle = overhang.layer_middle(number, first, layer)
+            upper = overhang.layer_middle(number + 1, first, layer)
+            lowered = middle - overhang.SUPPORT_CUT_DROP
+            clear, higher = middle + CLEAR_OF_MIDDLE, upper + CLEAR_OF_MIDDLE
             above = [layer_of(middle + offset) for offset in
-                     (-d.TOLERANCE + BESIDE, -d.TOLERANCE / 2, 0.0, d.TOLERANCE / 2, layer / 4)]
-            below = [layer_of(middle + offset) for offset in (-d.TOLERANCE - BESIDE, -1.5 * d.TOLERANCE, -layer / 4)]
+                     (-d.TOLERANCE + BESIDE, -d.TOLERANCE / 2, 0.0, d.TOLERANCE / 2, CLEAR_OF_MIDDLE)]
+            below = [layer_of(middle + offset) for offset in
+                     (-d.TOLERANCE - BESIDE, -1.5 * d.TOLERANCE, -CLEAR_OF_MIDDLE)]
             expect(above == [number + 1] * len(above) and below == [number] * len(below),
                    "first layer %.2f mm, middle of layer %d: from the tolerance below it a point counts to "
                    "the layer above, lower to that layer: %s, %s" % (first, number, above, below))
-            at = overhang.cut_heights(middle, first, layer)
-            expect(abs(at.here - overhang.layer_middle(number + 1, first, layer)) < BESIDE
-                   and abs(at.below - (middle - overhang.SUPPORT_CUT_DROP)) < BESIDE,
-                   "first layer %.2f mm, middle of layer %d: its section is cut at the middle of the layer above, "
-                   "its support the drop under this one: %s" % (first, number, at))
+            plain = cuts_of().at(clear)
+            expect(plain.number == number + 1 and plain.here == upper and plain.below == middle,
+                   "first layer %.2f mm, middle of layer %d: with nothing starting near it, a layer is cut at "
+                   "its middle and what carries it at the middle below, whether its height is among the "
+                   "starts or not: %s" % (first, number, plain))
+            near = [cuts_of(middle + offset).at(clear) for offset in
+                    (-d.TOLERANCE + BESIDE, 0.0, overhang.NEAR_MIDDLE - BESIDE)]
+            expect(all(at.here == upper and abs(at.below - lowered) < BESIDE for at in near),
+                   "first layer %.2f mm, middle of layer %d: with a point starting near that middle, what "
+                   "carries the layer above is cut the drop under it, for every point of that layer: %s"
+                   % (first, number, near))
+            farther = cuts_of(middle + overhang.NEAR_MIDDLE + BESIDE).at(clear)
+            expect(farther.below == middle,
+                   "first layer %.2f mm, middle of layer %d: a point starting farther above that middle leaves "
+                   "the support of its layer at the middle itself: %s" % (first, number, farther))
+            # Right where the layer changes, the tolerance below the middle: a
+            # start seen a rounding below it lowers the layer above all the
+            # same, for another copy that sees it a rounding above.
+            edge = middle - d.TOLERANCE
+            across = [cuts_of(edge + off).at(edge + BESIDE) for off in (-overhang.LAYER_EDGE / 2, 0.0, BESIDE)]
+            expect(all(at.number == number + 1 and abs(at.below - lowered) < BESIDE for at in across),
+                   "first layer %.2f mm, middle of layer %d: a point starting right where the layer changes "
+                   "lowers the support of the layer above on whichever side of it a rounding puts it: %s"
+                   % (first, number, across))
+            lower = cuts_of(middle - 1.5 * d.TOLERANCE).at(clear)
+            expect(lower.below == middle,
+                   "first layer %.2f mm, middle of layer %d: a point starting more than that below the "
+                   "middle, in the layer of it, leaves the layer above carried by the cut at the middle, "
+                   "where its slice carries: %s" % (first, number, lower))
+            apart = cuts_of(clear, higher)
+            expect(apart.at(higher).number == apart.at(clear).number + 1
+                   and apart.at(higher).below == apart.at(clear).here,
+                   "first layer %.2f mm, middle of layer %d: the support of a layer is the cut of the layer "
+                   "below, the very same height, where no point starts near it: %s, %s"
+                   % (first, number, apart.at(clear), apart.at(higher)))
+
+
+def check_starts():
+    """What overhang.Starts tells of a shape, and when it asks the shape."""
+    empty = overhang.Starts(Part.Shape())
+    expect(empty.bed is None and empty.points == [] and empty.down == [] and empty.heights == [],
+           "an empty shape has no bed, no lowest points, no faces facing down and no heights")
+    table = piers(GAP_CRITICAL)
+    under = next(number for number, face in enumerate(table.Faces, 1)
+                 if face.BoundBox.ZLength < d.TOLERANCE and abs(face.BoundBox.ZMin - PIER[2]) < d.TOLERANCE)
+    top = next(number for number, face in enumerate(table.Faces, 1)
+               if abs(face.BoundBox.ZMin - (PIER[2] + SLAB)) < d.TOLERANCE)
+    sampled, (meshed, starts) = calls_counted("facing_down", lambda: calls_counted(
+        "_lowest_points", lambda: overhang.Starts(table)))
+    expect(not sampled and not meshed, "a Starts never asked neither meshes its shape nor samples its faces")
+    meshed, lowest = calls_counted("_lowest_points", lambda: dict(starts.lowest))
+    expect(not meshed and abs(lowest[under] - PIER[2]) < d.TOLERANCE and top not in lowest,
+           "asked for its faces alone it does not mesh: the underside of a slab on piers starts at its "
+           "height, its top starts nothing: %s" % lowest)
+    sampled, (meshed, heights) = calls_counted("facing_down", lambda: calls_counted(
+        "_lowest_points", lambda: (starts.heights, starts.points, starts.down, starts.heights)[0]))
+    expect(not sampled and len(meshed) == 1 and any(abs(height - PIER[2]) < d.TOLERANCE for height in heights),
+           "asked for all, it meshes once and samples no face again; the height of the underside, which "
+           "holds no lowest point, is among its heights: %d meshes" % len(meshed))
+    starts.let_go()
+    expect(starts.heights == heights, "let go of its shape, it still tells what it worked out")
+    unasked = overhang.Starts(table)
+    unasked.let_go()
+    try:
+        unasked.points
+    except ValueError as error:
+        expect("lend" in str(error), "let go of before it was asked, it says it needs a shape: %s" % error)
+    else:
+        raise AssertionError("Starts without a shape gave points")
+    unasked.lend(table.copy())
+    expect(len(unasked.points) == len(starts.points) and unasked.lowest == lowest,
+           "lent another copy of the shape, it works out on that what it was not asked before")
 
 
 def check_islands():
@@ -1694,31 +1869,47 @@ def check_islands():
     expect(overhang.islands(standing, first, layer) == [], "a box standing on an edge has no island")
 
     block_x = ISLAND_SPAN * 3 / 4
-    block = Part.makeBox(ISLAND_SPAN / 4, ISLAND_DEPTH, ISLAND_TOP - ISLAND_BEAM - ISLAND_LOW,
+    block = Part.makeBox(ISLAND_BLOCK, ISLAND_DEPTH, ISLAND_UNDER - ISLAND_LOW,
                          V(block_x, 0, ISLAND_LOW))
     found = overhang.islands(bridge(block), first, layer)
     expect(len(found) == 1 and abs(found[0].point.z - ISLAND_LOW) < d.TOLERANCE
            and block_x - d.TOLERANCE <= found[0].point.x,
            "a block hanging under a bridge is one island, at its bottom: %s" % [i.point for i in found])
     piece = found[0].first.BoundBox if found and found[0].first else None
-    expect(piece is not None and abs(piece.XLength - ISLAND_SPAN / 4) < d.TOLERANCE
+    expect(piece is not None and abs(piece.XLength - ISLAND_BLOCK) < d.TOLERANCE
            and abs(piece.ZMin - ISLAND_LOW) < d.TOLERANCE and piece.ZLength <= first + layer,
            "its first layer in the air is the whole bottom of the block, a layer thick: %s" % piece)
     # The layers are cut at their middles: a bottom right on one, beside it or
     # within the tolerance of it, is found all the same.
     middle = overhang.layer_middle(ISLAND_LAYER, first, layer)
     for low in (middle + offset for offset in MIDDLE_OFFSETS):
-        hanging = Part.makeBox(ISLAND_SPAN / 4, ISLAND_DEPTH, ISLAND_TOP - ISLAND_BEAM - low, V(block_x, 0, low))
+        hanging = Part.makeBox(ISLAND_BLOCK, ISLAND_DEPTH, ISLAND_UNDER - low, V(block_x, 0, low))
         found = overhang.islands(bridge(hanging), first, layer)
         expect(len(found) == 1 and abs(found[0].point.z - low) < d.TOLERANCE,
                "a block hanging with its bottom at %.5f mm, the middle of a layer at %.2f mm, is one island: %s"
                % (low, middle, [i.point for i in found]))
-    second = Part.makeBox(ISLAND_SPAN / 8, ISLAND_DEPTH, ISLAND_TOP - ISLAND_BEAM - ISLAND_LOW,
+    second = Part.makeBox(ISLAND_SPAN / 8, ISLAND_DEPTH, ISLAND_UNDER - ISLAND_LOW,
                           V(ISLAND_SPAN * 3 / 8, 0, ISLAND_LOW))
     expect(len(overhang.islands(bridge(block.fuse(second)), first, layer)) == 2,
            "two blocks hanging side by side are two islands")
+    # Blocks whose bottoms lie in layers one above the other, clear of their
+    # middles: the cut of each layer is what carries the next, so each of
+    # their layers is cut once, and the layer below the lowest. The underside
+    # of the beam they hang from starts a layer of its own, far above.
+    for first_height, layer_height in LAYERINGS:
+        bottoms = stacked_bottoms(first_height, layer_height)
+        teeth = [Part.makeBox(COMB_TOOTH, ISLAND_DEPTH, ISLAND_UNDER - ISLAND_LOW,
+                              V(ISLAND_PILLAR + COMB_TOOTH * (1 + 2 * step), 0, bottom))
+                 for step, bottom in enumerate(bottoms)]
+        comb = bridge(teeth[0].fuse(teeth[1:]))
+        cut_at, hanging = cuts_counted(lambda: overhang.islands(comb, first_height, layer_height))
+        for_teeth = [z for z in cut_at if z < ISLAND_UNDER - layer_height]
+        expect(len(hanging) == COMB_TEETH and len(for_teeth) == COMB_TEETH + 1,
+               "first layer %.2f mm: %d blocks hanging in layers one above the other are %d islands, found with "
+               "one cut a layer and one below the lowest: %d cuts for them"
+               % (first_height, COMB_TEETH, len(hanging), len(for_teeth)))
 
-    under = ISLAND_TOP - ISLAND_BEAM
+    under = ISLAND_UNDER
     corners = [V(block_x, 0, under), V(ISLAND_SPAN, 0, under), V(block_x + ISLAND_SPAN / 8, 0, ISLAND_LOW)]
     ridge = Part.Face(Part.makePolygon(corners + corners[:1])).extrude(V(0, ISLAND_DEPTH, 0))
     found = overhang.islands(bridge(ridge), first, layer)
@@ -1780,6 +1971,10 @@ def check_printable_plans():
             overhang.rated = real_rated
     finally:
         overhang.islands = real
+    sampled, rated = calls_counted("facing_down", lambda: analysis.rate_plans(box, alike, p))
+    expect(len(rated) == len(alike) > 1 and len(sampled) == 1,
+           "ways standing the part alike have its faces sampled once for all of them: %d ways, %d samplings"
+           % (len(alike), len(sampled)))
 
 
 def cut_centre(shape, height):
@@ -3434,6 +3629,7 @@ def main():
     check_quick_plans()
     check_prism_side()
     check_cut_heights()
+    check_starts()
     check_islands()
     check_bridges()
     check_no_fragile_calls()
