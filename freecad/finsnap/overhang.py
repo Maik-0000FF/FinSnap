@@ -51,11 +51,14 @@ SECTION_CUT_MARGIN = 1.0
 # Sections are compared as slabs this thick around the plane of the bed (mm):
 # solids overlap reliably, faces only when they lie in one plane exactly.
 SECTION_SLAB = 1.0
-# What a point rests on is seen in the cut of the layer below its own. Where
-# the point lies within the tolerance of the middle of that layer, the cut
-# there could hold a sliver of what starts at the point; it is made this far
-# lower (mm), clear of it.
+# What carries a point is seen in a cut of the layer below its own, made this
+# far under the middle of that layer (mm), more than the tolerance by which a
+# point below the middle still counts to the layer above: the cut holds
+# nothing of what starts in the layer above (layer_cut()).
 SUPPORT_CUT_DROP = 2 * d.TOLERANCE
+# A point over the bed in layers: the layer it starts to print in and the
+# heights over the bed its section and what carries it are cut at.
+LayerCut = namedtuple("LayerCut", "number here below")
 # The top of a cut-out faces straight up, its sides sideways and its bottom
 # down: a face whose normal rises more than this is one of the top.
 FACING_UP = 0.5
@@ -163,11 +166,10 @@ def islands(part, first_layer, layer):
     resting = {}
     found = []
     for point in _lowest_points(part):
-        number = layer_holding(point.z - bed, first_layer, layer)
-        if number == 0:
+        at = layer_cut(point.z - bed, first_layer, layer)
+        if at is None:
             continue
-        here = bed + layer_middle(number, first_layer, layer)
-        below = bed + support_height(number - 1, point.z - bed, first_layer, layer)
+        here, below = bed + at.here, bed + at.below
         for z in (here, below):
             if z not in cut:
                 cut[z] = sections(part, z, layer)
@@ -176,7 +178,7 @@ def islands(part, first_layer, layer):
         # The sections lie in the plane of the bed, see sections().
         middle = Part.Vertex(App.Vector(point.x, point.y, 0))
         for index, (section, reach, outline) in enumerate(cut[here]):
-            key = (number, index)
+            key = (at.number, index)
             # A section decided before is passed over, and the box around one
             # turns most points away before the distance to it is measured.
             if key in resting or not reach.isInside(middle.Point):
@@ -188,8 +190,7 @@ def islands(part, first_layer, layer):
             except Part.OCCError:
                 resting[key] = True
             if not resting[key]:
-                top = bed + layer_middle(number, first_layer, layer) + layer / 2
-                found.append(Island(App.Vector(point), _first_layer(part, outline, point.z, top)))
+                found.append(Island(App.Vector(point), _first_layer(part, outline, point.z, here + layer / 2)))
     return found
 
 
@@ -210,43 +211,37 @@ def layer_middle(number, first_layer, layer):
     return first_layer / 2 if number == 0 else first_layer + (number - 0.5) * layer
 
 
-def layer_holding(height, first_layer, layer):
-    """The layer (from 0) a point `height` over the bed is printed in first:
-    the lowest one whose middle lies above the point. The layers are cut at
-    their middles (layer_faces()), and a cut holds only what lies below its
-    plane: a face starting right on a middle shows in the cut of the layer
-    above, not in that one. What carries the point is seen in the layer
-    below, cut at support_height().
+def layer_cut(height, first_layer, layer):
+    """Where a point `height` over the bed starts to print, as a LayerCut: the
+    layer (from 0, the first), the height over the bed its section is cut at,
+    `here`, and the height the layer below is cut at to see what carries the
+    point, `below`. None for a point in the first layer: the bed carries it.
+
+    A cut holds what lies below its plane (layer_faces()). `here` is the
+    middle of the layer. `below` lies SUPPORT_CUT_DROP under the middle of the
+    layer below, for every point: a point counts to a layer from the tolerance
+    below the middle before it, so what starts in a layer never reaches down
+    to the plane its support is cut at, however near that middle it starts,
+    and cannot carry itself. All that starts in one layer is cut at the same
+    two heights.
 
     INPUTS this has to withstand (first layer 0.2, layers 0.2):
-      on the bed, or up to the middle of
-        the first layer                     ->  0, the bed carries it
-      between two middles, 0.25             ->  1
-      right on the middle of a layer, 0.3   ->  2, the layer above
-      within the tolerance below a middle   ->  the layer above, as on it
-      just above a middle, 0.31             ->  2
+      on the bed, up to the middle of the
+        first layer and the tolerance more  ->  None
+      between two middles, 0.25             ->  layer 1, here 0.3, below 0.1 less the drop
+      right on the middle of layer 1, 0.3   ->  layer 2, here 0.5, below 0.3 less the drop
+      within the tolerance below it         ->  layer 2 as well: it reaches the tolerance
+                                                at most below 0.3, the drop is more
+      more than the tolerance below it,
+        as one and a half times             ->  layer 1: its section at 0.3 holds a slice
+                                                of it thicker than the tolerance
+      just above it, 0.31                   ->  layer 2
     """
     if height <= first_layer / 2 + d.TOLERANCE:
-        return 0
-    return max(1, math.floor((height - first_layer + d.TOLERANCE) / layer + 0.5) + 1)
-
-
-def support_height(number, height, first_layer, layer):
-    """The height over the bed at which layer `number` is cut to see what
-    carries a point `height` high that starts in the layer above it
-    (layer_holding()): its middle, or SUPPORT_CUT_DROP lower where the point
-    lies within the tolerance of that middle. Cut right there, what starts at
-    the point could show as a sliver, be it a piece of its own or one with
-    what stands beside it, and carry itself.
-
-    INPUTS this has to withstand:
-      point well above the middle           ->  the middle
-      point right on the middle             ->  SUPPORT_CUT_DROP below it
-      point within the tolerance of the
-        middle, below or above it           ->  SUPPORT_CUT_DROP below it
-    """
-    middle = layer_middle(number, first_layer, layer)
-    return middle - SUPPORT_CUT_DROP if abs(height - middle) <= SUPPORT_CUT_DROP else middle
+        return None
+    number = max(1, math.floor((height - first_layer + d.TOLERANCE) / layer + 0.5) + 1)
+    return LayerCut(number, layer_middle(number, first_layer, layer),
+                    layer_middle(number - 1, first_layer, layer) - SUPPORT_CUT_DROP)
 
 
 def _lowest_points(shape):
@@ -273,15 +268,13 @@ def layer_faces(shape, z):
     INPUTS this has to withstand:
       the plane through the part            ->  the faces of the cut, holes and all
       a face of the part lying in the plane ->  cut whole
-      a piece of the part starting right on
-        the plane, or above it              ->  not in the cut
-      a piece of its own starting less than
-        the tolerance below the plane       ->  not in the cut either: its sliver has
-                                                faces the kernel cannot use
-      a step that deep in a piece reaching
-        further down                        ->  in the cut, with the piece it belongs
-                                                to, its top alone: neither its sides
-                                                nor its underside
+      what starts right on the plane, or
+        above it                            ->  not in the cut
+      what starts just below the plane,
+        a slice of any thickness            ->  its top alone: the sides and the
+                                                underside of a thin slice lie as near
+                                                the plane, and are no part of the cut
+      a part that is a shell, no solid      ->  [], as it has no inside to cut
       the plane above or below the part     ->  []
       a cut the kernel cannot make          ->  None
     """
@@ -295,8 +288,7 @@ def layer_faces(shape, z):
         cutter = Part.makeBox(box.XLength + 2 * SECTION_CUT_MARGIN, box.YLength + 2 * SECTION_CUT_MARGIN,
                               SECTION_CUT_HEIGHT, App.Vector(box.XMin - SECTION_CUT_MARGIN,
                                                              box.YMin - SECTION_CUT_MARGIN, z - SECTION_CUT_HEIGHT))
-        return [face for piece in shape.common(cutter).Solids if piece.BoundBox.ZLength > d.TOLERANCE
-                for face in piece.Faces if on_top(face)]
+        return [face for face in shape.common(cutter).Faces if on_top(face)]
     except Part.OCCError:
         return None
 

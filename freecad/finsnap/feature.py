@@ -134,6 +134,12 @@ COUNTER_ROUND_SIDE = QT_TRANSLATE_NOOP(
 NOTE_LAID_FLAT = QT_TRANSLATE_NOOP(
     "FinSnap", "The part lies flat again: the fins keep their last shape until the part is moved, for example "
     "stood on its edge again; then they are rebuilt.")
+# The property that places the fins, and what is said where an expression
+# holds it, so the fins are built where they stand but shown moved by it.
+PLACEMENT = "Placement"
+NOTE_PLACEMENT_HELD = QT_TRANSLATE_NOOP(
+    "FinSnap", "An expression sets the placement of the fins and moves them off the part: remove it, the fins "
+    "follow their part by themselves.")
 
 GROUP_SLICER = QT_TRANSLATE_NOOP("App::Property", "Slicer")
 GROUP_CONNECTION = QT_TRANSLATE_NOOP("App::Property", "Connection")
@@ -892,15 +898,11 @@ class FinSnapFeature:
             set_islands(obj, [])
             obj.Warnings = [translate("FinSnap", NOTE_LAID_FLAT)]
             return
-        # The fins are built where they stand: a placement left on the object,
-        # by the shape kept while laid flat or set by hand, would move them
-        # off the part. Dropped before the build, so fins that fail to build
-        # are not left turned either.
-        if not obj.Placement.isIdentity():
-            obj.Placement = App.Placement()
+        # Before the build, so fins that fail to build are not left turned either.
+        placement_held = drop_placement(obj)
         p = params_of(obj)
         try:
-            notes = []
+            notes = [translate("FinSnap", NOTE_PLACEMENT_HELD)] if placement_held else []
             part, build_main = self.side_builder(obj, MAIN)
             result = build_keeping_edits(obj, MAIN, build_main, notes)
             counter = None
@@ -1284,6 +1286,31 @@ def put_back_laid_flat(document, marks):
         setattr(obj, LAID_FLAT_AT, laid_at)
         setattr(obj, LAID_FLAT, True)
         obj.Shape = shape
+
+
+def drop_placement(obj):
+    """Put the placement of the fins `obj` back to none, as they are built
+    where they stand: one left on them would move them off the part. True
+    where an expression holds the placement: it would set it again at once,
+    so it is left, for a warning to say so.
+
+    INPUTS this has to withstand:
+      no placement                          ->  nothing changed, False
+      one left by the shape kept while the
+        part lay flat, or set by hand       ->  dropped, False
+      an expression on the placement or on
+        a part of it, as its base or angle  ->  left as it is, True
+      a placement set again from outside
+        on every recompute, as by a joint   ->  dropped each time: fins are no part
+                                                to move on their own, they follow
+                                                the part they stand at
+    """
+    if obj.Placement.isIdentity():
+        return False
+    if any(path.lstrip(".").startswith(PLACEMENT) for path, _ in obj.ExpressionEngine):
+        return True
+    obj.Placement = App.Placement()
+    return False
 
 
 def still_laid_flat(obj):

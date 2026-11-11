@@ -1021,6 +1021,15 @@ def stood_again_after_laid_flat(doc):
     doc.recompute()
     expect(fins.Placement.isIdentity() and at_the_part(),
            "a placement set on the fins by hand is dropped by the next build, they stay at the part")
+    fins.setExpression("Placement.Base.z", str(BOX[2]))
+    doc.recompute()
+    expect(abs(fins.Placement.Base.z - BOX[2]) < d.TOLERANCE and feature.NOTE_PLACEMENT_HELD in fins.Warnings,
+           "a placement held by an expression is left to it, and the fins say so: %s" % list(fins.Warnings))
+    fins.setExpression("Placement.Base.z", None)
+    fins.touch()
+    doc.recompute()
+    expect(fins.Placement.isIdentity() and at_the_part() and feature.NOTE_PLACEMENT_HELD not in fins.Warnings,
+           "the expression removed, the placement is dropped and the fins stand at the part again")
 
 
 def kept_islands(doc):
