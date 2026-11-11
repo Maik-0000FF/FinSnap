@@ -40,7 +40,9 @@ from .shapes import FACE_PREFIX, face_name, global_shape, keep, moved, shape_key
 # Parts as they stand are kept by stand_key(), at most KEPT of them (shapes.keep()).
 # What an entry keeps: the islands, None until worked out; the bridges, by
 # the bead, the limits and the faces carried; the centres of mass of the
-# part printed up to each layer, as standing.check() works them out.
+# part printed up to each layer, as standing.check() works them out; and where
+# something of the part starts to print (overhang.Starts), None until asked
+# for, which its islands and its bridges share.
 ISLANDS, BRIDGES, CENTRES, STARTS = "islands", "bridges", "centres", "starts"
 _kept = {}
 # Whether islands and bridges are checked while fins are made and edited, in
@@ -117,11 +119,11 @@ def _analysis(part_obj, p):
     return keep(_kept, stand_key(part_obj, p), lambda: {ISLANDS: None, BRIDGES: {}, CENTRES: {}, STARTS: None})
 
 
-def _starts(part_obj, p, shape):
-    """Where something of `shape`, the shape of `part_obj` as it stands, starts
-    to print (overhang.Starts): one for the part as it stands, so its islands
-    and its bridges are cut at the same heights and it is meshed once."""
-    kept = _analysis(part_obj, p)
+def _starts(kept, shape):
+    """Where something of `shape` starts to print (overhang.Starts), kept in
+    `kept`, the entry of its part as it stands (_analysis()): one for the part
+    as it stands, so its islands and its bridges are cut at the same heights,
+    its faces are sampled once and it is meshed once."""
     if kept[STARTS] is None:
         kept[STARTS] = overhang.Starts(shape)
     return kept[STARTS]
@@ -146,7 +148,7 @@ def islands(part_obj, p):
     if kept[ISLANDS] is None:
         shape = global_shape(part_obj)
         kept[ISLANDS] = overhang.islands(shape, p.first_layer_height, p.layer_height,
-                                         _starts(part_obj, p, shape))
+                                         _starts(kept, shape))
     return list(kept[ISLANDS])
 
 
@@ -165,9 +167,10 @@ def bridges(part_obj, shape, supported, p):
     rating = limits.current()
     carried = tuple(number for number, face in enumerate(shape.Faces, 1)
                     if any(face.isSame(other) for other in supported))
-    found = keep(_analysis(part_obj, p)[BRIDGES], (p.bead_width, rating, carried),
+    kept = _analysis(part_obj, p)
+    found = keep(kept[BRIDGES], (p.bead_width, rating, carried),
                   lambda: bridge.bridges(shape, p.first_layer_height, p.layer_height, p.bead_width, rating, supported,
-                                         _starts(part_obj, p, shape)))
+                                         _starts(kept, shape)))
     return list(found)
 
 

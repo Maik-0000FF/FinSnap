@@ -25,7 +25,6 @@ from . import feature
 from . import face_frame, geometry
 from . import handles
 from . import limits
-from . import overhang
 from . import presets
 from . import stability
 from .i18n import QT_TRANSLATE_NOOP, translate
@@ -254,7 +253,7 @@ def check_part(part_obj, p):
         part = global_shape(part_obj)
         rated = feature.overhangs_of(part_obj, part_obj.Document, p)
         spans = feature.bridges_of(part_obj, part_obj.Document, p)
-        found = overhang.islands(part, p.first_layer_height, p.layer_height)
+        found = analysis.islands(part_obj, p)
         level, note, shown = feature.stability_of(part_obj, p)
         worst, lines = analysis.part_report(part_obj, rated, spans, found, level, note, shown)
         overhangs = [(part.getElement(name), rated_level) for name, rated_level in rated]

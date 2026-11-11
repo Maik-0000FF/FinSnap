@@ -82,30 +82,35 @@ def bridges(shape, first_layer, layer, bead, rating, supported=(), starts=None):
     """The Bridges of `shape` as it stands, printed in layers `first_layer`
     high on the bed, every other `layer` high, in beads `bead` wide, rated by
     `rating`, a limits.Limits. Faces in `supported`, carried by fins, span
-    nothing. `starts`, an overhang.Starts of the shape, is what islands() of
-    the same shape took or will take, so both cut it at the same heights and
-    it is meshed once; left out, it is worked out here.
+    nothing. `starts`, an overhang.Starts of the shape as it stands, is what
+    islands() of it took or will take, so both cut it at the same heights,
+    its faces are sampled once and it is meshed once; left out, it is worked
+    out here.
 
     INPUTS this has to withstand:
-      an empty shape                        ->  []
+      an empty shape                        ->  [], nothing asked of it
       no face hanging flatter than the
         critical angle                      ->  [], the shape neither meshed nor cut
       faces hanging in several layers       ->  each layer and what carries it cut once
       a layer the kernel cannot cut         ->  no bridge said there
+      `starts` of another copy of the
+        shape as it stands                  ->  as of this one: its faces by number, its
+                                                heights by layer
     """
     if shape.isNull():
         return []
-    hanging = [number for number, down in overhang.steepest_down(shape, supported, rating.overhang_min_area)
+    starts = starts or overhang.Starts(shape)
+    hanging = [number for number, down in
+               overhang.steepest_down(shape, supported, rating.overhang_min_area, starts.down)
                if overhang.flatter(down, rating.overhang_critical)]
     if not hanging:
         return []
-    starts = starts or overhang.Starts(shape)
     bed = starts.bed
     # How a layer is cut depends on all that starts in it, not on these faces alone.
-    cut_at = overhang.cut_heights(starts.heights, first_layer, layer)
+    cuts = overhang.LayerCuts(starts.heights, first_layer, layer)
     starting = {}
     for number in hanging:
-        at = cut_at[bounds(shape.Faces[number - 1]).ZMin - bed]
+        at = cuts.at(starts.lowest[number])
         if at is not None:
             starting.setdefault(at, []).append(number)
     found = []
