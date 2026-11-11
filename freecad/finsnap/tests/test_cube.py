@@ -12,6 +12,8 @@ import os
 import re
 import sys
 
+import numpy
+
 import Part
 
 from freecad.finsnap.tests.support import (CHAMFER, EDGE, HALF_TURN, RECESS_RADIUS, TILT, expect, grooved,
@@ -19,6 +21,7 @@ from freecad.finsnap.tests.support import (CHAMFER, EDGE, HALF_TURN, RECESS_RADI
                                            tilted_cube)
 from freecad.finsnap import analysis
 from freecad.finsnap import defaults as d
+from freecad.finsnap import bridge as bridging
 from freecad.finsnap.bridge import bridges as find_bridges
 from freecad.finsnap import contour, face_frame, geometry, quick_stands, tine_rows
 from freecad.finsnap import limits
@@ -53,6 +56,9 @@ TALL_BOX_HEIGHT = 80.0
 ANGLE_TOLERANCE = 0.5
 # How closely a span is measured: a bead is laid across in lines one bead apart.
 SPAN_TOLERANCE = 0.1
+LINES_SIDE = 10.0  # side of a square the lines of a bridge are laid across, in whole mm
+LINES_HOLE = (4.0, 4.0, 6.0, 6.0)  # a hole in it, from corner to corner, in whole mm
+ROUND_TABLE = 20.0  # radius of a disc on a ring wall, in mm
 ODD_TILT = 30.0        # any angle but 45, at which a right-angled edge needs its face
 # First tines half a layer (0.1 mm) off the grid of 0.2 mm layers.
 HALF_LAYER_STARTS = (1.1, 1.3, 1.5, 1.7)
@@ -559,6 +565,107 @@ def piers(gap, depth=PIER[1], slab_depth=None, height=PIER[2]):
     second = Part.makeBox(width, depth, height, V(width + gap, 0, 0))
     slab = Part.makeBox(2 * width + gap, slab_depth or depth, SLAB, V(0, 0, height))
     return first.fuse([second, slab]).removeSplitter()
+
+
+def plate(x0, y0, x1, y1, hole=None):
+    """A face in the plane of the bed from (x0, y0) to (x1, y1), with `hole`,
+    four numbers the same way, cut out of it."""
+    face = Part.makePlane(x1 - x0, y1 - y0, V(x0, y0, 0))
+    if hole is None:
+        return face
+    hx0, hy0, hx1, hy1 = hole
+    return face.cut(Part.makePlane(hx1 - hx0, hy1 - hy0, V(hx0, hy0, 0))).Faces[0]
+
+
+def check_bridge_lines():
+    """The lines a bridge lays across a free region, by arithmetic on its
+    outline: every kind of outline, point and line the tables of
+    bridging._outline(), _inside(), _pieces(), _anchored() and _covered() name."""
+    bead, side = d.BEAD_WIDTH, LINES_SIDE
+    square = bridging._outline(plate(0, 0, side, side), bead)
+    holed = bridging._outline(plate(0, 0, side, side, LINES_HOLE), bead)
+    half = side / 2
+    corners = [V(0, half, 0), V(half, 0, 0), V(side, half, 0), V(half, side, 0)]
+    diamond = bridging._outline(Part.Face(Part.makePolygon(corners + corners[:1])), bead)
+    disc = Part.Face(Part.Wire(Part.makeCircle(half, V(half, half, 0))))
+    round_starts, round_ends = bridging._outline(disc, bead)
+    off = numpy.abs(numpy.hypot(*((round_starts + round_ends) / 2 - half).T) - half).max()
+    expect(len(square[0]) == 4 and len(holed[0]) == 8 and (square[0][0] == square[1][-1]).all()
+           and (round_starts[0] == round_ends[-1]).all() and 0 < off <= bead / bridging.OUTLINE_FINENESS + d.TOLERANCE,
+           "the outline of a face is its corners, its holes with it, each ring closed on its first point; a "
+           "round one in pieces no farther off than a bead by the fineness: %.4f mm" % off)
+
+    def inside(outline, *points, slack=d.TOLERANCE):
+        return list(bridging._inside(numpy.array(points, dtype=float), outline, slack))
+
+    lo, hi = LINES_HOLE[0], LINES_HOLE[2]
+    expect(inside(square, (half, half), (side + 1, half), (side + d.TOLERANCE / 2, half), (-1, 0), (-1, side))
+           == [True, False, True, False, False],
+           "a point lies in a face inside its outline or within the slack of it, not outside, nor on the line "
+           "of a side beside it")
+    expect(inside(holed, ((lo + hi) / 2, (lo + hi) / 2), (lo / 2, half), (lo + d.TOLERANCE / 2, half))
+           == [False, True, True],
+           "a point in a hole of a face lies in no face, one beside the hole or on its rim does")
+    expect(inside(diamond, (-1, half), (half, half), (half / 2, half)) == [False, True, True],
+           "a ray through a corner of the outline counts the corner once, one touching it not at all")
+
+    def pieces(outline, degrees):
+        found, along, across = bridging._pieces(outline, (half, half), half + 1, 1.0, degrees)
+        return [(round(float(row[0]), 6), round(float(row[1]), 6), round(float(row[2]), 6)) for row in found]
+
+    for degrees in (0, 90):
+        found = pieces(square, degrees)
+        inner = [piece for piece in found if 0 < abs(piece[0]) < side]
+        on_side = [piece for piece in found if piece not in inner]
+        expect(len(inner) == int(side) - 1 and all(piece[1:] == (0.0, float(side)) for piece in found)
+               and len(on_side) <= 2,
+               "lines across a square a millimetre apart at %d degrees: one piece each from side to side; a "
+               "line along a side has one or none: %s" % (degrees, found))
+    through = [piece for piece in pieces(diamond, 0) if piece[0] == half]
+    touching = [piece for piece in pieces(diamond, 0) if piece[0] in (0.0, float(side)) and piece[2] - piece[1] > 0]
+    expect(through == [(half, 0.0, float(side))] and not touching,
+           "a line through two corners of a diamond is one piece from corner to corner; one touching a "
+           "corner only has no piece of any length: %s" % pieces(diamond, 0))
+    past = [piece for piece in pieces(holed, 0) if piece[0] == half]
+    expect(past == [(half, 0.0, float(lo)), (half, float(hi), float(side))],
+           "a line across a hole stops at it and goes on past it: %s" % past)
+
+    gap = (PIER[0], 0, PIER[0] + GAP_CRITICAL, PIER[1])
+    region = bridging._outline(plate(*gap), bead)
+    left, right = (0, 0, PIER[0], PIER[1]), (PIER[0] + GAP_CRITICAL, 0, 2 * PIER[0] + GAP_CRITICAL, PIER[1])
+    centre, reach = (PIER[0] + GAP_CRITICAL / 2, PIER[1] / 2), GAP_CRITICAL
+
+    def anchored(supports, degrees=0):
+        return bridging._anchored(region, [bridging._outline(plate(*support), bead) for support in supports], bead,
+                                centre, reach, bead, degrees)
+
+    held = anchored([left, right])
+    expect(held is not None and abs(held[1] - GAP_CRITICAL) < d.TOLERANCE and held[3].shape[1:] == (2, 2)
+           and anchored([left, right], 90) is None and anchored([left]) is None and anchored([]) is None,
+           "lines across a gap rest on a support at each end, on two of them; along the gap, with one "
+           "support or with none, nothing is anchored")
+    open_left = (PIER[0] - bead, 0, PIER[0], PIER[1])
+    expect(bridging._anchored(region, [bridging._outline(plate(*left, hole=open_left), bead),
+                                     bridging._outline(plate(*right), bead)], bead, centre, reach, bead, 0) is None,
+           "ends that come to lie over a hole of a support rest on nothing")
+    short = bridging._outline(plate(PIER[0], 0, PIER[0] + bead / 2, PIER[1]), bead)
+    expect(bridging._anchored(short, [bridging._outline(plate(*left), bead)], bead, centre, reach, bead, 0) is None,
+           "pieces no longer than a bead are left out")
+
+    lines = numpy.array([[(0.0, 0.0), (float(side), 0.0)]])
+    expect(bridging._covered(plate(0, -bead, side, bead), lines, bead)
+           and not bridging._covered(plate(0, -bead, side, 2 * bead + 1), lines, bead)
+           and not bridging._covered(plate(0, -bead, side, bead), lines[:0], bead),
+           "a face is covered where all of it lies within a spacing of a line, not where it reaches farther, "
+           "nor without a line")
+
+    table = Part.makeCylinder(ROUND_TABLE, PIER[2]).cut(Part.makeCylinder(ROUND_TABLE - PIER[0], PIER[2])).fuse(
+        [Part.makeCylinder(ROUND_TABLE, SLAB, V(0, 0, PIER[2]))]).removeSplitter()
+    spans = find_bridges(table, d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, bead, limits.Limits())
+    across = 2 * (ROUND_TABLE - PIER[0])
+    expect(len(spans) == 1 and abs(spans[0].span - across) < SPAN_TOLERANCE,
+           "a disc on a ring wall spans the whole hole, the line through the seam of its round outline "
+           "kept: %s" % [s.span for s in spans])
 
 
 def check_bridges():
@@ -3631,6 +3738,7 @@ def main():
     check_cut_heights()
     check_starts()
     check_islands()
+    check_bridge_lines()
     check_bridges()
     check_no_fragile_calls()
     check_printable_plans()

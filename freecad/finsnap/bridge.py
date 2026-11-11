@@ -23,7 +23,10 @@ bridged is the span.
 
 The region is never offset: the kernel's 2D offset can crash FreeCAD on some
 outlines, in a way no exception catches. Lines are extended instead, and
-distances measured.
+distances measured. The lines are not cut out of the region by the kernel
+either, a cut for every direction tried: its outline and those of the
+supports are taken once, in straight pieces, and the lines laid by
+arithmetic on them.
 
 Only the layers where a face lying flatter than the critical overhang limit
 starts are cut: a bridge spans under such a face, and nowhere else.
@@ -51,6 +54,8 @@ INPUTS this has to withstand (bridges()):
 import math
 from collections import namedtuple
 
+import numpy
+
 import FreeCAD as App
 import Part
 
@@ -66,6 +71,9 @@ HALF_TURN = 180
 LINES_MOST = 40
 # Two directions covering within this many line spacings as much count as alike.
 COVERAGE_ALIKE = 1.0
+# The lines are laid by arithmetic on the outline of a region, its curved
+# sides taken in straight pieces no farther off than the bead width by this.
+OUTLINE_FINENESS = 50
 
 # What the kernel raises where it cannot cut or clip a region.
 KERNEL_ERRORS = (Part.OCCError, App.Base.CADKernelError)
@@ -159,23 +167,138 @@ def _free(here, below):
         return []
 
 
-def _rests_on(point, below):
-    return any(face.isInside(point, d.TOLERANCE, True) for face in below)
+def _outline(face, bead):
+    """The outline of `face`, a face in the plane of the bed, its outer ring
+    and its holes, as (starts, ends), an (n, 2) array each of the ends of its
+    straight pieces. Curved sides are taken in pieces no farther off than
+    the bead by OUTLINE_FINENESS. Each ring is closed on its first point: the
+    kernel gives the last a rounding beside it, and a line through that gap
+    would cross nothing there. What the kernel raises passes on.
+
+    INPUTS this has to withstand:
+      a face with straight sides            ->  its corners
+      a face with curved sides              ->  points on them, no farther off than said
+      a face with holes                     ->  the pieces of every ring, all in one
+      a ring whose last point misses its
+        first by a rounding                 ->  closed on the first
+      a ring the kernel gives open, its
+        ends apart                          ->  closed by a piece from the last to the first
+    """
+    starts, ends = [], []
+    for wire in face.Wires:
+        ring = numpy.array([(point.x, point.y) for point in wire.discretize(Deflection=bead / OUTLINE_FINENESS)])
+        if numpy.hypot(*(ring[-1] - ring[0])) <= d.TOLERANCE:
+            ring[-1] = ring[0]
+        else:
+            ring = numpy.vstack([ring, ring[:1]])
+        starts.append(ring[:-1])
+        ends.append(ring[1:])
+    return numpy.concatenate(starts), numpy.concatenate(ends)
+
+
+def _inside(points, outline, slack):
+    """Whether each of `points`, (k, 2), lies in the face outlined by
+    `outline` (_outline()), or within `slack` (mm) of its outline.
+
+    A point lies in the face where a ray from it crosses the outline an odd
+    number of times, over all its rings. A piece of the outline counts as
+    crossed where one of its ends lies above the ray and the other on it or
+    below, so a corner the ray runs through counts once, and one it only
+    touches twice or not at all.
+
+    INPUTS this has to withstand:
+      a point inside the face               ->  True
+      a point outside it                    ->  False
+      a point in a hole of it               ->  False
+      a point on the outline, or within the
+        slack of it, inside or out          ->  True
+      a ray through a corner of the outline ->  the corner counted once
+      a ray along a side                    ->  that side not crossed
+    """
+    starts, ends = outline
+    px, py = points[:, 0:1], points[:, 1:2]
+    ax, ay, bx, by = starts[:, 0], starts[:, 1], ends[:, 0], ends[:, 1]
+    crossed = (ay > py) != (by > py)
+    # Where the piece meets the height of the ray; a piece along it is not crossed.
+    with numpy.errstate(divide="ignore", invalid="ignore"):
+        at = ax + (py - ay) * (bx - ax) / (by - ay)
+    odd = (crossed & (at > px)).sum(axis=1) % 2 == 1
+    dx, dy = bx - ax, by - ay
+    with numpy.errstate(divide="ignore", invalid="ignore"):
+        along = numpy.nan_to_num(((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy))
+    along = numpy.clip(along, 0.0, 1.0)
+    near = numpy.hypot(px - (ax + along * dx), py - (ay + along * dy)).min(axis=1) <= slack
+    return odd | near
+
+
+def _pieces(outline, centre, reach, spacing, degrees):
+    """The pieces inside the region outlined by `outline` of the lines
+    `spacing` apart across it at `degrees`, laid from `reach` to one side of
+    `centre`, an (x, y) pair, to as far on the other: (m, 3), a row for each
+    piece of how far its line lies across, and where along it the piece
+    starts and ends; with the directions along and across, a unit vector each.
+
+    A line is inside the region between its first and second crossing of
+    the outline, its third and fourth, and so on. A piece of the outline
+    counts as crossed where one of its ends lies above the line and the
+    other on it or below.
+
+    INPUTS this has to withstand:
+      a region with straight sides          ->  the pieces of the lines inside it
+      a region with curved sides            ->  the same, a piece ending as far off as the
+                                                outline is taken (_outline())
+      a region with holes                   ->  a line stops at a hole and goes on past it,
+                                                a piece each side
+      a line through a corner of the
+        outline, the outline going on
+        across it                           ->  the corner one crossing
+      a line touching the outline at a
+        corner only                         ->  no crossing, or two at one place: a piece
+                                                of no length, which no caller keeps
+      a line lying along a side             ->  that side no crossing: a piece along it
+                                                or none, as the rounding of the line
+                                                falls, either way no longer than the
+                                                pieces of the lines beside it
+      a line past the region                ->  no piece of it
+    """
+    turn = math.radians(degrees)
+    along = numpy.array((math.cos(turn), math.sin(turn)))
+    across = numpy.array((-along[1], along[0]))
+    count = int(2 * reach / spacing) + 1
+    offsets = numpy.arange(count) * spacing - reach + numpy.dot(centre, across)
+    starts, ends = outline
+    above_start = starts.dot(across)[None, :] - offsets[:, None]
+    above_end = ends.dot(across)[None, :] - offsets[:, None]
+    crossed = (above_start > 0) != (above_end > 0)
+    from_start, to_end = starts.dot(along), ends.dot(along)
+    with numpy.errstate(divide="ignore", invalid="ignore"):
+        at = from_start[None, :] + (to_end - from_start)[None, :] * above_start / (above_start - above_end)
+    pieces = []
+    for line in range(count):
+        crossings = numpy.sort(at[line][crossed[line]])
+        pieces.extend((offsets[line], first, last) for first, last in zip(crossings[0::2], crossings[1::2]))
+    return numpy.array(pieces).reshape(-1, 3), along, across
 
 
 def _span(region, below, bead):
     """(span, lines, spacing) of `region` bridged from `below`: the longest
     line across it in the direction a slicer bridges in, anchored half a bead
     past each end on the supports, all lines anchored so in that direction,
-    as one shape, what the slicer bridges, and how far apart they lie; None
-    where no line crossing more than a bead of it is anchored so at both
-    ends, or where the region is a strip narrower than a bead throughout,
-    twice its area by its outline. The directions are tried in coarse steps
-    first, then in fine ones round the best of them."""
+    as (m, 2, 2), the two ends of each, what the slicer bridges, and how far
+    apart they lie; None where no line crossing more than a bead of it is
+    anchored so at both ends, where the region is a strip narrower than a
+    bead throughout, twice its area by its outline, or where the kernel
+    cannot give an outline. The directions are tried in coarse steps first,
+    then in fine ones round the best of them."""
     if 2 * region.Area <= bead * region.Length:
         return None
+    try:
+        outline = _outline(region, bead)
+        supports = [_outline(face, bead) for face in below]
+    except KERNEL_ERRORS:
+        return None
     box = region.BoundBox
-    centre = box.Center
+    centre = (box.Center.x, box.Center.y)
     reach = box.DiagonalLength / 2 + bead
     # A bead apart, or farther on a large region, which needs no more lines
     # to tell its directions apart.
@@ -185,7 +308,7 @@ def _span(region, below, bead):
     def measure(degrees):
         degrees %= HALF_TURN
         if degrees not in measured:
-            measured[degrees] = _anchored(region, below, bead, centre, reach, spacing, degrees)
+            measured[degrees] = _anchored(outline, supports, bead, centre, reach, spacing, degrees)
         return measured[degrees]
 
     def best():
@@ -207,43 +330,69 @@ def _span(region, below, bead):
     return longest, lines, spacing
 
 
-def _anchored(region, below, bead, centre, reach, spacing, degrees):
+def _anchored(outline, supports, bead, centre, reach, spacing, degrees):
     """(coverage, longest, degrees, lines) of the lines `spacing` apart
-    across `region` at `degrees` that rest on `below` half a bead past both
-    ends and cross more than a bead of it: their summed and their longest
-    length (mm), and they, as one shape; None where none does, or the kernel
-    cannot clip them."""
-    turn = math.radians(degrees)
-    along = App.Vector(math.cos(turn), math.sin(turn), 0)
-    across = App.Vector(-along.y, along.x, 0)
-    count = int(2 * reach / spacing) + 1
-    lines = [Part.LineSegment(centre + across * (k * spacing - reach) - along * reach,
-                              centre + across * (k * spacing - reach) + along * reach).toShape()
-             for k in range(count)]
-    try:
-        clipped = Part.makeCompound(lines).common(region)
-    except KERNEL_ERRORS:
+    across the region outlined by `outline` at `degrees` (_pieces()) that
+    rest on `supports`, the outlines of the faces below, half a bead past
+    both ends and cross more than a bead of it: their summed and their
+    longest length (mm), and they, as (m, 2, 2), the two ends of each; None
+    where none does.
+
+    An end rests where the point half a bead past it lies in one of the
+    supports, or within the tolerance of its outline and, as the outlines
+    of region and support are taken in pieces each on its own, as much more
+    as a curved one may be off.
+
+    INPUTS this has to withstand:
+      a piece no longer than a bead         ->  left out
+      a piece both of whose ends, half a
+        bead on, lie in a support           ->  kept
+      an end, half a bead on, over nothing,
+        or over a hole of a support         ->  the piece left out
+      an end within the tolerance of the
+        outline of a support, and as much
+        more as a curved outline is off     ->  it rests
+      several supports, the ends of a piece
+        on two of them                      ->  kept: each end rests on any of them
+      no support below                      ->  None
+      no piece anchored at both ends        ->  None
+    """
+    pieces, along, across = _pieces(outline, centre, reach, spacing, degrees)
+    pieces = pieces[pieces[:, 2] - pieces[:, 1] > bead]
+    if not len(pieces) or not supports:
         return None
-    anchored = []
-    for edge in clipped.Edges:
-        if edge.Length <= bead:
-            continue
-        start, end = edge.Vertexes[0].Point, edge.Vertexes[-1].Point
-        outward = (end - start).normalize() * (bead / 2)
-        if _rests_on(start - outward, below) and _rests_on(end + outward, below):
-            anchored.append(edge)
-    if not anchored:
+    foot = pieces[:, 0:1] * across[None, :]
+    ends = (foot + (pieces[:, 1:2] - bead / 2) * along[None, :], foot + (pieces[:, 2:3] + bead / 2) * along[None, :])
+    slack = d.TOLERANCE + bead / OUTLINE_FINENESS
+    rests = [numpy.zeros(len(pieces), dtype=bool) for _ in ends]
+    for support in supports:
+        for at_end, points in zip(rests, ends):
+            at_end |= _inside(points, support, slack)
+    pieces = pieces[rests[0] & rests[1]]
+    if not len(pieces):
         return None
-    lengths = [edge.Length for edge in anchored]
-    return sum(lengths), max(lengths), degrees, Part.makeCompound(anchored)
+    foot = pieces[:, 0:1] * across[None, :]
+    lines = numpy.stack([foot + pieces[:, 1:2] * along[None, :], foot + pieces[:, 2:3] * along[None, :]], axis=1)
+    lengths = pieces[:, 2] - pieces[:, 1]
+    return float(lengths.sum()), float(lengths.max()), degrees, lines
 
 
 def _covered(face, lines, spacing):
     """Whether `lines`, the lines a bridge lays across, in the plane of the
-    bed, `spacing` apart, cover `face` of the part whole, seen from above:
-    its corners and every point of a grid on it within a spacing of a line.
-    The rest of a free region, reaching past where the lines rest at both
-    ends, hangs out unbridged: a face over it is covered in part only."""
+    bed, as (m, 2, 2), the two ends of each, `spacing` apart, cover `face` of
+    the part whole, seen from above: its corners and every point of a grid
+    on it within a spacing of a line. The rest of a free region, reaching
+    past where the lines rest at both ends, hangs out unbridged: a face over
+    it is covered in part only.
+
+    INPUTS this has to withstand:
+      every corner and point of the grid
+        within a spacing of a line          ->  True
+      one of them farther from every line   ->  False
+      no line                               ->  False
+    """
+    if not len(lines):
+        return False
     u0, u1, v0, v1 = face.ParameterRange
     steps = d.OVERHANG_SAMPLES
     points = [vertex.Point for vertex in face.Vertexes]
@@ -253,10 +402,13 @@ def _covered(face, lines, spacing):
             v = v0 + (v1 - v0) * (j + 0.5) / steps
             if face.isPartOfDomain(u, v):
                 points.append(face.valueAt(u, v))
-    try:
-        return all(lines.distToShape(Part.Vertex(App.Vector(p.x, p.y, 0)))[0] <= spacing for p in points)
-    except KERNEL_ERRORS:
-        return False
+    px = numpy.array([point.x for point in points])[:, None]
+    py = numpy.array([point.y for point in points])[:, None]
+    ax, ay = lines[:, 0, 0], lines[:, 0, 1]
+    dx, dy = lines[:, 1, 0] - ax, lines[:, 1, 1] - ay
+    # The nearest point of each line to each point, between its ends; a line is longer than a bead.
+    along = numpy.clip(((px - ax) * dx + (py - ay) * dy) / (dx * dx + dy * dy), 0.0, 1.0)
+    return bool((numpy.hypot(px - (ax + along * dx), py - (ay + along * dy)).min(axis=1) <= spacing).all())
 
 
 def _lies_over(face, region, bead):
