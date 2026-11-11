@@ -92,11 +92,18 @@ ISLAND_TOP = 30.0      # height of the top of the bridge
 ISLAND_BEAM = 5.0      # thickness of its beam, and of the cap of a mushroom
 ISLAND_LOW = 10.0      # height of the bottom of what hangs from it, well above the bed
 ISLAND_LAYER = 50      # a layer on whose middle the bottom of a hanging block or a slab is put
+# How far beside a height where the layer changes a point is put to fall clearly on one side of it (mm):
+# far more than rounding moves it, far less than the tolerance.
+BESIDE = d.TOLERANCE / 100
+# First layer and layer heights the cut heights are checked with (mm): the first as high as the others, and
+# higher; and the layers whose middles they are checked at, the lowest among them.
+LAYERINGS = ((d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT), (1.5 * d.LAYER_HEIGHT, d.LAYER_HEIGHT))
+CUT_LAYERS = (1, 2, ISLAND_LAYER)
 # How far from that middle it is put (mm): well below and above, right on it, within the tolerance of it,
-# where it counts to the layer above, right at the tolerance below, where rounding decides the layer,
-# and one to two tolerances below, where it counts to that layer.
-MIDDLE_OFFSETS = (-d.LAYER_HEIGHT / 4, -1.5 * d.TOLERANCE, -d.TOLERANCE, -d.TOLERANCE / 2, 0.0, d.TOLERANCE / 2,
-                  1.5 * d.TOLERANCE, d.LAYER_HEIGHT / 4)
+# where it counts to the layer above, just beside the tolerance below, on either side of where the layer
+# changes, and one to two tolerances below, where it counts to that layer.
+MIDDLE_OFFSETS = (-d.LAYER_HEIGHT / 4, -1.5 * d.TOLERANCE, -d.TOLERANCE - BESIDE, -d.TOLERANCE + BESIDE,
+                  -d.TOLERANCE / 2, 0.0, d.TOLERANCE / 2, 1.5 * d.TOLERANCE, d.LAYER_HEIGHT / 4)
 ISLAND_STEM = 3.0      # radius of the stem of a mushroom, and of a hole through a box
 ISLAND_CAP = 10.0      # radius of the cap of a mushroom
 STABLE_TOLERANCE = 0.05  # how far a plumb line or a margin may be off what is reckoned, in mm
@@ -1641,6 +1648,39 @@ def bridge(hanging):
     pillar = Part.makeBox(ISLAND_SPAN / 4, ISLAND_DEPTH, ISLAND_TOP)
     beam = Part.makeBox(ISLAND_SPAN, ISLAND_DEPTH, ISLAND_BEAM, V(0, 0, ISLAND_TOP - ISLAND_BEAM))
     return pillar.fuse([beam, hanging]).removeSplitter()
+
+
+def check_cut_heights():
+    """The layer a point starts to print in and the heights it is cut at, at
+    every kind of height the table of overhang.cut_heights() names, with the
+    first layer as high as the others and higher."""
+    for first, layer in LAYERINGS:
+        def layer_of(height):
+            at = overhang.cut_heights(height, first, layer)
+            return None if at is None else at.number
+
+        bed_most = first / 2 + d.TOLERANCE
+        expect(all(layer_of(height) is None for height in (0.0, first / 2, bed_most - BESIDE)),
+               "first layer %.2f mm: up to its middle and the tolerance above, the bed carries a point" % first)
+        lowest = overhang.cut_heights(bed_most + BESIDE, first, layer)
+        expect(lowest is not None and lowest.number == 1
+               and abs(lowest.here - overhang.layer_middle(1, first, layer)) < BESIDE
+               and abs(lowest.below - (first / 2 - overhang.SUPPORT_CUT_DROP)) < BESIDE,
+               "first layer %.2f mm: just above that, a point starts in layer 1, carried by the first: %s"
+               % (first, lowest))
+        for number in CUT_LAYERS:
+            middle = overhang.layer_middle(number, first, layer)
+            above = [layer_of(middle + offset) for offset in
+                     (-d.TOLERANCE + BESIDE, -d.TOLERANCE / 2, 0.0, d.TOLERANCE / 2, layer / 4)]
+            below = [layer_of(middle + offset) for offset in (-d.TOLERANCE - BESIDE, -1.5 * d.TOLERANCE, -layer / 4)]
+            expect(above == [number + 1] * len(above) and below == [number] * len(below),
+                   "first layer %.2f mm, middle of layer %d: from the tolerance below it a point counts to "
+                   "the layer above, lower to that layer: %s, %s" % (first, number, above, below))
+            at = overhang.cut_heights(middle, first, layer)
+            expect(abs(at.here - overhang.layer_middle(number + 1, first, layer)) < BESIDE
+                   and abs(at.below - (middle - overhang.SUPPORT_CUT_DROP)) < BESIDE,
+                   "first layer %.2f mm, middle of layer %d: its section is cut at the middle of the layer above, "
+                   "its support the drop under this one: %s" % (first, number, at))
 
 
 def check_islands():
@@ -3392,6 +3432,7 @@ def main():
     check_quick_plan()
     check_quick_plans()
     check_prism_side()
+    check_cut_heights()
     check_islands()
     check_bridges()
     check_no_fragile_calls()

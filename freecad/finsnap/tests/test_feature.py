@@ -1023,8 +1023,17 @@ def stood_again_after_laid_flat(doc):
            "a placement set on the fins by hand is dropped by the next build, they stay at the part")
     fins.setExpression("Placement.Base.z", str(BOX[2]))
     doc.recompute()
-    expect(abs(fins.Placement.Base.z - BOX[2]) < d.TOLERANCE and feature.NOTE_PLACEMENT_HELD in fins.Warnings,
-           "a placement held by an expression is left to it, and the fins say so: %s" % list(fins.Warnings))
+    raised = fins.Shape.BoundBox.ZMin - global_shape(part).BoundBox.ZMin
+    expect(abs(fins.Placement.Base.z - BOX[2]) < d.TOLERANCE and abs(raised - BOX[2]) < d.TOLERANCE
+           and feature.NOTE_PLACEMENT_HELD in fins.Warnings,
+           "a placement held by an expression is left to it, the fins stand moved by it and say so: %s"
+           % list(fins.Warnings))
+    layer_height = fins.LayerHeight.Value
+    fins.LayerHeight = 0.0
+    doc.recompute()
+    expect(not fins.isValid() and list(fins.Warnings) == [feature.NOTE_PLACEMENT_HELD],
+           "fins that fail to build still say that an expression holds their placement")
+    fins.LayerHeight = layer_height
     fins.setExpression("Placement.Base.z", None)
     fins.touch()
     doc.recompute()

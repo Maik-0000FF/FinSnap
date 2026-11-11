@@ -90,7 +90,7 @@ def bridges(shape, first_layer, layer, bead, rating, supported=()):
     for number, down in overhang.steepest_down(shape, supported, rating.overhang_min_area):
         if not overhang.flatter(down, rating.overhang_critical):
             continue
-        at = overhang.layer_cut(bounds(shape.Faces[number - 1]).ZMin - bed, first_layer, layer)
+        at = overhang.cut_heights(bounds(shape.Faces[number - 1]).ZMin - bed, first_layer, layer)
         if at is not None:
             starting.setdefault(at, []).append(number)
     found = []

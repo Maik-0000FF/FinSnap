@@ -899,10 +899,10 @@ class FinSnapFeature:
             obj.Warnings = [translate("FinSnap", NOTE_LAID_FLAT)]
             return
         # Before the build, so fins that fail to build are not left turned either.
-        placement_held = drop_placement(obj)
+        held = [translate("FinSnap", NOTE_PLACEMENT_HELD)] if drop_placement(obj) else []
         p = params_of(obj)
         try:
-            notes = [translate("FinSnap", NOTE_PLACEMENT_HELD)] if placement_held else []
+            notes = list(held)
             part, build_main = self.side_builder(obj, MAIN)
             result = build_keeping_edits(obj, MAIN, build_main, notes)
             counter = None
@@ -915,6 +915,10 @@ class FinSnapFeature:
                     _, build_counter = counter_side
                     counter = build_keeping_edits(obj, COUNTER, build_counter, notes)
         except Exception:
+            # A placement held is said all the same: the fins shown are the last
+            # built, moved by it.
+            if held:
+                obj.Warnings = held
             # Built nothing, the fins carry no face; the overhang marks still
             # follow the part.
             hidden_property(obj, CARRIED, "App::PropertyStringList")
@@ -1307,7 +1311,8 @@ def drop_placement(obj):
     """
     if obj.Placement.isIdentity():
         return False
-    if any(path.lstrip(".").startswith(PLACEMENT) for path, _ in obj.ExpressionEngine):
+    # A path names the property first, then what of it: "Placement.Base.z".
+    if any(path.lstrip(".").split(".")[0] == PLACEMENT for path, _ in obj.ExpressionEngine):
         return True
     obj.Placement = App.Placement()
     return False

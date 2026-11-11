@@ -54,11 +54,11 @@ SECTION_SLAB = 1.0
 # What carries a point is seen in a cut of the layer below its own, made this
 # far under the middle of that layer (mm), more than the tolerance by which a
 # point below the middle still counts to the layer above: the cut holds
-# nothing of what starts in the layer above (layer_cut()).
+# nothing of what starts in the layer above (cut_heights()).
 SUPPORT_CUT_DROP = 2 * d.TOLERANCE
 # A point over the bed in layers: the layer it starts to print in and the
 # heights over the bed its section and what carries it are cut at.
-LayerCut = namedtuple("LayerCut", "number here below")
+CutHeights = namedtuple("CutHeights", "number here below")
 # The top of a cut-out faces straight up, its sides sideways and its bottom
 # down: a face whose normal rises more than this is one of the top.
 FACING_UP = 0.5
@@ -166,7 +166,7 @@ def islands(part, first_layer, layer):
     resting = {}
     found = []
     for point in _lowest_points(part):
-        at = layer_cut(point.z - bed, first_layer, layer)
+        at = cut_heights(point.z - bed, first_layer, layer)
         if at is None:
             continue
         here, below = bed + at.here, bed + at.below
@@ -211,8 +211,8 @@ def layer_middle(number, first_layer, layer):
     return first_layer / 2 if number == 0 else first_layer + (number - 0.5) * layer
 
 
-def layer_cut(height, first_layer, layer):
-    """Where a point `height` over the bed starts to print, as a LayerCut: the
+def cut_heights(height, first_layer, layer):
+    """Where a point `height` over the bed starts to print, as a CutHeights: the
     layer (from 0, the first), the height over the bed its section is cut at,
     `here`, and the height the layer below is cut at to see what carries the
     point, `below`. None for a point in the first layer: the bed carries it.
@@ -225,9 +225,17 @@ def layer_cut(height, first_layer, layer):
     and cannot carry itself. All that starts in one layer is cut at the same
     two heights.
 
+    The first layer alone is told apart the other way: what starts up to its
+    middle, the tolerance above it included, lies in it and on the bed, as
+    there is no layer below to carry it; a point on any other middle counts
+    to the layer above.
+
     INPUTS this has to withstand (first layer 0.2, layers 0.2):
       on the bed, up to the middle of the
         first layer and the tolerance more  ->  None
+      more than the tolerance above that
+        middle, below the next              ->  layer 1, its support cut the drop under
+                                                the middle of the first layer
       between two middles, 0.25             ->  layer 1, here 0.3, below 0.1 less the drop
       right on the middle of layer 1, 0.3   ->  layer 2, here 0.5, below 0.3 less the drop
       within the tolerance below it         ->  layer 2 as well: it reaches the tolerance
@@ -243,7 +251,7 @@ def layer_cut(height, first_layer, layer):
     if height <= first_layer / 2 + d.TOLERANCE:
         return None
     number = max(1, math.floor((height - first_layer + d.TOLERANCE) / layer + 0.5) + 1)
-    return LayerCut(number, layer_middle(number, first_layer, layer),
+    return CutHeights(number, layer_middle(number, first_layer, layer),
                     layer_middle(number - 1, first_layer, layer) - SUPPORT_CUT_DROP)
 
 
