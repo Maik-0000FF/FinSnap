@@ -1037,6 +1037,11 @@ def stood_again_after_laid_flat(doc):
            "a placement held by an expression is left to it, the fins stand moved by it and say so: %s"
            % list(fins.Warnings))
     fins.setExpression("Placement.Base.z", None)
+    fins.LayerHeight = 0.0
+    doc.recompute()
+    expect(not fins.isValid() and not fins.Warnings,
+           "the expression removed and the build failing, the warning of the placement held does not stay")
+    fins.LayerHeight = layer_height
     fins.touch()
     doc.recompute()
     expect(fins.Placement.isIdentity() and at_the_part() and feature.NOTE_PLACEMENT_HELD not in fins.Warnings,
