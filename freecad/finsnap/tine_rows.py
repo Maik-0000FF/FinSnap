@@ -14,6 +14,15 @@ from . import defaults as d
 from .face_frame import FinError
 from .i18n import QT_TRANSLATE_NOOP, translate
 
+# How near a cut a corner of a face may lie for the cut still to be worked out
+# from its corners (_cut_corners()): nearer, the kernel cuts, as only it knows
+# what a cut through a corner or along an edge gives (mm). Far wider than what
+# the kernel takes for the same point.
+CORNER_NEAR_CUT = d.TOLERANCE
+# The face asked last and its corners (_outline_of()): told once, as every place
+# and height tried in a build asks of the same face.
+_outlined = []
+
 # Said where the face is narrower than a fin, or its tine, at every tine height.
 NARROW_AT_EVERY_TINE = QT_TRANSLATE_NOOP("FinSnap", "the face is narrower than the %.2f mm a fin needs at every tine")
 
@@ -51,11 +60,92 @@ def tine_heights(p, frame, tine_count):
     return zs, height
 
 
+def _straight_outline(face):
+    """The corners of `face`, its outer wire first, then its holes, each a list of
+    points in their order round it; None unless it is one planar face whose edges
+    are all straight lines, which is what _cut_corners() can cut.
+
+    INPUTS this has to withstand:
+      one planar face, every edge a line     ->  its corners, the outer wire first
+      a hole of straight edges               ->  a list of its own after the outer one
+      an edge that is round                  ->  None
+      a straight edge the kernel holds as a
+        spline, as a STEP file brings them   ->  None: not looked into, it is not a line
+      a face that is not planar              ->  None
+      several faces, or none                 ->  None: the kernel joins what they share
+    """
+    faces = face.Faces
+    if len(faces) != 1 or not isinstance(faces[0].Surface, Part.Plane):
+        return None
+    outer = faces[0].OuterWire
+    rings = []
+    for wire in [outer] + [wire for wire in faces[0].Wires if not wire.isSame(outer)]:
+        if not all(isinstance(edge.Curve, Part.Line) for edge in wire.Edges):
+            return None
+        rings.append([vertex.Point for vertex in wire.OrderedVertexes])
+    return rings
+
+
+def _outline_of(face):
+    """_straight_outline() of `face`, told once for the face asked last."""
+    if not _outlined or not _outlined[0][0].isSame(face):
+        _outlined[:] = [(face, _straight_outline(face))]
+    return _outlined[0][1]
+
+
+def _cut_corners(rings, at, value):
+    """Where the plane on which at(point) is `value` crosses the edges between
+    the corners of `rings`, as points; None where a corner lies within
+    CORNER_NEAR_CUT of it, which is left to the kernel. Worked out, they are
+    the points the kernel finds within what it takes for one point, about
+    1e-7 mm: what is made of them is compared with d.TOLERANCE, a thousand
+    times that.
+
+    INPUTS this has to withstand:
+      the plane across two edges            ->  the two points
+      across a face that turns in, as an L
+        or a U, or through a hole           ->  four points, or more
+      past the face                         ->  none
+      a corner in the plane, or an edge
+        along it, within CORNER_NEAR_CUT    ->  None
+    """
+    found = []
+    for ring in rings:
+        sides = [at(point) - value for point in ring]
+        if any(abs(side) <= CORNER_NEAR_CUT for side in sides):
+            return None
+        for a, b, side_a, side_b in zip(ring, ring[1:] + ring[:1], sides, sides[1:] + sides[:1]):
+            if (side_a < 0) != (side_b < 0):
+                found.append(a + (b - a) * (side_a / (side_a - side_b)))
+    return found
+
+
 def _span_at(face, frame, height):
     """(first, last) position along the face where the level plane at
     `height` crosses the outer edges of `face`, None if it misses. Holes
     inside the face lie within, so only its outer wires are cut: much faster
-    than slicing the face itself, with the same outermost points."""
+    than slicing the face itself, with the same outermost points. Worked out
+    from the corners of a face _straight_outline() knows, cut by the kernel
+    otherwise (_span_cut()).
+
+    INPUTS this has to withstand:
+      one planar face of straight edges     ->  worked out, no cut
+      a hole in it                          ->  passed over: the outer wire alone
+      the height past the face              ->  None
+      a corner at the height, an edge along
+        it, a round edge, a face not planar,
+        several faces                       ->  cut by the kernel, as before
+    """
+    rings = _outline_of(face)
+    points = None if rings is None else _cut_corners(rings[:1], lambda point: point.z, height)
+    if points is None:
+        return _span_cut(face, frame, height)
+    ts = [point.dot(frame.along) for point in points]
+    return (min(ts), max(ts)) if ts else None
+
+
+def _span_cut(face, frame, height):
+    """_span_at() by a cut of the kernel."""
     box = face.BoundBox
     # A plane larger than the face, about its middle.
     size = 2 * box.DiagonalLength
@@ -196,7 +286,37 @@ def _snap_up(p, z):
 def _bands_at(frame, face, t):
     """The stretches of height (mm, from the bed) where `face` lies across
     the vertical plane at `t` along it, lowest first: a hole, a groove or a
-    bore across that plane splits them."""
+    bore across that plane splits them. Worked out from the corners of a face
+    _straight_outline() knows, cut by the kernel otherwise (_bands_cut()).
+
+    INPUTS this has to withstand:
+      one planar face of straight edges     ->  worked out: one stretch
+      a hole of straight edges across the
+        plane, or a face turning in there,
+        as an L or a U                      ->  worked out: a stretch below and one above
+      the plane past the face               ->  none
+      a stretch ending on a layer boundary  ->  the same tines as by the cut: what is
+                                                made of it is compared with d.TOLERANCE
+      a corner in the plane, an edge along
+        it, a round edge, a face not planar,
+        several faces                       ->  cut by the kernel, as before
+      a face lying level, two crossings at
+        one height, or an odd number of
+        them                                ->  cut by the kernel: no order to pair them by
+    """
+    rings = _outline_of(face)
+    points = None if rings is None else _cut_corners(rings, lambda point: point.dot(frame.along), t)
+    if points is None or len(points) % 2:
+        return _bands_cut(frame, face, t)
+    # Along the cut the face is entered and left in turn, from the lowest up.
+    heights = sorted(point.z - frame.bed_z for point in points)
+    if any(high - low <= CORNER_NEAR_CUT for low, high in zip(heights, heights[1:])):
+        return _bands_cut(frame, face, t)
+    return list(zip(heights[::2], heights[1::2]))
+
+
+def _bands_cut(frame, face, t):
+    """_bands_at() by a cut of the kernel."""
     bands = []
     for wire in face.slice(frame.along, t):
         box = wire.BoundBox

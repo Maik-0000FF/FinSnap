@@ -11,6 +11,7 @@ import math
 import os
 import re
 import sys
+import types
 
 import numpy
 
@@ -176,6 +177,12 @@ BOSS_BESIDE = 4.0
 BOSS_SHIFT = 6.0
 BOSS_MIDDLE = 6.0
 BOSS_WIDE = 9.0
+# Faces of straight edges leaning over the bed (check_straight_faces()): how far
+# they lean (degrees), how much a cut worked out may differ from the kernel's
+# (mm), and the layer a stretch is made to end on.
+STRAIGHT_LEAN = 55.0
+STRAIGHT_SAME = 1e-6
+STRAIGHT_LAYER = 0.2
 # A face tapering from the bed up (tapered()): its half width at the bed, how
 # deep the part is, and as (half width at the top, height) one wider than a
 # fin at the top tine but too narrow for it and its end insets, and one
@@ -4448,6 +4455,122 @@ def check_boss_on_face():
            "the two fins left beside the boss keep the gap, feet and all: %.2f mm" % closest)
 
 
+def check_straight_faces():
+    """The cuts through one planar face of straight edges are worked out from its
+    corners and are what the kernel cuts; every other face, and a cut through a
+    corner or along an edge, is left to the kernel."""
+    lean = App.Rotation(V(1, 0, 0), STRAIGHT_LEAN)
+
+    def face_of(*rings):
+        """A leaning face with the first of `rings`, lists of (x, y), as its outline and the others as holes."""
+        faces = [Part.Face(Part.makePolygon([lean.multVec(V(x, y, 0)) for x, y in ring + ring[:1]])) for ring in rings]
+        return faces[0].cut(faces[1:]).Faces[0] if len(faces) > 1 else faces[0]
+
+    frame = types.SimpleNamespace(along=V(1, 0, 0), bed_z=0.0)
+    cuts = {"span": 0, "bands": 0}
+    real_span, real_bands = tine_rows._span_cut, tine_rows._bands_cut
+
+    def span_cut(*args):
+        cuts["span"] += 1
+        return real_span(*args)
+
+    def bands_cut(*args):
+        cuts["bands"] += 1
+        return real_bands(*args)
+
+    def same(one, other):
+        """Whether two answers, None, a pair or a list of pairs, agree within STRAIGHT_SAME."""
+        if one is None or other is None:
+            return one is None and other is None
+        flat = [list(numpy.ravel(found)) for found in (one, other)]
+        return len(flat[0]) == len(flat[1]) and all(abs(a - b) <= STRAIGHT_SAME for a, b in zip(*flat))
+
+    faces = [("a rectangle", face_of([(0, 0), (20, 0), (20, 30), (0, 30)]), 1),
+             ("a slanted quad", face_of([(0, 0), (20, 0), (23, 30), (-2, 27)]), 1),
+             ("a triangle", face_of([(0, 0), (20, 0), (9, 30)]), 1),
+             ("an L", face_of([(0, 0), (20, 0), (20, 10), (8, 10), (8, 30), (0, 30)]), 1),
+             ("a U lying on its side", face_of([(0, 0), (20, 0), (20, 10), (8, 10), (8, 20), (20, 20), (20, 30),
+                                                (0, 30)]), 2),
+             ("a rectangle with a square hole", face_of([(0, 0), (20, 0), (20, 30), (0, 30)],
+                                                        [(6, 10), (14, 10), (14, 20), (6, 20)]), 2)]
+    tine_rows._span_cut, tine_rows._bands_cut = span_cut, bands_cut
+    try:
+        for name, face, most in faces:
+            top = face.BoundBox.ZMax
+            heights = [top * share for share in (0.07, 0.31, 0.5, 0.77, 0.93)] + [-1.0, top + 1.0]
+            places = [1.3, 4.9, 9.7, 11.1, 13.3, 17.7, -5.0, 40.0]
+            cuts["span"] = cuts["bands"] = 0
+            spans = [tine_rows._span_at(face, frame, height) for height in heights]
+            bands = [tine_rows._bands_at(frame, face, t) for t in places]
+            worked_out = dict(cuts)
+            expect(not worked_out["span"] and not worked_out["bands"]
+                   and all(same(found, real_span(face, frame, height)) for found, height in zip(spans, heights))
+                   and all(same(found, real_bands(frame, face, t)) for found, t in zip(bands, places))
+                   and max(len(found) for found in bands) == most and spans[-1] is None and bands[-1] == [],
+                   "%s: %d widths and %d cuts along a fin worked out as the kernel cuts them, no cut made, up to %d "
+                   "stretches, none past the face" % (name, len(spans), len(bands), max(len(found) for found in bands)))
+        # What is left to the kernel: counted, and answered as it answers.
+        plain = faces[0][1]
+        notched = faces[4][1]
+        round_hole = plain.cut(Part.Face(Part.Wire(Part.makeCircle(4, lean.multVec(V(10, 15, 0)),
+                                                                   lean.multVec(V(0, 0, 1)))))).Faces[0]
+        curved = Part.makeCylinder(10, 20).Faces[0]
+        two = Part.makeCompound([plain, plain.translated(V(20, 0, 0))])
+        top = plain.BoundBox.ZMax
+        left = [("a corner at the height", lambda: tine_rows._span_at(plain, frame, top), "span"),
+                ("an edge at the height", lambda: tine_rows._span_at(plain, frame, 0.0), "span"),
+                ("a corner nearer the height than CORNER_NEAR_CUT",
+                 lambda: tine_rows._span_at(plain, frame, top - tine_rows.CORNER_NEAR_CUT / 2), "span"),
+                ("an edge along the cut", lambda: tine_rows._bands_at(frame, notched, 8.0), "bands"),
+                ("a corner in the cut", lambda: tine_rows._bands_at(frame, plain, 20.0), "bands"),
+                ("a round hole, the width", lambda: tine_rows._span_at(round_hole, frame, top / 2), "span"),
+                ("a round hole, along a fin", lambda: tine_rows._bands_at(frame, round_hole, 10.0), "bands"),
+                ("a face that is not planar", lambda: tine_rows._span_at(curved, frame, 10.0), "span"),
+                ("two faces, the width", lambda: tine_rows._span_at(two, frame, top / 2), "span"),
+                ("two faces, along a fin", lambda: tine_rows._bands_at(frame, two, 10.0), "bands")]
+        for name, ask, kind in left:
+            cuts["span"] = cuts["bands"] = 0
+            found = ask()
+            expect(cuts[kind] == 1, "%s: cut by the kernel (%s)" % (name, found))
+        expect(tine_rows._straight_outline(curved) is None and tine_rows._straight_outline(two) is None
+               and tine_rows._straight_outline(round_hole) is None
+               and [len(ring) for ring in tine_rows._straight_outline(faces[5][1])] == [4, 4],
+               "only one planar face of straight edges has corners to cut by, a hole as a ring of its own")
+        # A straight edge held as a spline is not a line: left to the kernel.
+        a, b = lean.multVec(V(0, 30, 0)), lean.multVec(V(0, 0, 0))
+        spline = Part.BSplineCurve()
+        spline.interpolate([a, (a + b) / 2, b])
+        sides = [Part.makeLine(lean.multVec(V(0, 0, 0)), lean.multVec(V(20, 0, 0))),
+                 Part.makeLine(lean.multVec(V(20, 0, 0)), lean.multVec(V(20, 30, 0))),
+                 Part.makeLine(lean.multVec(V(20, 30, 0)), lean.multVec(V(0, 30, 0))), spline.toShape()]
+        splined = Part.Face(Part.Wire(sides))
+        cuts["span"] = 0
+        found = tine_rows._span_at(splined, frame, top / 2)
+        expect(tine_rows._straight_outline(splined) is None and cuts["span"] == 1
+               and same(found, tine_rows._span_at(plain, frame, top / 2)),
+               "a straight edge held as a spline is left to the kernel, with the same width: %s" % (found,))
+    finally:
+        tine_rows._span_cut, tine_rows._bands_cut = real_span, real_bands
+    # A stretch ending on a layer boundary: the same tines as by the cut.
+    rise = math.sin(math.radians(STRAIGHT_LEAN))
+    low, high = 40 * STRAIGHT_LAYER / rise, 75 * STRAIGHT_LAYER / rise
+    holed = face_of([(0, 0), (20, 0), (20, 30), (0, 30)], [(6, low), (14, low), (14, high), (6, high)])
+    params = FinParams(layer_height=STRAIGHT_LAYER, tine_restart=True)
+    asked = (params, frame, holed, 9.0, d.FIN_THICKNESS_BASE, holed.BoundBox.ZMax, None)
+    worked_out = tine_rows.restarted_tines(*asked)
+    real = tine_rows._bands_at
+    tine_rows._bands_at = tine_rows._bands_cut
+    try:
+        cut = tine_rows.restarted_tines(*asked)
+    finally:
+        tine_rows._bands_at = real
+    ends = [band for band in tine_rows._bands_at(frame, holed, 9.5)]
+    expect(worked_out == cut and worked_out and len(ends) == 2
+           and abs(ends[0][1] / STRAIGHT_LAYER - round(ends[0][1] / STRAIGHT_LAYER)) < d.TOLERANCE,
+           "a stretch ending on a layer boundary, at %.4f mm: the same %d tines worked out as by the cut"
+           % (ends[0][1], len(worked_out or [])))
+
+
 def check_surely_in_part():
     """A place where the fin would stand in what stands out of the face is told
     from points of the fin, before it is built: only where the measure of the
@@ -4715,6 +4838,7 @@ def main():
     check_merged_clearance(cube, face)
     check_fin_at(cube, face)
     check_boss_on_face()
+    check_straight_faces()
     check_surely_in_part()
     check_narrow_reason()
     print("all checks passed", file=sys.__stdout__)
