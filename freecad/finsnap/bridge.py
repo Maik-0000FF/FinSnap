@@ -75,6 +75,9 @@ COVERAGE_ALIKE = 1.0
 # sides taken in straight pieces no farther off than the bead width by this.
 OUTLINE_FINENESS = 50
 
+# The box of a face the kernel can tell none of, as XMin, XMax, YMin, YMax:
+# it meets every other.
+EVERYWHERE = (-math.inf, math.inf, -math.inf, math.inf)
 # What the kernel raises where it cannot cut or clip a region.
 KERNEL_ERRORS = (Part.OCCError, App.Base.CADKernelError)
 # A bridge: the numbers (from 1) of the faces of the part it lies under, those
@@ -127,12 +130,20 @@ def bridges(shape, first_layer, layer, bead, rating, supported=(), starts=None):
     # Read once: the kernel makes the list of the faces anew each time it is asked for.
     part_faces = shape.Faces
     faces = starts.cuts({bed + z for at in starting for z in (at.here, at.below)})
-    made = {}
+    # The faces of each height in the plane of the bed, and the boxes around
+    # them: a height is the layer of one face hanging and what carries the
+    # next, so both are taken once for it.
+    made, boxes = {}, {}
 
     def cut(z):
         if z not in made:
             made[z] = _flat(faces[z], z)
         return made[z]
+
+    def boxed(z):
+        if z not in boxes:
+            boxes[z] = _boxes(made[z])
+        return boxes[z]
 
     for at, numbers in sorted(starting.items()):
         here, below = cut(bed + at.here), cut(bed + at.below)
@@ -142,7 +153,7 @@ def bridges(shape, first_layer, layer, bead, rating, supported=(), starts=None):
         # hanging in it, by their numbers in order: each taken once for all
         # its regions, and only where there is a region to ask them for.
         supports = corners = None
-        for region in _free(here, below):
+        for region in _free(here, below, boxed(bed + at.here), boxed(bed + at.below)):
             if _strip(region, bead):
                 continue
             if corners is None:
@@ -175,14 +186,55 @@ def _flat(faces, z):
     return [face.translated(App.Vector(0, 0, -z)) for face in faces]
 
 
-def _free(here, below):
-    """The regions of the faces `here` that rest on none of the faces `below`;
-    none where the kernel cannot cut them."""
+def _boxes(faces):
+    """The boxes around `faces` in x and y (_box()), as an array, a row for
+    each: XMin, XMax, YMin, YMax. A face the kernel can tell no box of has a
+    row reaching everywhere, so it meets every other; no rows of no faces."""
+    rows = []
+    for face in faces:
+        box = _box(face)
+        rows.append(EVERYWHERE if box is None else (box.XMin, box.XMax, box.YMin, box.YMax))
+    return numpy.array(rows, dtype=float).reshape(-1, 4)
+
+
+def _free(here, below, here_boxes, below_boxes):
+    """The regions of the faces `here` that rest on none of the faces `below`,
+    in the order of the faces; none where the kernel cannot cut them.
+    `here_boxes` and `below_boxes` are the boxes around them (_boxes()).
+
+    A face is cut by the faces below whose boxes meet its own, and by no
+    others: a cut of the kernel takes as long as there are faces to cut by,
+    and a face away from it takes nothing off. A face meeting none is free
+    whole and given as it is, not a copy of it out of a cut: it is not to be
+    changed in place.
+
+    INPUTS this has to withstand:
+      a face whose box meets that of none
+        below                               ->  free whole, given as it is, the kernel
+                                                not asked
+      a face whose box meets one or several ->  cut by those alone
+      boxes that only touch                 ->  cut by it all the same: it takes nothing off
+      a face the kernel can tell no box of  ->  cut by all below, as without boxes
+      a face below without a box            ->  every face is cut by it
+      a face resting whole on those below   ->  no region of it
+      the kernel raising on the cut of one
+        face                                ->  no region of the layer; a face meeting
+                                                none below is not cut and cannot raise
+      the order                             ->  the faces in theirs, the regions of each
+                                                as the kernel gives them
+    """
+    found = []
     try:
-        support = Part.makeCompound(below)
-        return [region for face in here for region in face.cut(support).Faces]
+        for face, box in zip(here, here_boxes):
+            near = numpy.flatnonzero((below_boxes[:, 0] <= box[1]) & (box[0] <= below_boxes[:, 1])
+                                     & (below_boxes[:, 2] <= box[3]) & (box[2] <= below_boxes[:, 3]))
+            if len(near):
+                found.extend(face.cut(Part.makeCompound([below[int(number)] for number in near])).Faces)
+            else:
+                found.append(face)
     except KERNEL_ERRORS:
         return []
+    return found
 
 
 def _deflection(bead):
@@ -284,6 +336,44 @@ def _inside(points, outline, slack):
     along = numpy.clip(along, 0.0, 1.0)
     near = numpy.hypot(px - (ax + along * dx), py - (ay + along * dy)).min(axis=1) <= slack
     return odd | near
+
+
+def _slack(bead):
+    """How far outside the outline of a support a point still rests on it
+    (mm): the tolerance and, as the outlines of a region and of a support
+    are taken in pieces each on its own, as much more as a curved one may be
+    off (_deflection())."""
+    return d.TOLERANCE + _deflection(bead)
+
+
+def _near(supports, outline, bead):
+    """Those of `supports` (_supports()), in their order, that a line across
+    the region outlined by `outline` (_outline()) can rest on: the point half
+    a bead past an end of a line lies no further than that outside the box
+    around the outline, and rests on a support only within the slack
+    (_slack()) of the box around it. Both boxes are those of the outlines
+    themselves, as _resting() compares them, so no support a point could
+    rest on is left out.
+
+    INPUTS this has to withstand:
+      a support whose box does not meet the
+        box of the region, grown by half a
+        bead and the slack                  ->  left out: no end of a line reaches it
+      a support whose box meets or only
+        touches it                          ->  kept
+      no support near                       ->  [], as with no support
+      no supports                           ->  []
+      the order                             ->  that of `supports`
+    """
+    if not supports:
+        return []
+    corners = numpy.vstack(outline)
+    reach = bead / 2 + _slack(bead)
+    lowest, highest = corners.min(axis=0) - reach, corners.max(axis=0) + reach
+    lows = numpy.array([low for _, (low, _) in supports])
+    highs = numpy.array([high for _, (_, high) in supports])
+    meets = (lows <= highest).all(axis=1) & (highs >= lowest).all(axis=1)
+    return [supports[int(number)] for number in numpy.flatnonzero(meets)]
 
 
 def _resting(points, supports, slack):
@@ -400,6 +490,9 @@ def _span(region, supports, bead):
         return None
     if outline is None:
         return None
+    # The supports a line across the region can rest on, picked once for
+    # every direction tried.
+    supports = _near(supports, outline, bead)
     box = region.BoundBox
     centre = (box.Center.x, box.Center.y)
     reach, spacing = _laying(box.DiagonalLength, bead)
@@ -438,9 +531,7 @@ def _anchored(outline, supports, bead, centre, reach, spacing, degrees):
     they, as (m, 2, 2), the two ends of each; None where none does.
 
     An end rests where the point half a bead past it lies in one of the
-    supports, or within the tolerance of its outline and, as the outlines
-    of region and support are taken in pieces each on its own, as much more
-    as a curved one may be off (_deflection()).
+    supports, or within the slack of its outline (_slack()).
 
     INPUTS this has to withstand:
       a piece no longer than a bead         ->  left out
@@ -463,7 +554,7 @@ def _anchored(outline, supports, bead, centre, reach, spacing, degrees):
     foot = pieces[:, 0:1] * across[None, :]
     past_ends = numpy.vstack([foot + (pieces[:, 1:2] - bead / 2) * along[None, :],
                               foot + (pieces[:, 2:3] + bead / 2) * along[None, :]])
-    rests = _resting(past_ends, supports, d.TOLERANCE + _deflection(bead)).reshape(2, -1)
+    rests = _resting(past_ends, supports, _slack(bead)).reshape(2, -1)
     pieces = pieces[rests[0] & rests[1]]
     if not len(pieces):
         return None
