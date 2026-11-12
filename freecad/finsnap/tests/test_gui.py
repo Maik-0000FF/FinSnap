@@ -1326,14 +1326,14 @@ def island_marks(doc):
     # The kernel failing to cut the first layer out: the island is marked by a
     # ball at its lowest point instead.
     from freecad.finsnap import overhang
-    real = overhang._first_layer
-    overhang._first_layer = lambda *args: None
+    real = overhang._first_layers
+    overhang._first_layers = lambda part, wanted: [None] * len(wanted)
     try:
         analysis._kept.clear()
         fins.touch()
         doc.recompute()
     finally:
-        overhang._first_layer = real
+        overhang._first_layers = real
         analysis._kept.clear()
     expect(len(fins.Islands) == 1 and fins.IslandLayers.isNull() and list(fins.IslandsUncut) == list(fins.Islands)
            and _balls(marks, over=True) == 1,

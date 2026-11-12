@@ -60,6 +60,13 @@ CUT_FACES_MOST = 4000
 # as long as they hold no more edges than this between them: measured, an edge kept
 # takes two to four thousand bytes, so some forty to eighty million in all.
 CUT_EDGES_KEPT = 20000
+# The first layers of the islands of a part are cut out of it in one cut of
+# the kernel, at most this many (_first_layers()). Measured on parts of up to
+# five thousand faces, the more are cut together the less it takes up to some
+# two hundred; a thousand in one cut take twice as long as in four. Unlike the
+# cuts of the layers (CUT_FACES_MOST), this does not turn with the faces of
+# the part.
+FIRST_LAYERS_MOST = 256
 # What carries a point is seen in a cut of the layer below its own, at the
 # middle of that layer. Where a point starts near that middle, the cut is made
 # this far under it (mm), more than the tolerance by which a point below the
@@ -233,20 +240,131 @@ def islands(part, first_layer, layer, starts=None):
             except Part.OCCError:
                 resting[key] = True
             if not resting[key]:
-                found.append(Island(App.Vector(point), _first_layer(part, outline, point.z, here + layer / 2)))
+                found.append((point, outline, point.z, here + layer / 2))
+    # The islands stay in the order found; their first layers are cut after
+    # the last is found, several in one cut.
+    firsts = _first_layers(part, [(outline, bottom, top) for _, outline, bottom, top in found])
+    return [Island(App.Vector(point), first) for (point, *_), first in zip(found, firsts)]
+
+
+def _first_layers(part, wanted):
+    """The first layer of each island of `part` in `wanted`, in their order:
+    for each (outline, bottom, top) the part from `bottom`, its lowest point,
+    up to `top`, the top of its first layer, within `outline`, the face where
+    the middle of that layer cuts it, as a compound of solids; None where
+    there is none or the kernel cannot cut it out.
+
+    The part is cut within a prism over each outline. A cut of the kernel
+    takes about as long as the part has faces, whatever is cut out, so the
+    prisms of several islands are cut in one (_apart(), _cut_within()).
+
+    INPUTS this has to withstand:
+      no island                             ->  [], nothing cut
+      one island                            ->  cut alone
+      several whose prisms keep apart       ->  one cut; each island has the solids
+                                                within its prism
+      prisms whose boxes overlap, meet or
+        lie nearer than the tolerance, as
+        of islands in neighbouring layers   ->  never in one cut: the later waits
+      more islands than FIRST_LAYERS_MOST   ->  several cuts, none of more
+      a prism the part lies in several
+        pieces within                       ->  all of them, in one compound
+      a prism holding nothing of the part,
+        or no solid of it, as of a shell    ->  None, not tried again alone
+      an outline the kernel cannot make a
+        prism of                            ->  None for that island, the others cut
+      a cut of several the kernel cannot
+        make, or gives a null shape of      ->  its islands cut one by one; None for one
+                                                it cannot cut alone either
+    """
+    prisms = [_prism(*each) for each in wanted]
+    found = [None] * len(wanted)
+    for batch in _apart([(index, prism) for index, prism in enumerate(prisms) if prism is not None],
+                        FIRST_LAYERS_MOST):
+        pieces = _cut_within(part, batch)
+        if pieces is None and len(batch) > 1:
+            pieces = {}
+            for one in batch:
+                pieces.update(_cut_within(part, [one]) or {})
+        for index, solids in (pieces or {}).items():
+            if sum(solid.Volume for solid in solids) > 0:
+                found[index] = Part.makeCompound(solids)
     return found
 
 
-def _first_layer(part, outline, bottom, top):
-    """The part from `bottom`, the lowest point of an island, up to `top`, the
-    top of its first layer, within `outline`, the face where the middle of
-    that layer cuts it; None where the kernel cannot cut it out."""
+def _prism(outline, bottom, top):
+    """The prism over `outline`, a face of a cut, from the tolerance under
+    `bottom` up to `top`; None where the kernel cannot make it, which it says
+    by an OCCError, or by a ValueError of an outline that is a null shape."""
     try:
         footprint = outline.translated(App.Vector(0, 0, bottom - d.TOLERANCE - outline.BoundBox.ZMin))
-        piece = part.common(footprint.extrude(App.Vector(0, 0, top - bottom + d.TOLERANCE)))
+        return footprint.extrude(App.Vector(0, 0, top - bottom + d.TOLERANCE))
+    except (Part.OCCError, ValueError):
+        return None
+
+
+def _apart(prisms, most):
+    """`prisms`, as (index, prism), in batches to cut together: lists of at
+    most `most`, in each of which the boxes around the prisms keep more than
+    the tolerance apart, so the prisms neither overlap nor touch and what is
+    cut out within one lies in its box alone. A prism too near one of a
+    batch waits for a later one.
+
+    INPUTS this has to withstand:
+      no prisms                             ->  no batch
+      prisms far apart, no more than `most` ->  one batch, in their order
+      more of them                          ->  several, none of more than `most`
+      two whose boxes overlap, share a
+        side, or lie less than the
+        tolerance apart                     ->  in different batches
+      two whose boxes are apart while the
+        prisms are near, an L around a
+        block                               ->  boxes overlap: different batches
+    """
+    waiting = []
+    for index, prism in prisms:
+        near = App.BoundBox(prism.BoundBox)
+        near.enlarge(d.TOLERANCE)
+        waiting.append((index, prism, near))
+    while waiting:
+        batch, later = [], []
+        for each in waiting:
+            if len(batch) < most and not any(each[2].intersect(other.BoundBox) for _, other, _ in batch):
+                batch.append(each)
+            else:
+                later.append(each)
+        yield [(index, prism) for index, prism, _ in batch]
+        waiting = later
+
+
+def _cut_within(part, batch):
+    """What of `part` lies within each prism of `batch`, (index, prism) whose
+    boxes keep apart (_apart()): its solids by index, in one cut of the
+    kernel; an index with none is left out. None where the kernel cannot
+    make the cut or gives a null shape.
+
+    A solid cut out lies within its prism, so the middle of its box lies in
+    the box of that prism and of no other of the batch.
+
+    Whether what the kernel gives is valid is not looked at, as for the cuts
+    of the layers (_cut_out()): an island whose solids are missing from a
+    cut that came out wrong without being null is said without a first
+    layer. Decided so."""
+    try:
+        cut_out = part.common(Part.makeCompound([prism for _, prism in batch]))
     except Part.OCCError:
         return None
-    return piece if piece.Volume > 0 else None
+    if cut_out.isNull():
+        return None
+    boxes = [(index, prism.BoundBox) for index, prism in batch]
+    within = {}
+    for solid in cut_out.Solids:
+        middle = solid.BoundBox.Center
+        for index, box in boxes:
+            if box.isInside(middle):
+                within.setdefault(index, []).append(solid)
+                break
+    return within
 
 
 def layer_middle(number, first_layer, layer):
