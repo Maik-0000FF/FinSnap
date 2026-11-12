@@ -2338,6 +2338,98 @@ def check_islands():
     expect(overhang.islands(Part.Shape(), first, layer) == [], "an empty shape has no island said, nothing raised")
 
 
+def check_first_layers():
+    """The first layers of the islands of a part, cut out of it several in one cut."""
+    first, layer = d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT
+    height = ISLAND_UNDER - ISLAND_LOW
+    lefts = [ISLAND_PILLAR + COMB_TOOTH * (1 + 2 * step) for step in range(COMB_TEETH)]
+    comb = bridge(Part.makeCompound([Part.makeBox(COMB_TOOTH, ISLAND_DEPTH, height, V(left, 0, ISLAND_LOW))
+                                     for left in lefts]))
+
+    def cut_out(run=lambda: overhang.islands(comb, first, layer)):
+        """How many prisms each cut of the kernel is asked for, and the islands."""
+        calls, found = calls_counted("_cut_within", run)
+        return [len(batch) for _, batch in calls], found
+
+    def whole(found):
+        """Whether the islands lie at the blocks, in the order found, each with its first layer."""
+        return (len(found) == COMB_TEETH and all(
+            island.first is not None and abs(island.first.BoundBox.XLength - COMB_TOOTH) < d.TOLERANCE
+            and abs(island.first.BoundBox.ZMin - ISLAND_LOW) < d.TOLERANCE
+            and island.first.BoundBox.XMin - d.TOLERANCE <= island.point.x <= island.first.BoundBox.XMax + d.TOLERANCE
+            for island in found))
+
+    asked, found = cut_out()
+    expect(asked == [COMB_TEETH] and whole(found),
+           "blocks hanging side by side have their first layers cut in one cut of the kernel, each island its "
+           "own, in the order found: %s prisms a cut, %s" % (asked, [i.first and i.first.BoundBox for i in found]))
+    alone = [island.first.Volume for island in found if island.first is not None]
+
+    real_most = overhang.FIRST_LAYERS_MOST
+    overhang.FIRST_LAYERS_MOST = COMB_TEETH - 1
+    try:
+        asked, found = cut_out()
+    finally:
+        overhang.FIRST_LAYERS_MOST = real_most
+    expect(asked == [COMB_TEETH - 1, 1] and whole(found),
+           "more islands than are cut together are cut in several cuts, none of more: %s" % asked)
+
+    # A cut of several the kernel cannot make: its islands are cut one by one.
+    real = overhang._cut_within
+    overhang._cut_within = lambda part, batch: real(part, batch) if len(batch) == 1 else None
+    try:
+        asked, found = cut_out()
+    finally:
+        overhang._cut_within = real
+    expect(asked == [COMB_TEETH] + [1] * COMB_TEETH and whole(found)
+           and all(abs(island.first.Volume - volume) < d.TOLERANCE for island, volume in zip(found, alone)),
+           "a cut of several the kernel cannot make is taken one island at a time, each first layer as cut "
+           "together: %s" % asked)
+    overhang._cut_within = lambda part, batch: None
+    try:
+        found = overhang.islands(comb, first, layer)
+    finally:
+        overhang._cut_within = real
+    expect(len(found) == COMB_TEETH and all(island.first is None for island in found),
+           "islands the kernel cannot cut alone either are said without a first layer")
+
+    # Straight from outlines: a prism holding nothing, a shell, an outline no prism is made of.
+    box = Part.makeBox(ISLAND_BLOCK, ISLAND_DEPTH, ISLAND_BEAM)
+    outline = [face for face in box.Faces if face.BoundBox.ZMax < d.TOLERANCE][0]
+    beside = outline.translated(V(2 * ISLAND_BLOCK, 0, 0))
+    asked, firsts = cut_out(lambda: overhang._first_layers(box, [(outline, 0, layer), (beside, 0, layer)]))
+    expect(asked == [2] and firsts[0] is not None and abs(firsts[0].Volume - outline.Area * layer) < d.TOLERANCE
+           and firsts[1] is None,
+           "a prism holding nothing of the part gives no first layer and is not cut again alone, the one "
+           "beside it is: %s cuts, %s" % (asked, firsts))
+    asked, firsts = cut_out(lambda: overhang._first_layers(box.Shells[0], [(outline, 0, layer)]))
+    expect(asked == [1] and firsts == [None], "a part that is a shell has no solid in a prism, so no first layer")
+    asked, firsts = cut_out(lambda: overhang._first_layers(box, [(Part.Shape(), 0, layer), (outline, 0, layer)]))
+    expect(asked == [1] and firsts[0] is None and firsts[1] is not None,
+           "an outline no prism can be made of gives no first layer, the others are cut: %s" % firsts)
+    expect(overhang._first_layers(box, []) == [] and cut_out(lambda: overhang._first_layers(box, []))[0] == [],
+           "no island, nothing cut")
+
+    # Prisms too near each other never share a cut: the same outline in neighbouring layers, whose prisms
+    # reach the tolerance into each other, one beside another by less than the tolerance, and boxes that
+    # overlap though the prisms do not.
+    def batches(*prisms):
+        return [[index for index, _ in batch]
+                for batch in overhang._apart(list(enumerate(prisms)), overhang.FIRST_LAYERS_MOST)]
+
+    lower, upper = overhang._prism(outline, 0, layer), overhang._prism(outline, layer, 2 * layer)
+    far = overhang._prism(beside, 0, layer)
+    near = overhang._prism(outline.translated(V(ISLAND_BLOCK + d.TOLERANCE / 2, 0, 0)), 0, layer)
+    touching = overhang._prism(outline.translated(V(ISLAND_BLOCK, 0, 0)), 0, layer)
+    clear = overhang._prism(outline.translated(V(ISLAND_BLOCK + 3 * d.TOLERANCE, 0, 0)), 0, layer)
+    expect(batches() == [] and batches(lower, far) == [[0, 1]] and batches(lower, upper, far) == [[0, 2], [1]]
+           and batches(lower, near) == [[0], [1]] and batches(lower, touching) == [[0], [1]]
+           and batches(lower, clear) == [[0, 1]],
+           "prisms far apart share a cut; one in the layer above another, one touching another or nearer "
+           "than the tolerance waits for a later cut: %s, %s, %s, %s"
+           % (batches(lower, upper, far), batches(lower, near), batches(lower, touching), batches(lower, clear)))
+
+
 def check_printable_plans():
     """Quick fins offers the ways without islands, or the fewest first."""
     p = FinParams()
@@ -4038,6 +4130,7 @@ def main():
     check_faces_at()
     check_starts()
     check_islands()
+    check_first_layers()
     check_bridge_lines()
     check_bridges()
     check_no_fragile_calls()
