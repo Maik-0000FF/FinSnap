@@ -344,7 +344,12 @@ def _cut_within(part, batch):
     make the cut or gives a null shape.
 
     A solid cut out lies within its prism, so the middle of its box lies in
-    the box of that prism and of no other of the batch."""
+    the box of that prism and of no other of the batch.
+
+    Whether what the kernel gives is valid is not looked at, as for the cuts
+    of the layers (_cut_out()): an island whose solids are missing from a
+    cut that came out wrong without being null is said without a first
+    layer. Decided so."""
     try:
         cut_out = part.common(Part.makeCompound([prism for _, prism in batch]))
     except Part.OCCError:
