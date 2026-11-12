@@ -76,6 +76,7 @@ NONE = -math.inf
 # each block twice the size of the one before, starting with this many pairs
 # of a piece and a height (_Pieces._furthest()).
 FIRST_BLOCK = 256
+LARGEST_BLOCK = 2 ** 16
 
 
 class ContourError(ValueError):
@@ -377,40 +378,45 @@ class _Pieces:
         return (numpy.maximum(0, numpy.ceil((self.low - first) / step - d.TOLERANCE)).astype(int),
                 numpy.minimum(len(heights) - 1, numpy.floor((self.high - first) / step + d.TOLERANCE)).astype(int))
 
-    @staticmethod
-    def _pairs(start, end):
-        """Every piece with every place from its `start` to its `end`, as two
-        arrays: the numbers of the pieces, in their order, and the places."""
+    def _blocks(self, start, end):
+        """Every piece with every place from its `start` to its `end`, in
+        blocks: for each, the numbers of its pieces and the places, an array
+        each, in the order of the pieces. A block is twice the size of the
+        one before, up to LARGEST_BLOCK, counted in pairs of a piece and a
+        place: a cut of tens of thousands of pieces has millions of pairs,
+        which are never all held at once. A piece is not split between two
+        blocks."""
         lengths = numpy.maximum(0, end - start + 1)
-        numbers = numpy.repeat(numpy.arange(len(lengths)), lengths)
-        # Counting up from the start of each piece.
-        steps = numpy.arange(lengths.sum()) - numpy.repeat(numpy.cumsum(lengths) - lengths, lengths)
-        return numbers, start[numbers] + steps
+        upto = numpy.cumsum(lengths)
+        piece, done, size = 0, 0, FIRST_BLOCK
+        while piece < len(lengths):
+            stop = max(piece + 1, int(numpy.searchsorted(upto, done + size, side="right")))
+            ours = lengths[piece:stop]
+            numbers = numpy.repeat(numpy.arange(piece, stop), ours)
+            # Counting up from the start of each piece.
+            steps = numpy.arange(ours.sum()) - numpy.repeat(numpy.cumsum(ours) - ours, ours)
+            yield numbers, start[numbers] + steps
+            piece, done, size = stop, int(upto[stop - 1]), min(2 * size, LARGEST_BLOCK)
 
-    def _furthest(self, numbers, places, low, high, count):
-        """The furthest out the pieces `numbers` reach between `low` and
-        `high` at each of `count` places, `places` the place of each; NONE
-        where none reaches. The pieces are asked in blocks, each twice the
-        size of the one before: one that cannot reach as far as is found at
-        its place by then, the tolerance aside, is not asked, and adds
-        nothing if it were."""
-        found = numpy.full(count, NONE)
-        start, size = 0, FIRST_BLOCK
-        while start < len(numbers):
-            block = slice(start, start + size)
-            ours, where = numbers[block], places[block]
-            asked = self.outermost[ours] >= found[where] - d.TOLERANCE
-            numpy.maximum.at(found, where[asked], self._between(ours[asked], low[block][asked], high[block][asked]))
-            start, size = start + size, 2 * size
+    def _furthest(self, ranges, low, high):
+        """The furthest out the pieces reach between `low` and `high`, the
+        heights of each place, an array each, at each of those places; NONE
+        where none reaches. `ranges` are the first and the last place of
+        each piece. A piece that cannot reach as far as is found at a place
+        by the blocks before its own, the tolerance aside, is not asked
+        there, and would add nothing if it were."""
+        found = numpy.full(len(low), NONE)
+        for numbers, places in self._blocks(*ranges):
+            asked = self.outermost[numbers] >= found[places] - d.TOLERANCE
+            numbers, places = numbers[asked], places[asked]
+            numpy.maximum.at(found, places, self._between(numbers, low[places], high[places]))
         return found
 
     def reaches(self, heights):
         """How far out the pieces reach within the radius at every one of the
         evenly spaced `heights`; None where none does."""
         z = numpy.asarray(heights, dtype=float)
-        numbers, places = self._pairs(*self._samples(heights))
-        found = self._furthest(numbers, places, z[places], z[places], len(heights))
-        return [None if value == NONE else value for value in found.tolist()]
+        return [None if value == NONE else value for value in self._furthest(self._samples(heights), z, z).tolist()]
 
     def reach(self, near, stretch, z):
         """How far out the pieces reaching into the stretch `stretch` of
@@ -431,8 +437,12 @@ class _Pieces:
         reaches. Of pieces reaching as far, within TOLERANCE, as two do
         where they meet, the smallest value is kept.
 
-        The pieces reaching a height are taken in their order, one after the
-        other: which value stays hangs on it.
+        The pieces reaching a height count in their order, as taken one after
+        the other: which value stays hangs on it. They are not gone through
+        one by one, nor laid out in a table of heights by pieces, which a
+        level underside in thousands of short pieces would make a thousand
+        times too large: what each piece does follows from the furthest the
+        pieces before it reach, worked out for all at once.
 
         INPUTS this has to withstand:
           one piece at a height                 ->  its reach and its value
@@ -448,36 +458,55 @@ class _Pieces:
             that past the first                 ->  from the furthest down, the first is
                                                     left out; from the nearest up, the last
                                                     takes over: as the order has it
+          thousands of pieces at one height, as
+            a level underside of a part from a
+            mesh has                            ->  as taken one after the other, in no more
+                                                    time or room than their number asks
           no piece at a height                  ->  None
         """
         count = len(heights)
         z = numpy.asarray(heights, dtype=float)
-        numbers, places = self._pairs(*self._samples(heights))
+        blocks = list(self._blocks(*self._samples(heights)))
+        if not blocks:
+            return [None] * count
+        numbers, places = (numpy.concatenate(each) for each in zip(*blocks))
         reach = self._between(numbers, z[places], z[places])
         there = reach != NONE
         numbers, places, reach = numbers[there], places[there], reach[there]
         if not len(numbers):
             return [None] * count
-        # By height, the pieces of each still in their order; then a column
-        # for the first piece of every height, one for the second, and so on.
+        # By height, the pieces of each still in their order: a group for
+        # every height a piece reaches.
         order = numpy.argsort(places, kind="stable")
         numbers, places, reach = numbers[order], places[order], reach[order]
-        starts = numpy.flatnonzero(numpy.r_[True, places[1:] != places[:-1]])
-        rank = numpy.arange(len(places)) - numpy.repeat(starts, numpy.diff(numpy.r_[starts, len(places)]))
-        columns = int(rank.max()) + 1
-        reaches = numpy.full((count, columns), NONE)
-        values = numpy.zeros((count, columns))
-        reaches[places, rank] = reach
-        values[places, rank] = numpy.array([measure(piece) for piece in self.pieces], dtype=float)[numbers]
-        best, kept = numpy.full(count, NONE), numpy.zeros(count)
-        for column in range(columns):
-            r, value = reaches[:, column], values[:, column]
-            has = r != NONE
-            takes = has & ((best == NONE) | (r > best + d.TOLERANCE))
-            level = has & ~takes & (r >= best - d.TOLERANCE)
-            kept = numpy.where(takes, value, numpy.where(level & (value < kept), value, kept))
-            best = numpy.where(takes, r, numpy.where(level, numpy.maximum(r, best), best))
-        return [None if r == NONE else (r, value) for r, value in zip(best.tolist(), kept.tolist())]
+        values = numpy.array([measure(piece) for piece in self.pieces], dtype=float)[numbers]
+        first = numpy.r_[True, places[1:] != places[:-1]]
+        starts = numpy.flatnonzero(first)
+        sizes = numpy.diff(numpy.r_[starts, len(places)])
+        group = numpy.repeat(numpy.arange(len(starts)), sizes)
+        # The furthest any piece of its height up to each one reaches: taken
+        # from the one a step before, then two, then four, as far as a group is
+        # long, which gives what going through them one by one would.
+        furthest = reach.copy()
+        step = 1
+        while step < sizes.max():
+            same = group[step:] == group[:-step]
+            furthest[step:] = numpy.where(same, numpy.maximum(furthest[step:], furthest[:-step]), furthest[step:])
+            step *= 2
+        # What the pieces before each one reach, and so what each does: takes
+        # over, adds its value to those kept, or is left out.
+        before = numpy.r_[NONE, furthest[:-1]]
+        takes = first | (reach > before + d.TOLERANCE)
+        adds = takes | (reach >= before - d.TOLERANCE)
+        # The values kept are those from the last piece that took over on.
+        turn = numpy.arange(len(places))
+        last = numpy.maximum.reduceat(numpy.where(takes, turn, -1), starts)
+        kept = numpy.minimum.reduceat(numpy.where(adds & (turn >= last[group]), values, math.inf), starts)
+        best = numpy.maximum.reduceat(reach, starts)
+        found = [None] * count
+        for place, r, value in zip(places[starts].tolist(), best.tolist(), kept.tolist()):
+            found[place] = (r, value)
+        return found
 
     def lifted(self, values, heights):
         """`values`, the reach of the pieces within the radius at `heights`
@@ -503,18 +532,20 @@ class _Pieces:
         """
         stretches = len(heights) - 1
         z = numpy.asarray(heights, dtype=float)
-        numbers, places = self._pairs(*self.stretches(heights))
-        low, high = z[places], z[places + 1]
-        most = self._furthest(numbers, places, low, high, stretches)
+        ranges = self.stretches(heights)
+        low, high = z[:-1], z[1:]
+        most = self._furthest(ranges, low, high)
         given = numpy.array([NONE if value is None else value for value in values], dtype=float)
         missing = numpy.array([value is None for value in values], dtype=bool)
         open_end = missing[:-1] | missing[1:]
         a, b = given[:-1], given[1:]
-        asked = ~open_end[places] & (self.outermost[numbers] - numpy.minimum(a, b)[places] > d.CONTOUR_SHARE)
-        where = places[asked]
-        past = self._past_run(numbers[asked], low[asked], high[asked], a[where], b[where])
+        lowest = numpy.minimum(a, b)
         cut = numpy.zeros(stretches, dtype=bool)
-        cut[where[past > d.CONTOUR_SHARE]] = True
+        for numbers, places in self._blocks(*ranges):
+            asked = ~open_end[places] & (self.outermost[numbers] - lowest[places] > d.CONTOUR_SHARE)
+            numbers, places = numbers[asked], places[asked]
+            past = self._past_run(numbers, low[places], high[places], a[places], b[places])
+            cut[places[past > d.CONTOUR_SHARE]] = True
         up = numpy.where(cut, most, NONE)
         raised = numpy.full(len(values), NONE)
         raised[:-1] = numpy.maximum(raised[:-1], up)

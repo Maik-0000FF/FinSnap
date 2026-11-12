@@ -3878,6 +3878,21 @@ def check_contour_pieces():
            "one piece at a height gives its reach and its value; a piece more than the tolerance short of "
            "the furthest gives nothing, and one further than those before by more takes over with its "
            "value alone: %s, %s, %s" % (alone, short, facing(near, far)))
+    # Many pieces at one height, reaching about as far, in no order: what is kept is what taking
+    # them one after the other keeps, by the rule as it reads.
+    many = [crossing(1.0 + tolerance * 2.5 * math.sin(7.0 * k)) for k in range(4 * contour.FIRST_BLOCK)]
+    values = {piece[0]: math.cos(3.0 * k) for k, piece in enumerate(many)}
+    reach_at_half, kept = None, None
+    for piece in many:
+        r, value = (piece[0][0] + 2.0) / 2, values[piece[0]]
+        if reach_at_half is None or r > reach_at_half + tolerance:
+            reach_at_half, kept = r, value
+        elif r >= reach_at_half - tolerance:
+            reach_at_half, kept = max(r, reach_at_half), min(value, kept)
+    found = contour._Pieces(many, 0.0).facing(halves, lambda piece: values[piece[0]])[1]
+    expect(len(set(values)) == len(many) and close(found[0], reach_at_half) and found[1] == kept,
+           "%d pieces at one height, reaching about as far in no order: the reach and the value kept are "
+           "those of taking them one after the other: %s, wanted %s" % (len(many), found, (reach_at_half, kept)))
     expect(contour._Pieces([], 0.0).facing(halves, lambda piece: 0.0) == [None] * 3
            and contour._Pieces([crossing(1.0)], 0.0).facing([2.0, 3.0, 4.0], lambda piece: 0.0) == [None] * 3,
            "no piece at a height, no reach there")
