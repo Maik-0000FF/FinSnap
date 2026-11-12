@@ -2338,6 +2338,81 @@ def check_islands():
     expect(overhang.islands(Part.Shape(), first, layer) == [], "an empty shape has no island said, nothing raised")
 
 
+def check_island_boxes():
+    """The lowest points of a part and the sections of its layers, sorted by their boxes before
+    the kernel is asked: the islands are those found asking it of every section."""
+    first, layer = d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT
+    height = ISLAND_UNDER - ISLAND_LOW
+
+    def told(found):
+        return [(tuple(round(value, CUTS_DIGITS) for value in island.point),
+                 None if island.first is None else round(island.first.Volume, CUTS_DIGITS)) for island in found]
+
+    def unsorted(run):
+        """What `run` returns with every section asked of the kernel, none turned away by its box."""
+        real = overhang._holding, overhang._meeting
+        overhang._holding = lambda boxes, x, y: list(range(len(boxes)))
+        overhang._meeting = lambda boxes, box: list(range(len(boxes)))
+        try:
+            return run()
+        finally:
+            overhang._holding, overhang._meeting = real
+
+    # Round teeth: the mesh of a round bottom has many lowest points, each of them a point to
+    # start from, in layers one above the other.
+    bottoms = stacked_bottoms(first, layer)
+    teeth = [Part.makeCylinder(COMB_TOOTH / 2, ISLAND_UNDER - bottom,
+                               V(ISLAND_PILLAR + COMB_TOOTH * (1.5 + 2 * step), ISLAND_DEPTH / 2, bottom))
+             for step, bottom in enumerate(bottoms)]
+    comb = bridge(Part.makeCompound(teeth))
+    points = len(overhang.Starts(comb).points)
+    asked, found = calls_counted("_overlap", lambda: overhang.islands(comb, first, layer))
+    asked_all, found_all = unsorted(lambda: calls_counted("_overlap", lambda: overhang.islands(comb, first, layer)))
+    expect(points > COMB_TEETH * COMB_TEETH and len(found) == COMB_TEETH and told(found) == told(found_all)
+           and len(asked) <= len(asked_all),
+           "round blocks hanging in layers one above the other, %d lowest points between them: the islands "
+           "found with the boxes sorted are those found asking the kernel of every section, in the same "
+           "order, with the same first layers: %s" % (points, told(found)))
+
+    # A point in the box of a section, yet far from it: a small block in the corner of an L, both
+    # hanging at one height. Whichever is come to first, each is an island at a point of its own.
+    left = ISLAND_PILLAR + COMB_TOOTH
+    angle = Part.makeBox(ISLAND_SPAN / 2, COMB_TOOTH, height, V(left, 0, ISLAND_LOW)).fuse(
+        Part.makeBox(COMB_TOOTH, ISLAND_DEPTH, height, V(left, 0, ISLAND_LOW))).removeSplitter()
+    small = Part.makeBox(COMB_TOOTH, COMB_TOOTH, height,
+                         V(left + ISLAND_SPAN / 4, ISLAND_DEPTH - 2 * COMB_TOOTH, ISLAND_LOW))
+    hung = bridge(Part.makeCompound([angle, small]))
+    for order, what in ((list, "as they come"), (lambda points: list(reversed(points)), "the other way round")):
+        starts = overhang.Starts(hung)
+        starts._points = order(starts.points)
+        found = overhang.islands(hung, first, layer, starts)
+        on_own = [island.first is not None
+                  and island.first.distToShape(Part.Vertex(island.point))[0] < d.TOLERANCE for island in found]
+        areas = sorted(round(island.first.Volume / (island.first.BoundBox.ZLength or 1)) for island in found
+                       if island.first is not None)
+        expect(len(found) == 2 and all(on_own) and areas == sorted(round(each.Volume / height)
+                                                                     for each in (angle, small)),
+               "a small block in the corner of an L, its points in the box of the L yet far from it, the "
+               "points taken %s: two islands, each at a point of its own: %s" % (what, told(found)))
+
+    # The edges of a box count to it, as BoundBox has it; no boxes hold and meet nothing.
+    box = App.BoundBox(0, 0, 0, 1, 1, 1)
+    flat = overhang._flat([box])
+    for x in (0.0, 1.0, 0.5, 1.0 + BESIDE, -BESIDE):
+        expect((overhang._holding(flat, x, 0.5) == [0]) == box.isInside(V(x, 0.5, 0.5))
+               and (overhang._holding(flat, 0.5, x) == [0]) == box.isInside(V(0.5, x, 0.5)),
+               "a point at %r along a box from 0 to 1 lies in it as BoundBox says: %s"
+               % (x, box.isInside(V(x, 0.5, 0.5))))
+    for low in (1.0, 1.0 + BESIDE, 1.0 - BESIDE, -1.0, -1.0 - BESIDE):
+        other = App.BoundBox(low, 0, 0, low + 1, 1, 1)
+        expect((overhang._meeting(flat, overhang._flat([other])[0]) == [0]) == box.intersect(other),
+               "a box from %r beside one from 0 to 1 meets it as BoundBox says: %s" % (low, box.intersect(other)))
+    none = overhang._flat([])
+    expect(none.shape == (0, 4) and overhang._holding(none, 0, 0) == [] and overhang._meeting(none, flat[0]) == []
+           and overhang._holding(overhang._flat([box, box]), 0.5, 0.5) == [0, 1],
+           "no boxes hold no point and meet no box; boxes holding a point are given by number, rising")
+
+
 def check_first_layers():
     """The first layers of the islands of a part, cut out of it several in one cut."""
     first, layer = d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT
@@ -4130,6 +4205,7 @@ def main():
     check_faces_at()
     check_starts()
     check_islands()
+    check_island_boxes()
     check_first_layers()
     check_bridge_lines()
     check_bridges()
