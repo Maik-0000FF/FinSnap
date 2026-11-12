@@ -214,7 +214,9 @@ class _Below:
         and z, a row of INTEGRALS: the triangles lying wholly below summed
         as kept, those crossing the height clipped at it (_clipped()). A
         triangle touching the height from above with a corner or a side
-        lies neither below nor across it and adds nothing."""
+        lies neither below nor across it and adds nothing. Where no triangle
+        crosses the height, the row is the one kept, not a copy: it is not
+        to be changed in place."""
         whole = int(numpy.searchsorted(self.tops, height, side="right"))
         sums = self.summed[whole]
         # Of the triangles not summed whole, those reaching below the height.
