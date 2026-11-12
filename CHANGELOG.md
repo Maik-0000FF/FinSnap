@@ -20,6 +20,7 @@ All notable changes to FinSnap are listed here. The format follows
 - The lowest points of a part and the cuts of its layers are sorted by their boxes before the kernel is asked where an island starts, which tells most on round undersides, whose mesh has many lowest points: the islands of a comb of 200 round teeth take 3.7 s instead of 16.1 s, of 60 round teeth 0.9 s instead of 1.9 s, of 200 square teeth 4.5 s instead of 5.4 s
 - The faces a bridge lies under are told by the box around its free region before the kernel measures how far their corners are from it, and the lines of a region under no face that counts are not laid: the bridges of 64 tables side by side take 4.1 s instead of 16.0 s, with every second top carried by fins 3.1 s instead of 10.1 s
 - A free region of a layer is cut by the faces below near it alone, and its lines are checked against the supports near it alone, both picked by their boxes: the bridges of 64 tables side by side take 1.8 s instead of 4.3 s, of 196 tables 6.7 s instead of 36.6 s, stairs of 40 steps and a single table as before
+- The check of the stability clips the triangles crossing a layer all at once instead of one at a time, which tells on round walls, whose triangles reach over their whole height: 36 tables on round legs take 0.33 s instead of 1.2 s, a part that tips over early 0.012 s instead of 0.030 s, a plain box 4.8 ms instead of 5.3 ms
 
 ### Fixed
 
