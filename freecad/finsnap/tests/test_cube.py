@@ -4448,6 +4448,103 @@ def check_boss_on_face():
            "the two fins left beside the boss keep the gap, feet and all: %.2f mm" % closest)
 
 
+def check_surely_in_part():
+    """A place where the fin would stand in what stands out of the face is told
+    from points of the fin, before it is built: only where the measure of the
+    fin built says the same, with points the fin as built holds or comes near."""
+    asked, built_at = [], []
+    real_sure, real_body = geometry._Places.surely_in_part, geometry._Places._body
+
+    def sure(self, t, own, half_foot=None):
+        found = real_sure(self, t, own, half_foot)
+        asked.append((self, t, own, found))
+        return found
+
+    def body(self, t, height, half_foot):
+        built_at.append((self, t, height))
+        return real_body(self, t, height, half_foot)
+
+    def searched(shape, params, **more):
+        """What a build under the face of `shape` asked, and what it made of it."""
+        del asked[:], built_at[:]
+        geometry._Places.surely_in_part, geometry._Places._body = sure, body
+        try:
+            geometry.build(shape, lower_left_face(shape), params, **more)
+            outcome = "built"
+        except face_frame.FinError:
+            outcome = "refused"
+        finally:
+            geometry._Places.surely_in_part, geometry._Places._body = real_sure, real_body
+        return outcome, list(asked), list(built_at)
+
+    wide = bossed_cube((BOSS_WIDE, EDGE / 2))
+    middle = bossed_cube((BOSS_MIDDLE, EDGE / 2))
+    cases = [("the default foot", middle, FinParams(placement=d.PLACEMENT_CENTER), {}),
+             ("a rectangular foot", middle, FinParams(placement=d.PLACEMENT_CENTER, foot_shape=d.FOOT_RECTANGLE), {}),
+             ("no foot", middle, FinParams(placement=d.PLACEMENT_CENTER, foot_shape=d.FOOT_NONE), {}),
+             ("a height of its own", middle, FinParams(placement=d.PLACEMENT_CENTER), {"heights": {1: EDGE / 3}}),
+             ("a boss over the whole face", wide, FinParams(placement=d.PLACEMENT_CENTER), {})]
+    for name, shape, params, more in cases:
+        outcome, places, bodies = searched(shape, params, **more)
+        told = [(self, t, own) for self, t, own, found in places if found]
+        wrong, outside, far, points = 0, 0, 0, 0
+        for self, t, own, found in places:
+            height = self.reach(t, own)
+            if height <= d.TOLERANCE:
+                continue
+            solid = real_body(self, t, height, self.half_foot)
+            front = geometry.in_front_of(self.part, self.whole_face)
+            wrong += found and solid.distToShape(front)[0] >= params.gap - d.TOLERANCE
+            # Three by three: one inside the fin, one beside it on either side.
+            for number, point in enumerate(self.sure_points(t, height, self.half_foot)):
+                points += 1
+                if number % 3 == 0:
+                    outside += not solid.isInside(point, d.TOLERANCE, False)
+                else:
+                    far += solid.distToShape(Part.Vertex(point))[0] >= params.gap - d.TOLERANCE
+        built_where_told = [1 for self, t, own in told if (self, t, self.reach(t, own)) in
+                            [(places_, at, height) for places_, at, height in bodies]]
+        expect(told and not wrong and not outside and not far and points and not built_where_told,
+               "%s, %s: %d of %d places told to stand in the part, %d of them clear by the measure; of %d points "
+               "%d outside the fin, %d as far off as the gap; fins built where it was told %d"
+               % (name, outcome, len(told), len(places), wrong, points, outside, far, len(built_where_told)))
+    # Told once, kept: the place is not asked of the kernel again.
+    outcome, places, _ = searched(wide, FinParams(placement=d.PLACEMENT_CENTER))
+    self, t, own, _ = next(place for place in places if place[3])
+    real_inside = geometry._inside
+    calls = []
+    geometry._inside = lambda solid, point: calls.append(1) or real_inside(solid, point)
+    try:
+        again = self.surely_in_part(t, own)
+        # A point on the surface of what stands out, and a kernel that cannot tell.
+        front = geometry.in_front_of(self.part, self.whole_face)
+        on_surface = front.Vertexes[0].Point
+        deep = front.Solids[0].CenterOfMass
+        expect(again and not calls, "a place told to stand in the part is not asked again")
+        expect(real_inside(front.Solids[0], deep) and not real_inside(front.Solids[0], on_surface),
+               "a point inside what stands out is inside it, one on its surface is not")
+
+        class Failing:
+            def isInside(self, *args):
+                raise Part.OCCError("no classifier")
+        expect(real_inside(Failing(), deep) is False, "where the kernel cannot tell, a point is not said to be inside")
+    finally:
+        geometry._inside = real_inside
+    # Nothing in front of the face, a fin without a height, a round side: not said.
+    cube = tilted_cube()
+    outcome, places, _ = searched(cube, FinParams(placement=d.PLACEMENT_CENTER))
+    expect(outcome == "built" and not any(found for *_, found in places),
+           "a plain face: no place told to stand in the part (%d asked)" % len(places))
+    expect(self.sure_points(t, 0.0, self.half_foot) == [], "a fin without a height has no points to ask")
+    # What stands out in two solids: each is asked by itself.
+    two = bossed_cube((BOSS_RADII[0], EDGE / 4), (BOSS_RADII[0], 3 * EDGE / 4))
+    frame = face_frame.frame_of(two, lower_left_face(two))
+    front = geometry.in_front_of(two, frame)
+    hits = [sum(real_inside(solid, other.CenterOfMass) for solid in front.Solids) for other in front.Solids]
+    expect(len(front.Solids) == 2 and hits == [1, 1],
+           "two bosses stand out as two solids, a point in one is inside that one alone: %s" % hits)
+
+
 def tapered(top_half, height):
     """A part whose face, leaning 45 degrees, tapers from TAPER_BASE_HALF at
     the bed to `top_half` at `height`, and that face."""
@@ -4618,6 +4715,7 @@ def main():
     check_merged_clearance(cube, face)
     check_fin_at(cube, face)
     check_boss_on_face()
+    check_surely_in_part()
     check_narrow_reason()
     print("all checks passed", file=sys.__stdout__)
 
