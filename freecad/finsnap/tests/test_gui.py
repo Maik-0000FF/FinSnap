@@ -1169,6 +1169,22 @@ def marks_drawn_once(doc, fins):
            and back == ([commands.OVERHANG_MARKS], 1, before),
            "overhangs written as none take their marks away, written again bring them back, drawn once each "
            "time, once both properties are written: %s, %s" % (emptied, back))
+    # Marks that cannot be made: the old ones stay where they are.
+    kept = list(view.marked[commands.OVERHANG_MARKS])
+
+    def failing(obj, kind):
+        raise Part.OCCError("no mesh")
+
+    commands.ViewProviderFinSnap._marks_of = staticmethod(failing)
+    try:
+        view.mark(fins, (commands.OVERHANG_MARKS,))
+        raised = False
+    except Part.OCCError:
+        raised = True
+    finally:
+        commands.ViewProviderFinSnap._marks_of = staticmethod(real)
+    expect(raised and view.marked[commands.OVERHANG_MARKS] == kept and len(kept) == 1 and in_order(),
+           "marks that cannot be made leave those there were under the switch, in their place")
     bare = types.SimpleNamespace(**{feature.OVERHANGS: names, feature.UNPRINTABLE_OVERHANGS: [], "Base": None})
     expect(real(bare, commands.OVERHANG_MARKS) == [], "fins without a part have no overhang marks")
 

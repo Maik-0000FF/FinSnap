@@ -194,6 +194,9 @@ class ViewProviderFinSnap:
                                                     marks seen through one another look as
                                                     they did
           a part without a shape, or no part    ->  no overhang marks left
+          the marks of a kind that cannot be
+            made, the kernel raising            ->  the error passes on; the marks it had
+                                                    stay, and so does their place
           a build breaking off between two
             kinds                               ->  those not written keep the marks of the
                                                     build before. Decided so
@@ -204,12 +207,15 @@ class ViewProviderFinSnap:
         if not hasattr(self, "marks"):
             return
         for kind in kinds:
+            # The new ones first: where they cannot be made, as a face the
+            # kernel cannot mesh, the error passes on and the old ones stay.
+            nodes = self._marks_of(obj, kind)
             for node in self.marked[kind]:
                 self.marks.removeChild(node)
             # After the marks of the kinds before it in MARKS.
             at = sum(len(self.marked[before]) for before in MARKS[:MARKS.index(kind)])
-            self.marked[kind] = self._marks_of(obj, kind)
-            for offset, node in enumerate(self.marked[kind]):
+            self.marked[kind] = nodes
+            for offset, node in enumerate(nodes):
                 self.marks.insertChild(node, at + offset)
         self.show_marks()
 
