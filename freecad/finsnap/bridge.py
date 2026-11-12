@@ -138,13 +138,15 @@ def bridges(shape, first_layer, layer, bead, rating, supported=(), starts=None):
         here, below = cut(bed + at.here), cut(bed + at.below)
         if not here or not below:
             continue
-        # The outlines of what carries the layer, taken once for all its regions,
-        # and the corners of the faces hanging in it, by their numbers in order.
-        supports = None
-        corners = {number: _corners(part_faces[number - 1]) for number in numbers}
+        # The outlines of what carries the layer, and the corners of the faces
+        # hanging in it, by their numbers in order: each taken once for all
+        # its regions, and only where there is a region to ask them for.
+        supports = corners = None
         for region in _free(here, below):
             if _strip(region, bead):
                 continue
+            if corners is None:
+                corners = {number: _corners(part_faces[number - 1]) for number in numbers}
             # The faces first: they are told fast, and under none of them the
             # region is no bridge of theirs, so its lines need not be laid.
             under = _over(region, corners, bead)
