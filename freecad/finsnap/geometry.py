@@ -109,7 +109,7 @@ from . import defaults as d
 from . import orient
 from .face_frame import UP, FinError, Frame, HandEditError, beside_lowest, frame_of, in_plane, support_of
 from .i18n import QT_TRANSLATE_NOOP, translate
-from .shapes import TooManyPairs, between_rings, bounds, keep, meshed_of, shape_key
+from .shapes import TooManyPairs, between_rings, bounds, keep, meshed_of, shape_key, working
 from .tine_rows import (NARROW_AT_EVERY_TINE, TINE_CUTS_IN, TINE_MISSES, extent_at, face_tines, fin_stretch, flank_bend,
                         restarted_tines, round_move, side_foot_start, side_tine, tine_end, tine_end_fault,
                         tine_end_points, tine_start, tines_on_face, touching_at, wide_enough)
@@ -934,6 +934,7 @@ def check(p, part, pieces, bodies, slack=0.0):
             raise FinError(translate("FinSnap", NOTE_TOO_CLOSE) % (distance, p.gap))
 
 
+@working()
 def build(part, face, p, tine_count=None, left_out=(), shifts=None, heights=None):
     """Fins under `face` of `part`, reaching over a groove to the pieces beyond
     it. tine_count overrides p.tine_count (counter fin). Fins are named by their

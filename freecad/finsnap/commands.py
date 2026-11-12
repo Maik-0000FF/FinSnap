@@ -254,7 +254,7 @@ class ViewProviderFinSnap:
             if panel is not None:
                 # The panel may delete this very object; not while its own
                 # onDelete still runs.
-                QtCore.QTimer.singleShot(0, functools.partial(panel.remove_fins, fins))
+                panel.once_free(functools.partial(panel.remove_fins, fins))
                 return False
             obj.Document.openTransaction(translate("FinSnap", "Remove fin"))
             done = feature.remove_fins(obj, fins)

@@ -34,6 +34,7 @@ INPUTS this has to withstand (bounds()):
                                             deflection off them
 """
 
+import contextlib
 from collections import namedtuple
 
 import numpy
@@ -113,6 +114,40 @@ def shape_key(shape):
         centre = None
     return (round(shape.Volume, KEY_DIGITS), round(shape.Area, KEY_DIGITS), len(shape.Faces), len(shape.Edges),
             corners, centre)
+
+
+# How many builds and checks of FinSnap are under way in the kernel, one
+# within another counted each (working()).
+_at_work = 0
+
+
+@contextlib.contextmanager
+def working():
+    """While this lasts, FinSnap is at work in the kernel: building fins or
+    checking a part. FreeCAD shows its progress during a long operation of
+    the kernel and lets timers fire meanwhile; a build started from one of
+    them, inside the operation under way, can stop in the kernel and never
+    return, so FreeCAD freezes. Who would start one asks at_work() first.
+    Used as a decorator as well.
+
+    INPUTS this has to withstand:
+      a build or a check under way          ->  at work
+      one within another, a check in a
+        build or a build tried in a build   ->  at work until the outermost is through
+      what is done raising                  ->  the count taken back all the same
+      nothing under way                     ->  not at work
+    """
+    global _at_work
+    _at_work += 1
+    try:
+        yield
+    finally:
+        _at_work -= 1
+
+
+def at_work():
+    """Whether FinSnap is at work in the kernel, see working()."""
+    return _at_work > 0
 
 
 def keep(store, key, make, most=KEPT):
