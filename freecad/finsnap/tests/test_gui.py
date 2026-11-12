@@ -539,11 +539,11 @@ def profile_choices(doc):
            "a timer firing during a recompute, also of another document, puts its action off")
     panel.ends_timer.stop()
     App.listDocuments = all_documents
-    panel.building = True
-    panel.when_built(panel.ends_timer, lambda: done.append(True))
-    expect(not done and panel.ends_timer.isActive(), "so does one firing while the panel builds the fins itself")
+    from freecad.finsnap import shapes
+    with shapes.working():
+        panel.when_built(panel.ends_timer, lambda: done.append(True))
+    expect(not done and panel.ends_timer.isActive(), "so does one firing while FinSnap builds fins or checks a part")
     panel.ends_timer.stop()
-    panel.building = False
     panel.when_built(panel.ends_timer, lambda: done.append(True))
     expect(done == [True] and not panel.ends_timer.isActive(), "with no recompute running it is done")
 
@@ -1105,6 +1105,142 @@ def lost_release_keeps_selection(panel, fins):
         Gui.Selection.addSelection(fins.Document.Name, fins.Name, own)
     expect(len(others) > 0 and all(changed),
            "a release as the mouse sends it changes the selection at each of these places: %s" % changed)
+
+
+def timers_wait_for_builds(panel):
+    """While FinSnap builds fins or checks a part, whoever started it, and
+    while FreeCAD shows the progress of an operation, no timer of the panel
+    starts a build of its own: a build inside one under way can stop in the
+    kernel for good."""
+    import time
+    from freecad.finsnap import geometry, handles, shapes, taskpanel
+
+    def wait(ms):
+        end = time.monotonic() + ms / handles.MS_PER_SECOND
+        while time.monotonic() < end:
+            QtWidgets.QApplication.processEvents()
+
+    done = []
+    timer = panel.ends_timer
+    timer.stop()
+
+    def asked(what="done"):
+        """What a timer firing now does: its action, or nothing but start again."""
+        del done[:]
+        timer.stop()
+        panel.when_built(timer, lambda: done.append(what))
+        put_off = timer.isActive()
+        timer.stop()
+        return list(done), put_off
+
+    # The count of what is at work: one within another, and after an error.
+    with shapes.working():
+        outer = asked()
+        with shapes.working():
+            inner = shapes.at_work()
+        still = asked()
+    try:
+        with shapes.working():
+            raise ValueError("a build failing")
+    except ValueError:
+        pass
+    expect(outer == ([], True) and inner and still == ([], True) and not shapes.at_work()
+           and asked() == (["done"], False),
+           "while FinSnap is at work in the kernel, also after a build within it is through, a timer puts its "
+           "action off; once the outermost is through, and after one that raised, it is done")
+
+    # A build tried to see whether a fin can stand, the timer for the ends of the arrows firing in
+    # the middle of it, as the progress of FreeCAD lets it: no second build starts inside it.
+    builds = []
+    real_build = geometry._build
+    panel.known_ends.clear()
+
+    def firing(*args, **kwargs):
+        builds.append(shapes.at_work())
+        panel.when_built(timer, panel.update_ends)
+        return real_build(*args, **kwargs)
+
+    value = panel.next_values(handles.UP, panel.built_value(handles.UP))
+    geometry._build = firing
+    try:
+        timer.stop()
+        stands = [panel.can_stand(handles.UP, step) for _, step in value[:1]]
+        put_off = timer.isActive()
+    finally:
+        geometry._build = real_build
+        timer.stop()
+    expect(len(value) > 0 and builds == [True] and put_off and len(stands) == 1,
+           "a build tried for a fin, the timer for the ends of its arrows firing in the middle of it: FinSnap "
+           "counts as at work, the timer is put off, and no build is started inside the one under way: "
+           "%d builds" % len(builds))
+
+    # An operation of FreeCAD showing its progress: told by the probe.
+    free = taskpanel.operation_runs()
+    progress = App.Base.ProgressIndicator()
+    progress.start("at work", 0)
+    try:
+        running, during = taskpanel.operation_runs(), asked()
+    finally:
+        progress.stop()
+    expect(not free and running and during == ([], True) and not taskpanel.operation_runs()
+           and asked() == (["done"], False),
+           "while FreeCAD shows the progress of an operation the probe says one runs and a timer puts its "
+           "action off; before and after, it says none runs and the action is done")
+
+    # A probe that goes on saying an operation runs, with nothing else saying so, is not believed for ever.
+    probes = []
+    real_probe = taskpanel.operation_runs
+    taskpanel.operation_runs = lambda: probes.append(True) or True
+    try:
+        first = asked()
+        panel.probe_alone_since = time.monotonic() - taskpanel.PROBE_BELIEVED_S - 1
+        late = asked()
+        count = len(probes)
+        after = asked()
+    finally:
+        taskpanel.operation_runs = real_probe
+    expect(first == ([], True) and late == (["done"], False) and after == (["done"], False)
+           and len(probes) == count and not panel.probe_believed,
+           "a probe saying an operation runs for longer than it is believed, nothing else saying so: the "
+           "action is done, and the probe is not asked again for this panel")
+    panel.probe_believed, panel.probe_alone_since = True, None
+
+    # What is to be done later waits as the timers do, and keeps its order.
+    with shapes.working():
+        panel.once_free(lambda: done.append("first"))
+        panel.once_free(lambda: done.append("second"))
+        del done[:]
+        wait(4 * taskpanel.BUSY_RETRY_MS)
+        waiting = list(done)
+    wait(4 * taskpanel.BUSY_RETRY_MS)
+    in_order = list(done)
+    panel.released = True
+    try:
+        del done[:]
+        panel.once_free(lambda: done.append("closed"))
+        wait(4 * taskpanel.BUSY_RETRY_MS)
+    finally:
+        panel.released = False
+    expect(waiting == [] and in_order == ["first", "second"] and done == [] and panel.to_do == [],
+           "what is to be done later is not done while FinSnap is at work, then in its order, and not once "
+           "the panel is closed: %s, %s" % (waiting, in_order))
+
+    def failing():
+        raise ValueError("an action failing")
+
+    del done[:]
+    panel.free_timer.stop()
+    panel.to_do = [lambda: done.append("before"), failing, lambda: done.append("after")]
+    try:
+        panel.do_waiting()
+        raised = False
+    except ValueError:
+        raised = True
+    kept = len(panel.to_do)
+    wait(4 * taskpanel.BUSY_RETRY_MS)
+    expect(raised and kept == 1 and done == ["before", "after"] and panel.to_do == [],
+           "one of what is to be done later raising: its error passes on, and what came after it is kept "
+           "and done next: %s" % done)
 
 
 def arrow_field(panel, fins):
@@ -2660,6 +2796,7 @@ def main():
     released_without_button(moving.handles, "a box")
     lost_release_sent(moving.handles)
     lost_release_keeps_selection(moving, lined)
+    timers_wait_for_builds(moving)
     arrow_field(moving, lined)
     expect(all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(handles.axis_color("z"), AXIS_Z_RGB)),
            "the arrow up has the colour of the z axis: %s" % (handles.axis_color("z"),))

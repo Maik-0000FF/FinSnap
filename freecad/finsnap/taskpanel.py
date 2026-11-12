@@ -11,6 +11,7 @@ away and opens again as it was left.
 import functools
 import html
 import math
+import time
 
 import FreeCAD as App
 import FreeCADGui as Gui
@@ -31,7 +32,7 @@ from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
 from .paths import (ICON_CHECK_OUTDATED, ICON_CHECK_PART, ICON_COUNTER, ICON_REMOVE_COUNTER, ICON_REMOVE_FIN,
                     ICON_RESET_FINS, ICON_STABILITY, SIDE_VIEW, TOP_VIEW)
-from .shapes import FACE_PREFIX, global_shape, outermost
+from .shapes import FACE_PREFIX, at_work, global_shape, outermost, working
 from .version import NAME, application
 
 # Upper limits of the input fields; generous, the geometry rejects nonsense.
@@ -91,6 +92,15 @@ FIN_LIST_ROWS = 6
 # Pause after the arrows are put on a fin before trying where it can go, so a
 # run of rebuilds tries only once, after the last.
 ENDS_DELAY_MS = 300
+# How long the probe for an operation of FreeCAD is believed while it alone
+# says one runs (s): longer than an operation of another workbench the panel
+# would wait out takes, far shorter than a user waits for arrows that never
+# come.
+PROBE_BELIEVED_S = 60.0
+# How soon a timer put off because something is at work in the kernel asks
+# again at the least (ms): what is put off with no delay of its own would
+# otherwise ask without a pause.
+BUSY_RETRY_MS = 50
 # How close a fin let go beyond where it can stand comes to that limit, and
 # how far an arrow end looks ahead before it is left out (mm).
 SNAP_RESOLUTION = 0.1
@@ -552,6 +562,37 @@ class Section(QtWidgets.QWidget):
         self.header.setStyleSheet(SECTION_HEADER_STYLE + (MODIFIED_HEADER_STYLE if modified else ""))
 
 
+class _Reached(QtCore.QObject):
+    """Notes whether an event sent to it reaches it."""
+
+    def __init__(self):
+        super().__init__()
+        self.reached = False
+
+    def event(self, event):
+        self.reached = True
+        return True
+
+
+def operation_runs():
+    """Whether FreeCAD shows the progress of a long operation of the kernel,
+    its own or of any workbench. While one runs, its progress bar filters
+    the events of the application and drops, among others, every event
+    saying the mouse left something: one sent to an object of its own here
+    does not reach it then. It tells of no operation that shows no progress.
+
+    INPUTS this has to withstand:
+      no operation running                  ->  False: the event reaches its object
+      an operation showing its progress     ->  True: FreeCAD drops the event
+      the event dropped by something else,
+        as a FreeCAD that filters otherwise ->  True, wrongly: who asks does not
+                                                believe it for ever (busy())
+    """
+    probe = _Reached()
+    QtWidgets.QApplication.sendEvent(probe, QtCore.QEvent(QtCore.QEvent.Leave))
+    return not probe.reached
+
+
 class IgnoresWheel(QtCore.QObject):
     """Passes the mouse wheel on past a list whose choice sets every field, so
     scrolling the panel over it does not choose anything."""
@@ -801,9 +842,10 @@ class FinSnapTaskPanel:
         self.obj = obj
         # The profile active as the panel opened, for Cancel; None for the standard one.
         self.opened_profile = presets.active_profile()
-        # Whether the panel is building the fins itself: FreeCAD does not count
-        # the recompute of one object as a recompute of its document.
-        self.building = False
+        # When the probe for an operation of FreeCAD first said one runs with
+        # nothing else saying so (operation_runs()), and whether it is believed.
+        self.probe_alone_since = None
+        self.probe_believed = True
         # Whether the notes say a profile action was refused, until one succeeds.
         self.profile_refused = False
         # Fins just made: Cancel deletes them, then calls on_cancel, if any.
@@ -854,6 +896,12 @@ class FinSnapTaskPanel:
         self.ends_timer.setSingleShot(True)
         self.ends_timer.setInterval(ENDS_DELAY_MS)
         self.ends_timer.timeout.connect(functools.partial(self.when_built, self.ends_timer, self.update_ends))
+        # What is to be done once the events under way are through and nothing
+        # is being built (once_free()), in its order.
+        self.to_do = []
+        self.free_timer = QtCore.QTimer(self.form)
+        self.free_timer.setSingleShot(True)
+        self.free_timer.timeout.connect(functools.partial(self.when_built, self.free_timer, self.do_waiting))
         # The field of the fin with the handles changed, typed into or stepped,
         # and not taken yet: taken on Enter, on leaving it, or before the
         # arrows are grabbed or go to another fin; until then the panel leaves
@@ -1475,11 +1523,12 @@ class FinSnapTaskPanel:
         QtWidgets.QApplication.setOverrideCursor(QtCore.Qt.WaitCursor)
         try:
             # A failed build does not raise here; FreeCAD marks the object and
-            # keeps the message, which the panel has to show.
-            self.building = True
-            built = self.obj.recompute()
+            # keeps the message, which the panel has to show. FreeCAD does not
+            # count the recompute of one object as one of its document: the
+            # panel says itself that it is at work.
+            with working():
+                built = self.obj.recompute()
         finally:
-            self.building = False
             QtWidgets.QApplication.restoreOverrideCursor()
             bar.clearMessage()
         if not built:
@@ -2043,17 +2092,70 @@ class FinSnapTaskPanel:
         never return, so FreeCAD freezes.
 
         INPUTS this has to withstand:
-          no recompute running                  ->  done now
-          a recompute of this document running  ->  not done, the timer started again
+          nothing at work                       ->  done now
+          FinSnap building fins, whoever asked:
+            the panel recomputing them, a build
+            tried to see whether a fin can
+            stand, a command                    ->  not done, the timer started again
+          FinSnap checking a part: islands,
+            bridges, overhangs, stability, the
+            ways to stand it                    ->  the same
+          a recompute of this document running  ->  the same
           a recompute of another document       ->  the same: rebuild_fins() goes through
                                                     all of them, and it is one kernel
-          the panel building the fins itself    ->  the same
+          an operation of FreeCAD or another
+            workbench showing its progress      ->  the same, as long as the probe for it
+                                                    is believed (busy())
           several timeouts during a long one    ->  put off each time, done once after
         """
-        if self.building or any(document.Recomputing for document in App.listDocuments().values()):
-            timer.start()
+        if self.busy():
+            # No sooner than BUSY_RETRY_MS: a timer of no delay would fire again at once.
+            timer.start(max(timer.interval(), BUSY_RETRY_MS))
             return
         action()
+
+    def busy(self):
+        """Whether something is at work in the kernel, so nothing may be built
+        now: FinSnap itself (shapes.at_work()), a recompute of a document, or
+        an operation of FreeCAD or another workbench showing its progress
+        (operation_runs()). The first two are told outright; the last is a net
+        under them, taken from how FreeCAD behaves, and not believed for ever:
+        once it alone has said so for longer than PROBE_BELIEVED_S, with
+        neither of the others saying so, it is not asked again for this
+        panel, or a probe gone wrong would put every timer off for good."""
+        if at_work() or any(document.Recomputing for document in App.listDocuments().values()):
+            self.probe_alone_since = None
+            return True
+        if not self.probe_believed or not operation_runs():
+            self.probe_alone_since = None
+            return False
+        now = time.monotonic()
+        if self.probe_alone_since is None:
+            self.probe_alone_since = now
+        self.probe_believed = now - self.probe_alone_since <= PROBE_BELIEVED_S
+        return self.probe_believed
+
+    def once_free(self, action):
+        """Do `action` once the events under way are through and nothing is at
+        work in the kernel, after what was put here before it. A plain timer
+        of no delay fires inside a build started meanwhile as well."""
+        self.to_do.append(action)
+        self.free_timer.start(0)
+
+    def do_waiting(self):
+        """Do what once_free() was given, in its order; not once the panel is
+        closed. Where one of them raises, its error passes on and those after
+        it are kept, to be done next: one failing does not lose the others."""
+        while self.to_do:
+            action = self.to_do.pop(0)
+            if self.released:
+                continue
+            try:
+                action()
+            except Exception:
+                if self.to_do:
+                    self.free_timer.start(0)
+                raise
 
     def update_ends(self):
         """Leave out each end of an arrow where the handled fin cannot go.
@@ -2232,7 +2334,7 @@ class FinSnapTaskPanel:
         # under it, so the last step is made once the event is through.
         self.drag_timer.stop()
         self.dragged = None
-        QtCore.QTimer.singleShot(0, functools.partial(self.finish_drag, kind, mm))
+        self.once_free(functools.partial(self.finish_drag, kind, mm))
 
     def finish_drag(self, kind, mm):
         """An arrow let go: the fin goes where it is, or, where it cannot stand
@@ -2320,7 +2422,7 @@ class FinSnapTaskPanel:
         """The half `end` of the arrow of `kind` double clicked: a field past its
         tip, once the click and the arrow let go are through, as they put the
         keyboard on the field of the panel."""
-        QtCore.QTimer.singleShot(0, functools.partial(self.edit_at_arrow, kind, end))
+        self.once_free(functools.partial(self.edit_at_arrow, kind, end))
 
     def edit_at_arrow(self, kind, end=None):
         """Lay a field over the 3D view past the tip of the half `end` of the
@@ -2430,7 +2532,7 @@ class FinSnapTaskPanel:
         except RuntimeError:
             pass
         # Closed by FreeCAD first, the panel's form and its timers are gone already.
-        for timer in (self.timer, self.drag_timer, self.ends_timer, self.key_timer):
+        for timer in (self.timer, self.drag_timer, self.ends_timer, self.key_timer, self.free_timer):
             try:
                 timer.stop()
             except RuntimeError:

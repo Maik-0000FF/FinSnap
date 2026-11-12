@@ -35,7 +35,7 @@ from . import overhang
 from . import stability as standing
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .presets import PREFERENCES
-from .shapes import FACE_PREFIX, face_name, global_shape, keep, moved, shape_key
+from .shapes import FACE_PREFIX, face_name, global_shape, keep, moved, shape_key, working
 
 # Parts as they stand are kept by stand_key(), at most KEPT of them (shapes.keep()).
 # What an entry keeps: the islands, None until worked out; the bridges, by
@@ -158,6 +158,7 @@ def set_checks_while_editing(on):
     App.ParamGet(PREFERENCES).SetBool(ISLANDS_WHILE_EDITING, bool(on))
 
 
+@working()
 def islands(part_obj, p):
     """The islands (overhang.islands()) of `part_obj` as it stands, on the
     layers of `p`; fins do not count. Worked out once for the part as it
@@ -176,6 +177,7 @@ def keep_islands(part_obj, p, found):
     _analysis(part_obj, p)[ISLANDS] = list(found)
 
 
+@working()
 def bridges(part_obj, shape, supported, p):
     """The bridges (bridge.bridges()) of `part_obj` as it stands, its shape
     `shape`, on the layers and beads of `p`, rated by the limits of the
@@ -196,6 +198,7 @@ def _bridges(kept, shape, supported, p):
     return list(found)
 
 
+@working()
 def overhangs(part_obj, shape, supported, p, with_bridges=True):
     """(name, level) of the faces of `part_obj`, its shape `shape`, that
     overhang, faces in `supported` carried by fins left out, rated by the
@@ -291,6 +294,7 @@ def with_colours(note, shown):
     return note + "\n" + translate("FinSnap", NOTE_COLOURS) % limits.current().tipping_angle
 
 
+@working()
 def stability(part_obj, p, holders):
     """Whether `part_obj`, as it stands, stays standing while it is printed in
     the layers of `p`, as (level, note, shown): first the part alone; where it
@@ -363,6 +367,7 @@ RatedPlan = namedtuple("RatedPlan", "plan islands overhangs bridges")
 RATING_FIELDS = ("first_layer_height", "layer_height", "bead_width")
 
 
+@working()
 def printable_plans(shape, plans, p):
     """The QuickPlans `plans` for `shape` as RatedPlans, rated by the limits of
     the preferences: those that print, with no island, no face too flat and
@@ -401,6 +406,7 @@ def printable_plans(shape, plans, p):
     return clean or sorted(rated, key=lambda entry: (len(entry.islands), unprintable(entry)))
 
 
+@working()
 def rate_plans(shape, plans, p):
     """The QuickPlans `plans` for `shape` as RatedPlans, in the order given,
     each rated as printable_plans() rates them, with none left out."""
