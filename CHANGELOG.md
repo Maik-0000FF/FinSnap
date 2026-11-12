@@ -24,6 +24,7 @@ All notable changes to FinSnap are listed here. The format follows
 
 ### Fixed
 
+- After an arrow is let go while its fins are still being built, the view turns with the middle mouse button right away again: FreeCAD drops the release of the mouse while it builds, so the navigation went on taking the left button as down until the next left click. The release is now sent to the view once the loss is noticed (#233)
 - Fins kept while their part is laid flat again are rebuilt at the part once it stands again, instead of turned off it and reaching below the bed; a placement set on the fins by hand no longer moves them off the part either, and one held by an expression is named in a warning
 - Islands and bridges are found when the underside lies right on the middle of a layer or within the tolerance of it, which they were not for every second tenth of a millimetre with 0.2 mm layers; just below a middle the check of the islands failed with "Null shape". Where something starts near the middle of a layer, what carries it is now cut a little under that middle
 
