@@ -147,6 +147,15 @@ CLEAR_KEPT = 1024
 _kept_in_front = {}
 IN_FRONT_KEPT = 32
 IN_FRONT_SKIN = 1e-3
+# Where a fin is looked at for standing in what is in front of the face before it
+# is built (_Places.surely_in_part()): the shares of its blade's height and of its
+# width from the flank outward the points are taken at, by the flank, where a boss
+# on the face stands, and at the top and the outer edge, where a fin under an
+# overhang runs into it; and the share of the least distance allowed the points
+# beside it lie off it, so each is nearer the fin than that distance for sure.
+SURE_HEIGHT_SHARES = (0.99, 0.8, 0.5, 0.2)
+SURE_OUT_SHARES = (0.02, 0.98, 0.5)
+SURE_BESIDE_SHARE = 0.5
 # How a foot and a blade beside the lowest line look for where they keep the gap,
 # see _least_clear(): the first step out and how near it comes (mm).
 FOOT_SEARCH_STEP = 0.5
@@ -1042,6 +1051,15 @@ def _within(p, room):
     return replace(p, fin_height=room) if p.fin_height > room else p
 
 
+def _inside(solid, point):
+    """Whether `point` lies inside `solid`, not on its surface; False where the
+    kernel cannot tell."""
+    try:
+        return solid.isInside(point, d.TOLERANCE, False)
+    except Part.OCCError:
+        return False
+
+
 def in_front_of(part, frame):
     """What of `part` stands out in front of the plane of the planar face of
     `frame`, IN_FRONT_SKIN off it, as a boss does; None for nothing. Cut once
@@ -1089,7 +1107,7 @@ class _Places:
         self.p, self.part, self.support, self.stretch, self.whole_face = p, part, support, stretch, whole_face
         self.thickness, self.half_foot, self.tine_z, self.face_narrow = thickness, half_foot, tine_z, face_narrow
         self.restart, self.count, self.slices = restart, count, slices
-        self._tines, self._contact, self._clear = {}, {}, {}
+        self._tines, self._contact, self._clear, self._surely_in = {}, {}, {}, {}
 
     def reach(self, t, own):
         """How high the fin starting at t reaches above the bed: a height of
@@ -1128,9 +1146,74 @@ class _Places:
         key = (t, height, half_foot)
         if key not in self._clear:
             front = in_front_of(self.part, self.whole_face)
-            self._clear[key] = front is None or height <= d.TOLERANCE or self._body(t, height, half_foot).distToShape(
+            self._clear[key] = front is None or height <= d.TOLERANCE or not self.surely_in_part(
+                t, own, half_foot) and self._body(t, height, half_foot).distToShape(
                 front)[0] >= self.p.gap - d.TOLERANCE
         return self._clear[key]
+
+    def surely_in_part(self, t, own, half_foot=None):
+        """Whether the fin starting at t stands in what of the part stands out in
+        front of the face, or nearer it than clear_at() allows, told without
+        building it: a point of the fin, or one beside it nearer than the least
+        distance allowed, lies inside. Only yes is an answer: no leaves it to
+        clear_at(), which measures the fin built. Asked before holds() where a
+        place is searched, as that cuts through the part for every tine.
+
+        INPUTS this has to withstand:
+          nothing in front of the face          ->  False, no point asked
+          a point of the fin inside what stands
+            out                                 ->  True: no fin built, no tine measured
+          the part beside the fin, a point
+            beside it inside                    ->  True: nearer than the gap
+          the part beside the fin, further off
+            than those points                   ->  False: measured as before
+          a point on the surface of what stands
+            out                                 ->  False: not sure
+          a fin without a height                ->  False
+          what stands out in several solids     ->  each asked by itself
+          the kernel cannot tell where a point
+            lies                                ->  False for that solid
+          a fin with a foot, without one, with a
+            height of its own                   ->  every point inside the fin as built,
+                                                    or the given share of the gap off it
+          a frame along a contour or beside the
+            lowest line of a round side         ->  False, by decision: its blade has
+                                                    another shape, and it is measured
+        """
+        height = self.reach(t, own)
+        half_foot = self.half_foot if half_foot is None else half_foot
+        key = (t, height, half_foot)
+        if key not in self._surely_in:
+            front = in_front_of(self.part, self.whole_face)
+            self._surely_in[key] = front is not None and any(
+                _inside(solid, point) for point in self.sure_points(t, height, half_foot)
+                for solid in front.Solids if solid.BoundBox.isInside(point))
+        return self._surely_in[key]
+
+    def sure_points(self, t, height, half_foot):
+        """Points the fin starting at t, `height` high, holds or comes nearer than
+        the least distance clear_at() allows: in its blade at SURE_HEIGHT_SHARES
+        of its height above the foot and SURE_OUT_SHARES of its width there, and
+        in the middle of its foot, each in the middle of its thickness and
+        beside it on either side."""
+        p, frame = self.p, self.stretch
+        beside = (p.gap - d.TOLERANCE) * SURE_BESIDE_SHARE
+        if height <= d.TOLERANCE or beside <= 0 or frame.contour is not None or frame.flank_curve:
+            return []
+        middle = t + self.thickness / 2
+        _, low, s_from = _blade_ends(p, frame, t, height, self.thickness)
+        top, s_out = frame.bed_z + height, fin_out(p, frame, height)
+        # (s, z, how far to either side of the middle the fin reaches there)
+        held = []
+        if top - low > d.TOLERANCE:
+            for z in (low + (top - low) * share for share in SURE_HEIGHT_SHARES):
+                flank = flank_at(p, frame, z)
+                held += [(flank + (s_out - flank) * share, z, self.thickness / 2) for share in SURE_OUT_SHARES]
+        if s_from is not None and p.foot_height > d.TOLERANCE:
+            s_to = foot_span(p, frame, height)[1]
+            held.append(((s_from + s_to) / 2, frame.bed_z + p.foot_height / 2, max(half_foot, self.thickness / 2)))
+        return [frame.point(at, s, z) for s, z, half in held
+                for at in (middle, middle - half - beside, middle + half + beside)]
 
     def _body(self, t, height, half_foot):
         """The fin starting at t and `height` high, its foot `half_foot` wide to
@@ -1438,7 +1521,8 @@ def _plan(part, frame, support, p, all_z, face_height, reach, count, restart, le
                 raise refused(translate("FinSnap", NOTE_FIN_IN_PART) % number, HandEditError)
 
             def clear_and_resting(t, own=own):
-                return places.holds(t, own, p.tine_height) and places.clear_at(t, own)
+                return (not places.surely_in_part(t, own) and places.holds(t, own, p.tine_height)
+                        and places.clear_at(t, own))
             moved_to = nearest_place(whole_face, p.end_inset, clear_and_resting, t0, thickness, others)
             if moved_to is None:
                 # Named where it was planned, as the user knows it.
