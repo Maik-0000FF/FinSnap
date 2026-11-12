@@ -66,6 +66,8 @@ BRIM_CORNER_POINTS = 16
 # What each triangle of the mesh adds to the centres of mass, see _Below: its
 # volume and its moments along x, y and z.
 INTEGRALS = 4
+# The corner after each of a triangle, by number, the way it turns.
+NEXT_CORNER = [1, 2, 0]
 
 # The result of check(): whether the part tips; the layer (from 0, the first)
 # it tips at or, if it stands, has its smallest tipping angle at, and the height of
@@ -207,16 +209,24 @@ class _Below:
         # The sums of the triangles up to each, in the order of their tops.
         self.summed = numpy.vstack([numpy.zeros(INTEGRALS), numpy.cumsum(_integrals(self.triangles), axis=0)])
 
+    def sums(self, height):
+        """The volume of the part below `height` and its moments along x, y
+        and z, a row of INTEGRALS: the triangles lying wholly below summed
+        as kept, those crossing the height clipped at it (_clipped()). A
+        triangle touching the height from above with a corner or a side
+        lies neither below nor across it and adds nothing."""
+        whole = int(numpy.searchsorted(self.tops, height, side="right"))
+        sums = self.summed[whole]
+        # Of the triangles not summed whole, those reaching below the height.
+        crossing = self.bottoms[whole:] < height
+        if not crossing.any():
+            return sums
+        return sums + _clipped(self.triangles[whole:][crossing], height)
+
     def centre(self, height):
         """The centre of mass of the part below `height`, as an App.Vector;
         None where nothing of it lies below."""
-        whole = int(numpy.searchsorted(self.tops, height, side="right"))
-        sums = self.summed[whole].copy()
-        # Of the triangles not summed whole, those reaching below the height.
-        crossing = whole + numpy.flatnonzero(self.bottoms[whole:] < height)
-        pieces = [piece for number in crossing for piece in _clipped(self.triangles[number].tolist(), height)]
-        if pieces:
-            sums += _integrals(numpy.array(pieces)).sum(axis=0)
+        sums = self.sums(height)
         volume = sums[0]
         if volume <= 0:
             return None
@@ -226,28 +236,75 @@ class _Below:
 def _integrals(triangles):
     """The volume and the moments along x, y and z each of `triangles`, an
     array of triangles of three (x, y, z) corners counterclockwise seen from
-    outside, adds, see _Below: one row of INTEGRALS for each."""
+    outside, adds, see _Below: one row of INTEGRALS for each; no rows of no
+    triangles."""
     a, b, c = triangles[:, 0], triangles[:, 1], triangles[:, 2]
     # Twice the area of each triangle times the x part of its normal.
     normal_x = (b[:, 1] - a[:, 1]) * (c[:, 2] - a[:, 2]) - (b[:, 2] - a[:, 2]) * (c[:, 1] - a[:, 1])
-    middles = ((a + b) / 2, (b + c) / 2, (c + a) / 2)
-    sums = numpy.stack([sum(m[:, 0] for m in middles), sum(m[:, 0] * m[:, 0] / 2 for m in middles),
-                        sum(m[:, 0] * m[:, 1] for m in middles), sum(m[:, 0] * m[:, 2] for m in middles)], axis=1)
+    # The middles of the three sides of each, and their x.
+    middles = (triangles + triangles[:, NEXT_CORNER]) / 2
+    x = middles[:, :, 0]
+    sums = numpy.empty((len(triangles), INTEGRALS))
+    sums[:, 0] = x.sum(axis=1)
+    # Over the middles of each triangle: x times x, x times y and x times z.
+    sums[:, 1:] = numpy.einsum("nm,nmk->nk", x, middles)
+    sums[:, 1] /= 2
     # The area times the mean of the three middles.
     return sums * (normal_x / 6)[:, None]
 
 
-def _clipped(triangle, height):
-    """The part of `triangle`, three (x, y, z) corners, below `height`, as
-    triangles, turning as it does."""
-    outline = []
-    for start, end in zip(triangle, triangle[1:] + triangle[:1]):
-        if start[2] <= height:
-            outline.append(start)
-        if (start[2] <= height) != (end[2] <= height):
-            share = (height - start[2]) / (end[2] - start[2])
-            outline.append([s + share * (e - s) for s, e in zip(start, end)])
-    return [(outline[0], outline[k], outline[k + 1]) for k in range(1, len(outline) - 1)]
+def _clipped(triangles, height):
+    """What the parts below `height` of `triangles` add to the volume and the
+    moments of a part (_integrals()), a row of INTEGRALS: `triangles` an
+    array of triangles of three (x, y, z) corners, each crossing the height,
+    its lowest corner below it and its highest above. A corner right on the
+    height counts as below.
+
+    One corner of such a triangle lies alone on its side of the height, and
+    its two sides from that corner cross it, the corner lying strictly on
+    the other side than both others; the third side is never cut, be it
+    level or not. The corner and where those two sides cross the height make
+    the piece at that corner. Where the corner is the one below, the piece
+    is what lies below. Where it is the one above, what lies below is the
+    triangle less the piece: the sums are over areas turning one way, so
+    they take off as they add.
+
+    The two other corners are taken in the order the triangle has them,
+    which is the way it turns but where the corner alone is its second:
+    there the piece turns the other way and is counted the other way round.
+
+    INPUTS this has to withstand:
+      one corner below, two above           ->  the piece at that corner
+      two corners below, one above          ->  the triangle less the piece at the corner
+                                                above
+      one below, one right on the height,
+        one above                           ->  as two below: the side to the corner on the
+                                                height is cut at that corner
+      a level side, two corners as high as
+        each other, above or below          ->  not cut, nothing divided by nought
+      the corner alone the first, the
+        second or the third of its triangle ->  the same sums: the way the triangle turns
+                                                is kept, a piece turned the other way would
+                                                be taken off the volume
+      a triangle with a corner on the
+        height and the others above, one
+        wholly above or wholly below        ->  not for here: _Below.sums() sums it whole
+                                                or leaves it out
+      no triangles                          ->  noughts
+    """
+    below = triangles[:, :, 2] <= height
+    two = below.sum(axis=1) == 2
+    # The corner alone on its side: the one below, or of two below the one above.
+    alone = below != two[:, None]
+    corner = triangles[alone][:, None]
+    others = triangles[~alone].reshape(-1, 2, triangles.shape[2])
+    share = (height - corner[:, :, 2]) / (others[:, :, 2] - corner[:, :, 2])
+    pieces = numpy.concatenate([corner, corner + share[:, :, None] * (others - corner)], axis=1)
+    # Summed in one go, which tells on a few triangles: the pieces, taken off
+    # where the corner is the one above or, the other way round, where it is
+    # the second of its triangle, and the triangles they are taken off.
+    taken = numpy.concatenate([numpy.where(two != alone[:, 1], -1.0, 1.0), numpy.ones(int(two.sum()))])
+    return taken @ _integrals(numpy.concatenate([pieces, triangles[two]]))
 
 
 def _foot_points(shape, z):

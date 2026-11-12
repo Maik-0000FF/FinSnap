@@ -2768,6 +2768,69 @@ def check_centres():
         expect(below.centre(box.ZMin - CENTRE_CUT_MARGIN) is None, "%s: below it, no centre" % name)
     expect(stability._Below(Part.Shape()).centre(1.0) is None, "an empty part has no centre")
 
+    # A cube standing on an edge: below a height up to its middle lies a prism over a right-angled
+    # triangle as high as that and twice as wide. Its middle goes through two edges and their corners.
+    cube = Part.makeBox(EDGE, EDGE, EDGE)
+    on_edge = cube.rotated(V(), V(0, 1, 0), -HALF_TURN / 4)
+    on_edge.translate(V(0, 0, -on_edge.BoundBox.ZMin))
+    middle = EDGE / math.sqrt(2)
+    below = stability._Below(on_edge)
+    for height in (middle / 2, middle - BESIDE, middle):
+        volume, centre = below.sums(height)[0], below.centre(height)
+        expect(abs(volume - EDGE * height * height) < CENTRE_FLAT_TOLERANCE * EDGE ** 2
+               and abs(centre.z - 2 * height / 3) < CENTRE_FLAT_TOLERANCE
+               and abs(centre.y - EDGE / 2) < CENTRE_FLAT_TOLERANCE and abs(centre.x) < CENTRE_FLAT_TOLERANCE,
+               "a cube on an edge below %.5f mm, its middle through two edges at %.5f mm: a prism of %.4f mm3, "
+               "its centre two thirds up: %.4f mm3, %s" % (height, middle, EDGE * height * height, volume, centre))
+    upper = middle + BESIDE
+    above = EDGE * (2 * middle - upper) ** 2
+    expect(abs(below.sums(upper)[0] - (EDGE ** 3 - above)) < CENTRE_FLAT_TOLERANCE * EDGE ** 2,
+           "just above its middle, the cube less the prism above: %.4f mm3" % below.sums(upper)[0])
+    # A cube standing on a corner: below the three corners next to it lies a pyramid of three edges
+    # of the cube, its centre three quarters up.
+    diagonal = V(1, 1, 1)
+    on_corner = cube.rotated(V(), diagonal.cross(V(0, 0, 1)), math.degrees(diagonal.getAngle(V(0, 0, 1))))
+    on_corner.translate(V(0, 0, -on_corner.BoundBox.ZMin))
+    corners = EDGE / math.sqrt(3)
+    below = stability._Below(on_corner)
+    for height in (corners / 2, corners - BESIDE, corners):
+        volume, centre = below.sums(height)[0], below.centre(height)
+        wanted = (height * math.sqrt(3)) ** 3 / 6
+        expect(abs(volume - wanted) < CENTRE_FLAT_TOLERANCE * EDGE ** 2
+               and abs(centre.z - 3 * height / 4) < CENTRE_FLAT_TOLERANCE,
+               "a cube on a corner below %.5f mm, its three next corners at %.5f mm: a pyramid of %.4f mm3, its "
+               "centre three quarters up: %.4f mm3, %s" % (height, corners, wanted, volume, centre))
+
+    # Single triangles: what lies below a height adds what its pieces, cut out by hand and turning
+    # as the triangle, add, whichever corner comes first; turned the other way they would take it off.
+    def adds(*triangles):
+        return stability._integrals(numpy.array(triangles, dtype=float)).sum(axis=0)
+
+    def turned(corners):
+        return [corners[turn:] + corners[:turn] for turn in range(3)]
+
+    cases = (("one corner below a height, its level side above", [(0, 0, 0), (1, 0, 2), (0, 1, 2)],
+              [[(0, 0, 0), (0.5, 0, 1), (0, 0.5, 1)]]),
+             ("two corners below a height, its level side below", [(0, 0, 2), (1, 0, 0), (0, 1, 0)],
+              [[(0.5, 0, 1), (1, 0, 0), (0, 1, 0)], [(0.5, 0, 1), (0, 1, 0), (0, 0.5, 1)]]),
+             ("one corner below a height, one right on it and one above", [(0, 0, 0), (1, 0, 1), (0, 1, 2)],
+              [[(0, 0, 0), (1, 0, 1), (0, 0.5, 1)]]))
+    for what, triangle, below_height in cases:
+        wanted = adds(*below_height)
+        for corners in turned(triangle):
+            found = stability._clipped(numpy.array([corners], dtype=float), 1)
+            expect(numpy.isfinite(found).all() and numpy.abs(found - wanted).max() < d.TOLERANCE
+                   and abs(wanted[0]) > d.TOLERANCE,
+                   "a triangle with %s, starting at %s, adds what its part below adds, turning as it does: %s"
+                   % (what, corners[0], [round(float(value), CUTS_DIGITS) for value in found]))
+    expect(not stability._clipped(numpy.empty((0, 3, 3)), 1).any(), "no triangles add nothing")
+    # A triangle touching a height from above, with a corner or a side, adds nothing below it.
+    upright = Part.makeBox(EDGE, EDGE, EDGE, V(0, 0, EDGE))
+    expect(abs(stability._Below(upright).sums(EDGE)[0]) < d.TOLERANCE
+           and stability._Below(upright).centre(EDGE) is None,
+           "a box standing on a height has nothing below it, the triangles of its sides touching the height "
+           "from above left out")
+
 
 def check_stability():
     """Whether a part stays standing while it is printed, layer by layer."""
