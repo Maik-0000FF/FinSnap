@@ -554,8 +554,9 @@ class LostRelease(QtCore.QObject):
                                                 viewport, at the mouse, once the events
                                                 under way are through
       the buttons and keys held then        ->  in the release as they stand, the middle
-                                                and the right button, Shift and Ctrl; the
-                                                left button alone is not among them
+                                                and the right button, Shift and Alt; the
+                                                left button alone is not among them, and
+                                                Ctrl is always said to be held
       the mouse outside the viewport        ->  sent all the same, with that place
       send() while one is under way         ->  no second one
       the left button down again when it
@@ -569,10 +570,22 @@ class LostRelease(QtCore.QObject):
         view is let go of                   ->  nothing sent, nothing more tried
       the viewport gone                     ->  this goes with it, nothing sent
       a part or a fin under the mouse when
-        the release is sent                 ->  not selected, and what is selected stays:
-                                                a release reaching the scene selects what
-                                                lies under it, so the view is told not to
-                                                select (`selecting`) while it is sent
+        the release is sent                 ->  not selected: a release reaching the scene
+                                                selects what lies under it, so the view is
+                                                told not to select (`selecting`) while it
+                                                is sent
+      something selected, a face of a fin
+        or of the part, wherever the mouse
+        is                                  ->  stays selected: after a release that
+                                                selected nothing the navigation of FreeCAD
+                                                empties the selection, but for one with
+                                                Ctrl held, so the release says Ctrl is.
+                                                With the view not selecting meanwhile, that
+                                                Ctrl toggles nothing under the mouse either
+      the navigation, whichever of those
+        FreeCAD has                         ->  the selection stays and the view does not
+                                                move with the mouse after: each takes the
+                                                keys held anew from the next event
       the view not selecting as it is       ->  left so, before and after
       a view without that switch            ->  sent all the same
       the release dropped on its way        ->  the switch as it was all the same
@@ -604,8 +617,11 @@ class LostRelease(QtCore.QObject):
         if buttons & QtCore.Qt.LeftButton:
             return
         where = QtGui.QCursor.pos()
+        # With Ctrl held, as far as the release says: the navigation empties
+        # the selection after a release that selected nothing, but for such a one.
+        keys = QtWidgets.QApplication.keyboardModifiers() | QtCore.Qt.ControlModifier
         release = QtGui.QMouseEvent(QtCore.QEvent.MouseButtonRelease, self.viewport.mapFromGlobal(where), where,
-                                    QtCore.Qt.LeftButton, buttons, QtWidgets.QApplication.keyboardModifiers())
+                                    QtCore.Qt.LeftButton, buttons, keys)
         self.seen = False
         # The arrow that would have taken the release is let go: sent now, it
         # reaches the scene, which selects what lies under it. Not this one.

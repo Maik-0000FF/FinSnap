@@ -1039,6 +1039,74 @@ def lost_release_sent(arrows):
     expect(gone.got == [], "a view gone before the release is sent gets none, and nothing is raised")
 
 
+def lost_release_keeps_selection(panel, fins):
+    """The release sent to the 3D view for one FreeCAD dropped leaves what is
+    selected as it is and the arrows on their fin, wherever the mouse is: over
+    another fin, over the empty view, over an arrow. A release as the mouse
+    itself sends it, at the same places, does change the selection: so the
+    places are ones where it counts."""
+    import time
+    from PySide import QtCore, QtGui
+    from freecad.finsnap import feature, handles
+    arrows = panel.handles
+    viewport = arrows.view.graphicsView().viewport()
+    which, number = panel.handled
+    others = [fin for fin in panel.built_fins() if fin != panel.handled]
+    own = "Face%d" % (feature.fin_faces(fins, which, number)[0] + 1)
+
+    def wait(ms):
+        end = time.monotonic() + ms / handles.MS_PER_SECOND
+        while time.monotonic() < end:
+            QtWidgets.QApplication.processEvents()
+
+    def on_screen(world):
+        """Where the point `world` shows, on the screen."""
+        aspect = arrows.viewer.getSoRenderManager().getViewportRegion().getViewportAspectRatio()
+        volume = arrows.view.getCameraNode().getViewVolume(aspect)
+        x, y, _ = volume.projectToScreen(coin.SbVec3f(*world)).getValue()
+        return viewport.mapToGlobal(QtCore.QPoint(round(x * viewport.width()), round((1 - y) * viewport.height())))
+
+    def selected():
+        return [(found.ObjectName, tuple(found.SubElementNames)) for found in Gui.Selection.getSelectionEx()]
+
+    def select_own():
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(fins.Document.Name, fins.Name, own)
+        return selected()
+
+    (x0, y0), (x1, y1) = arrows.tip_points(handles.UP)
+    other_face = fins.Shape.Faces[feature.fin_faces(fins, *others[0])[0]]
+    places = (("over another fin", on_screen(other_face.CenterOfMass)),
+              ("over the empty view", viewport.mapToGlobal(QtCore.QPoint(1, viewport.height() - 2))),
+              ("over an arrow", viewport.mapToGlobal(QtCore.QPoint(round((x0 + x1) / 2 * viewport.width()),
+                                                                   round((y0 + y1) / 2 * viewport.height())))))
+    real_pos = QtGui.QCursor.pos
+    through = 4 * handles.RELEASE_RETRY_MS
+    changed = []
+    try:
+        for where, at in places:
+            QtGui.QCursor.pos = staticmethod(lambda at=at: QtCore.QPoint(at))
+            before = select_own()
+            arrows._send_release()
+            wait(through)
+            expect(before and selected() == before and panel.handled == (which, number),
+                   "the release sent %s: what is selected stays selected, the arrows stay on their fin: %s"
+                   % (where, selected()))
+            # As the mouse itself sends it: no Ctrl held, the view selecting.
+            before = select_own()
+            plain = QtGui.QMouseEvent(QtCore.QEvent.MouseButtonRelease, viewport.mapFromGlobal(at), at,
+                                      QtCore.Qt.LeftButton, QtCore.Qt.NoButton, QtCore.Qt.NoModifier)
+            QtWidgets.QApplication.sendEvent(viewport, plain)
+            wait(through)
+            changed.append(selected() != before)
+    finally:
+        QtGui.QCursor.pos = real_pos
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(fins.Document.Name, fins.Name, own)
+    expect(len(others) > 0 and all(changed),
+           "a release as the mouse sends it changes the selection at each of these places: %s" % changed)
+
+
 def arrow_field(panel, fins):
     """A double click on an arrow lays a field over the 3D view at it, with
     the value of its field in the panel: Escape drops it, Enter takes what is
@@ -2591,6 +2659,7 @@ def main():
            "the arrows stay the same after a move; Coin may still hold the one let go")
     released_without_button(moving.handles, "a box")
     lost_release_sent(moving.handles)
+    lost_release_keeps_selection(moving, lined)
     arrow_field(moving, lined)
     expect(all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(handles.axis_color("z"), AXIS_Z_RGB)),
            "the arrow up has the colour of the z axis: %s" % (handles.axis_color("z"),))
