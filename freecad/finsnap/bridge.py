@@ -138,10 +138,17 @@ def bridges(shape, first_layer, layer, bead, rating, supported=(), starts=None):
         here, below = cut(bed + at.here), cut(bed + at.below)
         if not here or not below:
             continue
-        # The outlines of what carries the layer, taken once for all its regions.
+        # The outlines of what carries the layer, taken once for all its regions,
+        # and the corners of the faces hanging in it, by their numbers in order.
         supports = None
+        corners = {number: _corners(part_faces[number - 1]) for number in numbers}
         for region in _free(here, below):
             if _strip(region, bead):
+                continue
+            # The faces first: they are told fast, and under none of them the
+            # region is no bridge of theirs, so its lines need not be laid.
+            under = _over(region, corners, bead)
+            if not under:
                 continue
             if supports is None:
                 supports = _supports(below, bead)
@@ -149,12 +156,10 @@ def bridges(shape, first_layer, layer, bead, rating, supported=(), starts=None):
             if bridged is None:
                 continue
             span, lines, spacing = bridged
-            under = [n for n in numbers if _lies_over(part_faces[n - 1], region, bead)]
-            if under:
-                ceiling = bed + min(starts.lowest[n] for n in under)
-                covered = [n for n in under if _covered(part_faces[n - 1], lines, spacing)]
-                found.append(Bridge(under, covered, region.translated(App.Vector(0, 0, ceiling)), span,
-                                    rating.bridge_level(span)))
+            ceiling = bed + min(starts.lowest[n] for n in under)
+            covered = [n for n in under if _covered(part_faces[n - 1], lines, spacing)]
+            found.append(Bridge(under, covered, region.translated(App.Vector(0, 0, ceiling)), span,
+                                rating.bridge_level(span)))
     return found
 
 
@@ -500,13 +505,65 @@ def _covered(face, lines, spacing):
     return bool((numpy.hypot(px - (ax + along * dx), py - (ay + along * dy)).min(axis=1) <= spacing).all())
 
 
-def _lies_over(face, region, bead):
-    """Whether `face` of the part lies over `region`, a free region in the
-    plane of the bed: one of its corners or its middle, seen from above,
-    within half a bead of it."""
+def _corners(face):
+    """The corners of `face` of the part and its middle, seen from above, as
+    (x, y) each; the middle alone of a face without corners."""
     u0, u1, v0, v1 = face.ParameterRange
     points = [vertex.Point for vertex in face.Vertexes] + [face.valueAt((u0 + u1) / 2, (v0 + v1) / 2)]
+    return [(point.x, point.y) for point in points]
+
+
+def _box(region):
+    """The box around `region`, taken from its geometry and not from a mesh
+    it may carry, which lies within a curved side by its deflection; None
+    where the kernel cannot tell it."""
     try:
-        return any(region.distToShape(Part.Vertex(App.Vector(p.x, p.y, 0)))[0] <= bead / 2 for p in points)
+        return region.optimalBoundingBox(False, False)
     except KERNEL_ERRORS:
-        return False
+        return None
+
+
+def _over(region, corners, bead):
+    """The numbers of the faces of the part lying over `region`, a free
+    region in the plane of the bed, in the order of `corners`, which holds
+    the points of each face by its number (_corners()): a face lies over the
+    region where one of its points is within half a bead of it.
+
+    The distance of a point is measured by the kernel. A point further than
+    half a bead and the tolerance outside the box around the region cannot be
+    that near, and is not measured.
+
+    INPUTS this has to withstand:
+      a face far beside the region          ->  not over it, the kernel not asked
+      a point of a face in the grown box,
+        within half a bead of the region    ->  the face lies over it
+      a point in the box, yet further off,
+        as in the corner of an L or within
+        a ring                              ->  measured, does not count
+      every point of a face outside the box ->  not over it, nothing measured
+      a point right on the edge of the box  ->  in it: measured
+      a region with curved sides carrying
+        a mesh                              ->  the box is taken without the mesh (_box())
+      a region the kernel can tell no box
+        of                                  ->  every point measured, as without a box
+      a face without corners, a full disc   ->  its middle alone
+      the kernel raising on a point of a
+        face                                ->  that face not over the region; a point
+                                                turned away by the box is not measured
+                                                and cannot raise
+      no faces                              ->  []
+      the order                             ->  that of `corners`
+    """
+    box = _box(region)
+    reach = bead / 2 + d.TOLERANCE
+    found = []
+    for number, points in corners.items():
+        near = points if box is None else [
+            (x, y) for x, y in points
+            if box.XMin - reach <= x <= box.XMax + reach and box.YMin - reach <= y <= box.YMax + reach]
+        try:
+            if any(region.distToShape(Part.Vertex(App.Vector(x, y, 0)))[0] <= bead / 2 for x, y in near):
+                found.append(number)
+        except KERNEL_ERRORS:
+            continue
+    return found
