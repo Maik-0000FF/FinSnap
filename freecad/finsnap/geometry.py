@@ -1108,6 +1108,16 @@ class _Places:
         self.thickness, self.half_foot, self.tine_z, self.face_narrow = thickness, half_foot, tine_z, face_narrow
         self.restart, self.count, self.slices = restart, count, slices
         self._tines, self._contact, self._clear, self._surely_in = {}, {}, {}, {}
+        # What front() found, once it was asked.
+        self._front = []
+
+    def front(self):
+        """What of the part stands out in front of the face (in_front_of()), None
+        for nothing, asked once for all the places: asking again works out the
+        key of the part each time, which takes as long as telling a place."""
+        if not self._front:
+            self._front.append(in_front_of(self.part, self.whole_face))
+        return self._front[0]
 
     def reach(self, t, own):
         """How high the fin starting at t reaches above the bed: a height of
@@ -1145,7 +1155,7 @@ class _Places:
         half_foot = self.half_foot if half_foot is None else half_foot
         key = (t, height, half_foot)
         if key not in self._clear:
-            front = in_front_of(self.part, self.whole_face)
+            front = self.front()
             self._clear[key] = front is None or height <= d.TOLERANCE or not self.surely_in_part(
                 t, own, half_foot) and self._body(t, height, half_foot).distToShape(
                 front)[0] >= self.p.gap - d.TOLERANCE
@@ -1184,7 +1194,7 @@ class _Places:
         half_foot = self.half_foot if half_foot is None else half_foot
         key = (t, height, half_foot)
         if key not in self._surely_in:
-            front = in_front_of(self.part, self.whole_face)
+            front = self.front()
             self._surely_in[key] = front is not None and any(
                 _inside(solid, point) for point in self.sure_points(t, height, half_foot)
                 for solid in front.Solids if solid.BoundBox.isInside(point))
