@@ -18,6 +18,7 @@ All notable changes to FinSnap are listed here. The format follows
 - The islands and the bridges of a part share the cuts of its layers, and the bridges worked out again, as when fins are changed, take them as they were cut: for stairs of 40 steps under a slab both checks take 0.8 s instead of 1.2 s and the bridges again 0.2 s instead of 0.5 s. The cuts are kept for the part as it stands that was checked last, up to 20000 edges, some forty to eighty megabytes, and dropped when a document is closed
 - The first layers of the islands of a part, shown in the air, are cut out of it together, up to 256 in one cut, instead of in a cut of the whole part for each island: the islands of a comb of 200 teeth take 5.5 s instead of 18.7 s, those of one of 60 teeth 1.3 s instead of 2.3 s, a single island 0.02 s as before
 - The lowest points of a part and the cuts of its layers are sorted by their boxes before the kernel is asked where an island starts, which tells most on round undersides, whose mesh has many lowest points: the islands of a comb of 200 round teeth take 3.7 s instead of 16.1 s, of 60 round teeth 0.9 s instead of 1.9 s, of 200 square teeth 4.5 s instead of 5.4 s
+- The faces a bridge lies under are told by the box around its free region before the kernel measures how far their corners are from it, and the lines of a region under no face that counts are not laid: the bridges of 64 tables side by side take 4.1 s instead of 16.0 s, with every second top carried by fins 3.1 s instead of 10.1 s
 
 ### Fixed
 

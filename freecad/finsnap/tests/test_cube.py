@@ -747,6 +747,102 @@ def check_bridge_lines():
            "rim, and the lines rest on the plate around it: %s" % (LINES_FACETS, middle))
 
 
+def check_bridge_faces():
+    """The faces of a part lying over a free region, their points turned away by the box around
+    the region before the kernel measures how far they are from it."""
+    first, layer, bead = d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, d.BEAD_WIDTH
+    side, near, far = 10.0, bead / 4, bead
+    region = plate(0, 0, side, side)
+    corners = {7: [(side / 2, side / 2)], 3: [(OUT_OF_REACH, 0)], 5: [(OUT_OF_REACH, 0), (side + near, side / 2)],
+               4: [(side + far, side / 2)], 9: [(side + bead / 2, 0)]}
+    expect(bridging._over(region, corners, bead) == [7, 5, 9] and bridging._over(region, {}, bead) == [],
+           "the faces with a point within half a bead of a region lie over it, one right at half a bead "
+           "among them, in the order given; no faces, none: %s" % bridging._over(region, corners, bead))
+    # A point in the box around a region, yet far from the region: in the hole of a ring.
+    ring = plate(0, 0, side, side, hole=(side / 4, side / 4, 3 * side / 4, 3 * side / 4))
+    within = {1: [(side / 2, side / 2)], 2: [(side / 2, side / 2), (side / 8, side / 8)]}
+    expect(bridging._over(ring, within, bead) == [2],
+           "a face with its only point in the hole of a ring does not lie over the ring, one with a point "
+           "on the ring as well does: %s" % bridging._over(ring, within, bead))
+
+    class Region:
+        """A region standing in for one of the kernel: its box, or none to be had, and what it
+        is asked to measure, raising where told."""
+
+        def __init__(self, box=None, raising=False):
+            self.box, self.raising, self.asked = box, raising, []
+
+        def optimalBoundingBox(self, mesh, tolerance):
+            self.took = (mesh, tolerance)
+            if self.box is None:
+                raise Part.OCCError("no box")
+            return self.box
+
+        def distToShape(self, vertex):
+            self.asked.append((vertex.Point.x, vertex.Point.y))
+            if self.raising:
+                raise Part.OCCError("no distance")
+            return (0.0,)
+
+    box = App.BoundBox(0, 0, 0, side, side, 0)
+    edge = side + bead / 2 + d.TOLERANCE
+    boxed = Region(box)
+    expect(bridging._over(boxed, {1: [(edge, 0), (0, -bead / 2 - d.TOLERANCE)], 2: [(edge + BESIDE, 0)],
+                                  3: [(0, edge + BESIDE)]}, bead) == [1]
+           and boxed.asked == [(edge, 0)] and boxed.took == (False, False),
+           "a point right on the edge of the box around a region, grown by half a bead and the tolerance, "
+           "is measured, one beside it is not; the box is taken without a mesh: %s" % boxed.asked)
+    unboxed = Region()
+    expect(bridging._over(unboxed, {1: [(OUT_OF_REACH, 0)], 2: [(0, OUT_OF_REACH)]}, bead) == [1, 2]
+           and len(unboxed.asked) == 2,
+           "of a region the kernel can tell no box of, every point is measured")
+    failing = Region(box, raising=True)
+    expect(bridging._over(failing, {1: [(side / 2, side / 2)], 2: [(OUT_OF_REACH, 0)]}, bead) == []
+           and failing.asked == [(side / 2, side / 2)],
+           "the kernel raising on a point of a face, the face does not lie over the region; a point turned "
+           "away by the box is not measured and cannot raise")
+    disc = Part.Face(Part.Wire(Part.makeCircle(side)))
+    expect(sorted(bridging._corners(region)) == sorted([(0, 0), (side, 0), (0, side), (side, side),
+                                                        (side / 2, side / 2)]),
+           "the corners of a face and its middle are its points, seen from above: %s" % bridging._corners(region))
+    expect(len(bridging._corners(disc)) == 2 and bridging._corners(disc)[-1] != bridging._corners(disc)[0],
+           "a disc has the one corner of its edge and its middle: %s" % bridging._corners(disc))
+
+    # Slabs on piers side by side: the bridges found with the boxes are those found measuring every point.
+    pitch = 2 * PIER[0] + GAP_CRITICAL + PIER[0]
+    row = Part.makeCompound([piers(GAP_CRITICAL).translated(V(step * pitch, 0, 0)) for step in range(COMB_TEETH)])
+
+    def told(found):
+        return [(bridge.faces, bridge.covered, round(bridge.span, CUTS_DIGITS), bridge.level,
+                 round(bridge.region.Area, CUTS_DIGITS)) for bridge in found]
+
+    found = find_bridges(row, first, layer, bead, limits.Limits())
+    real_box = bridging._box
+    bridging._box = lambda region: None
+    try:
+        measured = find_bridges(row, first, layer, bead, limits.Limits())
+    finally:
+        bridging._box = real_box
+    expect(len(found) == COMB_TEETH and told(found) == told(measured)
+           and all(len(bridge.faces) == 1 for bridge in found),
+           "%d slabs on piers side by side: each bridge lies under its own face alone, found with the boxes "
+           "as measuring every point, in the same order: %s" % (COMB_TEETH, told(found)))
+    # A region under no face that counts, as under one carried by fins: its lines are not laid.
+    undersides = [face for face in row.Faces if face.BoundBox.ZLength < d.TOLERANCE
+                  and abs(face.BoundBox.ZMin - PIER[2]) < d.TOLERANCE]
+    carried = [face for face in undersides if face.BoundBox.XMax < pitch]
+    laid = []
+    real_span = bridging._span
+    bridging._span = lambda *args: laid.append(args) or real_span(*args)
+    try:
+        left = find_bridges(row, first, layer, bead, limits.Limits(), carried)
+    finally:
+        bridging._span = real_span
+    expect(len(carried) == 1 and len(left) == COMB_TEETH - 1 and len(laid) == COMB_TEETH - 1,
+           "the face under one of %d slabs carried by fins: the lines of the region under it are not laid, "
+           "the others are bridged: %d bridges, lines laid %d times" % (COMB_TEETH, len(left), len(laid)))
+
+
 def check_bridges():
     """Bridges: where a layer spans a gap between supports, how far, rated."""
     first, layer, bead = d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, d.BEAD_WIDTH
@@ -4208,6 +4304,7 @@ def main():
     check_island_boxes()
     check_first_layers()
     check_bridge_lines()
+    check_bridge_faces()
     check_bridges()
     check_no_fragile_calls()
     check_printable_plans()
