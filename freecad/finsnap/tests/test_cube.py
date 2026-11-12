@@ -842,6 +842,97 @@ def check_bridge_faces():
            "the face under one of %d slabs carried by fins: the lines of the region under it are not laid, "
            "the others are bridged: %d bridges, lines laid %d times" % (COMB_TEETH, len(left), len(laid)))
 
+    # The supports a line can rest on and the faces a face is cut by, picked by their boxes: the
+    # bridges are those found looking at every support and cutting by every face below.
+    real_near, real_boxes = bridging._near, bridging._boxes
+    bridging._near = lambda supports, outline, bead: supports
+    bridging._boxes = lambda faces: numpy.array([bridging.EVERYWHERE] * len(faces), dtype=float).reshape(-1, 4)
+    try:
+        by_all = find_bridges(row, first, layer, bead, limits.Limits())
+    finally:
+        bridging._near, bridging._boxes = real_near, real_boxes
+    cut_by = []
+    real_free = bridging._free
+
+    def free(here, below, here_boxes, below_boxes):
+        cut_by.extend(int(((below_boxes[:, 0] <= box[1]) & (box[0] <= below_boxes[:, 1])).sum())
+                      for box in here_boxes)
+        return real_free(here, below, here_boxes, below_boxes)
+
+    bridging._free = free
+    try:
+        find_bridges(row, first, layer, bead, limits.Limits())
+    finally:
+        bridging._free = real_free
+    expect(told(found) == told(by_all) and cut_by == [2] * COMB_TEETH,
+           "%d slabs on piers side by side: the bridges found with the supports and the faces below picked "
+           "by their boxes are those found with all of them, in the same order; each slab is cut by its own "
+           "two piers alone: %s" % (COMB_TEETH, cut_by))
+
+    # A support whose box only touches the box of a region, grown by half a bead and the slack, is
+    # kept; one beside that is not.
+    reach = bead / 2 + bridging._slack(bead)
+    outline = bridging._outline(region, bead)
+    beside_it = [plate(side + reach, 0, 2 * side, side), plate(side + reach + BESIDE, 0, 2 * side, side),
+                 plate(OUT_OF_REACH, 0, OUT_OF_REACH + side, side), plate(-side, -side, 0, 0),
+                 plate(0, -side - reach, side, -reach), plate(0, -side - reach - BESIDE, side, -reach - BESIDE)]
+    supports = bridging._supports(beside_it, bead)
+    kept = [number for each in bridging._near(supports, outline, bead)
+            for number, support in enumerate(supports) if support is each]
+    expect(kept == [0, 3, 4] and bridging._near([], outline, bead) == []
+           and bridging._near(supports[1:3], outline, bead) == [],
+           "the supports whose boxes meet or touch the box of a region grown by half a bead and the slack "
+           "are kept, in their order, those beside it are not; of no supports, or none near, none: %s" % kept)
+
+    # A face meeting no face below is free whole and not cut; one meeting some is cut by those.
+    here = [plate(0, 0, side, side), plate(OUT_OF_REACH, 0, OUT_OF_REACH + side, side),
+            plate(2 * side, 0, 3 * side, side), plate(5 * side, 0, 6 * side, side)]
+    below = [plate(0, 0, side / 2, side), plate(2 * side, 0, 3 * side, side), plate(6 * side, 0, 7 * side, side)]
+    regions = bridging._free(here, below, bridging._boxes(here), bridging._boxes(below))
+    expect(len(regions) == 3 and abs(regions[0].Area - side * side / 2) < d.TOLERANCE and regions[1] is here[1]
+           and abs(regions[2].Area - side * side) < d.TOLERANCE and regions[2] is not here[3],
+           "a face half on one below is free by half, one with no face below near it is given whole as it "
+           "is, one a face below only touches is free whole, one resting whole on another has no region: %s"
+           % [round(each.Area, CUTS_DIGITS) for each in regions])
+    expect(bridging._free([], below, bridging._boxes([]), bridging._boxes(below)) == []
+           and bridging._boxes([]).shape == (0, 4),
+           "no faces have no boxes and no free region")
+
+    class Face:
+        """A face standing in for one of the kernel: its box, or none to be had, and a cut that
+        raises or gives what it is cut by."""
+
+        def __init__(self, box=None, raising=False):
+            self.box, self.raising, self.cut_by = box, raising, None
+
+        def optimalBoundingBox(self, mesh, tolerance):
+            if self.box is None:
+                raise Part.OCCError("no box")
+            return self.box
+
+        def cut(self, others):
+            if self.raising:
+                raise Part.OCCError("no cut")
+            self.cut_by = len(others.Faces)
+            return Part.makeCompound([])
+
+    unboxed, away = Face(), Face(App.BoundBox(OUT_OF_REACH, 0, 0, OUT_OF_REACH + side, side, 0), raising=True)
+    faces = [unboxed, away]
+    regions = bridging._free(faces, below, bridging._boxes(faces), bridging._boxes(below))
+    expect(unboxed.cut_by == len(below) and regions == [away]
+           and tuple(bridging._boxes(faces)[0]) == bridging.EVERYWHERE,
+           "a face the kernel can tell no box of is cut by every face below; one meeting none below is "
+           "not cut, so the kernel cannot raise on it")
+    under = [Face(), plate(OUT_OF_REACH, 0, OUT_OF_REACH + side, side)]
+    cut = Face(App.BoundBox(0, 0, 0, side, side, 0))
+    bridging._free([cut], [plate(0, 0, side, side)] + under[1:], bridging._boxes([cut]),
+                   numpy.vstack([bridging._boxes([under[0]]), bridging._boxes(under[1:])]))
+    expect(cut.cut_by == 1, "a face below without a box cuts every face: %s" % cut.cut_by)
+    raising = Face(App.BoundBox(0, 0, 0, side, side, 0), raising=True)
+    faces = [here[1], raising]
+    expect(bridging._free(faces, below, bridging._boxes(faces), bridging._boxes(below)) == [],
+           "the kernel raising on the cut of one face, the layer has no free region")
+
 
 def check_bridges():
     """Bridges: where a layer spans a gap between supports, how far, rated."""
