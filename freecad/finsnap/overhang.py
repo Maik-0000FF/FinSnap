@@ -35,6 +35,8 @@ INPUTS this has to withstand (rated()):
 import math
 from collections import namedtuple
 
+import numpy
+
 import FreeCAD as App
 import Part
 
@@ -201,12 +203,46 @@ def islands(part, first_layer, layer, starts=None):
       an empty shape, a part the kernel
         cannot mesh, or a layer it cannot
         cut or overlap                      ->  no island said there
+
+    INPUTS the search from each lowest point has to withstand:
+      its layer or the one below not cut by
+        the kernel (None)                   ->  the point passed over, no island said
+      its layer cut, holding no section     ->  the point passed over, nothing asked
+      a point outside the box of every
+        section of its layer                ->  nothing measured
+      a point in the box of one section     ->  the distance to that one measured alone
+      a point in the boxes of several       ->  each in the order of its number
+      a point right on the edge of a box    ->  in it
+      the boxes compared in x and y alone   ->  the point is put at z 0 and the slabs lie
+                                                around the plane of the bed: z is always
+                                                within
+      a point in the box of a section, yet
+        further than a layer from it        ->  decides nothing: the section stays open
+                                                for a later point
+      a point within a layer of a section   ->  decides it: an island at this point, or
+                                                resting
+      a section decided before              ->  passed over, the kernel not asked
+      a section whose slab meets the box of
+        none below                          ->  an island, without a cut of the kernel
+      boxes that only touch                 ->  asked: the overlap is none, an island
+      a slab meeting the boxes of several
+        below                               ->  overlapped with each in turn, until one
+                                                carries it
+      the layer below holding no section    ->  an island
+      the kernel raising on the distance or
+        the overlap                         ->  counts as resting: no island said
+      the order                             ->  the points in theirs, for each the sections
+                                                by number: the islands as they were found
+                                                before the boxes were sorted
     """
     if part.isNull():
         return []
     starts = starts or Starts(part)
     bed = starts.bed
-    cut = {}
+    # The sections of each height cut, and the boxes around them and around
+    # their slabs in x and y (_flat()), for numpy to sort the points and the
+    # sections below by before the kernel is asked.
+    cut, reach, slabs = {}, {}, {}
     # Whether each section, by layer and number, rests on the layer below;
     # one that does not is an island, reported once, at its first lowest point.
     resting = {}
@@ -223,20 +259,30 @@ def islands(part, first_layer, layer, starts=None):
         for z in (here, below):
             if z not in cut:
                 cut[z] = sections(faces[z], z, layer)
-        if cut[here] is None or cut[below] is None:
+                if cut[z]:
+                    reach[z] = _flat(box for _, box, _ in cut[z])
+                    slabs[z] = _flat(slab.BoundBox for slab, _, _ in cut[z])
+        if cut[here] is None or cut[below] is None or not cut[here]:
             continue
-        # The sections lie in the plane of the bed, see sections().
-        middle = Part.Vertex(App.Vector(point.x, point.y, 0))
-        for index, (section, reach, outline) in enumerate(cut[here]):
+        # The sections lie in the plane of the bed, see sections(); the point
+        # is put there only once a section is found it may start on.
+        middle = None
+        # The boxes around the sections turn most points away before the
+        # distance to one is measured, and a section decided before is
+        # passed over.
+        for index in _holding(reach[here], point.x, point.y):
             key = (at.number, index)
-            # A section decided before is passed over, and the box around one
-            # turns most points away before the distance to it is measured.
-            if key in resting or not reach.isInside(middle.Point):
+            if key in resting:
                 continue
+            section, _, outline = cut[here][index]
+            middle = middle or Part.Vertex(App.Vector(point.x, point.y, 0))
             try:
+                # A point further off decides nothing: the section stays open
+                # for a later point.
                 if section.distToShape(middle)[0] > layer:
                     continue
-                resting[key] = any(_overlap(section, other) for other, _, _ in cut[below])
+                under = _meeting(slabs[below], slabs[here][index]) if cut[below] else ()
+                resting[key] = any(_overlap(section, cut[below][other][0]) for other in under)
             except Part.OCCError:
                 resting[key] = True
             if not resting[key]:
@@ -245,6 +291,26 @@ def islands(part, first_layer, layer, starts=None):
     # the last is found, several in one cut.
     firsts = _first_layers(part, [(outline, bottom, top) for _, outline, bottom, top in found])
     return [Island(App.Vector(point), first) for (point, *_), first in zip(found, firsts)]
+
+
+def _flat(boxes):
+    """`boxes` in x and y as an array, a row for each: XMin, XMax, YMin, YMax;
+    no rows of no boxes."""
+    return numpy.array([(box.XMin, box.XMax, box.YMin, box.YMax) for box in boxes], dtype=float).reshape(-1, 4)
+
+
+def _holding(boxes, x, y):
+    """The numbers, from 0 and rising, of the `boxes` (_flat()) the point at
+    `x`, `y` lies in, their edges included, as BoundBox.isInside() has it."""
+    return [int(number) for number in numpy.flatnonzero(
+        (boxes[:, 0] <= x) & (x <= boxes[:, 1]) & (boxes[:, 2] <= y) & (y <= boxes[:, 3]))]
+
+
+def _meeting(boxes, box):
+    """The numbers, from 0 and rising, of the `boxes` (_flat()) that `box`, a
+    row of such, meets or touches, as BoundBox.intersect() has it."""
+    return [int(number) for number in numpy.flatnonzero(
+        (boxes[:, 0] <= box[1]) & (box[0] <= boxes[:, 1]) & (boxes[:, 2] <= box[3]) & (box[2] <= boxes[:, 3]))]
 
 
 def _first_layers(part, wanted):
