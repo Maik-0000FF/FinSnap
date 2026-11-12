@@ -275,7 +275,8 @@ def islands(part, first_layer, layer, starts=None):
             if key in resting:
                 continue
             section, _, outline = cut[here][index]
-            middle = middle or Part.Vertex(App.Vector(point.x, point.y, 0))
+            if middle is None:
+                middle = Part.Vertex(App.Vector(point.x, point.y, 0))
             try:
                 # A point further off decides nothing: the section stays open
                 # for a later point.
