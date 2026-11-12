@@ -867,6 +867,120 @@ def released_without_button(arrows, name):
         arrows.on_start, arrows.on_done = real_start, real_done
 
 
+def lost_release_sent(arrows):
+    """The release of the left mouse button FreeCAD dropped while fins were
+    built is sent to the 3D view the arrows lie in, once, when an arrow is
+    found held with no button down; not where the left button is down again,
+    not once a new drag began or the view is gone, and again where it is
+    dropped on its way."""
+    import time
+    from PySide import QtCore
+    from freecad.finsnap import handles
+
+    class Seen(QtCore.QObject):
+        """Notes the releases of a mouse button a widget gets, and drops the
+        first `dropped` of the left one before any widget sees them, as the
+        progress bar of FreeCAD does from the application."""
+
+        def __init__(self, widget, dropped=0):
+            super().__init__()
+            self.widget, self.dropped, self.got = widget, dropped, []
+            if dropped:
+                QtWidgets.QApplication.instance().installEventFilter(self)
+            else:
+                widget.installEventFilter(self)
+
+        def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
+            if watched is not self.widget or event.type() != QtCore.QEvent.MouseButtonRelease:
+                return False
+            if self.dropped:
+                self.dropped -= 1
+                return True
+            self.got.append((event.button(), event.buttons()))
+            return False
+
+        def stop(self):
+            QtWidgets.QApplication.instance().removeEventFilter(self)
+            self.widget.removeEventFilter(self)
+
+    def wait(ms):
+        end = time.monotonic() + ms / handles.MS_PER_SECOND
+        while time.monotonic() < end:
+            QtWidgets.QApplication.processEvents()
+
+    through = 4 * handles.RELEASE_RETRY_MS
+    left = [(QtCore.Qt.LeftButton, QtCore.Qt.NoButton)]
+    viewport = arrows.view.graphicsView().viewport()
+    done, real_start, real_done = [], arrows.on_start, arrows.on_done
+    arrows.on_start = lambda kind: None
+    arrows.on_done = lambda kind, mm: done.append(kind)
+    real_buttons = QtWidgets.QApplication.mouseButtons
+
+    def lose(kind):
+        """Grab the arrow of `kind` and move it with no button down, as after a lost release."""
+        arrow = arrows.draggers[kind]
+        arrows._held(kind, None)
+        arrow.isActive.setValue(True)
+        arrows._dragged(kind, arrow)
+        arrows.held = False
+
+    try:
+        seen = Seen(viewport)
+        lose(handles.UP)
+        expect(seen.got == [], "the release is not sent from where the loss is noticed, in the middle of a move")
+        wait(through)
+        expect(seen.got == left and not arrows.lost_release.timer.isActive(),
+               "an arrow found held with no button down: its view gets one release of the left button, no "
+               "button held in it, and no more after: %s" % seen.got)
+        del seen.got[:]
+        lose(handles.UP)
+        lose(handles.UP)
+        wait(through)
+        expect(seen.got == left, "a release under way, a second loss noticed sends no second one: %s" % seen.got)
+        del seen.got[:]
+        lose(handles.UP)
+        arrows._held(handles.UP, None)
+        arrows.held = False
+        wait(through)
+        expect(seen.got == [] and not arrows.lost_release.timer.isActive(),
+               "a new drag begun before the release is sent: none is sent, the press of the new drag stands")
+        lose(handles.UP)
+        QtWidgets.QApplication.mouseButtons = staticmethod(lambda: QtCore.Qt.LeftButton)
+        wait(through)
+        QtWidgets.QApplication.mouseButtons = real_buttons
+        wait(through)
+        expect(seen.got == [] and not arrows.lost_release.timer.isActive(),
+               "the left button down again when the release is to be sent: none is sent, none tried again")
+        seen.stop()
+        # Dropped on its way, as while the progress bar still runs: sent again until the view has it.
+        dropping = Seen(viewport, dropped=2)
+        lose(handles.UP)
+        wait(handles.RELEASE_RETRY_MS / 2)
+        waiting = dropping.got == [] and arrows.lost_release.timer.isActive()
+        wait(2 * through)
+        dropping.stop()
+        expect(waiting and dropping.got == left and dropping.dropped == 0
+               and not arrows.lost_release.timer.isActive(),
+               "a release dropped twice on its way is sent again until the view gets it, once, and no more "
+               "after: %s" % dropping.got)
+    finally:
+        QtWidgets.QApplication.mouseButtons = real_buttons
+        arrows.on_start, arrows.on_done = real_start, real_done
+    # A view gone before the release is sent, and one let go of.
+    widget = QtWidgets.QWidget()
+    gone = Seen(widget)
+    lost = handles.LostRelease(widget)
+    lost.send()
+    lost.drop()
+    wait(through)
+    expect(gone.got == [], "a release dropped before it is sent is not sent")
+    lost.send()
+    gone.stop()
+    widget.deleteLater()
+    wait(through)
+    expect(gone.got == [], "a view gone before the release is sent gets none, and nothing is raised")
+
+
 def arrow_field(panel, fins):
     """A double click on an arrow lays a field over the 3D view at it, with
     the value of its field in the panel: Escape drops it, Enter takes what is
@@ -2418,6 +2532,7 @@ def main():
     expect(all(moving.handles.draggers[kind] is held[kind] for kind in held),
            "the arrows stay the same after a move; Coin may still hold the one let go")
     released_without_button(moving.handles, "a box")
+    lost_release_sent(moving.handles)
     arrow_field(moving, lined)
     expect(all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(handles.axis_color("z"), AXIS_Z_RGB)),
            "the arrow up has the colour of the z axis: %s" % (handles.axis_color("z"),))

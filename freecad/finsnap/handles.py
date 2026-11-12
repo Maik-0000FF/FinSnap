@@ -505,6 +505,89 @@ class NoView(RuntimeError):
 # The arrows of every task panel open, so their objects can look as before
 # editing while their documents are saved (saving_document()).
 EDITING = []
+# How long after a release of the mouse sent to the 3D view did not reach it
+# it is sent again (ms): FreeCAD drops it while a build goes on, which takes
+# far longer, and a hand does not turn the view sooner than this.
+RELEASE_RETRY_MS = 50
+
+
+class LostRelease(QtCore.QObject):
+    """Sends a view the release of the left mouse button that FreeCAD dropped.
+
+    While a long operation of the kernel runs, as fins being built during a
+    drag, FreeCAD's progress bar filters the events of the application and
+    drops every release of a mouse button. An arrow let go meanwhile stays
+    held, which Handles sees to itself, and the navigation of the view, which
+    notes for itself whether the left button is down, goes on taking it as
+    down: it would not turn the view with the middle button until the next
+    left click. So the release is sent again, to `viewport`, the widget of
+    the view the mouse goes to.
+
+    It is sent from a timer, never from where the loss is noticed, which is
+    in the middle of Coin handling a move. It counts as there once the
+    viewport itself has seen it: the filter of the progress bar hangs on the
+    application and comes before any of a widget, so a release it drops is
+    not seen here, and is sent again a little later.
+
+    INPUTS this has to withstand:
+      send(), the left button up            ->  one release of the left button to the
+                                                viewport, at the mouse, once the events
+                                                under way are through
+      the buttons and keys held then        ->  in the release as they stand, the middle
+                                                and the right button, Shift and Ctrl; the
+                                                left button alone is not among them
+      the mouse outside the viewport        ->  sent all the same, with that place
+      send() while one is under way         ->  no second one
+      the left button down again when it
+        is to be sent, first or again       ->  nothing sent, nothing more tried: a real
+                                                press is not undone
+      the release dropped on its way, as
+        while the progress bar still runs   ->  sent again RELEASE_RETRY_MS later, until
+                                                the viewport has seen it
+      seen by the viewport                  ->  nothing more sent
+      drop(), as a new drag begins or the
+        view is let go of                   ->  nothing sent, nothing more tried
+      the viewport gone                     ->  this goes with it, nothing sent
+    """
+
+    def __init__(self, viewport):
+        # A child of the viewport: it goes when the viewport does.
+        super().__init__(viewport)
+        self.viewport = viewport
+        self.seen = False
+        self.timer = QtCore.QTimer(self)
+        self.timer.setSingleShot(True)
+        self.timer.timeout.connect(self._send)
+
+    def send(self):
+        """Have the release sent once the events under way are through."""
+        if not self.timer.isActive():
+            self.timer.start(0)
+
+    def drop(self):
+        """Send nothing, and try no more."""
+        self.timer.stop()
+
+    def _send(self):
+        buttons = QtWidgets.QApplication.mouseButtons()
+        if buttons & QtCore.Qt.LeftButton:
+            return
+        where = QtGui.QCursor.pos()
+        release = QtGui.QMouseEvent(QtCore.QEvent.MouseButtonRelease, self.viewport.mapFromGlobal(where), where,
+                                    QtCore.Qt.LeftButton, buttons, QtWidgets.QApplication.keyboardModifiers())
+        self.seen = False
+        self.viewport.installEventFilter(self)
+        try:
+            QtWidgets.QApplication.sendEvent(self.viewport, release)
+        finally:
+            self.viewport.removeEventFilter(self)
+        if not self.seen:
+            self.timer.start(RELEASE_RETRY_MS)
+
+    def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
+        if event.type() == QtCore.QEvent.MouseButtonRelease and event.button() == QtCore.Qt.LeftButton:
+            self.seen = True
+        return False
 
 
 def saving_document(document, started):
@@ -614,6 +697,8 @@ class Handles:
         self.turned, self.last_turn = 0.0, 0.0
         # True from grabbing an arrow until letting it go.
         self.held = False
+        # Sends the view a release of the mouse FreeCAD dropped, made once one is.
+        self.lost_release = None
         # In the editing root of the 3D view, where FreeCAD puts the handles of
         # its own features: outside the nodes of the object, which take mouse
         # clicks for selecting. It shows only while the object is in edit mode.
@@ -810,6 +895,10 @@ class Handles:
 
     def _held(self, kind, _dragger):
         self.held = True
+        # A new drag: the view has a press of its own, a release still to be
+        # sent for the last one would undo it.
+        if self.lost_release is not None:
+            self.lost_release.drop()
         # Held: the look of a held arrow in its own colour again, should a
         # drag before have been let go by _dragged().
         self._tint_held(kind, HELD_COLOR)
@@ -841,6 +930,19 @@ class Handles:
         self._tint_held(kind, self._rest_color(kind))
         if self.held:
             self._let_go(kind, dragger)
+        self._send_release()
+
+    def _send_release(self):
+        """Have the view the arrows lie in sent the release of the left mouse
+        button it did not get, see LostRelease: the view of these arrows, not
+        the one active now. The loss is noticed at the next move of the mouse
+        only, in _dragged(): a middle button pressed before the mouse moves
+        finds the view as it was left. Decided so."""
+        if self.view is None or not hasattr(self.view, "graphicsView"):
+            return
+        if self.lost_release is None:
+            self.lost_release = LostRelease(self.view.graphicsView().viewport())
+        self.lost_release.send()
 
     def _held_look(self, kind):
         """The look of the arrow of `kind` while it is held: of the arc where it
@@ -1110,6 +1212,10 @@ class Handles:
         self._clear(self.noted)
         if self.attached:
             self.viewer.resetEditingRoot()
+        if self.lost_release is not None:
+            self.lost_release.drop()
+            self.lost_release.deleteLater()
+            self.lost_release = None
         # Not attached any more, also when the panel closes before it was.
         self.root = None
         # Let go of the 3D view: kept, its wrapper could outlive the view and
