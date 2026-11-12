@@ -76,6 +76,9 @@ NONE = -math.inf
 # each block twice the size of the one before, starting with this many pairs
 # of a piece and a height (_Pieces._furthest()).
 FIRST_BLOCK = 256
+# A block grows no larger than this many pairs: what is worked out for one
+# then takes a few megabytes, and a cut of millions of pairs a few dozen
+# blocks. Measured, larger blocks made a build no faster and took more room.
 LARGEST_BLOCK = 2 ** 16
 
 
@@ -384,8 +387,10 @@ class _Pieces:
         each, in the order of the pieces. A block is twice the size of the
         one before, up to LARGEST_BLOCK, counted in pairs of a piece and a
         place: a cut of tens of thousands of pieces has millions of pairs,
-        which are never all held at once. A piece is not split between two
-        blocks."""
+        and who takes the blocks one by one never holds them all at once, as
+        _furthest() and lifted() do. facing() puts them together: it is
+        asked of the front of the middle cut alone, with no radius, where
+        the pairs are few. A piece is not split between two blocks."""
         lengths = numpy.maximum(0, end - start + 1)
         upto = numpy.cumsum(lengths)
         piece, done, size = 0, 0, FIRST_BLOCK
