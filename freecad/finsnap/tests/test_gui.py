@@ -966,6 +966,64 @@ def lost_release_sent(arrows):
     finally:
         QtWidgets.QApplication.mouseButtons = real_buttons
         arrows.on_start, arrows.on_done = real_start, real_done
+    # While the release is sent the view does not select what lies under the mouse, and after, it
+    # selects as before: the switch of the view for it, and one standing in for it.
+    switch = arrows.lost_release.selecting
+
+    class Switch:
+        """A switch standing in for the one of a view: what it is set to, in order."""
+
+        def __init__(self, on):
+            self.on, self.set_to = on, []
+
+        def getValue(self):  # noqa: N802 - Coin's name
+            return self.on
+
+        def setValue(self, on):  # noqa: N802 - Coin's name
+            self.on = on
+            self.set_to.append(on)
+
+    class Arriving(Seen):
+        """Notes how the switch stands as each release arrives."""
+
+        def __init__(self, widget, switch, dropped=0):
+            super().__init__(widget, dropped)
+            self.switch, self.stood = switch, []
+
+        def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
+            if watched is self.widget and event.type() == QtCore.QEvent.MouseButtonRelease and not self.dropped:
+                self.stood.append(bool(self.switch.getValue()))
+            return super().eventFilter(watched, event)
+
+    arriving = Arriving(viewport, switch)
+    lose(handles.UP)
+    wait(through)
+    arriving.stop()
+    arrows.on_start, arrows.on_done = real_start, real_done
+    expect(switch is not None and arriving.stood == [False] and bool(switch.getValue()),
+           "the view of the arrows has a switch for selecting: off as the release arrives, on again after: %s"
+           % arriving.stood)
+    for on, dropped, wanted in ((True, 0, [False, True]), (False, 0, []), (True, 1, [False, True, False, True])):
+        target = QtWidgets.QWidget()
+        stand_in = Switch(on)
+        arriving = Arriving(target, stand_in, dropped)
+        lost = handles.LostRelease(target, stand_in)
+        lost.send()
+        wait(2 * through)
+        arriving.stop()
+        expect(arriving.got == left and stand_in.set_to == wanted and stand_in.on == on
+               and arriving.stood == [False],
+               "a view selecting: %s, the release dropped %d times on its way: it arrives with the view not "
+               "selecting, and the switch is as it was after, set %s" % (on, dropped, stand_in.set_to))
+        lost.deleteLater()
+        target.deleteLater()
+    plain = QtWidgets.QWidget()
+    arriving = Seen(plain)
+    handles.LostRelease(plain).send()
+    wait(through)
+    arriving.stop()
+    expect(arriving.got == left, "a view without a switch for selecting gets the release all the same")
+    plain.deleteLater()
     # A view gone before the release is sent, and one let go of.
     widget = QtWidgets.QWidget()
     gone = Seen(widget)

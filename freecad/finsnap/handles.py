@@ -509,6 +509,26 @@ EDITING = []
 # it is sent again (ms): FreeCAD drops it while a build goes on, which takes
 # far longer, and a hand does not turn the view sooner than this.
 RELEASE_RETRY_MS = 50
+# The node of a 3D view that selects what a release of the mouse lies over,
+# and its field that says whether it does: FreeCAD's own switch for it.
+SELECTION_NODE = "SoFCUnifiedSelection"
+SELECTION_ENABLED = "selectionEnabled"
+
+
+def selecting(viewer):
+    """The field of `viewer`, the viewer of a 3D view, that says whether a
+    release of the left mouse button selects what lies under it; None where
+    the view has no such node or field."""
+    kind = coin.SoType.fromName(SELECTION_NODE)
+    if kind.isBad():
+        return None
+    search = coin.SoSearchAction()
+    search.setType(kind)
+    search.setSearchingAll(True)
+    search.setInterest(coin.SoSearchAction.FIRST)
+    search.apply(viewer.getSoRenderManager().getSceneGraph())
+    path = search.getPath()
+    return None if path is None else path.getTail().getField(SELECTION_ENABLED)
 
 
 class LostRelease(QtCore.QObject):
@@ -548,12 +568,23 @@ class LostRelease(QtCore.QObject):
       drop(), as a new drag begins or the
         view is let go of                   ->  nothing sent, nothing more tried
       the viewport gone                     ->  this goes with it, nothing sent
+      a part or a fin under the mouse when
+        the release is sent                 ->  not selected, and what is selected stays:
+                                                a release reaching the scene selects what
+                                                lies under it, so the view is told not to
+                                                select (`selecting`) while it is sent
+      the view not selecting as it is       ->  left so, before and after
+      a view without that switch            ->  sent all the same
+      the release dropped on its way        ->  the switch as it was all the same
     """
 
-    def __init__(self, viewport):
+    def __init__(self, viewport, selecting=None):
+        """`selecting`, where the view has it, is its field that says whether
+        a release of the mouse selects what lies under it (selecting())."""
         # A child of the viewport: it goes when the viewport does.
         super().__init__(viewport)
         self.viewport = viewport
+        self.selecting = selecting
         self.seen = False
         self.timer = QtCore.QTimer(self)
         self.timer.setSingleShot(True)
@@ -576,11 +607,18 @@ class LostRelease(QtCore.QObject):
         release = QtGui.QMouseEvent(QtCore.QEvent.MouseButtonRelease, self.viewport.mapFromGlobal(where), where,
                                     QtCore.Qt.LeftButton, buttons, QtWidgets.QApplication.keyboardModifiers())
         self.seen = False
+        # The arrow that would have taken the release is let go: sent now, it
+        # reaches the scene, which selects what lies under it. Not this one.
+        selects = self.selecting is not None and self.selecting.getValue()
+        if selects:
+            self.selecting.setValue(False)
         self.viewport.installEventFilter(self)
         try:
             QtWidgets.QApplication.sendEvent(self.viewport, release)
         finally:
             self.viewport.removeEventFilter(self)
+            if selects:
+                self.selecting.setValue(True)
         if not self.seen:
             self.timer.start(RELEASE_RETRY_MS)
 
@@ -941,7 +979,7 @@ class Handles:
         if self.view is None or not hasattr(self.view, "graphicsView"):
             return
         if self.lost_release is None:
-            self.lost_release = LostRelease(self.view.graphicsView().viewport())
+            self.lost_release = LostRelease(self.view.graphicsView().viewport(), selecting(self.viewer))
         self.lost_release.send()
 
     def _held_look(self, kind):
