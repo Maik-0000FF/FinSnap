@@ -105,6 +105,21 @@ def _fins_under(obj):
     return list(found.values())
 
 
+# The kinds of marks the view provider of fins draws on their part, in the
+# order they lie under its switch: the first layers of the islands, a ball at
+# each island without one, the free regions of the bridges by level, and the
+# faces that overhang without fins.
+ISLAND_LAYER_MARKS = "island layers"
+ISLAND_SPOT_MARKS = "island spots"
+OVERHANG_MARKS = "overhangs"
+MARKS = (ISLAND_LAYER_MARKS, ISLAND_SPOT_MARKS, *feature.BRIDGES, OVERHANG_MARKS)
+# The property of the fins whose writing draws which kinds anew. The marks of
+# the overhangs hang on two properties and wait for the one written last.
+MARKED_BY = {feature.ISLAND_LAYERS: (ISLAND_LAYER_MARKS,), feature.ISLANDS_UNCUT: (ISLAND_SPOT_MARKS,),
+             **{name: (level,) for level, name in feature.BRIDGES.items()},
+             feature.OVERHANGS_WRITTEN_LAST: (OVERHANG_MARKS,)}
+
+
 class PartVisibility:
     """Document observer: when a part or a container of it is shown or hidden,
     the overhang marks of its fins follow."""
@@ -128,13 +143,15 @@ class ViewProviderFinSnap:
     def attach(self, vobj):
         self.Object = vobj.Object
         self.marks = coin.SoSwitch()
+        # The nodes of each kind of mark under the switch (MARKS), to take
+        # away again when that kind is drawn anew.
+        self.marked = {kind: [] for kind in MARKS}
         vobj.RootNode.addChild(self.marks)
         self.mark(vobj.Object)
 
     def updateData(self, obj, prop):  # noqa: N802 - FreeCAD API
-        if prop in (feature.OVERHANGS, feature.UNPRINTABLE_OVERHANGS, feature.ISLANDS, feature.ISLAND_LAYERS,
-                    feature.ISLANDS_UNCUT) + tuple(feature.BRIDGES.values()):
-            self.mark(obj)
+        if prop in MARKED_BY:
+            self.mark(obj, MARKED_BY[prop])
 
     def onChanged(self, vobj, prop):  # noqa: N802 - FreeCAD API
         if prop == "Visibility":
@@ -149,41 +166,79 @@ class ViewProviderFinSnap:
         visible = obj.ViewObject.Visibility and (not obj.Base or _shown(obj.Base[0]))
         self.marks.whichChild.setValue(coin.SO_SWITCH_ALL if visible else coin.SO_SWITCH_NONE)
 
-    def mark(self, obj):
-        """Cover the faces that overhang without fins with marks in the colour
-        of their level, yellow where critical, red where too flat to print, and the
-        first layer of each island, where the part would start printing in the
-        air, and the free regions of bridges spanning too far, by level."""
+    def mark(self, obj, kinds=MARKS):
+        """Draw the marks of `kinds` (MARKS) anew, all of them unless told:
+        the first layer of each island, where the part would start printing
+        in the air, a ball at an island without one, the free regions of
+        bridges spanning too far, by level, and the faces that overhang
+        without fins, yellow where critical, red where too flat to print.
+
+        A build writes the properties these hang on one after the other, and
+        each of them draws its own kind of mark alone: drawing all of them
+        for each took a mesh of every face seven times a build.
+
+        INPUTS this has to withstand:
+          a property of one kind written        ->  that kind drawn anew, the others left
+          the lowest points of the islands
+            written                             ->  nothing drawn: no mark hangs on them
+          the names of the overhangs written,
+            then those too flat to print        ->  drawn once, at the second, which
+                                                    feature.set_overhangs() writes last
+          a property written with the value it
+            has, as after the part was turned
+            and its overhangs kept their names  ->  drawn anew all the same: FreeCAD tells
+                                                    of every write, and the faces lie
+                                                    elsewhere
+          a property emptied                    ->  its marks taken away
+          the kinds, whichever is drawn first   ->  under the switch in the order of MARKS:
+                                                    marks seen through one another look as
+                                                    they did
+          a part without a shape, or no part    ->  no overhang marks left
+          a build breaking off between two
+            kinds                               ->  those not written keep the marks of the
+                                                    build before. Decided so
+          attached to its object, as a document
+            opened                              ->  every kind drawn
+          not attached yet                      ->  nothing
+        """
         if not hasattr(self, "marks"):
             return
-        self.marks.removeAllChildren()
-        # The first layer of each island that the printer would lay in the
-        # air, in the red a fin shows where it cannot stand.
-        layers = getattr(obj, feature.ISLAND_LAYERS, None)
-        if layers is not None and not layers.isNull():
-            self.marks.addChild(handles.island_layers(layers))
-        uncut = getattr(obj, feature.ISLANDS_UNCUT, [])
-        if uncut:
-            self.marks.addChild(handles.island_spots(uncut))
-        # The free regions of the bridges spanning too far, on the underside.
-        for level, name in feature.BRIDGES.items():
-            regions = getattr(obj, name, None)
-            if regions is not None and not regions.isNull():
-                self.marks.addChild(handles.bridge_regions(regions, level))
-        names = getattr(obj, feature.OVERHANGS, [])
-        if names and obj.Base:
-            try:
-                shape = global_shape(obj.Base[0])
-            except ValueError:
-                shape = None
-            if shape is not None:
-                unprintable = set(getattr(obj, feature.UNPRINTABLE_OVERHANGS, []))
-                for level, chosen in ((limits.CRITICAL, [name for name in names if name not in unprintable]),
-                                      (limits.UNPRINTABLE, [name for name in names if name in unprintable])):
-                    if chosen:
-                        faces = [shape.getElement(name) for name in chosen]
-                        self.marks.addChild(handles.overhang_faces(faces, level))
+        for kind in kinds:
+            for node in self.marked[kind]:
+                self.marks.removeChild(node)
+            # After the marks of the kinds before it in MARKS.
+            at = sum(len(self.marked[before]) for before in MARKS[:MARKS.index(kind)])
+            self.marked[kind] = self._marks_of(obj, kind)
+            for offset, node in enumerate(self.marked[kind]):
+                self.marks.insertChild(node, at + offset)
         self.show_marks()
+
+    @staticmethod
+    def _marks_of(obj, kind):
+        """The Coin nodes of the marks of `kind` (MARKS) of `obj` as it is."""
+        if kind == ISLAND_LAYER_MARKS:
+            # In the red a fin shows where it cannot stand.
+            layers = getattr(obj, feature.ISLAND_LAYERS, None)
+            return [handles.island_layers(layers)] if layers is not None and not layers.isNull() else []
+        if kind == ISLAND_SPOT_MARKS:
+            uncut = getattr(obj, feature.ISLANDS_UNCUT, [])
+            return [handles.island_spots(uncut)] if uncut else []
+        if kind in feature.BRIDGES:
+            # The free regions of the bridges spanning too far, on the underside.
+            regions = getattr(obj, feature.BRIDGES[kind], None)
+            return [handles.bridge_regions(regions, kind)] if regions is not None and not regions.isNull() else []
+        names = getattr(obj, feature.OVERHANGS, [])
+        if not names or not obj.Base:
+            return []
+        try:
+            shape = global_shape(obj.Base[0])
+        except ValueError:
+            return []
+        unprintable = set(getattr(obj, feature.UNPRINTABLE_OVERHANGS, []))
+        levels = ((limits.CRITICAL, [name for name in names if name not in unprintable]),
+                  (limits.UNPRINTABLE, [name for name in names if name in unprintable]))
+        return [handles.overhang_faces([shape.getElement(name) for name in chosen], level)
+                for level, chosen in levels if chosen]
 
     def setEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API
         # Fins just made by a command are deleted again by Cancel.

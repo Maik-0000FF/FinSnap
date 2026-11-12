@@ -22,6 +22,7 @@ All notable changes to FinSnap are listed here. The format follows
 - A free region of a layer is cut by the faces below near it alone, and its lines are checked against the supports near it alone, both picked by their boxes: the bridges of 64 tables side by side take 1.8 s instead of 4.3 s, of 196 tables 6.7 s instead of 36.6 s, stairs of 40 steps and a single table as before
 - The check of the stability clips the triangles crossing a layer all at once instead of one at a time, which tells on round walls, whose triangles reach over their whole height: 36 tables on round legs take 0.33 s instead of 1.2 s, a part that tips over early 0.012 s instead of 0.030 s, a plain box 4.8 ms instead of 5.3 ms
 - The contour a fin under a round side follows is worked out on arrays, all the pieces of a cut and all heights at once, instead of a piece and a height at a time: three fins on a stepped shaft with fillets are built in 12.4 s instead of 18.2 s, one fin there with every recess followed in 1.1 s instead of 2.3 s. What is built is the same
+- The marks on a part, for its overhangs, its islands and its bridges, are drawn once a build, each kind as the property it hangs on is written, instead of all of them again for each of seven properties: on a part with a hole and fillets that is 0.06 s a build instead of 0.4 s
 
 ### Fixed
 

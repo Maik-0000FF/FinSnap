@@ -1107,6 +1107,72 @@ def lost_release_keeps_selection(panel, fins):
            "a release as the mouse sends it changes the selection at each of these places: %s" % changed)
 
 
+def marks_drawn_once(doc, fins):
+    """The marks on the part of `fins`, which has a face overhanging without
+    fins: a build draws each kind once, at the property it hangs on, and they
+    keep their order under the switch."""
+    from freecad.finsnap import commands, feature, limits
+    view = fins.ViewObject.Proxy
+    marks = view.marks
+    drawn = []
+    real = commands.ViewProviderFinSnap._marks_of
+
+    def counted(obj, kind):
+        drawn.append(kind)
+        return real(obj, kind)
+
+    def in_order():
+        """Whether the nodes under the switch are those of the kinds, in their order."""
+        wanted = [node for kind in commands.MARKS for node in view.marked[kind]]
+        return marks.getNumChildren() == len(wanted) and all(
+            marks.getChild(k).getNodeId() == node.getNodeId() for k, node in enumerate(wanted))
+
+    names = list(getattr(fins, feature.OVERHANGS))
+    unprintable = list(getattr(fins, feature.UNPRINTABLE_OVERHANGS))
+    commands.ViewProviderFinSnap._marks_of = staticmethod(counted)
+    try:
+        fins.touch()
+        doc.recompute()
+        built = sorted(drawn)
+        del drawn[:]
+        # Written with the value it has: FreeCAD tells of it, and the marks are drawn anew, as
+        # they have to be once the part was turned and its overhangs kept their names.
+        setattr(fins, feature.UNPRINTABLE_OVERHANGS, unprintable)
+        again = list(drawn)
+        del drawn[:]
+        setattr(fins, feature.OVERHANGS, names)
+        setattr(fins, feature.ISLANDS, list(getattr(fins, feature.ISLANDS)))
+        silent = list(drawn)
+        # Kinds drawn in another order than they lie in.
+        view.mark(fins, (commands.OVERHANG_MARKS, commands.ISLAND_LAYER_MARKS))
+        ordered = in_order()
+        before = marks.getNumChildren()
+        # As a build writes them: the names first, those too flat to print last.
+        del drawn[:]
+        feature.set_overhangs(fins, [])
+        emptied = (list(drawn), view.marked[commands.OVERHANG_MARKS], marks.getNumChildren())
+        del drawn[:]
+        feature.set_overhangs(fins, [(name, limits.UNPRINTABLE if name in unprintable else limits.CRITICAL)
+                                     for name in names])
+        back = (list(drawn), len(view.marked[commands.OVERHANG_MARKS]), marks.getNumChildren())
+    finally:
+        commands.ViewProviderFinSnap._marks_of = staticmethod(real)
+    expect(names and built == sorted(commands.MARKS),
+           "a build draws every kind of mark once: %s" % built)
+    expect(again == [commands.OVERHANG_MARKS] and silent == [],
+           "the property the overhangs are written last with, written with the value it has, draws them anew; "
+           "their names and the lowest points of the islands, written alone, draw nothing: %s, %s"
+           % (again, silent))
+    expect(ordered and in_order() and before == 1,
+           "the marks lie under the switch in the order of their kinds, whichever was drawn first")
+    expect(emptied == ([commands.OVERHANG_MARKS], [], before - 1)
+           and back == ([commands.OVERHANG_MARKS], 1, before),
+           "overhangs written as none take their marks away, written again bring them back, drawn once each "
+           "time, once both properties are written: %s, %s" % (emptied, back))
+    bare = types.SimpleNamespace(**{feature.OVERHANGS: names, feature.UNPRINTABLE_OVERHANGS: [], "Base": None})
+    expect(real(bare, commands.OVERHANG_MARKS) == [], "fins without a part have no overhang marks")
+
+
 def timers_wait_for_builds(panel):
     """While FinSnap builds fins or checks a part, whoever started it, and
     while FreeCAD shows the progress of an operation, no timer of the panel
@@ -2275,6 +2341,7 @@ def main():
     expect(marks.whichChild.getValue() == coin.SO_SWITCH_NONE, "hiding the part hides the marks on it")
     box.ViewObject.Visibility = True
     expect(marks.whichChild.getValue() == coin.SO_SWITCH_ALL, "showing the part shows them again")
+    marks_drawn_once(doc, marked)
     # A part inside containers: hiding the container it lies in, or the one
     # around that, hides its marks as well.
     outer = doc.addObject("App::Part", "Outer")

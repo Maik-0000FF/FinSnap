@@ -739,8 +739,15 @@ def set_bridges(obj, found):
         setattr(obj, name, Part.makeCompound(regions) if regions else Part.Shape())
 
 
+# The property set_overhangs() writes last: what shows the overhangs hangs on
+# both it writes, and waits for this one, so it shows them once.
+OVERHANGS_WRITTEN_LAST = UNPRINTABLE_OVERHANGS
+
+
 def set_overhangs(obj, rated):
-    """Keep `rated`, from overhangs_of(), in the properties of `obj`."""
+    """Keep `rated`, from overhangs_of(), in the properties of `obj`: the
+    names of the faces first, those of them too flat to print last
+    (OVERHANGS_WRITTEN_LAST)."""
     setattr(obj, OVERHANGS, [name for name, _ in rated])
     hidden_property(obj, UNPRINTABLE_OVERHANGS, "App::PropertyStringList")
     setattr(obj, UNPRINTABLE_OVERHANGS, [name for name, level in rated if level == limits.UNPRINTABLE])
