@@ -1225,6 +1225,23 @@ def timers_wait_for_builds(panel):
            "what is to be done later is not done while FinSnap is at work, then in its order, and not once "
            "the panel is closed: %s, %s" % (waiting, in_order))
 
+    def failing():
+        raise ValueError("an action failing")
+
+    del done[:]
+    panel.free_timer.stop()
+    panel.to_do = [lambda: done.append("before"), failing, lambda: done.append("after")]
+    try:
+        panel.do_waiting()
+        raised = False
+    except ValueError:
+        raised = True
+    kept = len(panel.to_do)
+    wait(4 * taskpanel.BUSY_RETRY_MS)
+    expect(raised and kept == 1 and done == ["before", "after"] and panel.to_do == [],
+           "one of what is to be done later raising: its error passes on, and what came after it is kept "
+           "and done next: %s" % done)
+
 
 def arrow_field(panel, fins):
     """A double click on an arrow lays a field over the 3D view at it, with

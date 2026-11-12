@@ -2143,11 +2143,19 @@ class FinSnapTaskPanel:
         self.free_timer.start(0)
 
     def do_waiting(self):
-        """Do what once_free() was given, in its order; not once the panel is closed."""
-        waiting, self.to_do = self.to_do, []
-        for action in waiting:
-            if not self.released:
+        """Do what once_free() was given, in its order; not once the panel is
+        closed. Where one of them raises, its error passes on and those after
+        it are kept, to be done next: one failing does not lose the others."""
+        while self.to_do:
+            action = self.to_do.pop(0)
+            if self.released:
+                continue
+            try:
                 action()
+            except Exception:
+                if self.to_do:
+                    self.free_timer.start(0)
+                raise
 
     def update_ends(self):
         """Leave out each end of an arrow where the handled fin cannot go.
