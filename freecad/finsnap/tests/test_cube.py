@@ -3807,6 +3807,144 @@ def flank_slopes(result, p):
                for (s_high, z_high), (s_low, z_low) in zip(outline, outline[1:]) if z_high > z_low)
 
 
+def check_contour_pieces():
+    """The pieces of a cut as arrays (contour._Pieces): how far out they reach
+    at a height, which piece lies outermost with its value, and where the
+    run between two samples is lifted: every row of its tables."""
+    radius, share, tolerance = 0.2, d.CONTOUR_SHARE, d.TOLERANCE
+    heights = [0.0, 1.0, 2.0]
+
+    def open_piece(start, end):
+        """A piece of an open loop, which tells neither its side nor a mitre."""
+        return (start, end, 0.0, 0.0, None)
+
+    def reach(pieces, z, around=radius):
+        """How far out `pieces` reach at height z, asked of every piece."""
+        made = contour._Pieces(pieces, around)
+        return made.reach(made.stretches(heights), contour._stretch(heights, z), z)
+
+    def close(value, wanted):
+        return value is not None and abs(value - wanted) < tolerance
+
+    sloping, level = open_piece((0.0, 0.0), (1.0, 1.0)), open_piece((0.0, 1.0), (2.0, 1.0))
+    expect(close(reach([sloping], 0.5), 0.5 + radius * math.sqrt(2)) and close(reach([sloping], 0.5, 0.0), 0.5),
+           "at a height on a sloping piece the reach is the point on its line, the radius out along its "
+           "normal; with no radius the point of the piece itself: %s, %s"
+           % (reach([sloping], 0.5), reach([sloping], 0.5, 0.0)))
+    expect(close(reach([level], 1.0), 2.0 + radius) and close(reach([level], 1.0 + radius), 2.0)
+           and close(reach([level], 1.0 - radius), 2.0),
+           "at the height of a level piece the reach is its outer end and the radius; the radius above "
+           "and below it, where its two lines lie, its outer end: %s, %s, %s"
+           % (reach([level], 1.0), reach([level], 1.0 + radius), reach([level], 1.0 - radius)))
+    expect(reach([level], 1.0 + radius + BESIDE + tolerance) is None and reach([level], 0.5) is None
+           and reach([], 1.0) is None,
+           "above or below every piece by more than the radius, and of no pieces, there is no reach")
+    point = open_piece((1.0, 1.0), (1.0, 1.0))
+    made = contour._Pieces([point], radius)
+    expect(close(reach([point], 1.0), 1.0 + radius) and not made.has_line.any(),
+           "a piece without length reaches the radius round its one point and has no line: %s"
+           % reach([point], 1.0))
+    told = ((0.0, 0.0), (0.0, 2.0), 0.0, 0.0, (1.0, 0.0))
+    away = ((0.0, 0.0), (0.0, 2.0), 0.0, 0.0, (-1.0, 0.0))
+    lines = [int(contour._Pieces([piece], radius).has_line.sum()) for piece in (told, sloping, level)]
+    expect(lines == [1, 1, 2] and close(reach([told], 1.0), radius) and close(reach([away], 1.0), -radius),
+           "a piece of a loop that tells its side has one line, out of the part, a sloping piece of an open "
+           "loop one, a level one two; between its ends an upright piece reaches to its line, the radius to "
+           "the side its loop calls out of the part, be that out or in: %s, %s, %s"
+           % (lines, reach([told], 1.0), reach([away], 1.0)))
+
+    # Which piece lies outermost at a height, and what it tells: three pieces reaching as far out at
+    # most, so they stay in the order given, at one height each within the tolerance of the next and
+    # the last more than that past the first.
+    def crossing(at_half):
+        """A piece from the bed up to (2, 1) that lies `at_half` out at half a mm up."""
+        return open_piece((2 * at_half - 2.0, 0.0), (2.0, 1.0))
+
+    near, middle, far = (crossing(1.0 + step * tolerance) for step in (0.0, 0.8, 1.6))
+    tells = {near[0]: -3.0, middle[0]: -2.0, far[0]: -1.0}
+    halves = [0.0, 0.5, 1.0]
+
+    def facing(*pieces):
+        return contour._Pieces(list(pieces), 0.0).facing(halves, lambda piece: tells[piece[0]])[1]
+
+    up, down, alone, short = facing(near, middle, far), facing(far, middle, near), facing(middle), facing(far, near)
+    expect(close(up[0], 1.0 + 1.6 * tolerance) and up[1] == -3.0 and close(down[0], 1.0 + 1.6 * tolerance)
+           and down[1] == -2.0,
+           "three pieces at a height, each within the tolerance of the next: taken from the nearest up, the "
+           "smallest value of all three is kept; from the furthest down, the nearest is more than the "
+           "tolerance short and left out: %s, %s" % (up, down))
+    expect(alone == (alone[0], -2.0) and close(alone[0], 1.0 + 0.8 * tolerance) and short[1] == -1.0
+           and facing(near, far)[1] == -1.0,
+           "one piece at a height gives its reach and its value; a piece more than the tolerance short of "
+           "the furthest gives nothing, and one further than those before by more takes over with its "
+           "value alone: %s, %s, %s" % (alone, short, facing(near, far)))
+    # Many pieces at one height, reaching about as far, in no order: what is kept is what taking
+    # them one after the other keeps, by the rule as it reads.
+    many = [crossing(1.0 + tolerance * 2.5 * math.sin(7.0 * k)) for k in range(4 * contour.FIRST_BLOCK)]
+    values = {piece[0]: math.cos(3.0 * k) for k, piece in enumerate(many)}
+    reach_at_half, kept = None, None
+    for piece in many:
+        r, value = (piece[0][0] + 2.0) / 2, values[piece[0]]
+        if reach_at_half is None or r > reach_at_half + tolerance:
+            reach_at_half, kept = r, value
+        elif r >= reach_at_half - tolerance:
+            reach_at_half, kept = max(r, reach_at_half), min(value, kept)
+    found = contour._Pieces(many, 0.0).facing(halves, lambda piece: values[piece[0]])[1]
+    expect(len(set(values)) == len(many) and close(found[0], reach_at_half) and found[1] == kept,
+           "%d pieces at one height, reaching about as far in no order: the reach and the value kept are "
+           "those of taking them one after the other: %s, wanted %s" % (len(many), found, (reach_at_half, kept)))
+    expect(contour._Pieces([], 0.0).facing(halves, lambda piece: 0.0) == [None] * 3
+           and contour._Pieces([crossing(1.0)], 0.0).facing([2.0, 3.0, 4.0], lambda piece: 0.0) == [None] * 3,
+           "no piece at a height, no reach there")
+
+    # The run between two samples, lifted where a corner between them reaches past it.
+    wall = open_piece((0.0, 0.0), (0.0, 2.0))
+
+    def lifted(*pieces):
+        made = contour._Pieces(list(pieces), 0.0)
+        reaches = made.reaches(heights)
+        return reaches, made.lifted(reaches, heights)
+
+    def ledge(out):
+        """A level piece half a mm up, from the wall `out` out."""
+        return open_piece((0.0, 0.5), (out, 0.5))
+
+    smooth, corner = lifted(wall), lifted(wall, ledge(2.0))
+    expect(smooth == ([0.0] * 3, [0.0] * 3) and corner[0] == [0.0] * 3 and corner[1] == [2.0, 2.0, 0.0],
+           "a smooth contour is lifted nowhere; a ledge between two samples lifts both to where it reaches, "
+           "the sample above them stays: %s" % (corner,))
+    expect(lifted(wall, ledge(share))[1] == [0.0] * 3
+           and lifted(wall, ledge(share + BESIDE))[1][:2] == [share + BESIDE] * 2,
+           "a corner past the run between two samples by the share lifts nothing, one past it by more does")
+    started = lifted(open_piece((0.0, 0.3), (0.0, 2.0)))
+    empty = contour._Pieces([], radius)
+    expect(started == ([None, 0.0, 0.0], [0.0] * 3)
+           and lifted(open_piece((0.0, 1.3), (0.0, 2.0))) == ([None, None, 0.0], [None, 0.0, 0.0])
+           and empty.reaches(heights) == [None] * 3 and empty.lifted([None] * 3, heights) == [None] * 3,
+           "a sample without a reach, below where the contour starts, gets the most the pieces reach in the "
+           "stretch above it; one with nothing in either stretch beside it stays without; of no pieces "
+           "nothing reaches and nothing is lifted: %s" % (started,))
+
+    # Many pieces, most of them at the back: those not asked add nothing.
+    back = [open_piece((-5.0 - k * 0.01, 0.0), (-5.0 - k * 0.01, 2.0)) for k in range(3 * contour.FIRST_BLOCK)]
+    front = [wall, ledge(2.0)]
+    asked = []
+    real = contour._Pieces._between
+
+    def counted(self, numbers, low, high):
+        asked.append(len(numbers))
+        return real(self, numbers, low, high)
+
+    contour._Pieces._between = counted
+    try:
+        behind = lifted(*(back + front))
+    finally:
+        contour._Pieces._between = real
+    expect(behind == corner and sum(asked) < len(back),
+           "with hundreds of pieces behind the front the reach and the lift are those of the front alone, "
+           "and most of those behind are not asked: %d askings of %d pieces" % (sum(asked), len(back) + 2))
+
+
 def check_contour():
     """Under a whole round side the fin follows the contour of the part up to
     its top: over a step to a thinner part, a groove and a curved outline;
@@ -4465,6 +4603,7 @@ def main():
     check_centres()
     check_stability()
     check_round_side()
+    check_contour_pieces()
     check_contour()
     check_known_clear()
     check_meshed_distance()
