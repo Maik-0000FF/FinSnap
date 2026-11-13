@@ -20,7 +20,8 @@ from .i18n import QT_TRANSLATE_NOOP, translate
 # the kernel takes for the same point.
 CORNER_NEAR_CUT = d.TOLERANCE
 # The face asked last and its corners (_outline_of()): told once, as every place
-# and height tried in a build asks of the same face.
+# and height tried in a build asks of the same face, and forgotten as the build
+# ends (forget_outline()).
 _outlined = []
 
 # Said where the face is narrower than a fin, or its tine, at every tine height.
@@ -91,6 +92,11 @@ def _outline_of(face):
     if not _outlined or not _outlined[0][0].isSame(face):
         _outlined[:] = [(face, _straight_outline(face))]
     return _outlined[0][1]
+
+
+def forget_outline():
+    """Forget the face asked last, so that none is held past the build that asked."""
+    _outlined.clear()
 
 
 def _cut_corners(rings, at, value):
