@@ -24,6 +24,7 @@ All notable changes to FinSnap are listed here. The format follows
 - The contour a fin under a round side follows is worked out on arrays, all the pieces of a cut and all heights at once, instead of a piece and a height at a time: three fins on a stepped shaft with fillets are built in 12.4 s instead of 18.2 s, one fin there with every recess followed in 1.1 s instead of 2.3 s. What is built is the same
 - The marks on a part, for its overhangs, its islands and its bridges, are drawn once a build, each kind as the property it hangs on is written, instead of all of them again for each of seven properties: on a part with a hole and fillets that is 0.06 s a build instead of 0.4 s
 - A place where a fin would stand in what of the part stands out in front of the face is told from points of the fin, before the fin is built and its tines are measured against the part: Quick fins on the fillet of a round part, where two large faces take no fin at all, takes 18 s instead of 61 s (#243)
+- How wide a planar face of straight edges is at a height, and where it lies under a fin, is worked out from its corners instead of cut by the kernel; a cut through a corner or along an edge, and every other face, is cut as before: Quick fins on the fillet of a round part takes 12 s instead of 20 s (#243)
 
 ### Fixed
 

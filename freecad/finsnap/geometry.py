@@ -111,8 +111,8 @@ from .face_frame import UP, FinError, Frame, HandEditError, beside_lowest, frame
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .shapes import TooManyPairs, between_rings, bounds, keep, meshed_of, shape_key, working
 from .tine_rows import (NARROW_AT_EVERY_TINE, TINE_CUTS_IN, TINE_MISSES, extent_at, face_tines, fin_stretch, flank_bend,
-                        restarted_tines, round_move, side_foot_start, side_tine, tine_end, tine_end_fault,
-                        tine_end_points, tine_start, tines_on_face, touching_at, wide_enough)
+                        forget_outline, restarted_tines, round_move, side_foot_start, side_tine, tine_end,
+                        tine_end_fault, tine_end_points, tine_start, tines_on_face, touching_at, wide_enough)
 
 NOTE_TOO_CLOSE = QT_TRANSLATE_NOOP("FinSnap", "a fin comes within %.3f mm of the part, closer than the %.3f mm it "
                                               "keeps from the face")
@@ -958,7 +958,14 @@ def build(part, face, p, tine_count=None, left_out=(), shifts=None, heights=None
     drag never changes which faces the fins carry.
     """
     p.validate()
-    shifts, heights = shifts or {}, heights or {}
+    try:
+        return _build_reaching(part, face, p, tine_count, left_out, shifts or {}, heights or {})
+    finally:
+        forget_outline()
+
+
+def _build_reaching(part, face, p, tine_count, left_out, shifts, heights):
+    """build(), with the fins reaching over a groove where they can."""
     support = support_of(part, face)
     if support is face:
         return _build(part, face, face, p, tine_count, left_out, shifts, heights)
