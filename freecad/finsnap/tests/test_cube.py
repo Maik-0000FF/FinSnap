@@ -235,6 +235,12 @@ ENCLOSED_OFF_TOLD = 3.0
 # mesh of what they come near (mm), and a tine clearance that fits it.
 ENCLOSED_NARROW_GAP = 0.02
 ENCLOSED_NARROW_CLEARANCE = 0.0
+# How long the kernel takes a point on the clock of the test, as shares of
+# ENCLOSED_KERNEL_SLOW: quick, as on a dome, and slow; and past how many points
+# asked a solid is no longer waited for to be settled.
+ENCLOSED_QUICK_SHARE = 0.5
+ENCLOSED_SLOW_SHARE = 2.0
+ENCLOSED_ASKED_MOST = 5000
 # A face tapering from the bed up (tapered()): its half width at the bed, how
 # deep the part is, and as (half width at the top, height) one wider than a
 # fin at the top tine but too narrow for it and its end insets, and one
@@ -4711,20 +4717,48 @@ def check_enclosed():
            and len(shapes.mesh_arrays(cube, d.ENCLOSED_DEFLECTION, most=triangles)[1]) == triangles,
            "a solid of as many triangles as the most has a mesh, with one more it has none, told as it is meshed")
 
-    # _any_inside(): the kernel is asked of the points the mesh does not tell of alone.
-    real_inside, real_enclosed = geometry._inside, geometry.enclosed_of
-    calls = []
+    # A solid settled with its mesh, or without one: the kernel is asked of what the mesh does not tell of alone.
+    real_inside, real_enclosed, real_clock = geometry._inside, geometry.enclosed_of, geometry._clock
+    worth, slow = d.ENCLOSED_WORTH, d.ENCLOSED_KERNEL_SLOW
+    calls, meshes = [], []
     geometry._inside = lambda solid, point: calls.append(1) or real_inside(solid, point)
+
+    def standing(solid, with_mesh=None):
+        """`solid` as _any_inside() knows it, afresh: asking still, or settled with its mesh or without one."""
+        geometry._kept_solids_in.clear()
+        found = geometry._solids_in(solid)[0]
+        if with_mesh is not None:
+            found.settled, found.mesh = True, real_enclosed(solid) if with_mesh else None
+        return found
 
     def any_inside(solid, points, with_mesh=True):
         """What _any_inside() says and how often it asked the kernel for it."""
         del calls[:]
-        geometry._kept_solids_in.clear()
-        geometry.enclosed_of = real_enclosed if with_mesh else lambda solid: None
-        try:
-            return geometry._any_inside(solid, points), len(calls)
-        finally:
-            geometry.enclosed_of = real_enclosed
+        standing(solid, with_mesh)
+        return geometry._any_inside(solid, points), len(calls)
+
+    class Clock:
+        """A clock that goes on by `took` seconds over each call of the kernel timed by it."""
+
+        def __init__(self):
+            self.now, self.took, self.read = 0.0, 0.0, 0
+
+        def __call__(self):
+            self.read += 1
+            if self.read % 2 == 0:
+                self.now += self.took
+            return self.now
+
+    clock = Clock()
+
+    def settled(solid, took):
+        """`solid` asked of a point the kernel takes `took` for until it is settled, and of how many."""
+        found = standing(solid)
+        clock.took = took
+        del calls[:], meshes[:]
+        while not found.settled and len(calls) < ENCLOSED_ASKED_MOST:
+            geometry._any_inside(solid, [in_bore[1]])
+        return found, len(calls)
 
     try:
         outside = V(deep.x, deep.y, -ENCLOSED_PAST)
@@ -4739,6 +4773,36 @@ def check_enclosed():
                and any_inside(tube, [in_bore[1], in_wall], with_mesh=False) == (True, 2),
                "a point the mesh does not tell of is asked of the kernel, unless another is told to be inside; "
                "without a mesh each is asked until one is inside")
+
+        # How a solid is settled, on a clock of the test: once, by what the kernel took until then.
+        geometry._clock = clock
+        geometry.enclosed_of = lambda solid: meshes.append(1) or real_enclosed(solid)
+        took = slow * ENCLOSED_QUICK_SHARE
+        found, asked = settled(tube, took)
+        clock.took, read = worth, clock.read
+        later = geometry._any_inside(tube, [in_bore[1], in_wall])
+        expect(asked == math.ceil(worth / took) and found.mesh is None and not meshes and later
+               and clock.read == read,
+               "a quick kernel: settled after %d points, as many as take what a mesh is worth, without a mesh; "
+               "none is made when it turns slow after, and it is timed no more" % asked)
+        took = slow * ENCLOSED_SLOW_SHARE
+        found, asked = settled(tube, took)
+        del calls[:]
+        read = clock.read
+        on_mesh = geometry._any_inside(tube, [in_tube(-ENCLOSED_OFF_TOLD * margin)]), len(calls)
+        untold = geometry._any_inside(tube, [in_bore[1]]), len(calls)
+        expect(asked == math.ceil(worth / took) and found.mesh is not None and len(meshes) == 1
+               and on_mesh == (False, 0) and untold == (False, 1) and clock.read == read,
+               "a slow kernel: settled after %d points with a mesh, made once; a point it tells of is not asked of "
+               "the kernel, one it does not is, timed no more" % asked)
+        found, asked = settled(tube, worth)
+        expect(asked == 1 and found.mesh is not None and len(meshes) == 1,
+               "a kernel taking what a mesh is worth for one point: a mesh after that point")
+        geometry.enclosed_of = lambda solid: meshes.append(1)
+        found, asked = settled(tube, took)
+        again = [geometry._any_inside(tube, [in_bore[1], in_wall]) for _ in range(3)]
+        expect(found.settled and found.mesh is None and len(meshes) == 1 and all(again),
+               "a slow kernel on a solid too large for a mesh: one is tried once, and the kernel asked from then on")
 
         # A search under a face with a boss: the same answers with the mesh as without, fewer asked.
         def searched(shape, params, with_mesh):
@@ -4759,9 +4823,11 @@ def check_enclosed():
             except face_frame.FinError:
                 outcome = "refused"
             finally:
-                geometry._Places.surely_in_part, geometry.enclosed_of = real_sure, real_enclosed
+                geometry._Places.surely_in_part = real_sure
             return outcome, answers, len(calls)
 
+        # A mesh is worth it from the first point on, however quick the kernel.
+        geometry._clock, d.ENCLOSED_WORTH, d.ENCLOSED_KERNEL_SLOW = real_clock, 0.0, 0.0
         bossed = bossed_cube((BOSS_MIDDLE, EDGE / 2))
         for name, params in (("the default gap", FinParams(placement=d.PLACEMENT_CENTER)),
                              ("a gap within the margin of the mesh",
@@ -4772,7 +4838,8 @@ def check_enclosed():
                    "%s, %s: %d places asked, told alike with the mesh and without; the kernel asked %d times "
                    "instead of %d" % (name, on_mesh[0], len(on_mesh[1]), on_mesh[2], by_kernel[2]))
     finally:
-        geometry._inside = real_inside
+        geometry._inside, geometry.enclosed_of, geometry._clock = real_inside, real_enclosed, real_clock
+        d.ENCLOSED_WORTH, d.ENCLOSED_KERNEL_SLOW = worth, slow
         geometry._kept_solids_in.clear()
 
 

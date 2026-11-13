@@ -298,6 +298,15 @@ ENCLOSED_MARGIN = ENCLOSED_MARGIN_DEFLECTIONS * ENCLOSED_DEFLECTION + TOLERANCE
 # large round body, a dome, takes seconds to mesh that finely and megabytes to
 # keep, while the kernel tells a point in its one face in no time.
 ENCLOSED_MOST = 20_000
+# A solid gets that mesh only once the kernel, asked of points in it, has taken
+# this long for it altogether (s): about what a mesh costs to make, a guide
+# value, not measured for each solid. So a solid asked of a few points never
+# pays for a mesh, and what is lost on one that gets none is about one mesh.
+# And only where the kernel took this long a point or longer on average by
+# then (s): a dome or a torus, one face it tells a point of in well under
+# that, is told no quicker on a mesh, and a large one costs seconds to mesh.
+ENCLOSED_WORTH = 0.05
+ENCLOSED_KERNEL_SLOW = 150e-6
 # Layer positions are rounded to this many decimals, so that 5 x 1.2 is 6.0.
 LENGTH_DECIMALS = 6
 # Below this the face counts as vertical or flat and cannot carry a fin.

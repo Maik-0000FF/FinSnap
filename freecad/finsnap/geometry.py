@@ -97,6 +97,7 @@ INPUTS this has to withstand (build()):
 """
 
 import math
+import time
 from collections import namedtuple
 from dataclasses import dataclass, field, fields, replace
 from functools import partial
@@ -147,11 +148,14 @@ CLEAR_KEPT = 1024
 _kept_in_front = {}
 IN_FRONT_KEPT = 32
 IN_FRONT_SKIN = 1e-3
-# The solids of what stands out in front of a face, each with its box and its
-# mesh (_solids_in()), by the shape in_front_of() keeps: of as many as keep()
-# holds by itself, which is more than a search goes through and bounds what
-# the meshes take in memory.
+# The solids of what stands out in front of a face, each with what is known of
+# it (_solids_in(), _Standing), by the shape in_front_of() keeps: of as many
+# as keep() holds by itself, which is more than a search goes through and
+# bounds what the meshes take in memory.
 _kept_solids_in = {}
+# The clock the kernel is timed by as it tells points inside a solid
+# (_Standing._by_kernel()), in seconds; a test puts its own in its place.
+_clock = time.perf_counter
 # Where a fin is looked at for standing in what is in front of the face before it
 # is built (_Places.surely_in_part()): the shares of its blade's height and of its
 # width from the flank outward the points are taken at, by the flank, where a boss
@@ -1072,36 +1076,76 @@ def _inside(solid, point):
         return False
 
 
-def _solids_in(front):
-    """The solids of `front`, each with its box and its mesh to tell points
-    inside it on, None where it has none (enclosed_of()). Made once for a
-    shape and kept with it, so that no other takes its place in memory."""
-    def make():
-        return front, [(solid, solid.BoundBox, enclosed_of(solid)) for solid in front.Solids]
+class _Standing:
+    """A solid of what stands out in front of a face, and how it is told which
+    points lie inside it. At first the kernel is asked, and timed. Once it has
+    taken ENCLOSED_WORTH for this solid altogether, about what a mesh costs, it
+    is settled for good: where the kernel took ENCLOSED_KERNEL_SLOW a point or
+    longer by then, the solid gets a mesh (enclosed_of()) that tells most
+    points from then on; else, or where it can have none, it stays with the
+    kernel. Settled once, as an average looked at again with every point could
+    tip, and a mesh refused would be made again.
 
-    return keep(_kept_solids_in, id(front), make)[1]
+    Only the calls of the kernel are timed, not what picks the points. What
+    is said of a point is what the kernel says, whichever way it is told.
+
+    INPUTS this has to withstand (any_inside()):
+      no points, or none in the box         ->  False, nothing asked, no time counted
+      asking still, the kernel quick or slow,
+        less than ENCLOSED_WORTH taken      ->  the kernel asked of each point, timed
+      ENCLOSED_WORTH reached, the kernel as
+        slow as ENCLOSED_KERNEL_SLOW a point ->  a mesh made, used from the next points on
+      ENCLOSED_WORTH reached, the kernel
+        quicker than that, as on a dome     ->  no mesh, now or later, however slow
+                                                the kernel turns after
+      a mesh due, the solid too large for
+        one                                 ->  tried that once, no mesh, not tried again
+      with a mesh: a point it tells of      ->  its answer, the kernel not asked
+      with a mesh: a point it does not tell
+        of                                  ->  the kernel asked, no longer timed
+      the kernel cannot tell of a point     ->  False for it (_inside()), its time counted
+      a point found inside                  ->  True, no further point asked
+    """
+
+    def __init__(self, solid):
+        self.solid, self.box = solid, solid.BoundBox
+        self.mesh, self.settled = None, False
+        # What the kernel took for this solid while it was asking still (s), and of how many points.
+        self.spent, self.asked = 0.0, 0
+
+    def any_inside(self, points):
+        """Whether one of `points` lies inside the solid, not on its surface."""
+        near = [point for point in points if self.box.isInside(point)]
+        told = [None] * len(near) if self.mesh is None else self.mesh.told(near)
+        return any(found for found in told) or any(
+            self._by_kernel(point) for point, found in zip(near, told) if found is None)
+
+    def _by_kernel(self, point):
+        """Whether `point` lies inside, by the kernel; timed until it is settled how the solid is told."""
+        if self.settled:
+            return _inside(self.solid, point)
+        start = _clock()
+        found = _inside(self.solid, point)
+        self.spent += _clock() - start
+        self.asked += 1
+        if self.spent >= d.ENCLOSED_WORTH:
+            self.settled = True
+            if self.spent >= d.ENCLOSED_KERNEL_SLOW * self.asked:
+                self.mesh = enclosed_of(self.solid)
+        return found
+
+
+def _solids_in(front):
+    """The solids of `front`, each as a _Standing. Made once for a shape and
+    kept with it, so that no other takes its place in memory."""
+    return keep(_kept_solids_in, id(front), lambda: (front, [_Standing(solid) for solid in front.Solids]))[1]
 
 
 def _any_inside(front, points):
     """Whether one of `points` lies inside a solid of `front`, not on its
-    surface: told on the mesh of the solid where that tells, by the kernel
-    where it does not, which is asked of no point once one is found inside.
-
-    INPUTS this has to withstand:
-      no points                             ->  False
-      points outside the box of every solid ->  False, neither mesh nor kernel asked
-      a point the mesh tells to be inside   ->  True, the kernel not asked
-      every point told to be outside        ->  False, the kernel not asked
-      a point the mesh does not tell of     ->  what the kernel says of it
-      a solid without a mesh                ->  what the kernel says of each point
-    """
-    for solid, box, mesh in _solids_in(front):
-        near = [point for point in points if box.isInside(point)]
-        told = [None] * len(near) if mesh is None else mesh.told(near)
-        if any(found for found in told) or any(
-                _inside(solid, point) for point, found in zip(near, told) if found is None):
-            return True
-    return False
+    surface, each solid asked by itself (_Standing.any_inside()), none once a
+    point is found inside one."""
+    return any(standing.any_inside(points) for standing in _solids_in(front))
 
 
 def in_front_of(part, frame):
@@ -1226,7 +1270,8 @@ class _Places:
           a fin without a height                ->  False
           what stands out in several solids     ->  each asked by itself
           a point the mesh of what stands out
-            tells of (_any_inside())            ->  not asked of the kernel
+            tells of, where it has one
+            (_Standing)                         ->  not asked of the kernel
           the kernel cannot tell where a point
             lies                                ->  False for that solid
           a fin with a foot, without one, with a
