@@ -25,6 +25,7 @@ All notable changes to FinSnap are listed here. The format follows
 - The marks on a part, for its overhangs, its islands and its bridges, are drawn once a build, each kind as the property it hangs on is written, instead of all of them again for each of seven properties: on a part with a hole and fillets that is 0.06 s a build instead of 0.4 s
 - A place where a fin would stand in what of the part stands out in front of the face is told from points of the fin, before the fin is built and its tines are measured against the part: Quick fins on the fillet of a round part, where two large faces take no fin at all, takes 18 s instead of 61 s (#243)
 - How wide a planar face of straight edges is at a height, and where it lies under a fin, is worked out from its corners instead of cut by the kernel; a cut through a corner or along an edge, and every other face, is cut as before: Quick fins on the fillet of a round part takes 12 s instead of 20 s (#243)
+- Whether a point of a fin lies in what of the part stands out in front of the face is told on a mesh of it, the points of a place at once, and asked of the kernel only where the mesh cannot tell, near its surface: Quick fins on the fillet of a round part takes 10 s instead of 12 s, and what it finds is the same (#243)
 
 ### Fixed
 

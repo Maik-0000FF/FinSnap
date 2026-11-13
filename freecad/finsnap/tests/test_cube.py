@@ -210,6 +210,28 @@ STRAIGHT_CURVED = (10.0, 20.0)
 STRAIGHT_HOLE_LAYERS = (40, 75)
 STRAIGHT_FIN_AT = 9.0
 STRAIGHT_BANDS_AT = 9.5
+# Solids whose mesh tells which points lie inside them (check_enclosed()): the
+# edge of a cube, how thick the walls of the hollow one are, the radius, the
+# height and the radius of the bore of a tube, and round it where the points
+# in it are taken, at what angle (degrees) and share of its height (mm).
+ENCLOSED_EDGE = 10.0
+ENCLOSED_WALL = 2.0
+ENCLOSED_TUBE = (10.0, 20.0, 4.0)
+ENCLOSED_TUBE_AT = (17.0, 0.37)
+# The points tried on each: a grid of that many a side, reaching that far past
+# the solid (mm); a point deep in the cube and one in the hollow of the hollow
+# one, off every diagonal of their faces, as shares of the edge; and how far
+# off a wall, in margins of the mesh, a point is not told of, and is.
+ENCLOSED_GRID = 9
+ENCLOSED_PAST = 1.0
+ENCLOSED_DEEP = (0.23, 0.41, 0.67)
+ENCLOSED_IN_HOLLOW = (0.37, 0.45, 0.58)
+ENCLOSED_OFF_UNTOLD = (0.0, 0.1, 0.9)
+ENCLOSED_OFF_TOLD = 3.0
+# A gap so narrow that the points beside a fin lie within the margin of the
+# mesh of what they come near (mm), and a tine clearance that fits it.
+ENCLOSED_NARROW_GAP = 0.02
+ENCLOSED_NARROW_CLEARANCE = 0.0
 # A face tapering from the bed up (tapered()): its half width at the bed, how
 # deep the part is, and as (half width at the top, height) one wider than a
 # fin at the top tine but too narrow for it and its end insets, and one
@@ -4604,6 +4626,135 @@ def check_straight_faces():
            % (ends[0][1], len(worked_out or [])))
 
 
+def check_enclosed():
+    """Which points lie inside a solid is told on its mesh as the kernel tells
+    it, and not told where the mesh cannot know; the kernel is asked of those
+    alone, and a search finds what it found without the mesh."""
+    edge, margin = ENCLOSED_EDGE, d.ENCLOSED_MARGIN
+    radius, height, bore = ENCLOSED_TUBE
+    inner = edge - 2 * ENCLOSED_WALL
+    cube = Part.makeBox(edge, edge, edge)
+    hollow = cube.cut(Part.makeBox(inner, inner, inner, V(ENCLOSED_WALL, ENCLOSED_WALL, ENCLOSED_WALL)))
+    tube = Part.makeCylinder(radius, height).cut(Part.makeCylinder(bore, height))
+
+    def kernel(solid, point):
+        return solid.isInside(point, d.TOLERANCE, False)
+
+    for name, solid in (("a cube", cube), ("a hollow cube", hollow), ("a tube", tube)):
+        mesh = shapes.enclosed_of(solid)
+        box = solid.BoundBox
+        axes = [numpy.linspace(low - ENCLOSED_PAST, high + ENCLOSED_PAST, ENCLOSED_GRID)
+                for low, high in ((box.XMin, box.XMax), (box.YMin, box.YMax), (box.ZMin, box.ZMax))]
+        grid = [V(x, y, z) for x in axes[0] for y in axes[1] for z in axes[2]]
+        told = mesh.told(grid)
+        wrong = sum(found is not None and found != kernel(solid, point) for found, point in zip(told, grid))
+        known = sum(found is not None for found in told)
+        expect(mesh.closed and not wrong and 2 * known > len(grid) and True in told and False in told,
+               "%s: %d of %d points told on the mesh, %d of them other than the kernel tells" %
+               (name, known, len(grid), wrong))
+
+    mesh = shapes.enclosed_of(cube)
+    deep = V(*(edge * share for share in ENCLOSED_DEEP))
+    centre = V(edge / 2, edge / 2, edge / 2)
+    expect(mesh.told([deep, V(deep.x, deep.y, -ENCLOSED_PAST), centre]) == [True, False, None] and mesh.told([]) == [],
+           "a point deep in a cube is inside, one below it outside, its centre, every ray from which runs "
+           "through a diagonal of a face, not told; no points, no answers")
+    by_wall = [V(deep.x, deep.y, edge + side * off * margin) for off in ENCLOSED_OFF_UNTOLD for side in (-1, 1)]
+    clear = [V(deep.x, deep.y, edge + side * ENCLOSED_OFF_TOLD * margin) for side in (-1, 1)]
+    expect(mesh.told(by_wall) == [None] * len(by_wall) and mesh.told(clear) == [True, False],
+           "points within the margin of a face of the cube, on either side, are not told of; %g margins off they are"
+           % ENCLOSED_OFF_TOLD)
+    expect(shapes.enclosed_of(hollow).told([V(*(edge * share for share in ENCLOSED_IN_HOLLOW))]) == [False],
+           "a point in the hollow of a cube is outside it")
+    # A round hollow: the triangles cut into the bore, a point just in it is not said to be inside.
+    turn, up = math.radians(ENCLOSED_TUBE_AT[0]), height * ENCLOSED_TUBE_AT[1]
+
+    def in_tube(off):
+        return V((bore + off) * math.cos(turn), (bore + off) * math.sin(turn), up)
+
+    mesh = shapes.enclosed_of(tube)
+    in_bore = [in_tube(-off * margin) for off in ENCLOSED_OFF_UNTOLD]
+    expect(mesh.told(in_bore) == [None] * len(in_bore)
+           and mesh.told([in_tube(-ENCLOSED_OFF_TOLD * margin), in_tube(ENCLOSED_OFF_TOLD * margin)]) == [False, True],
+           "points in the bore of a tube within the margin of its wall are not told of; %g margins off it they are "
+           "outside, as far in the wall inside" % ENCLOSED_OFF_TOLD)
+    # No closed mesh, or none at all: nothing told.
+    shell = Part.Shell(cube.Faces[:-1])
+    most = d.NEAR_MESH_MOST
+    d.NEAR_MESH_MOST = 0
+    try:
+        too_large = shapes.enclosed_of(cube)
+    finally:
+        d.NEAR_MESH_MOST = most
+    expect(not shapes.Enclosed(shell).closed and shapes.Enclosed(shell).told([deep]) == [None]
+           and shapes.Enclosed(cube.Faces[0]).told([deep]) == [None] and too_large is None,
+           "a cube with a face missing and a single face tell of no point; a solid with too many triangles has no mesh")
+
+    # _any_inside(): the kernel is asked of the points the mesh does not tell of alone.
+    real_inside, real_enclosed = geometry._inside, geometry.enclosed_of
+    calls = []
+    geometry._inside = lambda solid, point: calls.append(1) or real_inside(solid, point)
+
+    def any_inside(solid, points, with_mesh=True):
+        """What _any_inside() says and how often it asked the kernel for it."""
+        del calls[:]
+        geometry._kept_solids_in.clear()
+        geometry.enclosed_of = real_enclosed if with_mesh else lambda solid: None
+        try:
+            return geometry._any_inside(solid, points), len(calls)
+        finally:
+            geometry.enclosed_of = real_enclosed
+
+    try:
+        outside = V(deep.x, deep.y, -ENCLOSED_PAST)
+        expect([any_inside(cube, points) for points in ([], [outside], [deep], [outside, deep])]
+               == [(False, 0), (False, 0), (True, 0), (True, 0)]
+               and any_inside(tube, [in_tube(-ENCLOSED_OFF_TOLD * margin)]) == (False, 0),
+               "no points, points outside the box, points the mesh tells of: the kernel is not asked")
+        in_wall = in_tube(ENCLOSED_OFF_TOLD * margin)
+        expect(any_inside(cube, [by_wall[2], outside]) == (True, 1) and any_inside(tube, [in_bore[1]]) == (False, 1)
+               and any_inside(cube, [deep, by_wall[2]]) == (True, 0)
+               and any_inside(cube, [by_wall[2], deep], with_mesh=False) == (True, 1)
+               and any_inside(tube, [in_bore[1], in_wall], with_mesh=False) == (True, 2),
+               "a point the mesh does not tell of is asked of the kernel, unless another is told to be inside; "
+               "without a mesh each is asked until one is inside")
+
+        # A search under a face with a boss: the same answers with the mesh as without, fewer asked.
+        def searched(shape, params, with_mesh):
+            answers = []
+            real_sure = geometry._Places.surely_in_part
+
+            def sure(self, t, own, half_foot=None):
+                answers.append(real_sure(self, t, own, half_foot))
+                return answers[-1]
+
+            del calls[:]
+            geometry._kept_solids_in.clear()
+            geometry.enclosed_of = real_enclosed if with_mesh else lambda solid: None
+            geometry._Places.surely_in_part = sure
+            try:
+                geometry.build(shape, lower_left_face(shape), params)
+                outcome = "built"
+            except face_frame.FinError:
+                outcome = "refused"
+            finally:
+                geometry._Places.surely_in_part, geometry.enclosed_of = real_sure, real_enclosed
+            return outcome, answers, len(calls)
+
+        bossed = bossed_cube((BOSS_MIDDLE, EDGE / 2))
+        for name, params in (("the default gap", FinParams(placement=d.PLACEMENT_CENTER)),
+                             ("a gap within the margin of the mesh",
+                              FinParams(placement=d.PLACEMENT_CENTER, gap=ENCLOSED_NARROW_GAP,
+                                        tine_clearance=ENCLOSED_NARROW_CLEARANCE))):
+            on_mesh, by_kernel = searched(bossed, params, True), searched(bossed, params, False)
+            expect(on_mesh[:2] == by_kernel[:2] and any(on_mesh[1]) and on_mesh[2] < by_kernel[2],
+                   "%s, %s: %d places asked, told alike with the mesh and without; the kernel asked %d times "
+                   "instead of %d" % (name, on_mesh[0], len(on_mesh[1]), on_mesh[2], by_kernel[2]))
+    finally:
+        geometry._inside = real_inside
+        geometry._kept_solids_in.clear()
+
+
 def check_surely_in_part():
     """A place where the fin would stand in what stands out of the face is told
     from points of the fin, before it is built: only where the measure of the
@@ -4874,6 +5025,7 @@ def main():
     check_boss_on_face()
     check_straight_faces()
     check_surely_in_part()
+    check_enclosed()
     check_narrow_reason()
     print("all checks passed", file=sys.__stdout__)
 

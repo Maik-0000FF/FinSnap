@@ -65,6 +65,12 @@ SMALLEST_AREA = 1e-9
 # fin needs it again at once, and one mesh is what that costs.
 MESHES_KEPT = 1
 _kept_meshes = {}
+# Places to which the corners of a mesh are rounded to tell which of them the
+# faces of a solid share (Enclosed): the kernel meshes each face with its own.
+SAME_CORNER_DIGITS = 6
+# The rays Enclosed counts the crossings of, tried in this order, each as the
+# two axes it is seen across and the one it runs along.
+ENCLOSED_RAYS = ((0, 1, 2), (1, 2, 0), (2, 0, 1))
 
 
 def face_name(number):
@@ -302,6 +308,164 @@ def meshed_of(shape):
 def clear_meshes():
     """Forget every Meshed kept."""
     _kept_meshes.clear()
+
+
+def _segment_distances(points, start, end):
+    """The distance, in a plane, of each of `points` to the segment from `start`
+    to `end` on its row; to `start` where the two are one point."""
+    along = end - start
+    length = (along * along).sum(1)
+    with numpy.errstate(divide="ignore", invalid="ignore"):
+        share = numpy.where(length > 0, ((points - start) * along).sum(1) / length, 0.0)
+    nearest = start + along * numpy.clip(share, 0.0, 1.0)[:, None]
+    return numpy.sqrt(((points - nearest) ** 2).sum(1))
+
+
+class Enclosed:
+    """A solid as a closed mesh, to tell of many points at once which lie inside
+    it, in a fraction of the time the kernel takes for one. It tells only of a
+    point ENCLOSED_MARGIN or more off the mesh, where the mesh and the solid
+    agree; of any other it says nothing, and the caller asks the kernel.
+
+    A point lies inside where a ray from it goes through the mesh an odd number
+    of times. A ray that passes within the margin of the rim of a triangle
+    could go through it or miss it: it is not counted on, and the next of
+    ENCLOSED_RAYS is tried.
+
+    INPUTS this has to withstand (told()):
+      a point deep inside the solid         ->  True
+      a point well outside it, or outside
+        the box round it                    ->  False
+      a point in a hollow of it, or in a
+        bore through it, off its walls      ->  False
+      a point within the margin of the
+        mesh, on either side: on the
+        surface, or just in a round hollow
+        the triangles cut into              ->  None
+      a ray passing the rim of a triangle
+        or an upright one within the margin ->  the answer of the next ray
+      every ray passing one so              ->  None
+      a mesh that is not closed, as of a
+        shell or a face, or with an edge
+        more than two triangles share       ->  None for every point
+      a shape the kernel cannot mesh        ->  None for every point
+      no points                             ->  []
+    """
+
+    def __init__(self, solid):
+        points, triangles = mesh_arrays(solid, d.ENCLOSED_DEFLECTION, on_copy=True)
+        self.closed = self._closed(points, triangles)
+        self.a, self.b, self.c = (points[triangles[:, k]] for k in range(3))
+        self.low = numpy.minimum(numpy.minimum(self.a, self.b), self.c)
+        self.high = numpy.maximum(numpy.maximum(self.a, self.b), self.c)
+
+    @staticmethod
+    def _closed(points, triangles):
+        """Whether every edge of the mesh belongs to two triangles, corners at one
+        place taken for one and triangles drawn together to a line left out."""
+        if not len(triangles):
+            return False
+        _, merged = numpy.unique(points.round(SAME_CORNER_DIGITS), axis=0, return_inverse=True)
+        corners = merged.reshape(-1)[triangles]
+        whole = (corners[:, 0] != corners[:, 1]) & (corners[:, 1] != corners[:, 2]) & (corners[:, 2] != corners[:, 0])
+        corners = corners[whole]
+        edges = numpy.sort(numpy.concatenate([corners[:, [0, 1]], corners[:, [1, 2]], corners[:, [2, 0]]]), axis=1)
+        counts = numpy.unique(edges, axis=0, return_counts=True)[1]
+        return bool(len(counts)) and bool((counts == 2).all())
+
+    def told(self, points):
+        """For each of `points` True where it lies inside the solid, False where
+        outside, None where the mesh does not tell. In blocks of
+        NEAR_PAIRS_AT_ONCE pairs of a point and a triangle."""
+        if not len(points):
+            return []
+        if not self.closed:
+            return [None] * len(points)
+        points = numpy.array([tuple(point) for point in points], dtype=float).reshape(-1, 3)
+        block = max(1, d.NEAR_PAIRS_AT_ONCE // len(self.a))
+        return [found for start in range(0, len(points), block) for found in self._told(points[start:start + block])]
+
+    def _told(self, points):
+        found = [None] * len(points)
+        left = numpy.nonzero(~self._near(points))[0]
+        for axes in ENCLOSED_RAYS:
+            if not len(left):
+                break
+            crossings, passed_rim = self._ray(points[left], axes)
+            for number, odd in zip(left[~passed_rim], crossings[~passed_rim] % 2 == 1):
+                found[number] = bool(odd)
+            left = left[passed_rim]
+        return found
+
+    def _near(self, points):
+        """Which of `points` lie within the margin of the mesh."""
+        near = numpy.ones((len(points), len(self.a)), dtype=bool)
+        for axis in range(3):
+            along = points[:, axis:axis + 1]
+            near &= (along >= self.low[:, axis] - d.ENCLOSED_MARGIN) & (along <= self.high[:, axis] + d.ENCLOSED_MARGIN)
+        which, of = numpy.nonzero(near)
+        found = numpy.zeros(len(points), dtype=bool)
+        if len(which):
+            off = _point_triangle_distances(points[which], self.a[of], self.b[of], self.c[of])
+            found[which[off <= d.ENCLOSED_MARGIN]] = True
+        return found
+
+    def _ray(self, points, axes):
+        """For the rays from `points` along the last of `axes`, seen along it in the
+        plane of the first two: how many triangles each goes through, and whether
+        it passes within the margin of the rim of one at or above its point."""
+        margin = d.ENCLOSED_MARGIN
+        across, along = list(axes[:2]), axes[2]
+        over = points[:, along:along + 1] <= self.high[:, along]
+        for axis in across:
+            at = points[:, axis:axis + 1]
+            over = over & (at >= self.low[:, axis] - margin) & (at <= self.high[:, axis] + margin)
+        which, of = numpy.nonzero(over)
+        crossings = numpy.zeros(len(points), dtype=int)
+        passed_rim = numpy.zeros(len(points), dtype=bool)
+        if not len(which):
+            return crossings, passed_rim
+        seen = points[which][:, across]
+        heights = [corner[of][:, along] for corner in (self.a, self.b, self.c)]
+        a, b, c = (corner[of][:, across] for corner in (self.a, self.b, self.c))
+
+        def side(start, end):
+            """Twice the area `seen` spans with the edge, on its left counted positive."""
+            return ((end[:, 0] - start[:, 0]) * (seen[:, 1] - start[:, 1])
+                    - (end[:, 1] - start[:, 1]) * (seen[:, 0] - start[:, 0]))
+
+        # By edge: a to b, which lies opposite c, b to c opposite a, c to a opposite b.
+        sides = numpy.stack([side(a, b), side(b, c), side(c, a)])
+        lengths = numpy.stack([numpy.hypot(*(end - start).T) for start, end in ((a, b), (b, c), (c, a))])
+        area = sides.sum(0)
+        # Seen along the ray, a triangle standing along it is a line.
+        upright = numpy.abs(area) <= margin * lengths.max(0)
+        if upright.any():
+            at, (ua, ub, uc) = seen[upright], (corner[upright] for corner in (a, b, c))
+            off = numpy.minimum(numpy.minimum(_segment_distances(at, ua, ub), _segment_distances(at, ub, uc)),
+                                _segment_distances(at, uc, ua))
+            passed_rim[which[upright][off <= margin]] = True
+        lying = ~upright
+        if lying.any():
+            # How far inside each edge, and from them the least: inside the triangle past the margin.
+            with numpy.errstate(divide="ignore", invalid="ignore"):
+                inside = numpy.nanmin(sides[:, lying] * numpy.sign(area[lying]) / lengths[:, lying], axis=0)
+            shares = sides[:, lying] / area[lying]
+            height = shares[1] * heights[0][lying] + shares[2] * heights[1][lying] + shares[0] * heights[2][lying]
+            passed_rim[which[lying][numpy.abs(inside) <= margin]] = True
+            numpy.add.at(crossings, which[lying][(inside > margin) & (height > points[which][lying][:, along])], 1)
+        return crossings, passed_rim
+
+
+def enclosed_of(solid):
+    """The Enclosed of `solid`; None where it is too large for it or for memory,
+    as meshed_of() has it, and the kernel is asked instead."""
+    try:
+        if len(solid.copy().tessellate(d.NEAR_MESH_COARSE)[1]) > d.NEAR_MESH_MOST:
+            return None
+        return Enclosed(solid)
+    except (MemoryError, Part.OCCError):
+        return None
 
 
 def between_rings(rings):

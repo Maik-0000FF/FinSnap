@@ -285,6 +285,15 @@ FIN_FLANK_ANGLE = OVERHANG_ANGLE
 
 # --- Checks -------------------------------------------------------------------
 TOLERANCE = 1e-4
+# How closely the mesh follows a solid on which it is told which points lie
+# inside it (shapes.Enclosed, mm): finer, the mesh takes several times as long
+# to make; coarser, it is no quicker to make, its triangles on round faces
+# being bounded by their angle, and tells of fewer points. A point is told of
+# where it lies that many times the deflection off the mesh, and what the
+# kernel takes for on the surface, or further: there mesh and solid agree.
+ENCLOSED_DEFLECTION = 0.02
+ENCLOSED_MARGIN_DEFLECTIONS = 2
+ENCLOSED_MARGIN = ENCLOSED_MARGIN_DEFLECTIONS * ENCLOSED_DEFLECTION + TOLERANCE
 # Layer positions are rounded to this many decimals, so that 5 x 1.2 is 6.0.
 LENGTH_DECIMALS = 6
 # Below this the face counts as vertical or flat and cannot carry a fin.
