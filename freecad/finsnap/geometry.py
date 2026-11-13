@@ -926,6 +926,9 @@ def _not_known_clear(pieces, part, made_of=None):
     measured against the faces of the part near it by their boxes alone: joined
     to a body that stands clear, it gets into the part through one of its faces
     only, and a face further off than TOLERANCE by its box is not that face.
+    The boxes are those that touch the faces and the tine (bounds()): BoundBox
+    stops short of a round face once the part carries a mesh, by what the mesh
+    lies off it, and a tine cutting in just there would be taken for clear.
 
     INPUTS this has to withstand:
       pieces clear of the part              ->  none
@@ -940,18 +943,24 @@ def _not_known_clear(pieces, part, made_of=None):
         part or reaching into it            ->  that piece
       a body touching or in the part        ->  that piece, its tines not measured
       a tine with no face of the part near  ->  clear, not asked of the kernel
+      a tine cutting into a round face of a
+        part that carries a mesh, where its
+        BoundBox stops short of the face    ->  that piece
     """
     # Its hash: a part of many corners would be held in full by every entry.
     part_key = hash(shape_key(part))
-    # The faces of the part with their boxes, once tines are held against them.
+    # The faces of the part with the boxes that touch them, made as the first tine is held against them.
     boxed = []
 
-    def tine_clear(tine):
+    def faces_near(tine):
         if not boxed:
-            boxed.extend((face, face.BoundBox) for face in part.Faces)
-        reach = tine.BoundBox
+            boxed.append([(face, bounds(face)) for face in part.Faces])
+        reach = bounds(tine)
         reach.enlarge(d.TOLERANCE)
-        near = [face for face, box in boxed if reach.intersect(box)]
+        return [face for face, box in boxed[0] if reach.intersect(box)]
+
+    def tine_clear(tine):
+        near = faces_near(tine)
         return not near or tine.distToShape(Part.makeCompound(near))[0] > d.TOLERANCE
 
     def measured(shapes):
