@@ -913,10 +913,22 @@ def overlap_of(fins, part):
     return 0.0 if found > fins.Volume else found
 
 
-def _not_known_clear(pieces, part):
+def _not_known_clear(pieces, part, made_of=None):
     """Those of `pieces` that are not clear of `part`, each measured once for its
     shape: a fin moved leaves the others as they are, and measuring them all with
     every move takes longer than anything else about it.
+
+    `made_of` names for each piece the shapes it was fused from, its body first,
+    then the tines joined to it. A piece is as far off the part as the nearest of
+    them, and one by one they take a third of the time the piece takes whole,
+    its many faces held against every face of the part. The body is measured
+    against the part itself, which says 0 for a body inside it. A tine is
+    measured against the faces of the part near it by their boxes alone: joined
+    to a body that stands clear, it gets into the part through one of its faces
+    only, and a face further off than TOLERANCE by its box is not that face.
+    The boxes are those that touch the faces and the tine (bounds()): BoundBox
+    stops short of a round face once the part carries a mesh, by what the mesh
+    lies off it, and a tine cutting in just there would be taken for clear.
 
     INPUTS this has to withstand:
       pieces clear of the part              ->  none
@@ -925,23 +937,49 @@ def _not_known_clear(pieces, part):
       a piece mirrored onto the corners of
         one known clear                     ->  measured: shape_key() tells them apart
       the same shape, another part          ->  measured
+      no `made_of`                          ->  each piece measured whole
+      a body clear, every tine clear        ->  clear
+      a body clear, a tine touching the
+        part or reaching into it            ->  that piece
+      a body touching or in the part        ->  that piece, its tines not measured
+      a tine with no face of the part near  ->  clear, not asked of the kernel
+      a tine cutting into a round face of a
+        part that carries a mesh, where its
+        BoundBox stops short of the face    ->  that piece
     """
     # Its hash: a part of many corners would be held in full by every entry.
     part_key = hash(shape_key(part))
+    # The faces of the part with the boxes that touch them, made as the first tine is held against them.
+    boxed = []
 
-    def clear(piece):
-        return keep(_kept_clear, (part_key, shape_key(piece)),
-                    lambda: piece.distToShape(part)[0] > d.TOLERANCE, CLEAR_KEPT)
+    def faces_near(tine):
+        if not boxed:
+            boxed.append([(face, bounds(face)) for face in part.Faces])
+        reach = bounds(tine)
+        reach.enlarge(d.TOLERANCE)
+        return [face for face, box in boxed[0] if reach.intersect(box)]
 
-    return [piece for piece in pieces if not clear(piece)]
+    def tine_clear(tine):
+        near = faces_near(tine)
+        return not near or tine.distToShape(Part.makeCompound(near))[0] > d.TOLERANCE
+
+    def measured(shapes):
+        return shapes[0].distToShape(part)[0] > d.TOLERANCE and all(tine_clear(tine) for tine in shapes[1:])
+
+    def clear(piece, shapes):
+        return keep(_kept_clear, (part_key, shape_key(piece)), lambda: measured(shapes), CLEAR_KEPT)
+
+    made_of = [[piece] for piece in pieces] if made_of is None else made_of
+    return [piece for piece, shapes in zip(pieces, made_of) if not clear(piece, shapes)]
 
 
-def check(p, part, pieces, bodies, slack=0.0):
+def check(p, part, pieces, bodies, slack=0.0, made_of=None):
     """Fins, of `pieces`, clear of the part, no closer than their distance from the
     face, give or take `slack`: along a contour, CONTOUR_TOLERANCE. That every tine
-    reaches the face is settled when the tines are chosen, by contact_share()."""
+    reaches the face is settled when the tines are chosen, by contact_share().
+    `made_of` names for each piece what it was fused from (_not_known_clear())."""
     if p.connection == d.CONNECTION_SEPARATE:
-        unsure = _not_known_clear(pieces, part)
+        unsure = _not_known_clear(pieces, part, made_of)
         overlap = overlap_of(Part.makeCompound(unsure), part) if unsure else 0.0
         if overlap > d.TOLERANCE:
             raise FinError(translate("FinSnap", "the fins overlap the part by %.4f mm³") % overlap)
@@ -1822,6 +1860,8 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     bodies = []
     all_tines = []
     pieces = []
+    # By piece, the body and the tines it is fused from.
+    made_of = []
     # Tines over the gap between two faces in one plane are named as over a recess.
     findings = _Found(gap_heights=set(plan.gap_z), side_missing=side_missing)
     edges = []
@@ -1874,13 +1914,14 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         # sits on the top of the foot, where foot, flank and tine share an edge,
         # and fusing them pairwise fails on that edge.
         pieces.append(body.multiFuse(kept).removeSplitter() if piece is None else piece)
+        made_of.append([body] + kept)
 
     if not built_fins:
         raise FinError(translate("FinSnap", NOTE_NO_SIDE_FIN))
     fins = Part.makeCompound(pieces)
     # Fins beside the lowest line were measured as they were built.
     measured = [body for fin, body in zip(built_fins, bodies) if fin.number not in frames]
-    check(p, part, pieces, measured, 0.0 if frame.contour is None else d.CONTOUR_TOLERANCE)
+    check(p, part, pieces, measured, 0.0 if frame.contour is None else d.CONTOUR_TOLERANCE, made_of)
     warnings, targets = _warnings(p, frame, plan, findings)
 
     numbers = [fin.number for fin in built_fins]

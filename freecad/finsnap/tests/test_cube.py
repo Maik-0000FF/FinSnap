@@ -290,6 +290,18 @@ MATRIX_SIDE_TINES = {"rod": (7, 7, 7, 7, 7, 7, 7, 7), "tube": (7, 7, 7, 7), "ste
 HEIGHT_ACROSS_FIN = 0.02  # how far above the height it says a fin may reach (mm)
 LARGE_FILLET_RADIUS = 9.5  # nearly the radius of the rod
 MESHED_BOX, MESHED_OFF = 10.0, 0.5  # a box measured by its mesh, and how far off it (mm)
+# A fin measured by what it is fused from (check_known_clear()): how far its tine
+# ends off the box, and how far a tine reaches into it (mm).
+APART_TINE_OFF = 0.05
+APART_TINE_IN = 0.2
+# A round part that carries a mesh: its radius, its height and how closely the
+# mesh follows it (mm); the turns about its axis its side is looked at for
+# where its BoundBox stops shortest of it (degrees); and the share of that a
+# tine cuts into it there.
+APART_ROUND = (10.0, 20.0)
+APART_ROUND_MESH = 0.02
+APART_ROUND_TURNS = (0.0, 90.0, 180.0, 270.0)
+APART_ROUND_CUT = 0.9
 MESHED_VOLUME_APART = 0.5  # mm3: found on the mesh and exactly, the fins stand within a resolution
 FLANK_OUT_MOVED = 0.05  # mm: a blade moved out by more than this has really moved
 SETTLE_RESOLUTION, SETTLE_MOST = 0.01, 2.0  # what check_settled_clear() searches to and up to
@@ -3389,6 +3401,60 @@ def check_known_clear():
     # What is kept is what is answered: said otherwise there, the shape is not measured.
     geometry._kept_clear[(hash(shapes.shape_key(part)), shapes.shape_key(off))] = False
     expect(len(geometry._not_known_clear([off], part)) == 1, "a shape asked again is not measured again")
+
+    # A piece measured by its body and the tines joined to it, one by one.
+    def fin(body_at, tine_from):
+        """A body from `body_at` on beside the box and a tine from `tine_from` to it, and the two fused."""
+        body = Part.makeBox(1, 1, 1, V(body_at, 0, 0))
+        tine = Part.makeBox(body_at - tine_from, 0.5, 0.5, V(tine_from, 0.25, 0.25))
+        return body.fuse(tine).removeSplitter(), [body, tine]
+
+    def unsure_of(piece, shapes):
+        geometry._kept_clear.clear()
+        return len(geometry._not_known_clear([piece], part, [shapes])), len(geometry._not_known_clear([piece], part))
+
+    body_at = MESHED_BOX + MESHED_OFF
+    cases = [("the tine ending short of the part", fin(body_at, MESHED_BOX + APART_TINE_OFF), 0),
+             ("the tine touching the part", fin(body_at, MESHED_BOX), 1),
+             ("the tine reaching into the part", fin(body_at, MESHED_BOX - APART_TINE_IN), 1),
+             ("the body touching the part", fin(MESHED_BOX, MESHED_BOX - APART_TINE_IN), 1),
+             ("the body in the part", fin(1.0, 1.0 - APART_TINE_IN), 1)]
+    told = [(name, unsure_of(piece, shapes), expected) for name, (piece, shapes), expected in cases]
+    expect(all(found == (expected, expected) for _, found, expected in told),
+           "a fin by its body and its tine is told clear of the part as the fin whole: %s"
+           % ", ".join("%s %s" % (name, "not clear" if found[0] else "clear") for name, found, _ in told))
+    far_body = Part.makeBox(1, 1, 1, V(3 * MESHED_BOX, 0, 0))
+    far_tine = Part.makeBox(1, 0.5, 0.5, V(3 * MESHED_BOX - 1, 0.25, 0.25))
+    geometry._kept_clear.clear()
+    expect(geometry._not_known_clear([far_body.fuse(far_tine)], part, [[far_body, far_tine]]) == [],
+           "a tine with no face of the part near it is clear")
+    # A round part that carries a mesh: the BoundBox of its side stops short of it.
+    radius, height = APART_ROUND
+    round_part = Part.makeCylinder(radius, height)
+    round_part.tessellate(APART_ROUND_MESH)
+    side = next(face for face in round_part.Faces if isinstance(face.Surface, Part.Cylinder))
+
+    def short_at(turn):
+        """How far the BoundBox of the side stops short of it, `turn` degrees round the axis."""
+        out = App.Rotation(V(0, 0, 1), turn).multVec(V(1, 0, 0))
+        box = side.BoundBox
+        return radius - max(V(x, y, 0).dot(out) for x in (box.XMin, box.XMax) for y in (box.YMin, box.YMax))
+
+    turn = max(APART_ROUND_TURNS, key=short_at)
+    short = short_at(turn)
+    cut = short * APART_ROUND_CUT
+    body = Part.makeBox(1, 1, 1, V(radius + 1, -0.5, height / 2))
+    tine = Part.makeBox(1 + cut, 0.5, 0.5, V(radius - cut, -0.25, height / 2 + 0.25))
+    for shape in (body, tine):
+        shape.rotate(V(0, 0, 0), V(0, 0, 1), turn)
+    piece = body.fuse(tine).removeSplitter()
+    geometry._kept_clear.clear()
+    apart = len(geometry._not_known_clear([piece], round_part, [[body, tine]]))
+    geometry._kept_clear.clear()
+    whole = len(geometry._not_known_clear([piece], round_part))
+    expect(short > d.TOLERANCE and cut > d.TOLERANCE and (apart, whole) == (1, 1),
+           "a tine cutting %.4f mm into a round part that carries a mesh, where its BoundBox stops %.4f mm short "
+           "of it, is not taken for clear" % (cut, short))
 
     def bulging(x, tip):
         """A plate with one side an arc, from x, 0 to x, MESHED_BOX, bulging to tip."""
