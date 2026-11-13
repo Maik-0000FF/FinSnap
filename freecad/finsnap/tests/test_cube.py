@@ -1367,6 +1367,23 @@ def check_tine_ends(cube, face):
                  for off in (clearance, clearance + far, clearance - far)]
         expect(found == [None, tine_rows.TINE_MISSES, tine_rows.TINE_CUTS_IN],
                "a tine end the clearance off %s, further off and nearer: %s" % (what, found))
+    class Counted:
+        """A surface that counts how often all of it is measured."""
+
+        def __init__(self, shape):
+            self.shape, self.Faces, self.whole = shape, shape.Faces, 0
+
+        def distToShape(self, other):  # noqa: N802 - FreeCAD API
+            self.whole += 1
+            return self.shape.distToShape(other)
+
+    near_ring, far_off = V(sum(RING) + clearance, 0, -BOX_SIDE), V(sum(RING) + BOX_SIDE, 0, -BOX_SIDE)
+    alone, beside = Counted(ring), Counted(with_flat)
+    found = [tine_rows.tine_end_fault(surface, [point], clearance)
+             for surface in (alone, beside) for point in (near_ring, far_off)]
+    expect(found == [None, tine_rows.TINE_MISSES] * 2 and (alone.whole, beside.whole) == (0, 1),
+           "a point far off a ring is not measured a second time against the ring alone, which is all there is; "
+           "beside a flat face it is measured against both: %s, %d and %d times" % (found, alone.whole, beside.whole))
     boxes = [box for _, box in shapes.boxed_faces(with_flat, clearance)]
     expect(boxes[0] is None and abs(boxes[1].ZMin + clearance) < d.TOLERANCE
            and abs(boxes[1].XMax - BOX_SIDE - clearance) < d.TOLERANCE

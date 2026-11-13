@@ -713,6 +713,9 @@ def _off_surface(surface, point, reach):
         of several                          ->  the nearest of them
       a point in the box of no face         ->  measured against the whole surface
       a face without a box, as on a torus   ->  measured for every point
+      every face near the point, as where
+        none has a box, further than `reach` ->  what they say: they are the whole
+                                                surface, not measured again
       a point in a box, further than `reach`
         from the faces near it              ->  measured against the whole surface
       a point nearest an edge or a corner   ->  not behind
@@ -727,7 +730,7 @@ def _off_surface(surface, point, reach):
             if near not in joined:
                 joined[near] = Part.makeCompound([boxed[number][0] for number in near])
             found = joined[near].distToShape(vertex)
-        if found is None or found[0] > reach:
+        if found is None or found[0] > reach and len(near) < len(boxed):
             near = range(len(boxed))
             found = surface.distToShape(vertex)
     except Part.OCCError:
