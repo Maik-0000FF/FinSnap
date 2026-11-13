@@ -294,6 +294,17 @@ MESHED_BOX, MESHED_OFF = 10.0, 0.5  # a box measured by its mesh, and how far of
 # ends off the box, and how far a tine reaches into it (mm).
 APART_TINE_OFF = 0.05
 APART_TINE_IN = 0.2
+# A round part that carries a coarse mesh, for the end of a tine measured
+# against the faces near it (check_tine_ends()): its radius, its height and how
+# closely the mesh follows it (mm); the clearance a tine end is to keep; how
+# far off the side a point lies, far nearer than the clearance; and half the
+# side of a flat face standing the clearance beyond the point, whose box is
+# exact while that of the meshed side stops short (mm).
+ENDS_ROUND = (2000.0, 20.0)
+ENDS_ROUND_MESH = 5.0
+ENDS_ROUND_CLEARANCE = 0.2
+ENDS_ROUND_OFF = 0.01
+ENDS_ROUND_FLAT = 1.0
 # A round part that carries a mesh: its radius, its height and how closely the
 # mesh follows it (mm); the turns about its axis its side is looked at for
 # where its BoundBox stops shortest of it (degrees); and the share of that a
@@ -1339,6 +1350,43 @@ def check_tine_ends(cube, face):
              "past the end of the face")):
         found = tine_rows.tine_end_fault(bottom, points, gap)
         expect(found == wanted, "a tine end %s: %s" % (what, found))
+        # Against all the faces of the box, of which the bottom alone is near: the same.
+        found = tine_rows.tine_end_fault(box, points, gap)
+        expect(found == wanted, "a tine end %s, against the whole box: %s" % (what, found))
+    expect(tine_rows.tine_end_fault(box, [V(middle, middle, middle)], clearance) == tine_rows.TINE_CUTS_IN
+           and tine_rows.tine_end_fault(box, [V(middle, middle, -BOX_SIDE)], clearance) == tine_rows.TINE_MISSES,
+           "a point in the box of no face, deep in the part or far below it, is measured against all the faces")
+    # A round part that carries a mesh: the BoundBox of its side stops short of it, the box that touches it not.
+    radius, height = ENDS_ROUND
+    round_part = Part.makeCylinder(radius, height)
+    plain = round_part.copy()
+    round_part.tessellate(ENDS_ROUND_MESH)
+    side = next(f for f in round_part.Faces if isinstance(f.Surface, Part.Cylinder))
+
+    def short_at(turn):
+        """How far the BoundBox of the side stops short of it, `turn` degrees round the axis."""
+        out = App.Rotation(V(0, 0, 1), turn).multVec(V(1, 0, 0))
+        reach = side.BoundBox
+        return radius - max(V(x, y, 0).dot(out) for x in (reach.XMin, reach.XMax) for y in (reach.YMin, reach.YMax))
+
+    turn = max(APART_ROUND_TURNS, key=short_at)
+    short = short_at(turn)
+    out, half = radius + ENDS_ROUND_OFF, ENDS_ROUND_FLAT
+    by_side = V(out, 0, height / 2)
+    # Its corners in the order that turns its outward side to the point.
+    flat = Part.Face(Part.makePolygon([V(out + ENDS_ROUND_CLEARANCE, y, height / 2 + z)
+                                       for y, z in ((-half, -half), (-half, half), (half, half), (half, -half),
+                                                    (-half, -half))]))
+    flat.rotate(V(0, 0, 0), V(0, 0, 1), turn)
+    by_side = App.Rotation(V(0, 0, 1), turn).multVec(by_side)
+    found = [tine_rows.tine_end_fault(Part.makeCompound([shape, flat]), [by_side], ENDS_ROUND_CLEARANCE)
+             for shape in (side, plain)]
+    alone = tine_rows.tine_end_fault(flat, [by_side], ENDS_ROUND_CLEARANCE)
+    expect(short > ENDS_ROUND_CLEARANCE + d.TINE_END_TOLERANCE + d.TOLERANCE + ENDS_ROUND_OFF
+           and alone is None and found == [tine_rows.TINE_CUTS_IN] * 2,
+           "a point %.2f mm off the side of a round part that carries a mesh, where the BoundBox of the side stops "
+           "%.2f mm short of it, and the clearance off a flat face beside it, is too near the side: %s"
+           % (ENDS_ROUND_OFF, short, found))
 
     def said(result):
         return [w for w in result.warnings if "miss the face" in w or "into the part" in w]
