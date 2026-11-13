@@ -110,7 +110,8 @@ from . import defaults as d
 from . import orient
 from .face_frame import UP, FinError, Frame, HandEditError, beside_lowest, frame_of, in_plane, support_of
 from .i18n import QT_TRANSLATE_NOOP, translate
-from .shapes import TooManyPairs, between_rings, bounds, enclosed_of, keep, meshed_of, shape_key, working
+from .shapes import (TooManyPairs, between_rings, bounds, boxed_faces, enclosed_of, keep, meshed_of, shape_key,
+                     working)
 from .tine_rows import (NARROW_AT_EVERY_TINE, TINE_CUTS_IN, TINE_MISSES, extent_at, face_tines, fin_stretch, flank_bend,
                         forget_outline, restarted_tines, round_move, side_foot_start, side_tine, tine_end,
                         tine_end_fault, tine_end_points, tine_start, tines_on_face, touching_at, wide_enough)
@@ -926,9 +927,11 @@ def _not_known_clear(pieces, part, made_of=None):
     measured against the faces of the part near it by their boxes alone: joined
     to a body that stands clear, it gets into the part through one of its faces
     only, and a face further off than TOLERANCE by its box is not that face.
-    The boxes are those that touch the faces and the tine (bounds()): BoundBox
-    stops short of a round face once the part carries a mesh, by what the mesh
-    lies off it, and a tine cutting in just there would be taken for clear.
+    The boxes are those that touch the faces and the tine (boxed_faces(),
+    bounds()): BoundBox stops short of a round face once the part carries a
+    mesh, by what the mesh lies off it, and a tine cutting in just there would
+    be taken for clear. A face that has no such box, a fillet round a round
+    edge or a freeform face, is held against every tine.
 
     INPUTS this has to withstand:
       pieces clear of the part              ->  none
@@ -946,6 +949,8 @@ def _not_known_clear(pieces, part, made_of=None):
       a tine cutting into a round face of a
         part that carries a mesh, where its
         BoundBox stops short of the face    ->  that piece
+      a tine touching a face without a box,
+        as on a torus                       ->  that piece
     """
     # Its hash: a part of many corners would be held in full by every entry.
     part_key = hash(shape_key(part))
@@ -954,10 +959,10 @@ def _not_known_clear(pieces, part, made_of=None):
 
     def faces_near(tine):
         if not boxed:
-            boxed.append([(face, bounds(face)) for face in part.Faces])
+            boxed.append(boxed_faces(part))
         reach = bounds(tine)
         reach.enlarge(d.TOLERANCE)
-        return [face for face, box in boxed[0] if reach.intersect(box)]
+        return [face for face, box in boxed[0] if box is None or reach.intersect(box)]
 
     def tine_clear(tine):
         near = faces_near(tine)

@@ -13,6 +13,7 @@ import Part
 from . import defaults as d
 from .face_frame import FinError
 from .i18n import QT_TRANSLATE_NOOP, translate
+from .shapes import boxed_faces, keep
 
 # How near a cut a corner of a face may lie for the cut still to be worked out
 # from its corners (_cut_corners()): nearer, the kernel cuts, as only it knows
@@ -681,6 +682,62 @@ ROUND_MOVE_MOST = 2.0
 SIDE_TINE_STEPS = 16
 # What is wrong with the end of a tine, see tine_end_fault().
 TINE_MISSES, TINE_CUTS_IN = "misses", "cuts in"
+# The faces the fins carry with their boxes (_carried()), by the shape handed
+# in, which is held with them, and how wide the boxes are: of as many shapes
+# as keep() holds by itself.
+_kept_carried = {}
+
+
+def _carried(surface, reach):
+    """`surface`, the faces the fins carry, as tine_end_fault() holds points
+    against it: its faces with their boxes `reach` wider (boxed_faces()), and
+    the faces near a point joined to one shape, as they are asked for. Kept
+    with the shape for as long as it is held here, as every tine end of a
+    build asks of the same faces."""
+    return keep(_kept_carried, (id(surface), reach), lambda: (surface, boxed_faces(surface, reach), {}))[1:]
+
+
+def _off_surface(surface, point, reach):
+    """How far `point` lies from `surface`, and whether behind the face nearest
+    it, by the outward normal there; None where the kernel cannot measure it.
+
+    Measured against the faces whose box the point lies in, `reach` wide
+    (_carried()), which are few where the whole surface is the part, and
+    against those that have no box, a fillet round a round edge or a freeform
+    face. What they say holds where it is no further than `reach`: every other
+    face lies further off than that. Else the whole surface is measured.
+
+    INPUTS this has to withstand:
+      a point within `reach` of a face      ->  measured against the faces near it
+      a point nearer one face, in the boxes
+        of several                          ->  the nearest of them
+      a point in the box of no face         ->  measured against the whole surface
+      a face without a box, as on a torus   ->  measured for every point
+      every face near the point, as where
+        none has a box, further than `reach` ->  what they say: they are the whole
+                                                surface, not measured again
+      a point in a box, further than `reach`
+        from the faces near it              ->  measured against the whole surface
+      a point nearest an edge or a corner   ->  not behind
+      a point the kernel cannot measure     ->  None
+    """
+    boxed, joined = _carried(surface, reach)
+    vertex = Part.Vertex(point)
+    near = tuple(number for number, (_, box) in enumerate(boxed) if box is None or box.isInside(point))
+    try:
+        found = None
+        if near:
+            if near not in joined:
+                joined[near] = Part.makeCompound([boxed[number][0] for number in near])
+            found = joined[near].distToShape(vertex)
+        if found is None or found[0] > reach and len(near) < len(boxed):
+            near = range(len(boxed))
+            found = surface.distToShape(vertex)
+    except Part.OCCError:
+        return None
+    distance, nearest, where = found
+    on_surface, kind, index, uv = nearest[0][0], where[0][0], where[0][1], where[0][2]
+    return distance, kind == "Face" and (point - on_surface).dot(boxed[near[index]][0].normalAt(*uv)) < 0
 
 
 def tine_end_fault(surface, points, clearance):
@@ -696,6 +753,9 @@ def tine_end_fault(surface, points, clearance):
     at the nearest point, not by classifying it in the whole part: that costs
     as much again as building the fins, at every drag of an arrow.
 
+    A point is measured against the faces near it (_off_surface()), as far as
+    it may lie off them for the end to be right, and a hair more.
+
     INPUTS this has to withstand:
       every point on the surface, no clearance       ->  None
       every point the clearance off the surface      ->  None
@@ -709,15 +769,13 @@ def tine_end_fault(surface, points, clearance):
                                                         where it is that far off
       a point the kernel cannot measure             ->  None: not said to be wrong
     """
+    reach = clearance + d.TINE_END_TOLERANCE + d.TOLERANCE
     offsets = []
     for point in points:
-        try:
-            distance, nearest, where = surface.distToShape(Part.Vertex(point))
-        except Part.OCCError:
-            continue
-        on_surface, kind, index, uv = nearest[0][0], where[0][0], where[0][1], where[0][2]
-        behind = kind == "Face" and (point - on_surface).dot(surface.Faces[index].normalAt(*uv)) < 0
-        offsets.append((-distance if behind else distance) - clearance)
+        measured = _off_surface(surface, point, reach)
+        if measured is not None:
+            distance, behind = measured
+            offsets.append((-distance if behind else distance) - clearance)
     if any(offset < -d.TINE_END_TOLERANCE for offset in offsets):
         return TINE_CUTS_IN
     if any(offset > d.TINE_END_TOLERANCE for offset in offsets):

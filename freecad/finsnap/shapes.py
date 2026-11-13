@@ -45,6 +45,11 @@ from .i18n import translate
 
 # bounds() measures the surfaces themselves, never a mesh that may hang on them.
 USE_TRIANGULATION = False
+# The surfaces on which bounds() finds the box of a face in well under a
+# millisecond (boxed_faces()). On a torus, as a fillet round a round edge is,
+# or a freeform surface it takes five to fifteen, as long as measuring a
+# hundred points against the face.
+QUICK_TO_BOX = (Part.Plane, Part.Cylinder, Part.Cone, Part.Sphere)
 # Prefix of the face names FreeCAD uses in selections and links: "Face3".
 FACE_PREFIX = "Face"
 # The container that holds a PartDesign part; its shape is that of its last feature.
@@ -99,6 +104,34 @@ def bounds(shape):
     of curved faces, so after a turn it can stand millimetres off a fillet: a
     part would then float above the bed, and fins reach below it."""
     return shape.optimalBoundingBox(USE_TRIANGULATION)
+
+
+def boxed_faces(shape, reach=0.0):
+    """The faces of `shape`, each with the box that touches it (bounds()), `reach`
+    wider, to tell which of them something can lie near; None in place of the
+    box of a face on a surface that is not QUICK_TO_BOX, which is to be taken
+    for near everything: its box would cost more than it saves.
+
+    Not BoundBox: it stops short of a round face once the shape carries a mesh,
+    by what the mesh lies off the face.
+
+    INPUTS this has to withstand:
+      a planar face, one on a cylinder, a
+        cone or a sphere                    ->  its box, `reach` wider
+      a face on a torus or a freeform
+        surface                             ->  None
+      a round face of a shape that carries
+        a mesh                              ->  the box of the face, not of the mesh
+      a shape without a face                ->  no faces
+    """
+    found = []
+    for face in shape.Faces:
+        box = None
+        if isinstance(face.Surface, QUICK_TO_BOX):
+            box = bounds(face)
+            box.enlarge(reach)
+        found.append((face, box))
+    return found
 
 
 def shape_key(shape):

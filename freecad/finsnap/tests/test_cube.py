@@ -294,6 +294,20 @@ MESHED_BOX, MESHED_OFF = 10.0, 0.5  # a box measured by its mesh, and how far of
 # ends off the box, and how far a tine reaches into it (mm).
 APART_TINE_OFF = 0.05
 APART_TINE_IN = 0.2
+# A round part that carries a coarse mesh, for the end of a tine measured
+# against the faces near it (check_tine_ends()): its radius, its height and how
+# closely the mesh follows it (mm); the clearance a tine end is to keep; how
+# far off the side a point lies, far nearer than the clearance; and half the
+# side of a flat face standing the clearance beyond the point, whose box is
+# exact while that of the meshed side stops short (mm).
+ENDS_ROUND = (2000.0, 20.0)
+ENDS_ROUND_MESH = 5.0
+ENDS_ROUND_CLEARANCE = 0.2
+ENDS_ROUND_OFF = 0.01
+ENDS_ROUND_FLAT = 1.0
+# A ring, whose face lies on a torus and so has no box to tell what is near
+# it by (check_tine_ends(), check_known_clear()): its two radii (mm).
+RING = (10.0, 2.0)
 # A round part that carries a mesh: its radius, its height and how closely the
 # mesh follows it (mm); the turns about its axis its side is looked at for
 # where its BoundBox stops shortest of it (degrees); and the share of that a
@@ -1339,6 +1353,74 @@ def check_tine_ends(cube, face):
              "past the end of the face")):
         found = tine_rows.tine_end_fault(bottom, points, gap)
         expect(found == wanted, "a tine end %s: %s" % (what, found))
+        # Against all the faces of the box, of which the bottom alone is near: the same.
+        found = tine_rows.tine_end_fault(box, points, gap)
+        expect(found == wanted, "a tine end %s, against the whole box: %s" % (what, found))
+    expect(tine_rows.tine_end_fault(box, [V(middle, middle, middle)], clearance) == tine_rows.TINE_CUTS_IN
+           and tine_rows.tine_end_fault(box, [V(middle, middle, -BOX_SIDE)], clearance) == tine_rows.TINE_MISSES,
+           "a point in the box of no face, deep in the part or far below it, is measured against all the faces")
+    # A face on a torus has no box: it is measured for every point, alone and beside a flat face.
+    ring = Part.makeTorus(RING[0], RING[1], V(0, 0, -BOX_SIDE))
+    with_flat = Part.makeCompound([ring.Faces[0], bottom])
+    for surface, what in ((ring, "a ring"), (with_flat, "a ring beside a flat face")):
+        found = [tine_rows.tine_end_fault(surface, [V(sum(RING) + off, 0, -BOX_SIDE)], clearance)
+                 for off in (clearance, clearance + far, clearance - far)]
+        expect(found == [None, tine_rows.TINE_MISSES, tine_rows.TINE_CUTS_IN],
+               "a tine end the clearance off %s, further off and nearer: %s" % (what, found))
+    class Counted:
+        """A surface that counts how often all of it is measured."""
+
+        def __init__(self, shape):
+            self.shape, self.Faces, self.whole = shape, shape.Faces, 0
+
+        def distToShape(self, other):  # noqa: N802 - FreeCAD API
+            self.whole += 1
+            return self.shape.distToShape(other)
+
+    near_ring, far_off = V(sum(RING) + clearance, 0, -BOX_SIDE), V(sum(RING) + BOX_SIDE, 0, -BOX_SIDE)
+    alone, beside = Counted(ring), Counted(with_flat)
+    found = [tine_rows.tine_end_fault(surface, [point], clearance)
+             for surface in (alone, beside) for point in (near_ring, far_off)]
+    expect(found == [None, tine_rows.TINE_MISSES] * 2 and (alone.whole, beside.whole) == (0, 1),
+           "a point far off a ring is not measured a second time against the ring alone, which is all there is; "
+           "beside a flat face it is measured against both: %s, %d and %d times" % (found, alone.whole, beside.whole))
+    boxes = [box for _, box in shapes.boxed_faces(with_flat, clearance)]
+    expect(boxes[0] is None and abs(boxes[1].ZMin + clearance) < d.TOLERANCE
+           and abs(boxes[1].XMax - BOX_SIDE - clearance) < d.TOLERANCE
+           and shapes.boxed_faces(Part.Compound([])) == [],
+           "a face on a torus has no box, a flat face the one that touches it, wider by what is asked; "
+           "a shape without a face has none")
+    # A round part that carries a mesh: the BoundBox of its side stops short of it, the box that touches it not.
+    radius, height = ENDS_ROUND
+    round_part = Part.makeCylinder(radius, height)
+    plain = round_part.copy()
+    round_part.tessellate(ENDS_ROUND_MESH)
+    side = next(f for f in round_part.Faces if isinstance(f.Surface, Part.Cylinder))
+
+    def short_at(turn):
+        """How far the BoundBox of the side stops short of it, `turn` degrees round the axis."""
+        out = App.Rotation(V(0, 0, 1), turn).multVec(V(1, 0, 0))
+        reach = side.BoundBox
+        return radius - max(V(x, y, 0).dot(out) for x in (reach.XMin, reach.XMax) for y in (reach.YMin, reach.YMax))
+
+    turn = max(APART_ROUND_TURNS, key=short_at)
+    short = short_at(turn)
+    out, half = radius + ENDS_ROUND_OFF, ENDS_ROUND_FLAT
+    by_side = V(out, 0, height / 2)
+    # Its corners in the order that turns its outward side to the point.
+    flat = Part.Face(Part.makePolygon([V(out + ENDS_ROUND_CLEARANCE, y, height / 2 + z)
+                                       for y, z in ((-half, -half), (-half, half), (half, half), (half, -half),
+                                                    (-half, -half))]))
+    flat.rotate(V(0, 0, 0), V(0, 0, 1), turn)
+    by_side = App.Rotation(V(0, 0, 1), turn).multVec(by_side)
+    found = [tine_rows.tine_end_fault(Part.makeCompound([shape, flat]), [by_side], ENDS_ROUND_CLEARANCE)
+             for shape in (side, plain)]
+    alone = tine_rows.tine_end_fault(flat, [by_side], ENDS_ROUND_CLEARANCE)
+    expect(short > ENDS_ROUND_CLEARANCE + d.TINE_END_TOLERANCE + d.TOLERANCE + ENDS_ROUND_OFF
+           and alone is None and found == [tine_rows.TINE_CUTS_IN] * 2,
+           "a point %.2f mm off the side of a round part that carries a mesh, where the BoundBox of the side stops "
+           "%.2f mm short of it, and the clearance off a flat face beside it, is too near the side: %s"
+           % (ENDS_ROUND_OFF, short, found))
 
     def said(result):
         return [w for w in result.warnings if "miss the face" in w or "into the part" in w]
@@ -3428,6 +3510,18 @@ def check_known_clear():
     geometry._kept_clear.clear()
     expect(geometry._not_known_clear([far_body.fuse(far_tine)], part, [[far_body, far_tine]]) == [],
            "a tine with no face of the part near it is clear")
+    # A part whose face has no box, on a torus: held against every tine.
+    ring = Part.makeTorus(*RING)
+    geometry._kept_clear.clear()
+    told = []
+    for tine_from in (sum(RING) + APART_TINE_OFF, sum(RING) - APART_TINE_IN):
+        body = Part.makeBox(1, 1, 1, V(sum(RING) + MESHED_OFF, -0.5, -0.5))
+        tine = Part.makeBox(sum(RING) + MESHED_OFF - tine_from, 0.5, 0.5, V(tine_from, -0.25, -0.25))
+        piece = body.fuse(tine).removeSplitter()
+        told.append((len(geometry._not_known_clear([piece], ring, [[body, tine]])),
+                     ring.distToShape(piece)[0] <= d.TOLERANCE))
+    expect(told == [(0, False), (1, True)],
+           "a tine ending short of a ring is clear, one reaching into it is not, as the fin whole says: %s" % told)
     # A round part that carries a mesh: the BoundBox of its side stops short of it.
     radius, height = APART_ROUND
     round_part = Part.makeCylinder(radius, height)
