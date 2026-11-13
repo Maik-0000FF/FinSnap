@@ -26,6 +26,7 @@ All notable changes to FinSnap are listed here. The format follows
 - A place where a fin would stand in what of the part stands out in front of the face is told from points of the fin, before the fin is built and its tines are measured against the part: Quick fins on the fillet of a round part, where two large faces take no fin at all, takes 18 s instead of 61 s (#243)
 - How wide a planar face of straight edges is at a height, and where it lies under a fin, is worked out from its corners instead of cut by the kernel; a cut through a corner or along an edge, and every other face, is cut as before: Quick fins on the fillet of a round part takes 12 s instead of 20 s (#243)
 - Whether a point of a fin lies in what of the part stands out in front of the face is told on a mesh of it, the points of a place at once, and asked of the kernel only where the mesh cannot tell, near its surface: Quick fins on the fillet of a round part takes 8.5 s instead of 10.7 s, and what it finds is the same (#243)
+- What stands out in front of a face is meshed for that only once the kernel has taken as long for it as a mesh costs to make, and was slow at it: a dome, of which the kernel tells a point in no time, and a solid asked of a few points are no longer meshed for nothing. A fin under a face with a dome of 400 mm radius is built in 2.9 s instead of 3.3 s, with one of 2 m radius in 27 s instead of 29 s (#247)
 
 ### Fixed
 
