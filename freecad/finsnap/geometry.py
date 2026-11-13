@@ -148,7 +148,9 @@ _kept_in_front = {}
 IN_FRONT_KEPT = 32
 IN_FRONT_SKIN = 1e-3
 # The solids of what stands out in front of a face, each with its box and its
-# mesh (_solids_in()), by the shape in_front_of() keeps, as many as it keeps.
+# mesh (_solids_in()), by the shape in_front_of() keeps: of as many as keep()
+# holds by itself, which is more than a search goes through and bounds what
+# the meshes take in memory.
 _kept_solids_in = {}
 # Where a fin is looked at for standing in what is in front of the face before it
 # is built (_Places.surely_in_part()): the shares of its blade's height and of its
@@ -1077,7 +1079,7 @@ def _solids_in(front):
     def make():
         return front, [(solid, solid.BoundBox, enclosed_of(solid)) for solid in front.Solids]
 
-    return keep(_kept_solids_in, id(front), make, IN_FRONT_KEPT)[1]
+    return keep(_kept_solids_in, id(front), make)[1]
 
 
 def _any_inside(front, points):

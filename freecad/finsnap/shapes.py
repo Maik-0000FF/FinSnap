@@ -71,6 +71,11 @@ SAME_CORNER_DIGITS = 6
 # The rays Enclosed counts the crossings of, tried in this order, each as the
 # two axes it is seen across and the one it runs along.
 ENCLOSED_RAYS = ((0, 1, 2), (1, 2, 0), (2, 0, 1))
+# How many triangles the grid they are sorted into for a ray aims at a cell, and
+# how often each may be named in it, over all the cells it reaches, before the
+# grid is made coarser: more would take longer to sort than they save.
+ENCLOSED_PER_CELL = 4
+ENCLOSED_CELL_NAMINGS = 8
 
 
 def face_name(number):
@@ -321,6 +326,50 @@ def _segment_distances(points, start, end):
     return numpy.sqrt(((points - nearest) ** 2).sum(1))
 
 
+_Cells = namedtuple("_Cells", "corner size count starts triangles most")
+
+
+def _cells(low, high, margin):
+    """Triangles, seen in a plane, sorted into a square grid by the boxes round
+    them, from `low` to `high` on each row and `margin` wider: what
+    _candidates() needs to name, for a point, the few it can lie within the
+    margin of. The grid aims at ENCLOSED_PER_CELL triangles a cell; where
+    they reach over so many cells that they are named more than
+    ENCLOSED_CELL_NAMINGS times each, as the long ones round a cylinder do,
+    it is made coarser."""
+    corner = low.min(0) - 2 * margin
+    extent = high.max(0) + 2 * margin - corner
+    count = max(1, int(numpy.ceil(numpy.sqrt(len(low) / ENCLOSED_PER_CELL))))
+    while True:
+        size = extent / count
+        first = numpy.clip(((low - margin - corner) / size).astype(int), 0, count - 1)
+        reach = numpy.clip(((high + margin - corner) / size).astype(int), 0, count - 1) - first + 1
+        each = reach[:, 0] * reach[:, 1]
+        if count == 1 or each.sum() <= ENCLOSED_CELL_NAMINGS * len(low):
+            break
+        count //= 2
+    of = numpy.repeat(numpy.arange(len(low)), each)
+    step = numpy.arange(each.sum()) - numpy.repeat(numpy.cumsum(each) - each, each)
+    cell = (first[of, 0] + step // reach[of, 1]) * count + first[of, 1] + step % reach[of, 1]
+    order = numpy.argsort(cell, kind="stable")
+    starts = numpy.searchsorted(cell[order], numpy.arange(count * count + 1))
+    return _Cells(corner, size, count, starts, of[order], int(numpy.diff(starts).max()))
+
+
+def _candidates(cells, seen):
+    """For the points `seen` in the plane of `cells`, the triangles of the cell
+    each lies in, as pairs: the number of the point and that of the triangle.
+    A point off the grid lies further than the margin from every triangle and
+    has none."""
+    at = numpy.floor((seen - cells.corner) / cells.size).astype(int)
+    on_grid = ((at >= 0) & (at < cells.count)).all(1)
+    cell = numpy.where(on_grid, at[:, 0] * cells.count + at[:, 1], 0)
+    each = numpy.where(on_grid, cells.starts[cell + 1] - cells.starts[cell], 0)
+    which = numpy.repeat(numpy.arange(len(seen)), each)
+    step = numpy.arange(each.sum()) - numpy.repeat(numpy.cumsum(each) - each, each)
+    return which, cells.triangles[cells.starts[cell][which] + step]
+
+
 class Enclosed:
     """A solid as a closed mesh, to tell of many points at once which lie inside
     it, in a fraction of the time the kernel takes for one. It tells only of a
@@ -331,6 +380,10 @@ class Enclosed:
     of times. A ray that passes within the margin of the rim of a triangle
     could go through it or miss it: it is not counted on, and the next of
     ENCLOSED_RAYS is tried.
+
+    Seen along a ray the triangles lie sorted into a grid (_cells()), made as
+    the first point asks along it, so that a point is held against the few of
+    its cell and what it costs hardly grows with the mesh.
 
     INPUTS this has to withstand (told()):
       a point deep inside the solid         ->  True
@@ -349,6 +402,8 @@ class Enclosed:
         shell or a face, or with an edge
         more than two triangles share       ->  None for every point
       a shape the kernel cannot mesh        ->  None for every point
+      long triangles reaching over the
+        whole of a round side               ->  a coarser grid, the same answers
       no points                             ->  []
     """
 
@@ -358,6 +413,8 @@ class Enclosed:
         self.a, self.b, self.c = (points[triangles[:, k]] for k in range(3))
         self.low = numpy.minimum(numpy.minimum(self.a, self.b), self.c)
         self.high = numpy.maximum(numpy.maximum(self.a, self.b), self.c)
+        # By ray, the grid its triangles are sorted into.
+        self._grids = {}
 
     @staticmethod
     def _closed(points, triangles):
@@ -373,16 +430,23 @@ class Enclosed:
         counts = numpy.unique(edges, axis=0, return_counts=True)[1]
         return bool(len(counts)) and bool((counts == 2).all())
 
+    def _grid(self, axes):
+        """The grid of the triangles seen along the ray `axes`."""
+        if axes not in self._grids:
+            across = list(axes[:2])
+            self._grids[axes] = _cells(self.low[:, across], self.high[:, across], d.ENCLOSED_MARGIN)
+        return self._grids[axes]
+
     def told(self, points):
         """For each of `points` True where it lies inside the solid, False where
-        outside, None where the mesh does not tell. In blocks of
-        NEAR_PAIRS_AT_ONCE pairs of a point and a triangle."""
+        outside, None where the mesh does not tell. In blocks of about
+        NEAR_PAIRS_AT_ONCE pairs of a point and a triangle, by the first ray."""
         if not len(points):
             return []
         if not self.closed:
             return [None] * len(points)
         points = numpy.array([tuple(point) for point in points], dtype=float).reshape(-1, 3)
-        block = max(1, d.NEAR_PAIRS_AT_ONCE // len(self.a))
+        block = max(1, d.NEAR_PAIRS_AT_ONCE // max(1, self._grid(ENCLOSED_RAYS[0]).most))
         return [found for start in range(0, len(points), block) for found in self._told(points[start:start + block])]
 
     def _told(self, points):
@@ -398,16 +462,16 @@ class Enclosed:
         return found
 
     def _near(self, points):
-        """Which of `points` lie within the margin of the mesh."""
-        near = numpy.ones((len(points), len(self.a)), dtype=bool)
-        for axis in range(3):
-            along = points[:, axis:axis + 1]
-            near &= (along >= self.low[:, axis] - d.ENCLOSED_MARGIN) & (along <= self.high[:, axis] + d.ENCLOSED_MARGIN)
-        which, of = numpy.nonzero(near)
+        """Which of `points` lie within the margin of the mesh: of a triangle of
+        their cell seen along the first ray, as any that near lies in it."""
+        margin, axes = d.ENCLOSED_MARGIN, ENCLOSED_RAYS[0]
+        which, of = _candidates(self._grid(axes), points[:, list(axes[:2])])
+        boxed = ((points[which] >= self.low[of] - margin) & (points[which] <= self.high[of] + margin)).all(1)
+        which, of = which[boxed], of[boxed]
         found = numpy.zeros(len(points), dtype=bool)
         if len(which):
             off = _point_triangle_distances(points[which], self.a[of], self.b[of], self.c[of])
-            found[which[off <= d.ENCLOSED_MARGIN]] = True
+            found[which[off <= margin]] = True
         return found
 
     def _ray(self, points, axes):
@@ -416,11 +480,12 @@ class Enclosed:
         it passes within the margin of the rim of one at or above its point."""
         margin = d.ENCLOSED_MARGIN
         across, along = list(axes[:2]), axes[2]
-        over = points[:, along:along + 1] <= self.high[:, along]
+        which, of = _candidates(self._grid(axes), points[:, across])
+        over = points[which, along] <= self.high[of, along]
         for axis in across:
-            at = points[:, axis:axis + 1]
-            over = over & (at >= self.low[:, axis] - margin) & (at <= self.high[:, axis] + margin)
-        which, of = numpy.nonzero(over)
+            at = points[which, axis]
+            over &= (at >= self.low[of, axis] - margin) & (at <= self.high[of, axis] + margin)
+        which, of = which[over], of[over]
         crossings = numpy.zeros(len(points), dtype=int)
         passed_rim = numpy.zeros(len(points), dtype=bool)
         if not len(which):
@@ -458,14 +523,13 @@ class Enclosed:
 
 
 def enclosed_of(solid):
-    """The Enclosed of `solid`; None where it is too large for it or for memory,
-    as meshed_of() has it, and the kernel is asked instead."""
+    """The Enclosed of `solid`; None where its mesh has more triangles than
+    ENCLOSED_MOST or does not fit in memory, and the kernel is asked instead."""
     try:
-        if len(solid.copy().tessellate(d.NEAR_MESH_COARSE)[1]) > d.NEAR_MESH_MOST:
-            return None
-        return Enclosed(solid)
-    except (MemoryError, Part.OCCError):
+        mesh = Enclosed(solid)
+    except MemoryError:
         return None
+    return mesh if len(mesh.a) <= d.ENCLOSED_MOST else None
 
 
 def between_rings(rings):

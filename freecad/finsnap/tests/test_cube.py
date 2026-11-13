@@ -218,6 +218,9 @@ ENCLOSED_EDGE = 10.0
 ENCLOSED_WALL = 2.0
 ENCLOSED_TUBE = (10.0, 20.0, 4.0)
 ENCLOSED_TUBE_AT = (17.0, 0.37)
+# The axis and the angle (degrees) a tube is turned by to lie askew, its long
+# triangles then reaching over the grid they are sorted into on every side.
+ENCLOSED_ASKEW = ((1.0, 2.0, 3.0), 37.0)
 # The points tried on each: a grid of that many a side, reaching that far past
 # the solid (mm); a point deep in the cube and one in the hollow of the hollow
 # one, off every diagonal of their faces, as shares of the edge; and how far
@@ -4640,7 +4643,8 @@ def check_enclosed():
     def kernel(solid, point):
         return solid.isInside(point, d.TOLERANCE, False)
 
-    for name, solid in (("a cube", cube), ("a hollow cube", hollow), ("a tube", tube)):
+    askew = tube.rotated(V(0, 0, 0), V(*ENCLOSED_ASKEW[0]), ENCLOSED_ASKEW[1])
+    for name, solid in (("a cube", cube), ("a hollow cube", hollow), ("a tube", tube), ("a tube askew", askew)):
         mesh = shapes.enclosed_of(solid)
         box = solid.BoundBox
         axes = [numpy.linspace(low - ENCLOSED_PAST, high + ENCLOSED_PAST, ENCLOSED_GRID)
@@ -4653,6 +4657,13 @@ def check_enclosed():
                "%s: %d of %d points told on the mesh, %d of them other than the kernel tells" %
                (name, known, len(grid), wrong))
 
+    mesh = shapes.Enclosed(askew)
+    aimed = math.ceil(math.sqrt(len(mesh.a) / shapes.ENCLOSED_PER_CELL))
+    cells = [mesh._grid(axes) for axes in shapes.ENCLOSED_RAYS]
+    named_most = shapes.ENCLOSED_CELL_NAMINGS * len(mesh.a)
+    expect(all(grid.count < aimed and (len(grid.triangles) <= named_most or grid.count == 1) for grid in cells),
+           "the long triangles of a tube askew are sorted into a coarser grid than aimed at, %s cells a side "
+           "instead of %d" % ([grid.count for grid in cells], aimed))
     mesh = shapes.enclosed_of(cube)
     deep = V(*(edge * share for share in ENCLOSED_DEEP))
     centre = V(edge / 2, edge / 2, edge / 2)
@@ -4680,12 +4691,12 @@ def check_enclosed():
            "outside, as far in the wall inside" % ENCLOSED_OFF_TOLD)
     # No closed mesh, or none at all: nothing told.
     shell = Part.Shell(cube.Faces[:-1])
-    most = d.NEAR_MESH_MOST
-    d.NEAR_MESH_MOST = 0
+    most = d.ENCLOSED_MOST
+    d.ENCLOSED_MOST = len(shapes.Enclosed(cube).a) - 1
     try:
         too_large = shapes.enclosed_of(cube)
     finally:
-        d.NEAR_MESH_MOST = most
+        d.ENCLOSED_MOST = most
     expect(not shapes.Enclosed(shell).closed and shapes.Enclosed(shell).told([deep]) == [None]
            and shapes.Enclosed(cube.Faces[0]).told([deep]) == [None] and too_large is None,
            "a cube with a face missing and a single face tell of no point; a solid with too many triangles has no mesh")

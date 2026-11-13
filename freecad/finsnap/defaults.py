@@ -294,6 +294,10 @@ TOLERANCE = 1e-4
 ENCLOSED_DEFLECTION = 0.02
 ENCLOSED_MARGIN_DEFLECTIONS = 2
 ENCLOSED_MARGIN = ENCLOSED_MARGIN_DEFLECTIONS * ENCLOSED_DEFLECTION + TOLERANCE
+# Past this many triangles a solid gets no such mesh and the kernel is asked: a
+# large round body, a dome, takes seconds to mesh that finely and megabytes to
+# keep, while the kernel tells a point in its one face in no time.
+ENCLOSED_MOST = 20_000
 # Layer positions are rounded to this many decimals, so that 5 x 1.2 is 6.0.
 LENGTH_DECIMALS = 6
 # Below this the face counts as vertical or flat and cannot carry a fin.
