@@ -109,7 +109,7 @@ from . import defaults as d
 from . import orient
 from .face_frame import UP, FinError, Frame, HandEditError, beside_lowest, frame_of, in_plane, support_of
 from .i18n import QT_TRANSLATE_NOOP, translate
-from .shapes import TooManyPairs, between_rings, bounds, keep, meshed_of, shape_key, working
+from .shapes import TooManyPairs, between_rings, bounds, enclosed_of, keep, meshed_of, shape_key, working
 from .tine_rows import (NARROW_AT_EVERY_TINE, TINE_CUTS_IN, TINE_MISSES, extent_at, face_tines, fin_stretch, flank_bend,
                         forget_outline, restarted_tines, round_move, side_foot_start, side_tine, tine_end,
                         tine_end_fault, tine_end_points, tine_start, tines_on_face, touching_at, wide_enough)
@@ -147,6 +147,11 @@ CLEAR_KEPT = 1024
 _kept_in_front = {}
 IN_FRONT_KEPT = 32
 IN_FRONT_SKIN = 1e-3
+# The solids of what stands out in front of a face, each with its box and its
+# mesh (_solids_in()), by the shape in_front_of() keeps: of as many as keep()
+# holds by itself, which is more than a search goes through and bounds what
+# the meshes take in memory.
+_kept_solids_in = {}
 # Where a fin is looked at for standing in what is in front of the face before it
 # is built (_Places.surely_in_part()): the shares of its blade's height and of its
 # width from the flank outward the points are taken at, by the flank, where a boss
@@ -1067,6 +1072,38 @@ def _inside(solid, point):
         return False
 
 
+def _solids_in(front):
+    """The solids of `front`, each with its box and its mesh to tell points
+    inside it on, None where it has none (enclosed_of()). Made once for a
+    shape and kept with it, so that no other takes its place in memory."""
+    def make():
+        return front, [(solid, solid.BoundBox, enclosed_of(solid)) for solid in front.Solids]
+
+    return keep(_kept_solids_in, id(front), make)[1]
+
+
+def _any_inside(front, points):
+    """Whether one of `points` lies inside a solid of `front`, not on its
+    surface: told on the mesh of the solid where that tells, by the kernel
+    where it does not, which is asked of no point once one is found inside.
+
+    INPUTS this has to withstand:
+      no points                             ->  False
+      points outside the box of every solid ->  False, neither mesh nor kernel asked
+      a point the mesh tells to be inside   ->  True, the kernel not asked
+      every point told to be outside        ->  False, the kernel not asked
+      a point the mesh does not tell of     ->  what the kernel says of it
+      a solid without a mesh                ->  what the kernel says of each point
+    """
+    for solid, box, mesh in _solids_in(front):
+        near = [point for point in points if box.isInside(point)]
+        told = [None] * len(near) if mesh is None else mesh.told(near)
+        if any(found for found in told) or any(
+                _inside(solid, point) for point, found in zip(near, told) if found is None):
+            return True
+    return False
+
+
 def in_front_of(part, frame):
     """What of `part` stands out in front of the plane of the planar face of
     `frame`, IN_FRONT_SKIN off it, as a boss does; None for nothing. Cut once
@@ -1188,6 +1225,8 @@ class _Places:
             out                                 ->  False: not sure
           a fin without a height                ->  False
           what stands out in several solids     ->  each asked by itself
+          a point the mesh of what stands out
+            tells of (_any_inside())            ->  not asked of the kernel
           the kernel cannot tell where a point
             lies                                ->  False for that solid
           a fin with a foot, without one, with a
@@ -1202,9 +1241,7 @@ class _Places:
         key = (t, height, half_foot)
         if key not in self._surely_in:
             front = self.front()
-            self._surely_in[key] = front is not None and any(
-                _inside(solid, point) for point in self.sure_points(t, height, half_foot)
-                for solid in front.Solids if solid.BoundBox.isInside(point))
+            self._surely_in[key] = front is not None and _any_inside(front, self.sure_points(t, height, half_foot))
         return self._surely_in[key]
 
     def sure_points(self, t, height, half_foot):
