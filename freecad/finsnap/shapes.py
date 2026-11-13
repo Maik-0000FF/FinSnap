@@ -231,14 +231,17 @@ class TooManyPairs(Exception):
     does not fit in memory."""
 
 
-def mesh_arrays(shape, deflection, on_copy=False):
+def mesh_arrays(shape, deflection, on_copy=False, most=None):
     """The mesh of `shape` as arrays: its points (n, 3) and the three points of each
     triangle by number (m, 3). Empty where the kernel cannot mesh it. `on_copy`
-    leaves the mesh the kernel keeps with the shape as it is."""
+    leaves the mesh the kernel keeps with the shape as it is. With `most`,
+    TooManyPairs for a mesh of more triangles, before any array is made of it."""
     try:
         points, triangles = (shape.copy() if on_copy else shape).tessellate(deflection)
     except Part.OCCError:
         points, triangles = [], []
+    if most is not None and len(triangles) > most:
+        raise TooManyPairs
     return (numpy.array([(point.x, point.y, point.z) for point in points], dtype=float).reshape(-1, 3),
             numpy.array(triangles, dtype=int).reshape(-1, 3))
 
@@ -405,10 +408,11 @@ class Enclosed:
       long triangles reaching over the
         whole of a round side               ->  a coarser grid, the same answers
       no points                             ->  []
+      a mesh of more triangles than `most`  ->  TooManyPairs, nothing made of it
     """
 
-    def __init__(self, solid):
-        points, triangles = mesh_arrays(solid, d.ENCLOSED_DEFLECTION, on_copy=True)
+    def __init__(self, solid, most=None):
+        points, triangles = mesh_arrays(solid, d.ENCLOSED_DEFLECTION, on_copy=True, most=most)
         self.closed = self._closed(points, triangles)
         self.a, self.b, self.c = (points[triangles[:, k]] for k in range(3))
         self.low = numpy.minimum(numpy.minimum(self.a, self.b), self.c)
@@ -524,12 +528,12 @@ class Enclosed:
 
 def enclosed_of(solid):
     """The Enclosed of `solid`; None where its mesh has more triangles than
-    ENCLOSED_MOST or does not fit in memory, and the kernel is asked instead."""
+    ENCLOSED_MOST, told as soon as it is meshed, or does not fit in memory,
+    and the kernel is asked instead."""
     try:
-        mesh = Enclosed(solid)
-    except MemoryError:
+        return Enclosed(solid, d.ENCLOSED_MOST)
+    except (MemoryError, TooManyPairs):
         return None
-    return mesh if len(mesh.a) <= d.ENCLOSED_MOST else None
 
 
 def between_rings(rings):

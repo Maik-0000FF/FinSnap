@@ -4691,15 +4691,25 @@ def check_enclosed():
            "outside, as far in the wall inside" % ENCLOSED_OFF_TOLD)
     # No closed mesh, or none at all: nothing told.
     shell = Part.Shell(cube.Faces[:-1])
-    most = d.ENCLOSED_MOST
-    d.ENCLOSED_MOST = len(shapes.Enclosed(cube).a) - 1
+    most, triangles = d.ENCLOSED_MOST, len(shapes.Enclosed(cube).a)
     try:
+        d.ENCLOSED_MOST = triangles
+        just_fits = shapes.enclosed_of(cube)
+        d.ENCLOSED_MOST = triangles - 1
         too_large = shapes.enclosed_of(cube)
     finally:
         d.ENCLOSED_MOST = most
+    try:
+        shapes.mesh_arrays(cube, d.ENCLOSED_DEFLECTION, most=triangles - 1)
+        counted = False
+    except shapes.TooManyPairs:
+        counted = True
     expect(not shapes.Enclosed(shell).closed and shapes.Enclosed(shell).told([deep]) == [None]
-           and shapes.Enclosed(cube.Faces[0]).told([deep]) == [None] and too_large is None,
-           "a cube with a face missing and a single face tell of no point; a solid with too many triangles has no mesh")
+           and shapes.Enclosed(cube.Faces[0]).told([deep]) == [None],
+           "a cube with a face missing and a single face tell of no point")
+    expect(just_fits is not None and too_large is None and counted
+           and len(shapes.mesh_arrays(cube, d.ENCLOSED_DEFLECTION, most=triangles)[1]) == triangles,
+           "a solid of as many triangles as the most has a mesh, with one more it has none, told as it is meshed")
 
     # _any_inside(): the kernel is asked of the points the mesh does not tell of alone.
     real_inside, real_enclosed = geometry._inside, geometry.enclosed_of
