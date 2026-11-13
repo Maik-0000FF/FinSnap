@@ -13,7 +13,7 @@ import Part
 from . import defaults as d
 from .face_frame import FinError
 from .i18n import QT_TRANSLATE_NOOP, translate
-from .shapes import bounds, keep
+from .shapes import boxed_faces, keep
 
 # How near a cut a corner of a face may lie for the cut still to be worked out
 # from its corners (_cut_corners()): nearer, the kernel cuts, as only it knows
@@ -682,29 +682,19 @@ ROUND_MOVE_MOST = 2.0
 SIDE_TINE_STEPS = 16
 # What is wrong with the end of a tine, see tine_end_fault().
 TINE_MISSES, TINE_CUTS_IN = "misses", "cuts in"
-# The faces the fins carry with their boxes (_carried()), by the shape of the
-# faces and how wide the boxes are: of as many shapes as keep() holds by itself.
+# The faces the fins carry with their boxes (_carried()), by the shape handed
+# in, which is held with them, and how wide the boxes are: of as many shapes
+# as keep() holds by itself.
 _kept_carried = {}
 
 
 def _carried(surface, reach):
     """`surface`, the faces the fins carry, as tine_end_fault() holds points
-    against it: its faces, each with the box that touches it (bounds()) made
-    `reach` wider, and the faces near a point joined to one shape, as they are
-    asked for. Kept with the shape, as every tine end of a build asks of the
-    same faces, and their boxes take as long as measuring a few ends.
-
-    The boxes are those of the faces themselves: BoundBox stops short of a
-    round face once the part carries a mesh."""
-    def make():
-        boxed = []
-        for face in surface.Faces:
-            box = bounds(face)
-            box.enlarge(reach)
-            boxed.append((face, box))
-        return surface, boxed, {}
-
-    return keep(_kept_carried, (id(surface), reach), make)[1:]
+    against it: its faces with their boxes `reach` wider (boxed_faces()), and
+    the faces near a point joined to one shape, as they are asked for. Kept
+    with the shape for as long as it is held here, as every tine end of a
+    build asks of the same faces."""
+    return keep(_kept_carried, (id(surface), reach), lambda: (surface, boxed_faces(surface, reach), {}))[1:]
 
 
 def _off_surface(surface, point, reach):
@@ -712,15 +702,17 @@ def _off_surface(surface, point, reach):
     it, by the outward normal there; None where the kernel cannot measure it.
 
     Measured against the faces whose box the point lies in, `reach` wide
-    (_carried()), which are few where the whole surface is the part. What they
-    say holds where it is no further than `reach`: every other face lies
-    further off than that. Else the whole surface is measured, as before.
+    (_carried()), which are few where the whole surface is the part, and
+    against those that have no box, a fillet round a round edge or a freeform
+    face. What they say holds where it is no further than `reach`: every other
+    face lies further off than that. Else the whole surface is measured.
 
     INPUTS this has to withstand:
       a point within `reach` of a face      ->  measured against the faces near it
       a point nearer one face, in the boxes
         of several                          ->  the nearest of them
       a point in the box of no face         ->  measured against the whole surface
+      a face without a box, as on a torus   ->  measured for every point
       a point in a box, further than `reach`
         from the faces near it              ->  measured against the whole surface
       a point nearest an edge or a corner   ->  not behind
@@ -728,7 +720,7 @@ def _off_surface(surface, point, reach):
     """
     boxed, joined = _carried(surface, reach)
     vertex = Part.Vertex(point)
-    near = tuple(number for number, (_, box) in enumerate(boxed) if box.isInside(point))
+    near = tuple(number for number, (_, box) in enumerate(boxed) if box is None or box.isInside(point))
     try:
         found = None
         if near:
