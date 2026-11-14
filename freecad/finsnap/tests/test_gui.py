@@ -44,6 +44,9 @@ QUICK_LENGTH = 80.0  # a face this long gets two fins with automatic placement
 THICK_LAYER = 0.3  # a layer height other than the standard, to see the steps follow
 FIN_SHIFT = 1.5  # how far a handle moves a fin along the face, in mm
 TOO_MANY_FINS = 50  # more fins than the face takes, so the build fails
+PART_MOVE = 5.0  # how far a part is moved to change it under its fins, in mm
+PAD_SIZE = 20.0  # the edge of a cube padded from a sketch, in mm
+OTHER_LANGUAGES = ("English", "German")  # two FreeCAD can switch between
 AXIS_Z_RGB = (0.2, 0.2, 0.8)  # FreeCAD's standard colour of the z axis
 COLOR_TOLERANCE = 0.01
 BUILD_STEP = 0.5  # how far a fin moves at each step of a counted drag, in mm
@@ -539,11 +542,11 @@ def profile_choices(doc):
            "a timer firing during a recompute, also of another document, puts its action off")
     panel.ends_timer.stop()
     App.listDocuments = all_documents
-    panel.building = True
-    panel.when_built(panel.ends_timer, lambda: done.append(True))
-    expect(not done and panel.ends_timer.isActive(), "so does one firing while the panel builds the fins itself")
+    from freecad.finsnap import shapes
+    with shapes.working():
+        panel.when_built(panel.ends_timer, lambda: done.append(True))
+    expect(not done and panel.ends_timer.isActive(), "so does one firing while FinSnap builds fins or checks a part")
     panel.ends_timer.stop()
-    panel.building = False
     panel.when_built(panel.ends_timer, lambda: done.append(True))
     expect(done == [True] and not panel.ends_timer.isActive(), "with no recompute running it is done")
 
@@ -631,6 +634,126 @@ def quick_on_pad(doc):
         fins[0].ViewObject.Proxy.panel.reject()
     for name in (box.Name, body.Name):
         doc.removeObject(name)
+
+
+def built_once_for_panel(doc):
+    """The panel a command opens on fins it built, their build kept, shows
+    that build; fins without a build kept, touched since or failed are built."""
+    from freecad.finsnap import commands, feature
+    from freecad.finsnap import defaults as d
+    builds = []
+    real_execute = feature.FinSnapFeature.execute
+
+    def counted(proxy, obj):
+        builds.append(obj.Name)
+        return real_execute(proxy, obj)
+
+    def opened(fins):
+        """The panel opened on `fins` and how often that built them."""
+        del builds[:]
+        Gui.ActiveDocument.setEdit(fins)
+        return fins.ViewObject.Proxy.panel, builds.count(fins.Name)
+
+    feature.FinSnapFeature.execute = counted
+    try:
+        box = doc.addObject("Part::Box", "OnceBox")
+        doc.recompute()
+        side = next(i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).y < -0.9)
+        select(box, "Face%d" % side)
+        Gui.runCommand("FinSnap_QuickFins")
+        quick = next(o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is box)
+        panel = quick.ViewObject.Proxy.panel
+        expect(builds.count(quick.Name) == 1 and quick.Proxy.results.get(feature.MAIN) is not None
+               and panel.status.text() and panel.handles.arrows.whichChild.getValue() == coin.SO_SWITCH_ALL,
+               "Quick fins builds its fins once, and the panel shows that build with its arrows: %d"
+               % builds.count(quick.Name))
+        panel.reject()
+        doc.removeObject(box.Name)
+
+        cube = doc.addObject("Part::Feature", "OnceCube")
+        cube.Shape = tilted_cube()
+        fins = feature.create(cube, face_name(cube, lower_left_face(cube.Shape)))
+        commands.ViewProviderFinSnap(fins.ViewObject)
+        fins.FinPlacement = d.PLACEMENT_DISTRIBUTED
+        fins.FinCount = 3
+        doc.recompute()
+        panel, built = opened(fins)
+        expect(built == 1 and fins.Proxy.results.get(feature.MAIN) is not None,
+               "fins opened with no build kept are built: %d" % built)
+        panel.reject()
+        expect(not fins.Proxy.editing and not fins.Proxy.results, "the panel closed, no build is kept")
+        feature.keep_build(fins, True)
+        doc.recompute()
+        fins.touch()
+        panel, built = opened(fins)
+        expect(built == 1, "fins touched since their build was kept are built: %d" % built)
+        panel.reject()
+        feature.keep_build(fins, True)
+        doc.recompute()
+        panel, built = opened(fins)
+        expect(built == 0, "fins built with their build kept and nothing changed since are shown as built: %d" % built)
+        panel.reject()
+        feature.keep_build(fins, True)
+        doc.recompute()
+        stood = cube.Placement
+        cube.Placement = App.Placement(App.Vector(PART_MOVE, 0, 0), App.Rotation()).multiply(stood)
+        expect(feature.TOUCHED not in fins.State, "fins whose part moved are not touched themselves")
+        panel, built = opened(fins)
+        expect(built == 1, "fins whose part moved since their build was kept are built: %d" % built)
+        panel.reject()
+        cube.Placement = stood
+        doc.recompute()
+
+        body = doc.addObject("PartDesign::Body", "OnceBody")
+        sketch = body.newObject("Sketcher::SketchObject", "OnceSketch")
+        corners = [App.Vector(x, y, 0) for x, y in ((0, 0), (PAD_SIZE, 0), (PAD_SIZE, PAD_SIZE), (0, PAD_SIZE))]
+        sketch.addGeometry([Part.LineSegment(start, end) for start, end in zip(corners, corners[1:] + corners[:1])])
+        pad = body.newObject("PartDesign::Pad", "OncePad")
+        pad.Profile = sketch
+        pad.Length = PAD_SIZE
+        doc.recompute()
+        side = next(i for i, f in enumerate(pad.Shape.Faces, 1) if f.normalAt(0, 0).y < -0.9)
+        select(pad, "Face%d" % side)
+        Gui.runCommand("FinSnap_QuickFins")
+        padded = next(o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is body)
+        padded.ViewObject.Proxy.panel.accept()
+        feature.keep_build(padded, True)
+        doc.recompute()
+        sketch.AttachmentOffset = App.Placement(App.Vector(PART_MOVE, 0, 0), App.Rotation())
+        expect(feature.TOUCHED not in padded.State, "fins on a Body whose sketch changed are not touched themselves")
+        panel, built = opened(padded)
+        expect(built == 1, "fins on a Body whose sketch changed since their build was kept are built: %d" % built)
+        panel.reject()
+        for name in (padded.Name, pad.Name, sketch.Name, body.Name):
+            doc.removeObject(name)
+        doc.recompute()
+        feature.keep_build(fins, True)
+        fins.FinCount = TOO_MANY_FINS
+        doc.recompute()
+        panel, built = opened(fins)
+        expect(built == 1 and panel.notes.isVisibleTo(panel.form) and not panel.status.text(),
+               "fins whose build failed are built by the panel, which says why: %d" % built)
+        panel.reject()
+        for name in (fins.Name, cube.Name):
+            doc.removeObject(name)
+        doc.recompute()
+    finally:
+        feature.FinSnapFeature.execute = real_execute
+
+
+def language_told():
+    """i18n.language() tells the language FreeCAD shows its texts in, and follows a switch."""
+    from freecad.finsnap import i18n
+    shown = Gui.getLocale()
+    told = []
+    try:
+        for name in OTHER_LANGUAGES:
+            Gui.setLocale(name)
+            told.append(i18n.language())
+    finally:
+        Gui.setLocale(shown)  # where no language is set, the name told is none FreeCAD can be switched to
+    expect(tuple(told) == OTHER_LANGUAGES,
+           "the language FreeCAD shows is told, also after a switch: %s" % ", ".join(map(str, told)))
 
 
 def checked_on_switch(doc):
@@ -865,6 +988,466 @@ def released_without_button(arrows, name):
                    "grabbed again" % (name, "arc" if turning else kind))
     finally:
         arrows.on_start, arrows.on_done = real_start, real_done
+
+
+def lost_release_sent(arrows):
+    """The release of the left mouse button FreeCAD dropped while fins were
+    built is sent to the 3D view the arrows lie in, once, when an arrow is
+    found held with no button down; not where the left button is down again,
+    not once a new drag began or the view is gone, and again where it is
+    dropped on its way."""
+    import time
+    from PySide import QtCore
+    from freecad.finsnap import handles
+
+    class Seen(QtCore.QObject):
+        """Notes the releases of a mouse button a widget gets, and drops the
+        first `dropped` of the left one before any widget sees them, as the
+        progress bar of FreeCAD does from the application."""
+
+        def __init__(self, widget, dropped=0):
+            super().__init__()
+            self.widget, self.dropped, self.got = widget, dropped, []
+            if dropped:
+                QtWidgets.QApplication.instance().installEventFilter(self)
+            else:
+                widget.installEventFilter(self)
+
+        def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
+            if watched is not self.widget or event.type() != QtCore.QEvent.MouseButtonRelease:
+                return False
+            if self.dropped:
+                self.dropped -= 1
+                return True
+            self.got.append((event.button(), event.buttons()))
+            return False
+
+        def stop(self):
+            QtWidgets.QApplication.instance().removeEventFilter(self)
+            self.widget.removeEventFilter(self)
+
+    def wait(ms):
+        end = time.monotonic() + ms / handles.MS_PER_SECOND
+        while time.monotonic() < end:
+            QtWidgets.QApplication.processEvents()
+
+    through = 4 * handles.RELEASE_RETRY_MS
+    left = [(QtCore.Qt.LeftButton, QtCore.Qt.NoButton)]
+    viewport = arrows.view.graphicsView().viewport()
+    done, real_start, real_done = [], arrows.on_start, arrows.on_done
+    arrows.on_start = lambda kind: None
+    arrows.on_done = lambda kind, mm: done.append(kind)
+    real_buttons = QtWidgets.QApplication.mouseButtons
+
+    def lose(kind):
+        """Grab the arrow of `kind` and move it with no button down, as after a lost release."""
+        arrow = arrows.draggers[kind]
+        arrows._held(kind, None)
+        arrow.isActive.setValue(True)
+        arrows._dragged(kind, arrow)
+        arrows.held = False
+
+    try:
+        seen = Seen(viewport)
+        lose(handles.UP)
+        expect(seen.got == [], "the release is not sent from where the loss is noticed, in the middle of a move")
+        wait(through)
+        expect(seen.got == left and not arrows.lost_release.timer.isActive(),
+               "an arrow found held with no button down: its view gets one release of the left button, no "
+               "button held in it, and no more after: %s" % seen.got)
+        del seen.got[:]
+        lose(handles.UP)
+        lose(handles.UP)
+        wait(through)
+        expect(seen.got == left, "a release under way, a second loss noticed sends no second one: %s" % seen.got)
+        del seen.got[:]
+        lose(handles.UP)
+        arrows._held(handles.UP, None)
+        arrows.held = False
+        wait(through)
+        expect(seen.got == [] and not arrows.lost_release.timer.isActive(),
+               "a new drag begun before the release is sent: none is sent, the press of the new drag stands")
+        lose(handles.UP)
+        QtWidgets.QApplication.mouseButtons = staticmethod(lambda: QtCore.Qt.LeftButton)
+        wait(through)
+        QtWidgets.QApplication.mouseButtons = real_buttons
+        wait(through)
+        expect(seen.got == [] and not arrows.lost_release.timer.isActive(),
+               "the left button down again when the release is to be sent: none is sent, none tried again")
+        seen.stop()
+        # Dropped on its way, as while the progress bar still runs: sent again until the view has it.
+        dropping = Seen(viewport, dropped=2)
+        lose(handles.UP)
+        wait(handles.RELEASE_RETRY_MS / 2)
+        waiting = dropping.got == [] and arrows.lost_release.timer.isActive()
+        wait(2 * through)
+        dropping.stop()
+        expect(waiting and dropping.got == left and dropping.dropped == 0
+               and not arrows.lost_release.timer.isActive(),
+               "a release dropped twice on its way is sent again until the view gets it, once, and no more "
+               "after: %s" % dropping.got)
+    finally:
+        QtWidgets.QApplication.mouseButtons = real_buttons
+        arrows.on_start, arrows.on_done = real_start, real_done
+    # While the release is sent the view does not select what lies under the mouse, and after, it
+    # selects as before: the switch of the view for it, and one standing in for it.
+    switch = arrows.lost_release.selecting
+
+    class Switch:
+        """A switch standing in for the one of a view: what it is set to, in order."""
+
+        def __init__(self, on):
+            self.on, self.set_to = on, []
+
+        def getValue(self):  # noqa: N802 - Coin's name
+            return self.on
+
+        def setValue(self, on):  # noqa: N802 - Coin's name
+            self.on = on
+            self.set_to.append(on)
+
+    class Arriving(Seen):
+        """Notes how the switch stands as each release arrives."""
+
+        def __init__(self, widget, switch, dropped=0):
+            super().__init__(widget, dropped)
+            self.switch, self.stood = switch, []
+
+        def eventFilter(self, watched, event):  # noqa: N802 - Qt's name
+            if watched is self.widget and event.type() == QtCore.QEvent.MouseButtonRelease and not self.dropped:
+                self.stood.append(bool(self.switch.getValue()))
+            return super().eventFilter(watched, event)
+
+    arriving = Arriving(viewport, switch)
+    lose(handles.UP)
+    wait(through)
+    arriving.stop()
+    arrows.on_start, arrows.on_done = real_start, real_done
+    expect(switch is not None and arriving.stood == [False] and bool(switch.getValue()),
+           "the view of the arrows has a switch for selecting: off as the release arrives, on again after: %s"
+           % arriving.stood)
+    for on, dropped, wanted in ((True, 0, [False, True]), (False, 0, []), (True, 1, [False, True, False, True])):
+        target = QtWidgets.QWidget()
+        stand_in = Switch(on)
+        arriving = Arriving(target, stand_in, dropped)
+        lost = handles.LostRelease(target, stand_in)
+        lost.send()
+        wait(2 * through)
+        arriving.stop()
+        expect(arriving.got == left and stand_in.set_to == wanted and stand_in.on == on
+               and arriving.stood == [False],
+               "a view selecting: %s, the release dropped %d times on its way: it arrives with the view not "
+               "selecting, and the switch is as it was after, set %s" % (on, dropped, stand_in.set_to))
+        lost.deleteLater()
+        target.deleteLater()
+    plain = QtWidgets.QWidget()
+    arriving = Seen(plain)
+    handles.LostRelease(plain).send()
+    wait(through)
+    arriving.stop()
+    expect(arriving.got == left, "a view without a switch for selecting gets the release all the same")
+    plain.deleteLater()
+    # A view gone before the release is sent, and one let go of.
+    widget = QtWidgets.QWidget()
+    gone = Seen(widget)
+    lost = handles.LostRelease(widget)
+    lost.send()
+    lost.drop()
+    wait(through)
+    expect(gone.got == [], "a release dropped before it is sent is not sent")
+    lost.send()
+    gone.stop()
+    widget.deleteLater()
+    wait(through)
+    expect(gone.got == [], "a view gone before the release is sent gets none, and nothing is raised")
+
+
+def lost_release_keeps_selection(panel, fins):
+    """The release sent to the 3D view for one FreeCAD dropped leaves what is
+    selected as it is and the arrows on their fin, wherever the mouse is: over
+    another fin, over the empty view, over an arrow. A release as the mouse
+    itself sends it, at the same places, does change the selection: so the
+    places are ones where it counts."""
+    import time
+    from PySide import QtCore, QtGui
+    from freecad.finsnap import feature, handles
+    arrows = panel.handles
+    viewport = arrows.view.graphicsView().viewport()
+    which, number = panel.handled
+    others = [fin for fin in panel.built_fins() if fin != panel.handled]
+    own = "Face%d" % (feature.fin_faces(fins, which, number)[0] + 1)
+
+    def wait(ms):
+        end = time.monotonic() + ms / handles.MS_PER_SECOND
+        while time.monotonic() < end:
+            QtWidgets.QApplication.processEvents()
+
+    def on_screen(world):
+        """Where the point `world` shows, on the screen."""
+        aspect = arrows.viewer.getSoRenderManager().getViewportRegion().getViewportAspectRatio()
+        volume = arrows.view.getCameraNode().getViewVolume(aspect)
+        x, y, _ = volume.projectToScreen(coin.SbVec3f(*world)).getValue()
+        return viewport.mapToGlobal(QtCore.QPoint(round(x * viewport.width()), round((1 - y) * viewport.height())))
+
+    def selected():
+        return [(found.ObjectName, tuple(found.SubElementNames)) for found in Gui.Selection.getSelectionEx()]
+
+    def select_own():
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(fins.Document.Name, fins.Name, own)
+        return selected()
+
+    (x0, y0), (x1, y1) = arrows.tip_points(handles.UP)
+    other_face = fins.Shape.Faces[feature.fin_faces(fins, *others[0])[0]]
+    places = (("over another fin", on_screen(other_face.CenterOfMass)),
+              ("over the empty view", viewport.mapToGlobal(QtCore.QPoint(1, viewport.height() - 2))),
+              ("over an arrow", viewport.mapToGlobal(QtCore.QPoint(round((x0 + x1) / 2 * viewport.width()),
+                                                                   round((y0 + y1) / 2 * viewport.height())))))
+    real_pos = QtGui.QCursor.pos
+    through = 4 * handles.RELEASE_RETRY_MS
+    changed = []
+    try:
+        for where, at in places:
+            QtGui.QCursor.pos = staticmethod(lambda at=at: QtCore.QPoint(at))
+            before = select_own()
+            arrows._send_release()
+            wait(through)
+            expect(before and selected() == before and panel.handled == (which, number),
+                   "the release sent %s: what is selected stays selected, the arrows stay on their fin: %s"
+                   % (where, selected()))
+            # As the mouse itself sends it: no Ctrl held, the view selecting.
+            before = select_own()
+            plain = QtGui.QMouseEvent(QtCore.QEvent.MouseButtonRelease, viewport.mapFromGlobal(at), at,
+                                      QtCore.Qt.LeftButton, QtCore.Qt.NoButton, QtCore.Qt.NoModifier)
+            QtWidgets.QApplication.sendEvent(viewport, plain)
+            wait(through)
+            changed.append(selected() != before)
+    finally:
+        QtGui.QCursor.pos = real_pos
+        Gui.Selection.clearSelection()
+        Gui.Selection.addSelection(fins.Document.Name, fins.Name, own)
+    expect(len(others) > 0 and all(changed),
+           "a release as the mouse sends it changes the selection at each of these places: %s" % changed)
+
+
+def marks_drawn_once(doc, fins):
+    """The marks on the part of `fins`, which has a face overhanging without
+    fins: a build draws each kind once, at the property it hangs on, and they
+    keep their order under the switch."""
+    from freecad.finsnap import commands, feature, limits
+    view = fins.ViewObject.Proxy
+    marks = view.marks
+    drawn = []
+    real = commands.ViewProviderFinSnap._marks_of
+
+    def counted(obj, kind):
+        drawn.append(kind)
+        return real(obj, kind)
+
+    def in_order():
+        """Whether the nodes under the switch are those of the kinds, in their order."""
+        wanted = [node for kind in commands.MARKS for node in view.marked[kind]]
+        return marks.getNumChildren() == len(wanted) and all(
+            marks.getChild(k).getNodeId() == node.getNodeId() for k, node in enumerate(wanted))
+
+    names = list(getattr(fins, feature.OVERHANGS))
+    unprintable = list(getattr(fins, feature.UNPRINTABLE_OVERHANGS))
+    commands.ViewProviderFinSnap._marks_of = staticmethod(counted)
+    try:
+        fins.touch()
+        doc.recompute()
+        built = sorted(drawn)
+        del drawn[:]
+        # Written with the value it has: FreeCAD tells of it, and the marks are drawn anew, as
+        # they have to be once the part was turned and its overhangs kept their names.
+        setattr(fins, feature.UNPRINTABLE_OVERHANGS, unprintable)
+        again = list(drawn)
+        del drawn[:]
+        setattr(fins, feature.OVERHANGS, names)
+        setattr(fins, feature.ISLANDS, list(getattr(fins, feature.ISLANDS)))
+        silent = list(drawn)
+        # Kinds drawn in another order than they lie in.
+        view.mark(fins, (commands.OVERHANG_MARKS, commands.ISLAND_LAYER_MARKS))
+        ordered = in_order()
+        before = marks.getNumChildren()
+        # As a build writes them: the names first, those too flat to print last.
+        del drawn[:]
+        feature.set_overhangs(fins, [])
+        emptied = (list(drawn), view.marked[commands.OVERHANG_MARKS], marks.getNumChildren())
+        del drawn[:]
+        feature.set_overhangs(fins, [(name, limits.UNPRINTABLE if name in unprintable else limits.CRITICAL)
+                                     for name in names])
+        back = (list(drawn), len(view.marked[commands.OVERHANG_MARKS]), marks.getNumChildren())
+    finally:
+        commands.ViewProviderFinSnap._marks_of = staticmethod(real)
+    expect(names and built == sorted(commands.MARKS),
+           "a build draws every kind of mark once: %s" % built)
+    expect(again == [commands.OVERHANG_MARKS] and silent == [],
+           "the property the overhangs are written last with, written with the value it has, draws them anew; "
+           "their names and the lowest points of the islands, written alone, draw nothing: %s, %s"
+           % (again, silent))
+    expect(ordered and in_order() and before == 1,
+           "the marks lie under the switch in the order of their kinds, whichever was drawn first")
+    expect(emptied == ([commands.OVERHANG_MARKS], [], before - 1)
+           and back == ([commands.OVERHANG_MARKS], 1, before),
+           "overhangs written as none take their marks away, written again bring them back, drawn once each "
+           "time, once both properties are written: %s, %s" % (emptied, back))
+    # Marks that cannot be made: the old ones stay where they are.
+    kept = list(view.marked[commands.OVERHANG_MARKS])
+
+    def failing(obj, kind):
+        raise Part.OCCError("no mesh")
+
+    commands.ViewProviderFinSnap._marks_of = staticmethod(failing)
+    try:
+        view.mark(fins, (commands.OVERHANG_MARKS,))
+        raised = False
+    except Part.OCCError:
+        raised = True
+    finally:
+        commands.ViewProviderFinSnap._marks_of = staticmethod(real)
+    expect(raised and view.marked[commands.OVERHANG_MARKS] == kept and len(kept) == 1 and in_order(),
+           "marks that cannot be made leave those there were under the switch, in their place")
+    bare = types.SimpleNamespace(**{feature.OVERHANGS: names, feature.UNPRINTABLE_OVERHANGS: [], "Base": None})
+    expect(real(bare, commands.OVERHANG_MARKS) == [], "fins without a part have no overhang marks")
+
+
+def timers_wait_for_builds(panel):
+    """While FinSnap builds fins or checks a part, whoever started it, and
+    while FreeCAD shows the progress of an operation, no timer of the panel
+    starts a build of its own: a build inside one under way can stop in the
+    kernel for good."""
+    import time
+    from freecad.finsnap import geometry, handles, shapes, taskpanel
+
+    def wait(ms):
+        end = time.monotonic() + ms / handles.MS_PER_SECOND
+        while time.monotonic() < end:
+            QtWidgets.QApplication.processEvents()
+
+    done = []
+    timer = panel.ends_timer
+    timer.stop()
+
+    def asked(what="done"):
+        """What a timer firing now does: its action, or nothing but start again."""
+        del done[:]
+        timer.stop()
+        panel.when_built(timer, lambda: done.append(what))
+        put_off = timer.isActive()
+        timer.stop()
+        return list(done), put_off
+
+    # The count of what is at work: one within another, and after an error.
+    with shapes.working():
+        outer = asked()
+        with shapes.working():
+            inner = shapes.at_work()
+        still = asked()
+    try:
+        with shapes.working():
+            raise ValueError("a build failing")
+    except ValueError:
+        pass
+    expect(outer == ([], True) and inner and still == ([], True) and not shapes.at_work()
+           and asked() == (["done"], False),
+           "while FinSnap is at work in the kernel, also after a build within it is through, a timer puts its "
+           "action off; once the outermost is through, and after one that raised, it is done")
+
+    # A build tried to see whether a fin can stand, the timer for the ends of the arrows firing in
+    # the middle of it, as the progress of FreeCAD lets it: no second build starts inside it.
+    builds = []
+    real_build = geometry._build
+    panel.known_ends.clear()
+
+    def firing(*args, **kwargs):
+        builds.append(shapes.at_work())
+        panel.when_built(timer, panel.update_ends)
+        return real_build(*args, **kwargs)
+
+    value = panel.next_values(handles.UP, panel.built_value(handles.UP))
+    # The build tried is to be made: one kept from before would start none.
+    geometry.forget_built()
+    geometry._build = firing
+    try:
+        timer.stop()
+        stands = [panel.can_stand(handles.UP, step) for _, step in value[:1]]
+        put_off = timer.isActive()
+    finally:
+        geometry._build = real_build
+        timer.stop()
+    expect(len(value) > 0 and builds == [True] and put_off and len(stands) == 1,
+           "a build tried for a fin, the timer for the ends of its arrows firing in the middle of it: FinSnap "
+           "counts as at work, the timer is put off, and no build is started inside the one under way: "
+           "%d builds" % len(builds))
+
+    # An operation of FreeCAD showing its progress: told by the probe.
+    free = taskpanel.operation_runs()
+    progress = App.Base.ProgressIndicator()
+    progress.start("at work", 0)
+    try:
+        running, during = taskpanel.operation_runs(), asked()
+    finally:
+        progress.stop()
+    expect(not free and running and during == ([], True) and not taskpanel.operation_runs()
+           and asked() == (["done"], False),
+           "while FreeCAD shows the progress of an operation the probe says one runs and a timer puts its "
+           "action off; before and after, it says none runs and the action is done")
+
+    # A probe that goes on saying an operation runs, with nothing else saying so, is not believed for ever.
+    probes = []
+    real_probe = taskpanel.operation_runs
+    taskpanel.operation_runs = lambda: probes.append(True) or True
+    try:
+        first = asked()
+        panel.probe_alone_since = time.monotonic() - taskpanel.PROBE_BELIEVED_S - 1
+        late = asked()
+        count = len(probes)
+        after = asked()
+    finally:
+        taskpanel.operation_runs = real_probe
+    expect(first == ([], True) and late == (["done"], False) and after == (["done"], False)
+           and len(probes) == count and not panel.probe_believed,
+           "a probe saying an operation runs for longer than it is believed, nothing else saying so: the "
+           "action is done, and the probe is not asked again for this panel")
+    panel.probe_believed, panel.probe_alone_since = True, None
+
+    # What is to be done later waits as the timers do, and keeps its order.
+    with shapes.working():
+        panel.once_free(lambda: done.append("first"))
+        panel.once_free(lambda: done.append("second"))
+        del done[:]
+        wait(4 * taskpanel.BUSY_RETRY_MS)
+        waiting = list(done)
+    wait(4 * taskpanel.BUSY_RETRY_MS)
+    in_order = list(done)
+    panel.released = True
+    try:
+        del done[:]
+        panel.once_free(lambda: done.append("closed"))
+        wait(4 * taskpanel.BUSY_RETRY_MS)
+    finally:
+        panel.released = False
+    expect(waiting == [] and in_order == ["first", "second"] and done == [] and panel.to_do == [],
+           "what is to be done later is not done while FinSnap is at work, then in its order, and not once "
+           "the panel is closed: %s, %s" % (waiting, in_order))
+
+    def failing():
+        raise ValueError("an action failing")
+
+    del done[:]
+    panel.free_timer.stop()
+    panel.to_do = [lambda: done.append("before"), failing, lambda: done.append("after")]
+    try:
+        panel.do_waiting()
+        raised = False
+    except ValueError:
+        raised = True
+    kept = len(panel.to_do)
+    wait(4 * taskpanel.BUSY_RETRY_MS)
+    expect(raised and kept == 1 and done == ["before", "after"] and panel.to_do == [],
+           "one of what is to be done later raising: its error passes on, and what came after it is kept "
+           "and done next: %s" % done)
 
 
 def arrow_field(panel, fins):
@@ -1326,14 +1909,14 @@ def island_marks(doc):
     # The kernel failing to cut the first layer out: the island is marked by a
     # ball at its lowest point instead.
     from freecad.finsnap import overhang
-    real = overhang._first_layer
-    overhang._first_layer = lambda *args: None
+    real = overhang._first_layers
+    overhang._first_layers = lambda part, wanted: [None] * len(wanted)
     try:
         analysis._kept.clear()
         fins.touch()
         doc.recompute()
     finally:
-        overhang._first_layer = real
+        overhang._first_layers = real
         analysis._kept.clear()
     expect(len(fins.Islands) == 1 and fins.IslandLayers.isNull() and list(fins.IslandsUncut) == list(fins.Islands)
            and _balls(marks, over=True) == 1,
@@ -1899,6 +2482,7 @@ def main():
     expect(marks.whichChild.getValue() == coin.SO_SWITCH_NONE, "hiding the part hides the marks on it")
     box.ViewObject.Visibility = True
     expect(marks.whichChild.getValue() == coin.SO_SWITCH_ALL, "showing the part shows them again")
+    marks_drawn_once(doc, marked)
     # A part inside containers: hiding the container it lies in, or the one
     # around that, hides its marks as well.
     outer = doc.addObject("App::Part", "Outer")
@@ -2055,6 +2639,8 @@ def main():
     chosen_stands(doc, quick, facing, messages)
     stands_reopened(doc, quick, facing)
     quick_on_pad(doc)
+    built_once_for_panel(doc)
+    language_told()
     checked_on_switch(doc)
     island_marks(doc)
     limits_page(doc)
@@ -2418,6 +3004,9 @@ def main():
     expect(all(moving.handles.draggers[kind] is held[kind] for kind in held),
            "the arrows stay the same after a move; Coin may still hold the one let go")
     released_without_button(moving.handles, "a box")
+    lost_release_sent(moving.handles)
+    lost_release_keeps_selection(moving, lined)
+    timers_wait_for_builds(moving)
     arrow_field(moving, lined)
     expect(all(abs(a - b) < COLOR_TOLERANCE for a, b in zip(handles.axis_color("z"), AXIS_Z_RGB)),
            "the arrow up has the colour of the z axis: %s" % (handles.axis_color("z"),))
@@ -2539,22 +3128,27 @@ def main():
     # build, and nothing is built twice. Afterwards every build is new, and
     # the arrow ends are tried once for each place of the fin.
     from freecad.finsnap import face_frame, geometry
-    real_build = geometry.build
-    builds = []
+    real_build, real_made = geometry.build, geometry._build_reaching
+    # The builds asked for, and those made: one asked again is kept, not made.
+    builds, made = [], []
 
     def counting(*args, **kwargs):
         builds.append(args)
         return real_build(*args, **kwargs)
 
-    geometry.build = counting
+    def making(*args):
+        made.append(args)
+        return real_made(*args)
+
+    geometry.build, geometry._build_reaching = counting, making
     try:
         moving.handle_started(handles.ALONG)
         steps = []
         for step in (1, 2):
             moving.handle_moved(handles.ALONG, step * BUILD_STEP)
-            del builds[:]
+            del made[:]
             moving.drag_step()
-            steps.append(len(builds))
+            steps.append(len(made))
         moving.finish_drag(handles.ALONG, 2 * BUILD_STEP)
         reuse_after = lined.Proxy.reuse
         del builds[:]
@@ -2572,7 +3166,7 @@ def main():
         tine_count.setValue(tine_count.value() - 1)
         moving.preview()
     finally:
-        geometry.build = real_build
+        geometry.build, geometry._build_reaching = real_build, real_made
     expect(steps == [1, 1], "each step of a drag builds once, not as trial and again for real: %s" % steps)
     expect(reuse_after is None, "after the drag, every build is made afresh")
     expect(first_ends == len(handles.KINDS) * 2 and same_ends == 0 and changed_ends > 0,
@@ -2647,9 +3241,12 @@ def main():
     del messages[:]
     blocked = feature.create(row, face_name(row, lower_left_face(row.Shape)))
     commands.ViewProviderFinSnap(blocked.ViewObject)
+    feature.keep_build(blocked, True)
     doc.recompute()
-    blocked_name = blocked.Name
+    blocked_name, blocked_proxy = blocked.Name, blocked.Proxy
     commands._edit_new(blocked)
+    expect(not blocked_proxy.editing and not blocked_proxy.results,
+           "fins whose panel did not open keep no build")
     expect(blocked_name not in [o.Name for o in doc.Objects] and len(messages) == 1
            and App.Qt.translate("FinSnap", commands.NOTE_BUSY) in messages[0],
            "new fins that cannot be edited while another task panel is open go again, with a message")

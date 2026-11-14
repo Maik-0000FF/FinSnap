@@ -33,6 +33,7 @@ V = App.Vector
 PACKAGE_ROOT = ET.parse(PACKAGE_XML).getroot()  # nosec B314
 PACKAGE_VERSION = PACKAGE_ROOT.findtext("{https://wiki.freecad.org/Package_Metadata}version")
 BOX = (40.0, 20.0, 20.0)
+SHARED_PIERS = 4  # a slab on two piers: each pier this fraction of its length wide, the slab of its height thick
 WIDER_ANGLE = 1.0  # degrees past the tipping angle a part stands at, so it is at risk of tipping
 TIPPED_ANGLE = -5.0  # degrees, the tipping angle of a part that tips
 # Beads tried past the bridges kept for a part, this much wider each (mm).
@@ -981,6 +982,140 @@ def turned_tube(doc):
            "laid flat, the fin keeps no turn of the tube, and the count its changes were made for")
 
 
+def stood_again_after_laid_flat(doc):
+    """Fins kept while their part is laid flat are moved with it; once the
+    part stands again they are rebuilt where it stands, and a placement left
+    on the fins, by the shape kept or set by hand, does not move them off."""
+    part = doc.addObject("Part::Feature", "LaidFlatBox")
+    part.Shape = Part.makeBox(*BOX)
+    doc.recompute()
+    shape = global_shape(part)
+    edge = next(e for e in shape.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE)
+    stand = orient.stand(shape, edge, d.TILT_ANGLE)
+
+    def stand_up():
+        orient.remember_flat(part)
+        part.Placement = stand.multiply(part.Placement)
+        doc.recompute()
+
+    def at_the_part():
+        """Whether the fins stand on the bed, their tines the clearance from the part."""
+        p = feature.params_of(fins)
+        apart = fins.Shape.distToShape(global_shape(part))[0]
+        return (abs(apart - p.clearance) < d.TOLERANCE
+                and abs(fins.Shape.BoundBox.ZMin - global_shape(part).BoundBox.ZMin) < d.TOLERANCE)
+
+    stand_up()
+    fins = feature.create(part, "Face%d" % (quick_stands.best_face(global_shape(part), FinParams()) + 1))
+    doc.recompute()
+    expect(fins.isValid() and at_the_part(), "fins of a part stood on its edge stand at it, on the bed")
+    feature.keep_laid_flat(fins, orient.back_to_flat(part))
+    orient.lay_back(part)
+    doc.recompute()
+    expect(feature.is_laid_flat(fins) and not fins.Placement.isIdentity(),
+           "laid flat with the fins kept, they are moved with the part")
+    stand_up()
+    expect(not feature.is_laid_flat(fins) and fins.isValid() and fins.Placement.isIdentity() and at_the_part(),
+           "the part stood again, the fins are rebuilt at it, not turned by the shape they kept")
+    fins.Placement = App.Placement(V(0, 0, BOX[2]), App.Rotation())
+    fins.touch()
+    doc.recompute()
+    expect(fins.Placement.isIdentity() and at_the_part(),
+           "a placement set on the fins by hand is dropped by the next build, they stay at the part")
+    layer_height = fins.LayerHeight.Value
+    fins.LayerHeight = 0.0
+    doc.recompute()
+    expect(not fins.isValid() and not fins.Warnings, "fins that fail to build keep no warning of an earlier build")
+    fins.setExpression("Placement.Base.z", str(BOX[2]))
+    doc.recompute()
+    expect(not fins.isValid() and list(fins.Warnings) == [feature.NOTE_PLACEMENT_HELD],
+           "fins that fail to build still say that an expression holds their placement")
+    fins.LayerHeight = layer_height
+    doc.recompute()
+    raised = fins.Shape.BoundBox.ZMin - global_shape(part).BoundBox.ZMin
+    expect(fins.isValid() and not feature.is_laid_flat(fins) and abs(fins.Placement.Base.z - BOX[2]) < d.TOLERANCE
+           and abs(raised - BOX[2]) < d.TOLERANCE and feature.NOTE_PLACEMENT_HELD in fins.Warnings,
+           "a placement held by an expression is left to it, the fins stand moved by it and say so: %s"
+           % list(fins.Warnings))
+    fins.setExpression("Placement.Base.z", None)
+    fins.LayerHeight = 0.0
+    doc.recompute()
+    expect(not fins.isValid() and not fins.Warnings,
+           "the expression removed and the build failing, the warning of the placement held does not stay")
+    fins.LayerHeight = layer_height
+    fins.touch()
+    doc.recompute()
+    expect(fins.Placement.isIdentity() and at_the_part() and feature.NOTE_PLACEMENT_HELD not in fins.Warnings,
+           "the expression removed, the placement is dropped and the fins stand at the part again")
+
+
+def checks_share_starts(doc):
+    """The overhangs, the bridges and the islands of a part as it stands, asked
+    one after the other as a build asks them, share what starts in it and the
+    cuts of its layers: its faces are sampled once, it is meshed once, no
+    height is cut twice, and no shape is kept. The bridges asked again, as for
+    other fins, cut nothing anew; the cuts go once another part is checked."""
+    length, depth, height = BOX
+    pier = length / SHARED_PIERS
+    slab = Part.makeBox(length, depth, height / SHARED_PIERS, V(0, 0, height))
+    table = Part.makeBox(pier, depth, height).fuse(
+        [Part.makeBox(pier, depth, height, V(length - pier, 0, 0)), slab]).removeSplitter()
+    part = doc.addObject("Part::Feature", "SharedStarts")
+    part.Shape = table
+    other = doc.addObject("Part::Feature", "SharedStartsBeside")
+    other.Shape = table.translated(V(0, 2 * depth, 0))
+    doc.recompute()
+    calls = {"_lowest_points": 0, "facing_down": 0, "_cut_out": 0}
+    real = {name: getattr(overhang, name) for name in calls}
+
+    def counted(name):
+        def call(*args):
+            calls[name] += 1
+            return real[name](*args)
+        return call
+
+    for name in calls:
+        setattr(overhang, name, counted(name))
+    try:
+        p = FinParams()
+        shape = global_shape(part)
+        rated = analysis.overhangs(part, shape, (), p)
+        spans = analysis.bridges(part, shape, (), p)
+        found = analysis.islands(part, p)
+        once = dict(calls)
+        kept = analysis._analysis(part, p)[analysis.STARTS]
+        wider = dataclasses.replace(p, bead_width=p.bead_width + BEAD_STEP)
+        again = analysis.bridges(part, shape, (), wider)
+        after = dict(calls)
+        held = len(kept._cuts)
+        analysis.islands(other, p)
+    finally:
+        for name in calls:
+            setattr(overhang, name, real[name])
+    expect(len(spans) == 1 and rated == [] and found == [] and once["_lowest_points"] == once["facing_down"] == 1
+           and once["_cut_out"] == 1 and kept._shape is None,
+           "the overhangs, the bridges and the islands of a slab on piers, asked one after the other, sample "
+           "its faces once, mesh it once and cut its layers in one cut, and the Starts kept hold no shape: %s"
+           % once)
+    expect(len(again) == 1 and after == once and held > 0 and kept._cuts == {},
+           "its bridges asked again, for another bead, cut nothing anew; the cuts kept go once another part "
+           "is checked: %d heights held, then %d" % (held, len(kept._cuts)))
+    # Other layers are another entry with cuts of its own; a document closed drops what is kept.
+    analysis.bridges(part, shape, (), dataclasses.replace(p, bead_width=p.bead_width + 2 * BEAD_STEP))
+    back = len(kept._cuts)
+    thicker = dataclasses.replace(p, layer_height=p.layer_height + BEAD_STEP)
+    analysis.bridges(part, shape, (), thicker)
+    layered = analysis._analysis(part, thicker)[analysis.STARTS]
+    expect(back > 0 and layered is not kept and kept._cuts == {} and len(layered._cuts) > 0,
+           "the part checked again has its cuts back; on other layers it is cut for those, in a stock of its "
+           "own, and the cuts of the layers before are dropped")
+    scratch = App.newDocument("ClosedBeside")
+    App.closeDocument(scratch.Name)
+    App.setActiveDocument(doc.Name)
+    expect(layered._cuts == {} and analysis._stocked is None,
+           "a document closed drops the cuts kept")
+
+
 def kept_islands(doc):
     """Islands handed to the fins, as Quick fins does, are taken as they are
     while the part stands so; moved, it is cut for them anew. A part whose
@@ -1174,7 +1309,7 @@ def stability_by_limits(doc):
     # goes out of date once the limits change.
     checked = check.record(box, [], check.STABILITY, level, "note", None)
     feature.follow_limits()
-    expect(checked.OutOfDate and "Touched" not in checked.State,
+    expect(checked.OutOfDate and feature.TOUCHED not in checked.State,
            "new limits put the check of a part without fins out of date")
     doc.removeObject(checked.Name)
     doc.removeObject(box.Name)
@@ -1189,7 +1324,8 @@ def check_objects(doc):
     doc.recompute()
     found = check.record(cube, [], check.STABILITY, analysis.STANDS, "note", None)
     again = check.record(cube, [], check.STABILITY, analysis.STANDS, "note again", None)
-    expect(found is again and not found.OutOfDate and found.Result == "note again" and "Touched" not in found.State,
+    expect(found is again and not found.OutOfDate and found.Result == "note again"
+           and feature.TOUCHED not in found.State,
            "checking a part again fills the same check, up to date and not touched")
     fins = feature.create(cube, face_name(cube.Shape, lower_left_face(cube.Shape)))
     doc.recompute()
@@ -1356,6 +1492,8 @@ def main():
     counter_under_slot_end(doc)
     tapered_pad(doc)
     warnings_and_old_files(doc)
+    stood_again_after_laid_flat(doc)
+    checks_share_starts(doc)
     kept_islands(doc)
     stability_raised_and_counter(doc)
     check_objects(doc)

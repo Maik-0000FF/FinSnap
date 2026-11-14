@@ -7,10 +7,14 @@ Run in FreeCAD, with this checkout installed as an addon (see CONTRIBUTING.md):
     freecad --console freecad/finsnap/tests/test_cube.py
 """
 
+import dataclasses
 import math
 import os
 import re
 import sys
+import types
+
+import numpy
 
 import Part
 
@@ -19,6 +23,7 @@ from freecad.finsnap.tests.support import (CHAMFER, EDGE, HALF_TURN, RECESS_RADI
                                            tilted_cube)
 from freecad.finsnap import analysis
 from freecad.finsnap import defaults as d
+from freecad.finsnap import bridge as bridging
 from freecad.finsnap.bridge import bridges as find_bridges
 from freecad.finsnap import contour, face_frame, geometry, quick_stands, tine_rows
 from freecad.finsnap import limits
@@ -53,6 +58,15 @@ TALL_BOX_HEIGHT = 80.0
 ANGLE_TOLERANCE = 0.5
 # How closely a span is measured: a bead is laid across in lines one bead apart.
 SPAN_TOLERANCE = 0.1
+LINES_SIDE = 10.0  # side of a square the lines of a bridge are laid across, in whole mm
+LINES_HOLE = (4.0, 4.0, 6.0, 6.0)  # a hole in it, from corner to corner, in whole mm
+ROUND_TABLE = 20.0  # radius of a disc on a ring wall, in mm
+ROUND_POST = 3.0  # radius of a post in the middle of it, in mm
+LINES_SPACING = 1.0  # how far apart the lines are laid across that square, in mm
+LINES_PAST = 1.0  # how far past the square they are laid, in mm
+LINES_BESIDE = 1.0  # how far beside the square a point is put that lies outside it, in mm
+LINES_DIGITS = 6  # places the ends of their pieces are compared to
+LINES_FACETS = 200  # flat sides of a round outline as a part from a mesh has it
 ODD_TILT = 30.0        # any angle but 45, at which a right-angled edge needs its face
 # First tines half a layer (0.1 mm) off the grid of 0.2 mm layers.
 HALF_LAYER_STARTS = (1.1, 1.3, 1.5, 1.7)
@@ -91,6 +105,33 @@ ISLAND_DEPTH = 10.0    # depth of the bridge and of what hangs from it
 ISLAND_TOP = 30.0      # height of the top of the bridge
 ISLAND_BEAM = 5.0      # thickness of its beam, and of the cap of a mushroom
 ISLAND_LOW = 10.0      # height of the bottom of what hangs from it, well above the bed
+ISLAND_LAYER = 50      # a layer on whose middle the bottom of a hanging block or a slab is put
+# How far beside a height where the layer changes a point is put to fall clearly on one side of it (mm):
+# far more than rounding or the kernel moves it, well less than the tolerance.
+BESIDE = d.TOLERANCE / 10
+# First layer and layer heights the cut heights are checked with (mm): the first as high as the others, and
+# higher and lower; and the layers whose middles they are checked at, the lowest among them.
+LAYERINGS = ((d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT), (1.5 * d.LAYER_HEIGHT, d.LAYER_HEIGHT),
+             (d.LAYER_HEIGHT / 2, d.LAYER_HEIGHT))
+CUT_LAYERS = (1, 2, ISLAND_LAYER)
+COMB_TEETH = 4         # blocks or steps in layers one above the other, to count the cuts of them
+COMB_TOOTH = ISLAND_SPAN / 16  # width of such a block and of the room between two, in mm
+ISLAND_PILLAR = ISLAND_SPAN / 4  # width of the pillar of the bridge islands hang from, in mm
+ISLAND_BLOCK = ISLAND_PILLAR  # width of a block hanging from its beam, in mm
+ISLAND_UNDER = ISLAND_TOP - ISLAND_BEAM  # height of the underside of its beam, in mm
+RIDGE_INTO_SLAB = SLAB / 2  # how far a ridge hanging from a slab reaches up into it, in mm
+# How far above the middle of a layer something starts that is to lie clear of it, and below it, in mm.
+CLEAR_OF_MIDDLE = d.LAYER_HEIGHT / 4
+CUTS_LOW = 10.0  # the lowest of some heights to cut a part at together, in mm
+CUTS_FEW = 3  # heights cut together where fewer are to be than as many as can
+STOCK_LAYERS = (10, 20, 30)  # layers through the piers of a slab on piers, to cut it at their middles
+CUTS_DIGITS = 4  # places the area of a cut, a point or a span is compared to
+CUTS_AS_SET = overhang.CUTS_MOST  # how many heights are cut together, to put back after a test changed it
+# How far from that middle it is put (mm): well below and above, right on it, within the tolerance of it,
+# where it counts to the layer above, just beside the tolerance below, on either side of where the layer
+# changes, and one to two tolerances below, where it counts to that layer.
+MIDDLE_OFFSETS = (-CLEAR_OF_MIDDLE, -1.5 * d.TOLERANCE, -d.TOLERANCE - BESIDE, -d.TOLERANCE + BESIDE,
+                  -d.TOLERANCE / 2, 0.0, d.TOLERANCE / 2, 1.5 * d.TOLERANCE, CLEAR_OF_MIDDLE)
 ISLAND_STEM = 3.0      # radius of the stem of a mushroom, and of a hole through a box
 ISLAND_CAP = 10.0      # radius of the cap of a mushroom
 STABLE_TOLERANCE = 0.05  # how far a plumb line or a margin may be off what is reckoned, in mm
@@ -118,6 +159,9 @@ GROOVE_WIDTH = 2.0
 GROOVE_FROM = 8.0
 WIDE_BOX = 60.0          # long enough for a U profile with legs of a third each
 SHIFT = 1.5           # how far a fin is moved along the face by hand, in mm
+TOO_THICK = 30.0      # a fin too thick for one on each corner of the cube, in mm
+# As many fins built as FinSnap keeps; these tests keep none but where the keeping is tested.
+BUILT_KEPT_IN_USE = geometry.BUILT_KEPT
 MERGED_CLEARANCE = 0.3  # a tine clearance that merged fins must not take
 # A nozzle and bead so wide that no gap up to GAP_MAX makes the tines long
 # enough, and a layer it prints, in mm.
@@ -137,6 +181,70 @@ BOSS_BESIDE = 4.0
 BOSS_SHIFT = 6.0
 BOSS_MIDDLE = 6.0
 BOSS_WIDE = 9.0
+# Faces of straight edges leaning over the bed (check_straight_faces()): how far
+# they lean (degrees), how much a cut worked out may differ from the kernel's
+# (mm), and the layer a stretch is made to end on.
+STRAIGHT_LEAN = 55.0
+STRAIGHT_SAME = 1e-6
+STRAIGHT_LAYER = 0.2
+# Their outlines, flat before they lean (mm): how wide and how high the
+# rectangle is that all of them start from, the upper corners of the slanted
+# quad, where the tip of the triangle lies, how far in the L and the U step,
+# from where to where the square hole and the notch of the U reach, across and
+# upwards, and the radius of the round hole in the middle.
+STRAIGHT_WIDE = 20.0
+STRAIGHT_HIGH = 30.0
+STRAIGHT_SLANTED_TOP = ((23.0, 30.0), (-2.0, 27.0))
+STRAIGHT_TIP = 9.0
+STRAIGHT_STEP = 8.0
+STRAIGHT_HOLE_ACROSS = (6.0, 14.0)
+STRAIGHT_HOLE_UP = (10.0, 20.0)
+STRAIGHT_ROUND_HOLE = 4.0
+# Where they are cut: the heights as shares of the height of the face, how far
+# below and above it a height misses it (mm), and the places along a fin, the
+# last two beside the face (mm). None of them through a corner or along an edge.
+STRAIGHT_SHARES = (0.07, 0.31, 0.5, 0.77, 0.93)
+STRAIGHT_PAST = 1.0
+STRAIGHT_PLACES = (1.3, 4.9, 9.7, 11.1, 13.3, 17.7, -5.0, 40.0)
+# A face that is not planar: the radius and the height of a cylinder (mm).
+STRAIGHT_CURVED = (10.0, 20.0)
+# The hole a stretch ends at on a layer boundary: its lower and upper edge in
+# layers up the face, where the fin tried there starts and where the stretches
+# are asked for, inside the hole (mm).
+STRAIGHT_HOLE_LAYERS = (40, 75)
+STRAIGHT_FIN_AT = 9.0
+STRAIGHT_BANDS_AT = 9.5
+# Solids whose mesh tells which points lie inside them (check_enclosed()): the
+# edge of a cube, how thick the walls of the hollow one are, the radius, the
+# height and the radius of the bore of a tube, and round it where the points
+# in it are taken, at what angle (degrees) and share of its height (mm).
+ENCLOSED_EDGE = 10.0
+ENCLOSED_WALL = 2.0
+ENCLOSED_TUBE = (10.0, 20.0, 4.0)
+ENCLOSED_TUBE_AT = (17.0, 0.37)
+# The axis and the angle (degrees) a tube is turned by to lie askew, its long
+# triangles then reaching over the grid they are sorted into on every side.
+ENCLOSED_ASKEW = ((1.0, 2.0, 3.0), 37.0)
+# The points tried on each: a grid of that many a side, reaching that far past
+# the solid (mm); a point deep in the cube and one in the hollow of the hollow
+# one, off every diagonal of their faces, as shares of the edge; and how far
+# off a wall, in margins of the mesh, a point is not told of, and is.
+ENCLOSED_GRID = 9
+ENCLOSED_PAST = 1.0
+ENCLOSED_DEEP = (0.23, 0.41, 0.67)
+ENCLOSED_IN_HOLLOW = (0.37, 0.45, 0.58)
+ENCLOSED_OFF_UNTOLD = (0.0, 0.1, 0.9)
+ENCLOSED_OFF_TOLD = 3.0
+# A gap so narrow that the points beside a fin lie within the margin of the
+# mesh of what they come near (mm), and a tine clearance that fits it.
+ENCLOSED_NARROW_GAP = 0.02
+ENCLOSED_NARROW_CLEARANCE = 0.0
+# How long the kernel takes a point on the clock of the test, as shares of
+# ENCLOSED_KERNEL_SLOW: quick, as on a dome, and slow; and past how many points
+# asked a solid is no longer waited for to be settled.
+ENCLOSED_QUICK_SHARE = 0.5
+ENCLOSED_SLOW_SHARE = 2.0
+ENCLOSED_ASKED_MOST = 5000
 # A face tapering from the bed up (tapered()): its half width at the bed, how
 # deep the part is, and as (half width at the top, height) one wider than a
 # fin at the top tine but too narrow for it and its end insets, and one
@@ -181,11 +289,37 @@ MATRIX_HIGH_CASES = {"rod": ((d.ROUND_FINS_THREE, 45.0, 0.0, 35.0), (d.ROUND_FIN
 # How many tines a side fin has, by shape, for MATRIX_CASES and then MATRIX_HIGH_CASES.
 MATRIX_SIDE_TINES = {"rod": (7, 7, 7, 7, 7, 7, 7, 7), "tube": (7, 7, 7, 7), "step near the fins": (13, 7, 13, 7, 7),
                      "flange": (7, 7, 7, 6), "thin step": (7, 7, 7, 7, 7), "cone": (7, 7, 7, 7, 7),
-                     "fillet": (7, 7, 7, 7, 5),
-                     "large fillet": (5, 6, 5, 5)}
+                     "fillet": (6, 6, 6, 6, 5),
+                     "large fillet": (5, 5, 5, 5)}
 HEIGHT_ACROSS_FIN = 0.02  # how far above the height it says a fin may reach (mm)
 LARGE_FILLET_RADIUS = 9.5  # nearly the radius of the rod
 MESHED_BOX, MESHED_OFF = 10.0, 0.5  # a box measured by its mesh, and how far off it (mm)
+# A fin measured by what it is fused from (check_known_clear()): how far its tine
+# ends off the box, and how far a tine reaches into it (mm).
+APART_TINE_OFF = 0.05
+APART_TINE_IN = 0.2
+# A round part that carries a coarse mesh, for the end of a tine measured
+# against the faces near it (check_tine_ends()): its radius, its height and how
+# closely the mesh follows it (mm); the clearance a tine end is to keep; how
+# far off the side a point lies, far nearer than the clearance; and half the
+# side of a flat face standing the clearance beyond the point, whose box is
+# exact while that of the meshed side stops short (mm).
+ENDS_ROUND = (2000.0, 20.0)
+ENDS_ROUND_MESH = 5.0
+ENDS_ROUND_CLEARANCE = 0.2
+ENDS_ROUND_OFF = 0.01
+ENDS_ROUND_FLAT = 1.0
+# A ring, whose face lies on a torus and so has no box to tell what is near
+# it by (check_tine_ends(), check_known_clear()): its two radii (mm).
+RING = (10.0, 2.0)
+# A round part that carries a mesh: its radius, its height and how closely the
+# mesh follows it (mm); the turns about its axis its side is looked at for
+# where its BoundBox stops shortest of it (degrees); and the share of that a
+# tine cuts into it there.
+APART_ROUND = (10.0, 20.0)
+APART_ROUND_MESH = 0.02
+APART_ROUND_TURNS = (0.0, 90.0, 180.0, 270.0)
+APART_ROUND_CUT = 0.9
 MESHED_VOLUME_APART = 0.5  # mm3: found on the mesh and exactly, the fins stand within a resolution
 FLANK_OUT_MOVED = 0.05  # mm: a blade moved out by more than this has really moved
 SETTLE_RESOLUTION, SETTLE_MOST = 0.01, 2.0  # what check_settled_clear() searches to and up to
@@ -213,6 +347,15 @@ NORMAL_DECIMALS = 6    # places to which the directions of faces are compared
 # ROD_HEIGHT, and on it a thinner one, or a body of revolution whose outline
 # runs through SPLINE_RADII, as far up again.
 STEP_RADIUS = 6.0
+# What ends a rod at the top, for the tines at the upper end of its side: a
+# fillet or a cone lower than CONTOUR_OWN_PART and a cone higher than it, each
+# cone narrowing so little that it leans over the bed still; a collar wider
+# than the rod and a piece of the same radius, both lower than it too.
+UPPER_LOW = 3.0
+UPPER_HIGH = 8.0
+UPPER_NARROWING = 0.5
+COLLAR_WIDER = 2.0
+TINES_END_BELOW = 1.0  # how far below the upper edge of a side its tines end at most (mm)
 # The thinner part only this high, the part stood on its free rim: about 6 mm
 # of it carry tines below the side, past CONTOUR_OWN_PART, or, lower, less.
 THIN_PART_CARRIES = 14.0
@@ -415,7 +558,7 @@ def check_corners(cube, face):
     check_corner_tines(sharp, leaning, "sharp box")
 
     try:
-        geometry.build(cube, face, FinParams(placement=d.PLACEMENT_CORNERS, fin_thickness=30.0))
+        geometry.build(cube, face, FinParams(placement=d.PLACEMENT_CORNERS, fin_thickness=TOO_THICK))
     except face_frame.FinError as error:
         expect("too short" in str(error) or "narrower" in str(error),
                "corner fins that would collide are refused: %s" % error)
@@ -528,14 +671,371 @@ def check_limits():
            "an unprintable limit of 0 degrees: critical at most")
 
 
-def piers(gap, depth=PIER[1], slab_depth=None):
-    """A slab on two piers `gap` apart, `depth` deep, the slab across the gap,
-    as deep as the piers or `slab_depth`, reaching past them at the back."""
-    width, _, height = PIER
+def piers(gap, depth=PIER[1], slab_depth=None, height=PIER[2]):
+    """A slab on two piers `gap` apart, `depth` deep and `height` high, the
+    slab across the gap, as deep as the piers or `slab_depth`, reaching past
+    them at the back."""
+    width = PIER[0]
     first = Part.makeBox(width, depth, height)
     second = Part.makeBox(width, depth, height, V(width + gap, 0, 0))
     slab = Part.makeBox(2 * width + gap, slab_depth or depth, SLAB, V(0, 0, height))
     return first.fuse([second, slab]).removeSplitter()
+
+
+def plate(x0, y0, x1, y1, hole=None):
+    """A face in the plane of the bed from (x0, y0) to (x1, y1), with `hole`,
+    four numbers the same way, cut out of it."""
+    face = Part.makePlane(x1 - x0, y1 - y0, V(x0, y0, 0))
+    if hole is None:
+        return face
+    hx0, hy0, hx1, hy1 = hole
+    return face.cut(Part.makePlane(hx1 - hx0, hy1 - hy0, V(hx0, hy0, 0))).Faces[0]
+
+
+def check_bridge_lines():
+    """The lines a bridge lays across a free region, by arithmetic on its
+    outline: every kind of outline, point and line the tables of
+    bridge._outline(), _supports(), _inside(), _resting(), _pieces(),
+    _anchored() and _covered() name."""
+    bead, side, half = d.BEAD_WIDTH, LINES_SIDE, LINES_SIDE / 2
+    lo, hi = LINES_HOLE[0], LINES_HOLE[2]
+    slack = d.TOLERANCE + bridging._deflection(bead)
+
+    def diamond_of(x0, y0, x1, y1):
+        """A square stood on a corner, its corners in the middles of the sides of the box given."""
+        mx, my = (x0 + x1) / 2, (y0 + y1) / 2
+        corners = [V(x0, my, 0), V(mx, y0, 0), V(x1, my, 0), V(mx, y1, 0)]
+        return Part.Face(Part.makePolygon(corners + corners[:1]))
+
+    square = bridging._outline(plate(0, 0, side, side), bead)
+    holed = bridging._outline(plate(0, 0, side, side, LINES_HOLE), bead)
+    diamond = bridging._outline(diamond_of(0, 0, side, side), bead)
+    tipped = bridging._outline(plate(0, 0, side, side).cut(diamond_of(*LINES_HOLE)).Faces[0], bead)
+    disc = Part.Face(Part.Wire(Part.makeCircle(half, V(half, half, 0))))
+    round_outline = bridging._outline(disc, bead)
+    off = numpy.abs(numpy.hypot(*((round_outline[0] + round_outline[1]) / 2 - half).T) - half).max()
+    turns = [2 * math.pi * k / LINES_FACETS for k in range(LINES_FACETS + 1)]
+    faceted = Part.Face(Part.makePolygon(
+        [V(half + half * math.cos(turn), half + half * math.sin(turn), 0) for turn in turns]))
+    expect(len(square[0]) == 4 and len(holed[0]) == 8 and len(bridging._outline(faceted, bead)[0]) == LINES_FACETS
+           and (square[0][0] == square[1][-1]).all() and (round_outline[0][0] == round_outline[1][-1]).all()
+           and 0 < off <= bridging._deflection(bead) + d.TOLERANCE,
+           "the outline of a face is its corners, its holes with it, those of a face of many flat sides as "
+           "many, each ring closed on its first point; a round one in pieces no farther off than the "
+           "deflection: %.4f mm" % off)
+    opened = Part.Wire(Part.makePolygon([V(0, 0, 0), V(side, 0, 0), V(side, side, 0)]))
+    unclosed = bridging._outline(type("OpenRing", (), {"Wires": [opened]})(), bead)
+    expect(len(unclosed[0]) == 3 and (unclosed[1][-1] == unclosed[0][0]).all()
+           and bridging._outline(Part.Shape(), bead) is None,
+           "a ring the kernel gives open is closed by a piece from its last point to its first; a face "
+           "without a ring has no outline")
+    carrying = bridging._supports([plate(0, 0, side, side), Part.Shape(), plate(side, 0, 2 * side, side)], bead)
+    lowest = [tuple(float(value) for value in box[0]) for _, box in carrying]
+    expect(lowest == [(0.0, 0.0), (float(side), 0.0)] and bridging._supports([], bead) == [],
+           "a face no outline can be taken of is left out of the supports, the faces beside it are kept, in "
+           "their order: %s" % lowest)
+
+    def inside(outline, *points, slack=d.TOLERANCE):
+        return list(bridging._inside(numpy.array(points, dtype=float), outline, slack))
+
+    beside = LINES_BESIDE
+    expect(inside(square, (half, half), (side + beside, half), (side + d.TOLERANCE / 2, half), (-beside, 0),
+                  (-beside, side)) == [True, False, True, False, False],
+           "a point lies in a face inside its outline or within the slack of it, not outside, nor on the line "
+           "of a side beside it")
+    expect(inside(holed, ((lo + hi) / 2, (lo + hi) / 2), (lo / 2, half), (lo + d.TOLERANCE / 2, half))
+           == [False, True, True],
+           "a point in a hole of a face lies in no face, one beside the hole or on its rim does")
+    expect(inside(diamond, (-beside, half), (half, half), (half / 2, half)) == [False, True, True],
+           "a ray through a corner of the outline counts the corner once, one touching it not at all")
+    # Between two points of the round outline its straight piece lies inside
+    # the circle: a point the tolerance outside the circle there is farther
+    # from the piece than the tolerance, and rests only with the slack for it.
+    between = (round_outline[0][0] + round_outline[1][0]) / 2 - half
+    outward = between / numpy.hypot(*between)
+    on_rim = tuple(half + outward * (half + d.TOLERANCE))
+    inner, off_rim = tuple(half + outward * (half - bead)), tuple(half + outward * (half + bead))
+    expect(inside(round_outline, on_rim, inner, off_rim, slack=slack) == [True, True, False]
+           and inside(round_outline, on_rim) == [False],
+           "a point the tolerance outside a round outline, between two of its points, rests on it with the "
+           "slack for its straight pieces and not without; one a bead outside does not")
+    resting = list(bridging._resting(numpy.array([(half, half), (side + half, half), (-beside, half)]), carrying,
+                                     slack))
+    expect(resting == [True, True, False]
+           and not bridging._resting(numpy.array([(half, half)]), [], slack).any(),
+           "a point rests where it lies in any of the supports, and on nothing without one")
+
+    def pieces(outline, degrees):
+        found, _, _ = bridging._pieces(outline, (half, half), half + LINES_PAST, LINES_SPACING, degrees)
+        return [tuple(round(float(value), LINES_DIGITS) for value in row) for row in found]
+
+    for degrees in (0, 90):
+        found = pieces(square, degrees)
+        inner = [piece for piece in found if 0 < abs(piece[0]) < side]
+        expect(len(inner) == int(side) - 1 and all(piece[1:] == (0.0, float(side)) for piece in found)
+               and len(found) - len(inner) <= 2,
+               "lines across a square a millimetre apart at %d degrees: one piece each from side to side; a "
+               "line along a side has one or none: %s" % (degrees, found))
+    through = [piece for piece in pieces(diamond, 0) if piece[0] == half]
+    touching = [piece for piece in pieces(diamond, 0) if piece[0] in (0.0, float(side)) and piece[2] - piece[1] > 0]
+    expect(through == [(half, 0.0, float(side))] and not touching,
+           "a line through two corners of a diamond is one piece from corner to corner; one touching a "
+           "corner only has no piece of any length: %s" % pieces(diamond, 0))
+    past = [piece for piece in pieces(holed, 0) if piece[0] == half]
+    expect(past == [(half, 0.0, float(lo)), (half, float(hi), float(side))],
+           "a line across a hole stops at it and goes on past it: %s" % past)
+    at_tips = [piece for piece in pieces(tipped, 0) if piece[0] in (float(lo), float(hi))]
+    expect(at_tips == [(float(lo), 0.0, float(side)), (float(hi), 0.0, float(side))],
+           "a line touching the tip of a hole, from below or from above, is one piece past the tip: %s" % at_tips)
+
+    gap = (PIER[0], 0, PIER[0] + GAP_CRITICAL, PIER[1])
+    region = bridging._outline(plate(*gap), bead)
+    left, right = (0, 0, PIER[0], PIER[1]), (PIER[0] + GAP_CRITICAL, 0, 2 * PIER[0] + GAP_CRITICAL, PIER[1])
+    centre, reach = (PIER[0] + GAP_CRITICAL / 2, PIER[1] / 2), GAP_CRITICAL
+
+    def anchored(supports, degrees=0, across=region):
+        return bridging._anchored(across, bridging._supports(supports, bead), bead, centre, reach, bead, degrees)
+
+    held = anchored([plate(*left), plate(*right)])
+    expect(held is not None and abs(held[1] - GAP_CRITICAL) < d.TOLERANCE and held[3].shape[1:] == (2, 2)
+           and anchored([plate(*left), plate(*right)], 90) is None and anchored([plate(*left)]) is None
+           and anchored([]) is None,
+           "lines across a gap rest on a support at each end, on two of them; along the gap, with one "
+           "support or with none, nothing is anchored")
+    open_left = (PIER[0] - bead, 0, PIER[0], PIER[1])
+    expect(anchored([plate(*left, hole=open_left), plate(*right)]) is None,
+           "ends that come to lie over a hole of a support rest on nothing")
+    short = bridging._outline(plate(PIER[0], 0, PIER[0] + bead / 2, PIER[1]), bead)
+    expect(anchored([plate(*left), plate(*right)], across=short) is None,
+           "pieces no longer than a bead are left out")
+
+    lines = numpy.array([[(0.0, 0.0), (float(side), 0.0)]])
+    expect(bridging._covered(plate(0, -bead, side, bead), lines, bead)
+           and not bridging._covered(plate(0, -bead, side, 2 * bead + 1), lines, bead)
+           and not bridging._covered(plate(0, -bead, side, bead), lines[:0], bead),
+           "a face is covered where all of it lies within a spacing of a line, not where it reaches farther, "
+           "nor without a line")
+
+    def table(post=0.0):
+        """A disc on a ring wall, with a post in its middle `post` in radius."""
+        wall = Part.makeCylinder(ROUND_TABLE, PIER[2]).cut(Part.makeCylinder(ROUND_TABLE - PIER[0], PIER[2]))
+        parts = [Part.makeCylinder(ROUND_TABLE, SLAB, V(0, 0, PIER[2]))]
+        if post:
+            parts.append(Part.makeCylinder(post, PIER[2]))
+        return wall.fuse(parts).removeSplitter()
+
+    def spans_of(shape):
+        found = find_bridges(shape, d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, bead, limits.Limits())
+        return [bridged.span for bridged in found]
+
+    across = 2 * (ROUND_TABLE - PIER[0])
+    plain, posted = spans_of(table()), spans_of(table(ROUND_POST))
+    expect(len(plain) == 1 and abs(plain[0] - across) < SPAN_TOLERANCE,
+           "a disc on a ring wall spans the whole hole, the line through the seam of its round outline "
+           "kept: %s" % plain)
+    # With a post in the middle the longest line is the first that passes
+    # beside the post: the lines lie as they are laid across the box of the
+    # hole (bridge._laying()), and a line at the post ends on it.
+    reach, spacing = bridging._laying(math.hypot(across, across), bead)
+    past_post = min(offset for offset in bridging._offsets(reach, spacing) if offset > ROUND_POST)
+    chord = 2 * math.sqrt((across / 2) ** 2 - past_post ** 2)
+    expect(len(posted) == 1 and abs(posted[0] - chord) < SPAN_TOLERANCE,
+           "the same with a post in its middle spans beside the post, the chord of the first line past it, "
+           "%.2f mm: %s" % (chord, posted))
+    on_facets = bridging._outline(faceted, bead)
+    middle = [piece for piece in pieces(on_facets, 0) if piece[0] == half]
+    wide = bridging._supports([plate(-side, -side, 2 * side, 2 * side, (0, 0, side, side))], bead)
+    held = bridging._anchored(on_facets, wide, bead, (half, half), half + LINES_PAST, LINES_SPACING, 0)
+    expect(middle == [(half, 0.0, float(side))] and held is not None and abs(held[1] - side) < SPAN_TOLERANCE,
+           "across a round outline of %d flat sides the line through the middle is one piece from rim to "
+           "rim, and the lines rest on the plate around it: %s" % (LINES_FACETS, middle))
+
+
+def check_bridge_faces():
+    """The faces of a part lying over a free region, their points turned away by the box around
+    the region before the kernel measures how far they are from it."""
+    first, layer, bead = d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, d.BEAD_WIDTH
+    side, near, far = 10.0, bead / 4, bead
+    region = plate(0, 0, side, side)
+    corners = {7: [(side / 2, side / 2)], 3: [(OUT_OF_REACH, 0)], 5: [(OUT_OF_REACH, 0), (side + near, side / 2)],
+               4: [(side + far, side / 2)], 9: [(side + bead / 2, 0)]}
+    expect(bridging._over(region, corners, bead) == [7, 5, 9] and bridging._over(region, {}, bead) == [],
+           "the faces with a point within half a bead of a region lie over it, one right at half a bead "
+           "among them, in the order given; no faces, none: %s" % bridging._over(region, corners, bead))
+    # A point in the box around a region, yet far from the region: in the hole of a ring.
+    ring = plate(0, 0, side, side, hole=(side / 4, side / 4, 3 * side / 4, 3 * side / 4))
+    within = {1: [(side / 2, side / 2)], 2: [(side / 2, side / 2), (side / 8, side / 8)]}
+    expect(bridging._over(ring, within, bead) == [2],
+           "a face with its only point in the hole of a ring does not lie over the ring, one with a point "
+           "on the ring as well does: %s" % bridging._over(ring, within, bead))
+
+    class Region:
+        """A region standing in for one of the kernel: its box, or none to be had, and what it
+        is asked to measure, raising where told."""
+
+        def __init__(self, box=None, raising=False):
+            self.box, self.raising, self.asked = box, raising, []
+
+        def optimalBoundingBox(self, mesh, tolerance):
+            self.took = (mesh, tolerance)
+            if self.box is None:
+                raise Part.OCCError("no box")
+            return self.box
+
+        def distToShape(self, vertex):
+            self.asked.append((vertex.Point.x, vertex.Point.y))
+            if self.raising:
+                raise Part.OCCError("no distance")
+            return (0.0,)
+
+    box = App.BoundBox(0, 0, 0, side, side, 0)
+    edge = side + bead / 2 + d.TOLERANCE
+    boxed = Region(box)
+    expect(bridging._over(boxed, {1: [(edge, 0), (0, -bead / 2 - d.TOLERANCE)], 2: [(edge + BESIDE, 0)],
+                                  3: [(0, edge + BESIDE)]}, bead) == [1]
+           and boxed.asked == [(edge, 0)] and boxed.took == (False, False),
+           "a point right on the edge of the box around a region, grown by half a bead and the tolerance, "
+           "is measured, one beside it is not; the box is taken without a mesh: %s" % boxed.asked)
+    unboxed = Region()
+    expect(bridging._over(unboxed, {1: [(OUT_OF_REACH, 0)], 2: [(0, OUT_OF_REACH)]}, bead) == [1, 2]
+           and len(unboxed.asked) == 2,
+           "of a region the kernel can tell no box of, every point is measured")
+    failing = Region(box, raising=True)
+    expect(bridging._over(failing, {1: [(side / 2, side / 2)], 2: [(OUT_OF_REACH, 0)]}, bead) == []
+           and failing.asked == [(side / 2, side / 2)],
+           "the kernel raising on a point of a face, the face does not lie over the region; a point turned "
+           "away by the box is not measured and cannot raise")
+    disc = Part.Face(Part.Wire(Part.makeCircle(side)))
+    expect(sorted(bridging._corners(region)) == sorted([(0, 0), (side, 0), (0, side), (side, side),
+                                                        (side / 2, side / 2)]),
+           "the corners of a face and its middle are its points, seen from above: %s" % bridging._corners(region))
+    expect(len(bridging._corners(disc)) == 2 and bridging._corners(disc)[-1] != bridging._corners(disc)[0],
+           "a disc has the one corner of its edge and its middle: %s" % bridging._corners(disc))
+
+    # Slabs on piers side by side: the bridges found with the boxes are those found measuring every point.
+    pitch = 2 * PIER[0] + GAP_CRITICAL + PIER[0]
+    row = Part.makeCompound([piers(GAP_CRITICAL).translated(V(step * pitch, 0, 0)) for step in range(COMB_TEETH)])
+
+    def told(found):
+        return [(bridge.faces, bridge.covered, round(bridge.span, CUTS_DIGITS), bridge.level,
+                 round(bridge.region.Area, CUTS_DIGITS)) for bridge in found]
+
+    found = find_bridges(row, first, layer, bead, limits.Limits())
+    real_box = bridging._box
+    bridging._box = lambda region: None
+    try:
+        measured = find_bridges(row, first, layer, bead, limits.Limits())
+    finally:
+        bridging._box = real_box
+    expect(len(found) == COMB_TEETH and told(found) == told(measured)
+           and all(len(bridge.faces) == 1 for bridge in found),
+           "%d slabs on piers side by side: each bridge lies under its own face alone, found with the boxes "
+           "as measuring every point, in the same order: %s" % (COMB_TEETH, told(found)))
+    # A region under no face that counts, as under one carried by fins: its lines are not laid.
+    undersides = [face for face in row.Faces if face.BoundBox.ZLength < d.TOLERANCE
+                  and abs(face.BoundBox.ZMin - PIER[2]) < d.TOLERANCE]
+    carried = [face for face in undersides if face.BoundBox.XMax < pitch]
+    laid = []
+    real_span = bridging._span
+    bridging._span = lambda *args: laid.append(args) or real_span(*args)
+    try:
+        left = find_bridges(row, first, layer, bead, limits.Limits(), carried)
+    finally:
+        bridging._span = real_span
+    expect(len(carried) == 1 and len(left) == COMB_TEETH - 1 and len(laid) == COMB_TEETH - 1,
+           "the face under one of %d slabs carried by fins: the lines of the region under it are not laid, "
+           "the others are bridged: %d bridges, lines laid %d times" % (COMB_TEETH, len(left), len(laid)))
+
+    # The supports a line can rest on and the faces a face is cut by, picked by their boxes: the
+    # bridges are those found looking at every support and cutting by every face below.
+    real_near, real_boxes = bridging._near, bridging._boxes
+    bridging._near = lambda supports, outline, bead: supports
+    bridging._boxes = lambda faces: numpy.array([bridging.EVERYWHERE] * len(faces), dtype=float).reshape(-1, 4)
+    try:
+        by_all = find_bridges(row, first, layer, bead, limits.Limits())
+    finally:
+        bridging._near, bridging._boxes = real_near, real_boxes
+    cut_by = []
+    real_free = bridging._free
+
+    def free(here, below, here_boxes, below_boxes):
+        cut_by.extend(int(((below_boxes[:, 0] <= box[1]) & (box[0] <= below_boxes[:, 1])).sum())
+                      for box in here_boxes)
+        return real_free(here, below, here_boxes, below_boxes)
+
+    bridging._free = free
+    try:
+        find_bridges(row, first, layer, bead, limits.Limits())
+    finally:
+        bridging._free = real_free
+    expect(told(found) == told(by_all) and cut_by == [2] * COMB_TEETH,
+           "%d slabs on piers side by side: the bridges found with the supports and the faces below picked "
+           "by their boxes are those found with all of them, in the same order; each slab is cut by its own "
+           "two piers alone: %s" % (COMB_TEETH, cut_by))
+
+    # A support whose box only touches the box of a region, grown by half a bead and the slack, is
+    # kept; one beside that is not.
+    reach = bead / 2 + bridging._slack(bead)
+    outline = bridging._outline(region, bead)
+    beside_it = [plate(side + reach, 0, 2 * side, side), plate(side + reach + BESIDE, 0, 2 * side, side),
+                 plate(OUT_OF_REACH, 0, OUT_OF_REACH + side, side), plate(-side, -side, 0, 0),
+                 plate(0, -side - reach, side, -reach), plate(0, -side - reach - BESIDE, side, -reach - BESIDE)]
+    supports = bridging._supports(beside_it, bead)
+    kept = [number for each in bridging._near(supports, outline, bead)
+            for number, support in enumerate(supports) if support is each]
+    expect(kept == [0, 3, 4] and bridging._near([], outline, bead) == []
+           and bridging._near(supports[1:3], outline, bead) == [],
+           "the supports whose boxes meet or touch the box of a region grown by half a bead and the slack "
+           "are kept, in their order, those beside it are not; of no supports, or none near, none: %s" % kept)
+
+    # A face meeting no face below is free whole and not cut; one meeting some is cut by those.
+    here = [plate(0, 0, side, side), plate(OUT_OF_REACH, 0, OUT_OF_REACH + side, side),
+            plate(2 * side, 0, 3 * side, side), plate(5 * side, 0, 6 * side, side)]
+    below = [plate(0, 0, side / 2, side), plate(2 * side, 0, 3 * side, side), plate(6 * side, 0, 7 * side, side)]
+    regions = bridging._free(here, below, bridging._boxes(here), bridging._boxes(below))
+    expect(len(regions) == 3 and abs(regions[0].Area - side * side / 2) < d.TOLERANCE and regions[1] is here[1]
+           and abs(regions[2].Area - side * side) < d.TOLERANCE and regions[2] is not here[3],
+           "a face half on one below is free by half, one with no face below near it is given whole as it "
+           "is, one a face below only touches is free whole, one resting whole on another has no region: %s"
+           % [round(each.Area, CUTS_DIGITS) for each in regions])
+    expect(bridging._free([], below, bridging._boxes([]), bridging._boxes(below)) == []
+           and bridging._boxes([]).shape == (0, 4),
+           "no faces have no boxes and no free region")
+
+    class Face:
+        """A face standing in for one of the kernel: its box, or none to be had, and a cut that
+        raises or gives what it is cut by."""
+
+        def __init__(self, box=None, raising=False):
+            self.box, self.raising, self.cut_by = box, raising, None
+
+        def optimalBoundingBox(self, mesh, tolerance):
+            if self.box is None:
+                raise Part.OCCError("no box")
+            return self.box
+
+        def cut(self, others):
+            if self.raising:
+                raise Part.OCCError("no cut")
+            self.cut_by = len(others.Faces)
+            return Part.makeCompound([])
+
+    unboxed, away = Face(), Face(App.BoundBox(OUT_OF_REACH, 0, 0, OUT_OF_REACH + side, side, 0), raising=True)
+    faces = [unboxed, away]
+    regions = bridging._free(faces, below, bridging._boxes(faces), bridging._boxes(below))
+    expect(unboxed.cut_by == len(below) and regions == [away]
+           and tuple(bridging._boxes(faces)[0]) == bridging.EVERYWHERE,
+           "a face the kernel can tell no box of is cut by every face below; one meeting none below is "
+           "not cut, so the kernel cannot raise on it")
+    under = [Face(), plate(OUT_OF_REACH, 0, OUT_OF_REACH + side, side)]
+    cut = Face(App.BoundBox(0, 0, 0, side, side, 0))
+    bridging._free([cut], [plate(0, 0, side, side)] + under[1:], bridging._boxes([cut]),
+                   numpy.vstack([bridging._boxes([under[0]]), bridging._boxes(under[1:])]))
+    expect(cut.cut_by == 1, "a face below without a box cuts every face: %s" % cut.cut_by)
+    raising = Face(App.BoundBox(0, 0, 0, side, side, 0), raising=True)
+    faces = [here[1], raising]
+    expect(bridging._free(faces, below, bridging._boxes(faces), bridging._boxes(below)) == [],
+           "the kernel raising on the cut of one face, the layer has no free region")
 
 
 def check_bridges():
@@ -552,6 +1052,74 @@ def check_bridges():
         expect(len(spans) == 1 and abs(spans[0].span - gap) < SPAN_TOLERANCE and spans[0].level == level,
                "a slab across a %.1f mm gap between piers spans it, %s: %s"
                % (gap, level, [(s.span, s.level) for s in spans]))
+    # The underside of the slab right on the middle of a layer, where the
+    # layers are cut, within the tolerance of it and beside it.
+    middle = overhang.layer_middle(ISLAND_LAYER, first, layer)
+    for height in (middle + offset for offset in MIDDLE_OFFSETS):
+        spans = found(piers(GAP_CRITICAL, height=height))
+        expect(len(spans) == 1 and abs(spans[0].span - GAP_CRITICAL) < SPAN_TOLERANCE,
+               "a slab with its underside at %.5f mm, the middle of a layer at %.2f mm, spans the gap: %s"
+               % (height, middle, [s.span for s in spans]))
+    for first_height, layer_height in LAYERINGS:
+        def found_here(shape, starts=None):
+            return find_bridges(shape, first_height, layer_height, bead, rating, starts=starts)
+
+        # A ridge hanging from the slab across the whole gap, its sides too
+        # steep to overhang, its edge just below the middle of the layer under
+        # the slab's: it starts in the layer of the slab and carries nothing.
+        below = overhang.layer_middle(ISLAND_LAYER, first_height, layer_height)
+        under = below + CLEAR_OF_MIDDLE
+        edge, top = below - d.TOLERANCE + BESIDE, under + RIDGE_INTO_SLAB
+        centre = PIER[0] + GAP_CRITICAL / 2
+        corners = [V(centre - (top - edge) / 2, 0, top), V(centre + (top - edge) / 2, 0, top), V(centre, 0, edge)]
+        ridge = Part.Face(Part.makePolygon(corners + corners[:1])).extrude(V(0, PIER[1], 0))
+        spans = found_here(piers(GAP_CRITICAL, height=under).fuse(ridge).removeSplitter())
+        expect(len(spans) == 1 and abs(spans[0].span - GAP_CRITICAL) < SPAN_TOLERANCE,
+               "first layer %.2f mm: a ridge hanging in the gap, starting just below the middle of the layer "
+               "under the slab, carries nothing: the slab spans the whole gap: %s"
+               % (first_height, [s.span for s in spans]))
+        # Steps under the slab, side by side across the gap, each a layer
+        # higher than the last and clear of the middles: every layer is cut
+        # once, and the layer below the lowest.
+        stairs = stairs_under_slab(first_height, layer_height)
+        kernel, (cut_at, spans) = kernel_cuts(lambda: cuts_counted(lambda: found_here(stairs)))
+        expect(spans and len(cut_at) == COMB_TEETH + 1 and kernel == cuts_due(stairs, cut_at) < len(cut_at),
+               "first layer %.2f mm: %d steps under a slab in layers one above the other are bridged, found "
+               "with each layer asked for once and the one below the lowest, in a cut of the kernel for each "
+               "batch of them and no more: %d "
+               "heights, %d cuts, spans %s"
+               % (first_height, COMB_TEETH, len(cut_at), kernel, [s.span for s in spans]))
+        # A slab whose underside, the ceiling of the gap, starts near a middle,
+        # beside a block hanging in the same layer: no lowest point lies on the
+        # ceiling, yet what carries that layer is cut lowered for the islands, and
+        # the bridges take that cut from the same Starts: the part is meshed once
+        # and no height is cut twice.
+        near = below - d.TOLERANCE / 2
+        hanging = Part.makeBox(ISLAND_PILLAR, ISLAND_DEPTH, ISLAND_UNDER - under,
+                               V(ISLAND_SPAN - ISLAND_PILLAR, 0, under))
+        beside = bridge(hanging).translated(V(2 * PIER[0] + GAP_CRITICAL + ISLAND_PILLAR, 0, 0))
+        both = Part.makeCompound([piers(GAP_CRITICAL, height=near), beside])
+        starts = overhang.Starts(both)
+        sampled, (meshed, (for_islands, for_bridges)) = calls_counted("facing_down", lambda: calls_counted(
+            "_lowest_points", lambda: (
+                cuts_counted(lambda: overhang.islands(both, first_height, layer_height, starts)),
+                cuts_counted(lambda: found_here(both, starts)))))
+        supports = [sorted(z for z in cut_at if abs(z - below) < CLEAR_OF_MIDDLE)
+                    for cut_at, _ in (for_islands, for_bridges)]
+        over_gap = [found for found in for_bridges[1] if abs(found.span - GAP_CRITICAL) < SPAN_TOLERANCE]
+        expect(len(for_islands[1]) == 1 and len(over_gap) == 1 and len(meshed) == 1 and len(sampled) == 1
+               and len(supports[0]) == 1 and supports[1] == [] and not set(for_islands[0]) & set(for_bridges[0])
+               and abs(supports[0][0] - (below - overhang.SUPPORT_CUT_DROP)) < BESIDE,
+               "first layer %.2f mm: a ceiling starting near a middle beside a block hanging in its layer, an "
+               "island, the ceiling a bridge across the gap: islands "
+               "cut what carries that layer the drop under the middle, the bridges take that cut and cut no "
+               "height again, the part "
+               "meshed once and its faces sampled once: %s, %d meshes, %d samplings"
+               % (first_height, supports, len(meshed), len(sampled)))
+    plain = Part.makeBox(*PIER)
+    meshed, (cut_at, spans) = calls_counted("_lowest_points", lambda: cuts_counted(lambda: found(plain)))
+    expect(spans == [] and not cut_at and not meshed,
+           "a box with no face hanging is neither meshed nor cut for bridges")
     deep = found(piers(GAP_CRITICAL, DEEP_SLAB))
     expect(len(deep) == 1 and abs(deep[0].span - GAP_CRITICAL) < SPAN_TOLERANCE,
            "a slab deeper than the gap spans across the gap, not along it: %s" % [s.span for s in deep])
@@ -798,6 +1366,74 @@ def check_tine_ends(cube, face):
              "past the end of the face")):
         found = tine_rows.tine_end_fault(bottom, points, gap)
         expect(found == wanted, "a tine end %s: %s" % (what, found))
+        # Against all the faces of the box, of which the bottom alone is near: the same.
+        found = tine_rows.tine_end_fault(box, points, gap)
+        expect(found == wanted, "a tine end %s, against the whole box: %s" % (what, found))
+    expect(tine_rows.tine_end_fault(box, [V(middle, middle, middle)], clearance) == tine_rows.TINE_CUTS_IN
+           and tine_rows.tine_end_fault(box, [V(middle, middle, -BOX_SIDE)], clearance) == tine_rows.TINE_MISSES,
+           "a point in the box of no face, deep in the part or far below it, is measured against all the faces")
+    # A face on a torus has no box: it is measured for every point, alone and beside a flat face.
+    ring = Part.makeTorus(RING[0], RING[1], V(0, 0, -BOX_SIDE))
+    with_flat = Part.makeCompound([ring.Faces[0], bottom])
+    for surface, what in ((ring, "a ring"), (with_flat, "a ring beside a flat face")):
+        found = [tine_rows.tine_end_fault(surface, [V(sum(RING) + off, 0, -BOX_SIDE)], clearance)
+                 for off in (clearance, clearance + far, clearance - far)]
+        expect(found == [None, tine_rows.TINE_MISSES, tine_rows.TINE_CUTS_IN],
+               "a tine end the clearance off %s, further off and nearer: %s" % (what, found))
+    class Counted:
+        """A surface that counts how often all of it is measured."""
+
+        def __init__(self, shape):
+            self.shape, self.Faces, self.whole = shape, shape.Faces, 0
+
+        def distToShape(self, other):  # noqa: N802 - FreeCAD API
+            self.whole += 1
+            return self.shape.distToShape(other)
+
+    near_ring, far_off = V(sum(RING) + clearance, 0, -BOX_SIDE), V(sum(RING) + BOX_SIDE, 0, -BOX_SIDE)
+    alone, beside = Counted(ring), Counted(with_flat)
+    found = [tine_rows.tine_end_fault(surface, [point], clearance)
+             for surface in (alone, beside) for point in (near_ring, far_off)]
+    expect(found == [None, tine_rows.TINE_MISSES] * 2 and (alone.whole, beside.whole) == (0, 1),
+           "a point far off a ring is not measured a second time against the ring alone, which is all there is; "
+           "beside a flat face it is measured against both: %s, %d and %d times" % (found, alone.whole, beside.whole))
+    boxes = [box for _, box in shapes.boxed_faces(with_flat, clearance)]
+    expect(boxes[0] is None and abs(boxes[1].ZMin + clearance) < d.TOLERANCE
+           and abs(boxes[1].XMax - BOX_SIDE - clearance) < d.TOLERANCE
+           and shapes.boxed_faces(Part.Compound([])) == [],
+           "a face on a torus has no box, a flat face the one that touches it, wider by what is asked; "
+           "a shape without a face has none")
+    # A round part that carries a mesh: the BoundBox of its side stops short of it, the box that touches it not.
+    radius, height = ENDS_ROUND
+    round_part = Part.makeCylinder(radius, height)
+    plain = round_part.copy()
+    round_part.tessellate(ENDS_ROUND_MESH)
+    side = next(f for f in round_part.Faces if isinstance(f.Surface, Part.Cylinder))
+
+    def short_at(turn):
+        """How far the BoundBox of the side stops short of it, `turn` degrees round the axis."""
+        out = App.Rotation(V(0, 0, 1), turn).multVec(V(1, 0, 0))
+        reach = side.BoundBox
+        return radius - max(V(x, y, 0).dot(out) for x in (reach.XMin, reach.XMax) for y in (reach.YMin, reach.YMax))
+
+    turn = max(APART_ROUND_TURNS, key=short_at)
+    short = short_at(turn)
+    out, half = radius + ENDS_ROUND_OFF, ENDS_ROUND_FLAT
+    by_side = V(out, 0, height / 2)
+    # Its corners in the order that turns its outward side to the point.
+    flat = Part.Face(Part.makePolygon([V(out + ENDS_ROUND_CLEARANCE, y, height / 2 + z)
+                                       for y, z in ((-half, -half), (-half, half), (half, half), (half, -half),
+                                                    (-half, -half))]))
+    flat.rotate(V(0, 0, 0), V(0, 0, 1), turn)
+    by_side = App.Rotation(V(0, 0, 1), turn).multVec(by_side)
+    found = [tine_rows.tine_end_fault(Part.makeCompound([shape, flat]), [by_side], ENDS_ROUND_CLEARANCE)
+             for shape in (side, plain)]
+    alone = tine_rows.tine_end_fault(flat, [by_side], ENDS_ROUND_CLEARANCE)
+    expect(short > ENDS_ROUND_CLEARANCE + d.TINE_END_TOLERANCE + d.TOLERANCE + ENDS_ROUND_OFF
+           and alone is None and found == [tine_rows.TINE_CUTS_IN] * 2,
+           "a point %.2f mm off the side of a round part that carries a mesh, where the BoundBox of the side stops "
+           "%.2f mm short of it, and the clearance off a flat face beside it, is too near the side: %s"
+           % (ENDS_ROUND_OFF, short, found))
 
     def said(result):
         return [w for w in result.warnings if "miss the face" in w or "into the part" in w]
@@ -1623,9 +2259,365 @@ def check_quick_plans():
 def bridge(hanging):
     """A pillar on the bed with a beam across its top and `hanging`, a solid
     under the far end of the beam: a bridge for islands to hang from."""
-    pillar = Part.makeBox(ISLAND_SPAN / 4, ISLAND_DEPTH, ISLAND_TOP)
-    beam = Part.makeBox(ISLAND_SPAN, ISLAND_DEPTH, ISLAND_BEAM, V(0, 0, ISLAND_TOP - ISLAND_BEAM))
+    pillar = Part.makeBox(ISLAND_PILLAR, ISLAND_DEPTH, ISLAND_TOP)
+    beam = Part.makeBox(ISLAND_SPAN, ISLAND_DEPTH, ISLAND_BEAM, V(0, 0, ISLAND_UNDER))
     return pillar.fuse([beam, hanging]).removeSplitter()
+
+
+def stacked_bottoms(first_layer, layer):
+    """The heights of COMB_TEETH bottoms in layers one above the other, each
+    clear of the middles of the layers."""
+    return [overhang.layer_middle(ISLAND_LAYER + step, first_layer, layer) + CLEAR_OF_MIDDLE
+            for step in range(COMB_TEETH)]
+
+
+def calls_counted(name, run):
+    """What overhang.<name>() is called with while `run` runs, a tuple for
+    each call, in their order, and what `run` returns."""
+    calls = []
+    real = getattr(overhang, name)
+
+    def counted(*args):
+        calls.append(args)
+        return real(*args)
+
+    setattr(overhang, name, counted)
+    try:
+        result = run()
+    finally:
+        setattr(overhang, name, real)
+    return calls, result
+
+
+def cuts_counted(run):
+    """The heights overhang.faces_at() is asked to cut at while `run` runs,
+    each once for each time it is asked, in rising order, and what `run`
+    returns. How often the kernel cuts for them tells kernel_cuts()."""
+    calls, result = calls_counted("faces_at", run)
+    return [z for _, heights, *_ in calls for z in sorted(set(heights))], result
+
+
+def kernel_cuts(run):
+    """How many cuts the kernel makes for the layers of a part while `run`
+    runs (overhang._cut_out()), and what `run` returns."""
+    calls, result = calls_counted("_cut_out", run)
+    return len(calls), result
+
+
+def cuts_due(shape, heights):
+    """How many cuts the kernel is to make of `shape` for `heights`: one for
+    each batch they are cut in (overhang._batches()), of as many as its
+    faces allow (overhang.cuts_together())."""
+    return len(list(overhang._batches(sorted(set(heights)), overhang.cuts_together(len(shape.Faces)))))
+
+
+def check_faces_at():
+    """The faces where several planes cut a shape, cut a few heights at a
+    time: every kind of heights the tables of overhang._batches() and
+    overhang.faces_at() name."""
+    first, layer = d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT
+    cutter = overhang.SECTION_CUT_HEIGHT
+    apart = [CUTS_LOW + step * layer for step in range(overhang.CUTS_MOST)]
+    lowered = apart[1] - overhang.SUPPORT_CUT_DROP
+
+    def batches(heights, most=overhang.CUTS_MOST):
+        return list(overhang._batches(sorted(heights), most))
+
+    expect(batches([]) == [] and batches(apart) == [apart]
+           and batches(apart + [apart[-1] + layer]) == [apart, [apart[-1] + layer]]
+           and batches(apart, CUTS_FEW) == [apart[start:start + CUTS_FEW] for start in range(0, len(apart), CUTS_FEW)],
+           "heights a cutter and more apart are cut together, as many at a time as said and no more")
+    near = batches(apart[:2] + [lowered, apart[0] + BESIDE])
+    gaps = [later - earlier for batch in near for earlier, later in zip(batch, batch[1:])]
+    expect(len(near) == 2 and all(gap >= cutter for gap in gaps),
+           "two heights nearer than a cutter is high, as a middle and the cut lowered under it, or two a "
+           "rounding apart, are never cut together: %s" % near)
+
+    bottoms = stacked_bottoms(first, layer)
+    teeth = [Part.makeBox(COMB_TOOTH, ISLAND_DEPTH, ISLAND_UNDER - ISLAND_LOW,
+                          V(ISLAND_PILLAR + COMB_TOOTH * (1 + 2 * step), 0, bottom))
+             for step, bottom in enumerate(bottoms)]
+    comb = bridge(teeth[0].fuse(teeth[1:]))
+    middles = [overhang.layer_middle(ISLAND_LAYER + step, first, layer) for step in range(COMB_TEETH + 1)]
+    under_beam = ISLAND_UNDER
+    asked = middles + [middles[1] - overhang.SUPPORT_CUT_DROP, under_beam, ISLAND_TOP + layer, middles[0]]
+
+    def told(faces):
+        return None if faces is None else (len(faces), round(sum(face.Area for face in faces), CUTS_DIGITS))
+
+    alone = {z: told(overhang.layer_faces(comb, z)) for z in asked}
+    single, together = calls_counted("layer_faces", lambda: overhang.faces_at(comb, asked))
+    expect(overhang.faces_at(comb, []) == {} and sorted(together) == sorted(set(asked)) and len(single) == 1
+           and all(told(together[z]) == alone[z] for z in asked) and told(together[ISLAND_TOP + layer]) == (0, 0.0)
+           and told(together[under_beam])[0] == 1 + COMB_TEETH,
+           "the faces of several heights cut together are those of each cut alone, each height once, the one "
+           "too near another cut by itself, none "
+           "above the part, and a face of the part lying in the plane of a height among those of that height")
+    single, one = calls_counted("layer_faces", lambda: overhang.faces_at(comb, middles[:1]))
+    expect(len(single) == 1 and told(one[middles[0]]) == alone[middles[0]], "one height is cut alone")
+
+    most = overhang.CUT_FACES_MOST
+    expect([overhang.cuts_together(count) for count in (1, most // overhang.CUTS_MOST, most // 2, most // 2 + 1, most)]
+           == [overhang.CUTS_MOST, overhang.CUTS_MOST, 2, 1, 1],
+           "a shape is cut at as many heights at a time as can be, at fewer with more faces, at two up to "
+           "half the most faces times heights, and one by one past that")
+    cut_out = overhang._cut_out
+
+    def without(compounds):
+        """overhang._cut_out() that gives `compounds`, called with what it is
+        asked of, for the cutters of several heights, and cuts a single one."""
+        def cut(shape, cutters):
+            return compounds(shape, cutters) if cutters.ShapeType == "Compound" else cut_out(shape, cutters)
+        return cut
+
+    def raising(shape, cutters):
+        raise Part.OCCError("no cut of several")
+
+    try:
+        overhang.CUT_FACES_MOST = 2 * len(comb.Faces)
+        kernel, by_two = kernel_cuts(lambda: overhang.faces_at(comb, middles))
+        expect(kernel == math.ceil(len(middles) / 2) and all(told(by_two[z]) == alone[z] for z in middles),
+               "on a shape of half as many faces as a cut may take, two heights are cut at a time: %d cuts of "
+               "the kernel for %d heights" % (kernel, len(middles)))
+        overhang.CUT_FACES_MOST = len(comb.Faces) - 1
+        kernel, each = kernel_cuts(lambda: overhang.faces_at(comb, middles))
+        expect(kernel == len(middles) and all(told(each[z]) == alone[z] for z in middles),
+               "on a shape of more faces than a cut of several is worth, every height is cut alone")
+        overhang.CUT_FACES_MOST = most
+        for failing, why in ((raising, "the kernel cannot make"), (lambda shape, cutters: None, "comes out null")):
+            overhang._cut_out = without(failing)
+            single, each = calls_counted("layer_faces", lambda: overhang.faces_at(comb, middles))
+            expect(len(single) == len(middles) and all(told(each[z]) == alone[z] for z in middles),
+                   "a cut of several that %s has its heights cut one by one" % why)
+    finally:
+        overhang.CUT_FACES_MOST = most
+        overhang._cut_out = cut_out
+
+    # One height at a time and several together find the same.
+    stairs = stairs_under_slab(first, layer)
+    together = (overhang.islands(comb, first, layer),
+                find_bridges(stairs, first, layer, d.BEAD_WIDTH, limits.Limits()))
+    try:
+        overhang.CUTS_MOST = 1
+        kernel, alone_found = kernel_cuts(lambda: (
+            overhang.islands(comb, first, layer), find_bridges(stairs, first, layer, d.BEAD_WIDTH, limits.Limits())))
+    finally:
+        overhang.CUTS_MOST = CUTS_AS_SET
+
+    def island_points(found):
+        return sorted(tuple(round(value, CUTS_DIGITS) for value in island.point) for island in found)
+
+    def bridge_spans(found):
+        return [(spanning.faces, spanning.covered, round(spanning.span, CUTS_DIGITS), spanning.level)
+                for spanning in found]
+
+    expect(island_points(together[0]) == island_points(alone_found[0]) and len(together[0]) == COMB_TEETH
+           and bridge_spans(together[1]) == bridge_spans(alone_found[1]) and together[1],
+           "cut one height at a time or several together, the islands lie at the same points and the bridges "
+           "span the same faces as far: %s, %s" % (island_points(together[0]), bridge_spans(together[1])))
+
+
+def stairs_under_slab(first_layer, layer):
+    """A slab on two piers with COMB_TEETH steps under it, side by side
+    across the gap, each a layer higher than the last and clear of the
+    middles of the layers."""
+    bottoms = stacked_bottoms(first_layer, layer)
+    width, height = GAP_CRITICAL / COMB_TEETH, bottoms[-1] + SLAB
+    steps = [Part.makeBox(width, PIER[1], height - bottom, V(PIER[0] + step * width, 0, bottom))
+             for step, bottom in enumerate(bottoms)]
+    return piers(GAP_CRITICAL, height=height).fuse(steps).removeSplitter()
+
+
+def check_cut_heights():
+    """The layer a point starts to print in and the heights the layers are cut
+    at, at every kind of height the tables of overhang.layer_of() and
+    overhang.LayerCuts name, with the first layer as high as the others,
+    higher and lower."""
+    for first, layer in LAYERINGS:
+        def cuts_of(*starts):
+            return overhang.LayerCuts(list(starts), first, layer)
+
+        def layer_of(height):
+            return overhang.layer_of(height, first, layer)
+
+        bed_most = first / 2 + d.TOLERANCE
+        on_bed = (0.0, first / 2, bed_most - BESIDE)
+        expect(all(layer_of(height) == 0 and cuts_of(*on_bed).at(height) is None for height in on_bed),
+               "first layer %.2f mm: up to its middle and the tolerance above, the bed carries a point, and "
+               "nothing is cut for it" % first)
+        lowest = cuts_of(bed_most + BESIDE).at(bed_most + BESIDE)
+        expect(lowest.number == 1 and lowest.here == overhang.layer_middle(1, first, layer)
+               and lowest.below == first / 2,
+               "first layer %.2f mm: just above that, a point starts in layer 1, carried by the first, which "
+               "is cut at its middle, never lower: %s" % (first, lowest))
+        for number in CUT_LAYERS:
+            middle = overhang.layer_middle(number, first, layer)
+            upper = overhang.layer_middle(number + 1, first, layer)
+            lowered = middle - overhang.SUPPORT_CUT_DROP
+            clear, higher = middle + CLEAR_OF_MIDDLE, upper + CLEAR_OF_MIDDLE
+            above = [layer_of(middle + offset) for offset in
+                     (-d.TOLERANCE + BESIDE, -d.TOLERANCE / 2, 0.0, d.TOLERANCE / 2, CLEAR_OF_MIDDLE)]
+            below = [layer_of(middle + offset) for offset in
+                     (-d.TOLERANCE - BESIDE, -1.5 * d.TOLERANCE, -CLEAR_OF_MIDDLE)]
+            expect(above == [number + 1] * len(above) and below == [number] * len(below),
+                   "first layer %.2f mm, middle of layer %d: from the tolerance below it a point counts to "
+                   "the layer above, lower to that layer: %s, %s" % (first, number, above, below))
+            plain = cuts_of().at(clear)
+            expect(plain.number == number + 1 and plain.here == upper and plain.below == middle,
+                   "first layer %.2f mm, middle of layer %d: with nothing starting near it, a layer is cut at "
+                   "its middle and what carries it at the middle below, whether its height is among the "
+                   "starts or not: %s" % (first, number, plain))
+            near = [cuts_of(middle + offset).at(clear) for offset in
+                    (-d.TOLERANCE + BESIDE, 0.0, overhang.NEAR_MIDDLE - BESIDE)]
+            expect(all(at.here == upper and abs(at.below - lowered) < BESIDE for at in near),
+                   "first layer %.2f mm, middle of layer %d: with a point starting near that middle, what "
+                   "carries the layer above is cut the drop under it, for every point of that layer: %s"
+                   % (first, number, near))
+            farther = cuts_of(middle + overhang.NEAR_MIDDLE + BESIDE).at(clear)
+            expect(farther.below == middle,
+                   "first layer %.2f mm, middle of layer %d: a point starting farther above that middle leaves "
+                   "the support of its layer at the middle itself: %s" % (first, number, farther))
+            # Right where the layer changes, the tolerance below the middle: a
+            # start seen a rounding below it lowers the layer above all the
+            # same, for another copy that sees it a rounding above.
+            edge = middle - d.TOLERANCE
+            across = [cuts_of(edge + off).at(edge + BESIDE) for off in (-overhang.LAYER_EDGE / 2, 0.0, BESIDE)]
+            expect(all(at.number == number + 1 and abs(at.below - lowered) < BESIDE for at in across),
+                   "first layer %.2f mm, middle of layer %d: a point starting right where the layer changes "
+                   "lowers the support of the layer above on whichever side of it a rounding puts it: %s"
+                   % (first, number, across))
+            lower = cuts_of(middle - 1.5 * d.TOLERANCE).at(clear)
+            expect(lower.below == middle,
+                   "first layer %.2f mm, middle of layer %d: a point starting more than that below the "
+                   "middle, in the layer of it, leaves the layer above carried by the cut at the middle, "
+                   "where its slice carries: %s" % (first, number, lower))
+            apart = cuts_of(clear, higher)
+            expect(apart.at(higher).number == apart.at(clear).number + 1
+                   and apart.at(higher).below == apart.at(clear).here,
+                   "first layer %.2f mm, middle of layer %d: the support of a layer is the cut of the layer "
+                   "below, the very same height, where no point starts near it: %s, %s"
+                   % (first, number, apart.at(clear), apart.at(higher)))
+
+
+def check_starts():
+    """What overhang.Starts tells of a shape, and when it asks the shape."""
+    empty = overhang.Starts(Part.Shape())
+    expect(empty.bed is None and empty.points == [] and empty.down == [] and empty.heights == [],
+           "an empty shape has no bed, no lowest points, no faces facing down and no heights")
+    table = piers(GAP_CRITICAL)
+    under = next(number for number, face in enumerate(table.Faces, 1)
+                 if face.BoundBox.ZLength < d.TOLERANCE and abs(face.BoundBox.ZMin - PIER[2]) < d.TOLERANCE)
+    top = next(number for number, face in enumerate(table.Faces, 1)
+               if abs(face.BoundBox.ZMin - (PIER[2] + SLAB)) < d.TOLERANCE)
+    sampled, (meshed, starts) = calls_counted("facing_down", lambda: calls_counted(
+        "_lowest_points", lambda: overhang.Starts(table)))
+    expect(not sampled and not meshed, "a Starts never asked neither meshes its shape nor samples its faces")
+    meshed, lowest = calls_counted("_lowest_points", lambda: dict(starts.lowest))
+    expect(not meshed and abs(lowest[under] - PIER[2]) < d.TOLERANCE and top not in lowest,
+           "asked for its faces alone it does not mesh: the underside of a slab on piers starts at its "
+           "height, its top starts nothing: %s" % lowest)
+    sampled, (meshed, heights) = calls_counted("facing_down", lambda: calls_counted(
+        "_lowest_points", lambda: (starts.heights, starts.points, starts.down, starts.heights)[0]))
+    expect(not sampled and len(meshed) == 1 and any(abs(height - PIER[2]) < d.TOLERANCE for height in heights),
+           "asked for all, it meshes once and samples no face again; the height of the underside, which "
+           "holds no lowest point, is among its heights: %d meshes" % len(meshed))
+    starts.let_go()
+    expect(starts.heights == heights, "let go of its shape, it still tells what it worked out")
+    unasked = overhang.Starts(table)
+    unasked.let_go()
+    try:
+        unasked.points
+    except ValueError as error:
+        expect("lend" in str(error), "let go of before it was asked, it says it needs a shape: %s" % error)
+    else:
+        raise AssertionError("Starts without a shape gave points")
+    unasked.lend(table.copy())
+    expect(len(unasked.points) == len(starts.points) and unasked.lowest == lowest,
+           "lent another copy of the shape, it works out on that what it was not asked before")
+
+    # The cuts of its layers, kept for the checks of the part to share.
+    apart = [overhang.layer_middle(number, d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT) for number in STOCK_LAYERS]
+    stock = overhang.Starts(table)
+    first_cuts, cut = kernel_cuts(lambda: stock.cuts(apart[:2]))
+    kept_cuts, kept = kernel_cuts(lambda: stock.cuts(apart[:2]))
+    more_cuts, more = kernel_cuts(lambda: stock.cuts(apart))
+
+    def same_faces(given, as_before):
+        return len(given) == len(as_before) and all(face.isSame(before) for face, before in zip(given, as_before))
+
+    expect(first_cuts == 1 and kept_cuts == 0 and more_cuts == 1 and stock.cuts([]) == {}
+           and all(same_faces(kept[z], cut[z]) and same_faces(more[z], cut[z]) for z in apart[:2])
+           and len(more) == len(apart) and all(len(more[z]) == 2 for z in apart),
+           "heights are cut together the first time they are asked, given as kept after, and of heights asked "
+           "in part before only the others are cut: %d, %d and %d cuts of the kernel"
+           % (first_cuts, kept_cuts, more_cuts))
+    more[apart[0]].append(None)
+    more[apart[1]].reverse()
+    expect(all(kept[z] is not cut[z] and same_faces(stock.cuts([z])[z], cut[z]) for z in apart[:2]),
+           "the lists of faces given are each its own: changed by a caller, what is kept stays as it was")
+    stock.let_go()
+    from_stock, _ = kernel_cuts(lambda: stock.cuts(apart))
+    try:
+        stock.cuts([apart[-1] + d.LAYER_HEIGHT])
+    except ValueError as error:
+        expect(from_stock == 0 and "lend" in str(error),
+               "let go of its shape, it still gives the cuts it keeps, and says it needs a shape for another: "
+               "%s" % error)
+    else:
+        raise AssertionError("Starts without a shape cut a height it did not keep")
+    stock.lend(table.copy())
+    on_copy, _ = kernel_cuts(lambda: stock.cuts([apart[-1] + d.LAYER_HEIGHT]))
+    stock.drop_cuts()
+    anew, _ = kernel_cuts(lambda: stock.cuts(apart))
+    expect(on_copy == 1 and anew == 1,
+           "lent another copy of the shape, it cuts what it lacks on that; its cuts dropped, it cuts anew")
+    most = overhang.CUT_EDGES_KEPT
+    one_height = sum(len(face.Edges) for face in cut[apart[0]])
+    try:
+        # Room for the faces of one height, not of two; then for none at all.
+        overhang.CUT_EDGES_KEPT = one_height
+        full = overhang.Starts(table)
+        full.cuts(apart)
+        beyond = [kernel_cuts(lambda: full.cuts(apart))[0] for _ in range(2)]
+        lowest_kept, _ = kernel_cuts(lambda: full.cuts(apart[:1]))
+        overhang.CUT_EDGES_KEPT = one_height - 1
+        none = overhang.Starts(table)
+        none.cuts(apart)
+        nothing_kept = (none._cuts, none._edges_kept)
+        # Without room, each check still cuts a height once: the islands, then the
+        # bridges, of a block hanging from a beam, which is an island and carries a bridge.
+        hung = bridge(Part.makeBox(ISLAND_BLOCK, ISLAND_DEPTH, ISLAND_UNDER - ISLAND_LOW,
+                                   V(ISLAND_SPAN - ISLAND_BLOCK, 0, ISLAND_LOW)))
+        bare = overhang.Starts(hung)
+        first_check, (asked, _) = kernel_cuts(lambda: cuts_counted(
+            lambda: overhang.islands(hung, d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, bare)))
+        second_check, (asked_again, spans) = kernel_cuts(lambda: cuts_counted(lambda: find_bridges(
+            hung, d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, d.BEAD_WIDTH, limits.Limits(), starts=bare)))
+    finally:
+        overhang.CUT_EDGES_KEPT = most
+    expect(beyond == [1, 1] and lowest_kept == 0 and nothing_kept == ({}, 0),
+           "a height whose faces would take what is kept past the most edges it may keep is given and not "
+           "kept, cut anew each time, be it the first; what fitted before is still given")
+    expect(len(spans) == 1 and first_check == cuts_due(hung, asked) > 0 and second_check == cuts_due(hung, asked_again)
+           and len(asked_again) == len(set(asked_again)) > 0,
+           "with no room to keep cuts, each check cuts the heights it asks for once: %d cuts for %d heights of "
+           "the islands, %d for %d of the bridges" % (first_check, len(asked), second_check, len(asked_again)))
+
+    # Faces kept are as they were cut once the islands and the bridges took them.
+    shared = overhang.Starts(hung)
+    overhang.islands(hung, d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, shared)
+
+    def as_cut(starts):
+        return {z: None if faces is None else [(face.hashCode(), round(face.Area, CUTS_DIGITS), face.BoundBox.ZMin)
+                                               for face in faces] for z, faces in starts._cuts.items()}
+
+    before = as_cut(shared)
+    spans = find_bridges(hung, d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, d.BEAD_WIDTH, limits.Limits(), starts=shared)
+    overhang.islands(hung, d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT, shared)
+    after = as_cut(shared)
+    expect(len(spans) == 1 and all(after[z] == before[z] for z in before) and len(after) >= len(before) > 0,
+           "the faces kept are as they were cut after the islands and the bridges took them: %d heights kept"
+           % len(after))
 
 
 def check_islands():
@@ -1638,22 +2630,51 @@ def check_islands():
     expect(overhang.islands(standing, first, layer) == [], "a box standing on an edge has no island")
 
     block_x = ISLAND_SPAN * 3 / 4
-    block = Part.makeBox(ISLAND_SPAN / 4, ISLAND_DEPTH, ISLAND_TOP - ISLAND_BEAM - ISLAND_LOW,
+    block = Part.makeBox(ISLAND_BLOCK, ISLAND_DEPTH, ISLAND_UNDER - ISLAND_LOW,
                          V(block_x, 0, ISLAND_LOW))
     found = overhang.islands(bridge(block), first, layer)
     expect(len(found) == 1 and abs(found[0].point.z - ISLAND_LOW) < d.TOLERANCE
            and block_x - d.TOLERANCE <= found[0].point.x,
            "a block hanging under a bridge is one island, at its bottom: %s" % [i.point for i in found])
     piece = found[0].first.BoundBox if found and found[0].first else None
-    expect(piece is not None and abs(piece.XLength - ISLAND_SPAN / 4) < d.TOLERANCE
+    expect(piece is not None and abs(piece.XLength - ISLAND_BLOCK) < d.TOLERANCE
            and abs(piece.ZMin - ISLAND_LOW) < d.TOLERANCE and piece.ZLength <= first + layer,
            "its first layer in the air is the whole bottom of the block, a layer thick: %s" % piece)
-    second = Part.makeBox(ISLAND_SPAN / 8, ISLAND_DEPTH, ISLAND_TOP - ISLAND_BEAM - ISLAND_LOW,
+    # The layers are cut at their middles: a bottom right on one, beside it or
+    # within the tolerance of it, is found all the same.
+    middle = overhang.layer_middle(ISLAND_LAYER, first, layer)
+    for low in (middle + offset for offset in MIDDLE_OFFSETS):
+        hanging = Part.makeBox(ISLAND_BLOCK, ISLAND_DEPTH, ISLAND_UNDER - low, V(block_x, 0, low))
+        found = overhang.islands(bridge(hanging), first, layer)
+        expect(len(found) == 1 and abs(found[0].point.z - low) < d.TOLERANCE,
+               "a block hanging with its bottom at %.5f mm, the middle of a layer at %.2f mm, is one island: %s"
+               % (low, middle, [i.point for i in found]))
+    second = Part.makeBox(ISLAND_SPAN / 8, ISLAND_DEPTH, ISLAND_UNDER - ISLAND_LOW,
                           V(ISLAND_SPAN * 3 / 8, 0, ISLAND_LOW))
     expect(len(overhang.islands(bridge(block.fuse(second)), first, layer)) == 2,
            "two blocks hanging side by side are two islands")
+    # Blocks whose bottoms lie in layers one above the other, clear of their
+    # middles: the cut of each layer is what carries the next, so each of
+    # their layers is cut once, and the layer below the lowest. The underside
+    # of the beam they hang from starts a layer of its own, far above.
+    for first_height, layer_height in LAYERINGS:
+        bottoms = stacked_bottoms(first_height, layer_height)
+        teeth = [Part.makeBox(COMB_TOOTH, ISLAND_DEPTH, ISLAND_UNDER - ISLAND_LOW,
+                              V(ISLAND_PILLAR + COMB_TOOTH * (1 + 2 * step), 0, bottom))
+                 for step, bottom in enumerate(bottoms)]
+        comb = bridge(teeth[0].fuse(teeth[1:]))
+        kernel, (cut_at, hanging) = kernel_cuts(
+            lambda: cuts_counted(lambda: overhang.islands(comb, first_height, layer_height)))
+        for_teeth = [z for z in cut_at if z < ISLAND_UNDER - layer_height]
+        expect(len(hanging) == COMB_TEETH and len(for_teeth) == COMB_TEETH + 1
+               and kernel == cuts_due(comb, cut_at) < len(cut_at),
+               "first layer %.2f mm: %d blocks hanging in layers one above the other are %d islands, found with "
+               "each of their layers asked for once and the one below the lowest, in a cut of the kernel for "
+               "each batch of them and no more: "
+               "%d heights for them, %d cuts in all"
+               % (first_height, COMB_TEETH, len(hanging), len(for_teeth), kernel))
 
-    under = ISLAND_TOP - ISLAND_BEAM
+    under = ISLAND_UNDER
     corners = [V(block_x, 0, under), V(ISLAND_SPAN, 0, under), V(block_x + ISLAND_SPAN / 8, 0, ISLAND_LOW)]
     ridge = Part.Face(Part.makePolygon(corners + corners[:1])).extrude(V(0, ISLAND_DEPTH, 0))
     found = overhang.islands(bridge(ridge), first, layer)
@@ -1674,6 +2695,173 @@ def check_islands():
     low = Part.makeCompound([box, Part.makeBox(5, 5, 5, V(40, 0, first / 4))])
     expect(overhang.islands(low, first, layer) == [], "a lowest point in the first layer rests on the bed")
     expect(overhang.islands(Part.Shape(), first, layer) == [], "an empty shape has no island said, nothing raised")
+
+
+def check_island_boxes():
+    """The lowest points of a part and the sections of its layers, sorted by their boxes before
+    the kernel is asked: the islands are those found asking it of every section."""
+    first, layer = d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT
+    height = ISLAND_UNDER - ISLAND_LOW
+
+    def told(found):
+        return [(tuple(round(value, CUTS_DIGITS) for value in island.point),
+                 None if island.first is None else round(island.first.Volume, CUTS_DIGITS)) for island in found]
+
+    def unsorted(run):
+        """What `run` returns with every section asked of the kernel, none turned away by its box."""
+        real = overhang._holding, overhang._meeting
+        overhang._holding = lambda boxes, x, y: list(range(len(boxes)))
+        overhang._meeting = lambda boxes, box: list(range(len(boxes)))
+        try:
+            return run()
+        finally:
+            overhang._holding, overhang._meeting = real
+
+    # Round teeth: the mesh of a round bottom has many lowest points, each of them a point to
+    # start from, in layers one above the other.
+    bottoms = stacked_bottoms(first, layer)
+    teeth = [Part.makeCylinder(COMB_TOOTH / 2, ISLAND_UNDER - bottom,
+                               V(ISLAND_PILLAR + COMB_TOOTH * (1.5 + 2 * step), ISLAND_DEPTH / 2, bottom))
+             for step, bottom in enumerate(bottoms)]
+    comb = bridge(Part.makeCompound(teeth))
+    points = len(overhang.Starts(comb).points)
+    asked, found = calls_counted("_overlap", lambda: overhang.islands(comb, first, layer))
+    asked_all, found_all = unsorted(lambda: calls_counted("_overlap", lambda: overhang.islands(comb, first, layer)))
+    expect(points > COMB_TEETH * COMB_TEETH and len(found) == COMB_TEETH and told(found) == told(found_all)
+           and len(asked) <= len(asked_all),
+           "round blocks hanging in layers one above the other, %d lowest points between them: the islands "
+           "found with the boxes sorted are those found asking the kernel of every section, in the same "
+           "order, with the same first layers: %s" % (points, told(found)))
+
+    # A point in the box of a section, yet far from it: a small block in the corner of an L, both
+    # hanging at one height. Whichever is come to first, each is an island at a point of its own.
+    left = ISLAND_PILLAR + COMB_TOOTH
+    angle = Part.makeBox(ISLAND_SPAN / 2, COMB_TOOTH, height, V(left, 0, ISLAND_LOW)).fuse(
+        Part.makeBox(COMB_TOOTH, ISLAND_DEPTH, height, V(left, 0, ISLAND_LOW))).removeSplitter()
+    small = Part.makeBox(COMB_TOOTH, COMB_TOOTH, height,
+                         V(left + ISLAND_SPAN / 4, ISLAND_DEPTH - 2 * COMB_TOOTH, ISLAND_LOW))
+    hung = bridge(Part.makeCompound([angle, small]))
+    for order, what in ((list, "as they come"), (lambda points: list(reversed(points)), "the other way round")):
+        starts = overhang.Starts(hung)
+        starts._points = order(starts.points)
+        found = overhang.islands(hung, first, layer, starts)
+        on_own = [island.first is not None
+                  and island.first.distToShape(Part.Vertex(island.point))[0] < d.TOLERANCE for island in found]
+        areas = sorted(round(island.first.Volume / (island.first.BoundBox.ZLength or 1)) for island in found
+                       if island.first is not None)
+        expect(len(found) == 2 and all(on_own) and areas == sorted(round(each.Volume / height)
+                                                                     for each in (angle, small)),
+               "a small block in the corner of an L, its points in the box of the L yet far from it, the "
+               "points taken %s: two islands, each at a point of its own: %s" % (what, told(found)))
+
+    # The edges of a box count to it, as BoundBox has it; no boxes hold and meet nothing.
+    box = App.BoundBox(0, 0, 0, 1, 1, 1)
+    flat = overhang._flat([box])
+    for x in (0.0, 1.0, 0.5, 1.0 + BESIDE, -BESIDE):
+        expect((overhang._holding(flat, x, 0.5) == [0]) == box.isInside(V(x, 0.5, 0.5))
+               and (overhang._holding(flat, 0.5, x) == [0]) == box.isInside(V(0.5, x, 0.5)),
+               "a point at %r along a box from 0 to 1 lies in it as BoundBox says: %s"
+               % (x, box.isInside(V(x, 0.5, 0.5))))
+    for low in (1.0, 1.0 + BESIDE, 1.0 - BESIDE, -1.0, -1.0 - BESIDE):
+        other = App.BoundBox(low, 0, 0, low + 1, 1, 1)
+        expect((overhang._meeting(flat, overhang._flat([other])[0]) == [0]) == box.intersect(other),
+               "a box from %r beside one from 0 to 1 meets it as BoundBox says: %s" % (low, box.intersect(other)))
+    none = overhang._flat([])
+    expect(none.shape == (0, 4) and overhang._holding(none, 0, 0) == [] and overhang._meeting(none, flat[0]) == []
+           and overhang._holding(overhang._flat([box, box]), 0.5, 0.5) == [0, 1],
+           "no boxes hold no point and meet no box; boxes holding a point are given by number, rising")
+
+
+def check_first_layers():
+    """The first layers of the islands of a part, cut out of it several in one cut."""
+    first, layer = d.FIRST_LAYER_HEIGHT, d.LAYER_HEIGHT
+    height = ISLAND_UNDER - ISLAND_LOW
+    lefts = [ISLAND_PILLAR + COMB_TOOTH * (1 + 2 * step) for step in range(COMB_TEETH)]
+    comb = bridge(Part.makeCompound([Part.makeBox(COMB_TOOTH, ISLAND_DEPTH, height, V(left, 0, ISLAND_LOW))
+                                     for left in lefts]))
+
+    def cut_out(run=lambda: overhang.islands(comb, first, layer)):
+        """How many prisms each cut of the kernel is asked for, and the islands."""
+        calls, found = calls_counted("_cut_within", run)
+        return [len(batch) for _, batch in calls], found
+
+    def whole(found):
+        """Whether the islands lie at the blocks, in the order found, each with its first layer."""
+        return (len(found) == COMB_TEETH and all(
+            island.first is not None and abs(island.first.BoundBox.XLength - COMB_TOOTH) < d.TOLERANCE
+            and abs(island.first.BoundBox.ZMin - ISLAND_LOW) < d.TOLERANCE
+            and island.first.BoundBox.XMin - d.TOLERANCE <= island.point.x <= island.first.BoundBox.XMax + d.TOLERANCE
+            for island in found))
+
+    asked, found = cut_out()
+    expect(asked == [COMB_TEETH] and whole(found),
+           "blocks hanging side by side have their first layers cut in one cut of the kernel, each island its "
+           "own, in the order found: %s prisms a cut, %s" % (asked, [i.first and i.first.BoundBox for i in found]))
+    alone = [island.first.Volume for island in found if island.first is not None]
+
+    real_most = overhang.FIRST_LAYERS_MOST
+    overhang.FIRST_LAYERS_MOST = COMB_TEETH - 1
+    try:
+        asked, found = cut_out()
+    finally:
+        overhang.FIRST_LAYERS_MOST = real_most
+    expect(asked == [COMB_TEETH - 1, 1] and whole(found),
+           "more islands than are cut together are cut in several cuts, none of more: %s" % asked)
+
+    # A cut of several the kernel cannot make: its islands are cut one by one.
+    real = overhang._cut_within
+    overhang._cut_within = lambda part, batch: real(part, batch) if len(batch) == 1 else None
+    try:
+        asked, found = cut_out()
+    finally:
+        overhang._cut_within = real
+    expect(asked == [COMB_TEETH] + [1] * COMB_TEETH and whole(found)
+           and all(abs(island.first.Volume - volume) < d.TOLERANCE for island, volume in zip(found, alone)),
+           "a cut of several the kernel cannot make is taken one island at a time, each first layer as cut "
+           "together: %s" % asked)
+    overhang._cut_within = lambda part, batch: None
+    try:
+        found = overhang.islands(comb, first, layer)
+    finally:
+        overhang._cut_within = real
+    expect(len(found) == COMB_TEETH and all(island.first is None for island in found),
+           "islands the kernel cannot cut alone either are said without a first layer")
+
+    # Straight from outlines: a prism holding nothing, a shell, an outline no prism is made of.
+    box = Part.makeBox(ISLAND_BLOCK, ISLAND_DEPTH, ISLAND_BEAM)
+    outline = [face for face in box.Faces if face.BoundBox.ZMax < d.TOLERANCE][0]
+    beside = outline.translated(V(2 * ISLAND_BLOCK, 0, 0))
+    asked, firsts = cut_out(lambda: overhang._first_layers(box, [(outline, 0, layer), (beside, 0, layer)]))
+    expect(asked == [2] and firsts[0] is not None and abs(firsts[0].Volume - outline.Area * layer) < d.TOLERANCE
+           and firsts[1] is None,
+           "a prism holding nothing of the part gives no first layer and is not cut again alone, the one "
+           "beside it is: %s cuts, %s" % (asked, firsts))
+    asked, firsts = cut_out(lambda: overhang._first_layers(box.Shells[0], [(outline, 0, layer)]))
+    expect(asked == [1] and firsts == [None], "a part that is a shell has no solid in a prism, so no first layer")
+    asked, firsts = cut_out(lambda: overhang._first_layers(box, [(Part.Shape(), 0, layer), (outline, 0, layer)]))
+    expect(asked == [1] and firsts[0] is None and firsts[1] is not None,
+           "an outline no prism can be made of gives no first layer, the others are cut: %s" % firsts)
+    expect(overhang._first_layers(box, []) == [] and cut_out(lambda: overhang._first_layers(box, []))[0] == [],
+           "no island, nothing cut")
+
+    # Prisms too near each other never share a cut: the same outline in neighbouring layers, whose prisms
+    # reach the tolerance into each other, one beside another by less than the tolerance, and boxes that
+    # overlap though the prisms do not.
+    def batches(*prisms):
+        return [[index for index, _ in batch]
+                for batch in overhang._apart(list(enumerate(prisms)), overhang.FIRST_LAYERS_MOST)]
+
+    lower, upper = overhang._prism(outline, 0, layer), overhang._prism(outline, layer, 2 * layer)
+    far = overhang._prism(beside, 0, layer)
+    near = overhang._prism(outline.translated(V(ISLAND_BLOCK + d.TOLERANCE / 2, 0, 0)), 0, layer)
+    touching = overhang._prism(outline.translated(V(ISLAND_BLOCK, 0, 0)), 0, layer)
+    clear = overhang._prism(outline.translated(V(ISLAND_BLOCK + 3 * d.TOLERANCE, 0, 0)), 0, layer)
+    expect(batches() == [] and batches(lower, far) == [[0, 1]] and batches(lower, upper, far) == [[0, 2], [1]]
+           and batches(lower, near) == [[0], [1]] and batches(lower, touching) == [[0], [1]]
+           and batches(lower, clear) == [[0, 1]],
+           "prisms far apart share a cut; one in the layer above another, one touching another or nearer "
+           "than the tolerance waits for a later cut: %s, %s, %s, %s"
+           % (batches(lower, upper, far), batches(lower, near), batches(lower, touching), batches(lower, clear)))
 
 
 def check_printable_plans():
@@ -1715,6 +2903,10 @@ def check_printable_plans():
             overhang.rated = real_rated
     finally:
         overhang.islands = real
+    sampled, rated = calls_counted("facing_down", lambda: analysis.rate_plans(box, alike, p))
+    expect(len(rated) == len(alike) > 1 and len(sampled) == 1,
+           "ways standing the part alike have its faces sampled once for all of them: %d ways, %d samplings"
+           % (len(alike), len(sampled)))
 
 
 def cut_centre(shape, height):
@@ -1747,6 +2939,69 @@ def check_centres():
         expect(whole < tolerance, "%s: above it, the centre of the whole part, %.2g mm off" % (name, whole))
         expect(below.centre(box.ZMin - CENTRE_CUT_MARGIN) is None, "%s: below it, no centre" % name)
     expect(stability._Below(Part.Shape()).centre(1.0) is None, "an empty part has no centre")
+
+    # A cube standing on an edge: below a height up to its middle lies a prism over a right-angled
+    # triangle as high as that and twice as wide. Its middle goes through two edges and their corners.
+    cube = Part.makeBox(EDGE, EDGE, EDGE)
+    on_edge = cube.rotated(V(), V(0, 1, 0), -HALF_TURN / 4)
+    on_edge.translate(V(0, 0, -on_edge.BoundBox.ZMin))
+    middle = EDGE / math.sqrt(2)
+    below = stability._Below(on_edge)
+    for height in (middle / 2, middle - BESIDE, middle):
+        volume, centre = below.sums(height)[0], below.centre(height)
+        expect(abs(volume - EDGE * height * height) < CENTRE_FLAT_TOLERANCE * EDGE ** 2
+               and abs(centre.z - 2 * height / 3) < CENTRE_FLAT_TOLERANCE
+               and abs(centre.y - EDGE / 2) < CENTRE_FLAT_TOLERANCE and abs(centre.x) < CENTRE_FLAT_TOLERANCE,
+               "a cube on an edge below %.5f mm, its middle through two edges at %.5f mm: a prism of %.4f mm3, "
+               "its centre two thirds up: %.4f mm3, %s" % (height, middle, EDGE * height * height, volume, centre))
+    upper = middle + BESIDE
+    above = EDGE * (2 * middle - upper) ** 2
+    expect(abs(below.sums(upper)[0] - (EDGE ** 3 - above)) < CENTRE_FLAT_TOLERANCE * EDGE ** 2,
+           "just above its middle, the cube less the prism above: %.4f mm3" % below.sums(upper)[0])
+    # A cube standing on a corner: below the three corners next to it lies a pyramid of three edges
+    # of the cube, its centre three quarters up.
+    diagonal = V(1, 1, 1)
+    on_corner = cube.rotated(V(), diagonal.cross(V(0, 0, 1)), math.degrees(diagonal.getAngle(V(0, 0, 1))))
+    on_corner.translate(V(0, 0, -on_corner.BoundBox.ZMin))
+    corners = EDGE / math.sqrt(3)
+    below = stability._Below(on_corner)
+    for height in (corners / 2, corners - BESIDE, corners):
+        volume, centre = below.sums(height)[0], below.centre(height)
+        wanted = (height * math.sqrt(3)) ** 3 / 6
+        expect(abs(volume - wanted) < CENTRE_FLAT_TOLERANCE * EDGE ** 2
+               and abs(centre.z - 3 * height / 4) < CENTRE_FLAT_TOLERANCE,
+               "a cube on a corner below %.5f mm, its three next corners at %.5f mm: a pyramid of %.4f mm3, its "
+               "centre three quarters up: %.4f mm3, %s" % (height, corners, wanted, volume, centre))
+
+    # Single triangles: what lies below a height adds what its pieces, cut out by hand and turning
+    # as the triangle, add, whichever corner comes first; turned the other way they would take it off.
+    def adds(*triangles):
+        return stability._integrals(numpy.array(triangles, dtype=float)).sum(axis=0)
+
+    def turned(corners):
+        return [corners[turn:] + corners[:turn] for turn in range(3)]
+
+    cases = (("one corner below a height, its level side above", [(0, 0, 0), (1, 0, 2), (0, 1, 2)],
+              [[(0, 0, 0), (0.5, 0, 1), (0, 0.5, 1)]]),
+             ("two corners below a height, its level side below", [(0, 0, 2), (1, 0, 0), (0, 1, 0)],
+              [[(0.5, 0, 1), (1, 0, 0), (0, 1, 0)], [(0.5, 0, 1), (0, 1, 0), (0, 0.5, 1)]]),
+             ("one corner below a height, one right on it and one above", [(0, 0, 0), (1, 0, 1), (0, 1, 2)],
+              [[(0, 0, 0), (1, 0, 1), (0, 0.5, 1)]]))
+    for what, triangle, below_height in cases:
+        wanted = adds(*below_height)
+        for corners in turned(triangle):
+            found = stability._clipped(numpy.array([corners], dtype=float), 1)
+            expect(numpy.isfinite(found).all() and numpy.abs(found - wanted).max() < d.TOLERANCE
+                   and abs(wanted[0]) > d.TOLERANCE,
+                   "a triangle with %s, starting at %s, adds what its part below adds, turning as it does: %s"
+                   % (what, corners[0], [round(float(value), CUTS_DIGITS) for value in found]))
+    expect(not stability._clipped(numpy.empty((0, 3, 3)), 1).any(), "no triangles add nothing")
+    # A triangle touching a height from above, with a corner or a side, adds nothing below it.
+    upright = Part.makeBox(EDGE, EDGE, EDGE, V(0, 0, EDGE))
+    expect(abs(stability._Below(upright).sums(EDGE)[0]) < d.TOLERANCE
+           and stability._Below(upright).centre(EDGE) is None,
+           "a box standing on a height has nothing below it, the triangles of its sides touching the height "
+           "from above left out")
 
 
 def check_stability():
@@ -2242,6 +3497,72 @@ def check_known_clear():
     geometry._kept_clear[(hash(shapes.shape_key(part)), shapes.shape_key(off))] = False
     expect(len(geometry._not_known_clear([off], part)) == 1, "a shape asked again is not measured again")
 
+    # A piece measured by its body and the tines joined to it, one by one.
+    def fin(body_at, tine_from):
+        """A body from `body_at` on beside the box and a tine from `tine_from` to it, and the two fused."""
+        body = Part.makeBox(1, 1, 1, V(body_at, 0, 0))
+        tine = Part.makeBox(body_at - tine_from, 0.5, 0.5, V(tine_from, 0.25, 0.25))
+        return body.fuse(tine).removeSplitter(), [body, tine]
+
+    def unsure_of(piece, shapes):
+        geometry._kept_clear.clear()
+        return len(geometry._not_known_clear([piece], part, [shapes])), len(geometry._not_known_clear([piece], part))
+
+    body_at = MESHED_BOX + MESHED_OFF
+    cases = [("the tine ending short of the part", fin(body_at, MESHED_BOX + APART_TINE_OFF), 0),
+             ("the tine touching the part", fin(body_at, MESHED_BOX), 1),
+             ("the tine reaching into the part", fin(body_at, MESHED_BOX - APART_TINE_IN), 1),
+             ("the body touching the part", fin(MESHED_BOX, MESHED_BOX - APART_TINE_IN), 1),
+             ("the body in the part", fin(1.0, 1.0 - APART_TINE_IN), 1)]
+    told = [(name, unsure_of(piece, shapes), expected) for name, (piece, shapes), expected in cases]
+    expect(all(found == (expected, expected) for _, found, expected in told),
+           "a fin by its body and its tine is told clear of the part as the fin whole: %s"
+           % ", ".join("%s %s" % (name, "not clear" if found[0] else "clear") for name, found, _ in told))
+    far_body = Part.makeBox(1, 1, 1, V(3 * MESHED_BOX, 0, 0))
+    far_tine = Part.makeBox(1, 0.5, 0.5, V(3 * MESHED_BOX - 1, 0.25, 0.25))
+    geometry._kept_clear.clear()
+    expect(geometry._not_known_clear([far_body.fuse(far_tine)], part, [[far_body, far_tine]]) == [],
+           "a tine with no face of the part near it is clear")
+    # A part whose face has no box, on a torus: held against every tine.
+    ring = Part.makeTorus(*RING)
+    geometry._kept_clear.clear()
+    told = []
+    for tine_from in (sum(RING) + APART_TINE_OFF, sum(RING) - APART_TINE_IN):
+        body = Part.makeBox(1, 1, 1, V(sum(RING) + MESHED_OFF, -0.5, -0.5))
+        tine = Part.makeBox(sum(RING) + MESHED_OFF - tine_from, 0.5, 0.5, V(tine_from, -0.25, -0.25))
+        piece = body.fuse(tine).removeSplitter()
+        told.append((len(geometry._not_known_clear([piece], ring, [[body, tine]])),
+                     ring.distToShape(piece)[0] <= d.TOLERANCE))
+    expect(told == [(0, False), (1, True)],
+           "a tine ending short of a ring is clear, one reaching into it is not, as the fin whole says: %s" % told)
+    # A round part that carries a mesh: the BoundBox of its side stops short of it.
+    radius, height = APART_ROUND
+    round_part = Part.makeCylinder(radius, height)
+    round_part.tessellate(APART_ROUND_MESH)
+    side = next(face for face in round_part.Faces if isinstance(face.Surface, Part.Cylinder))
+
+    def short_at(turn):
+        """How far the BoundBox of the side stops short of it, `turn` degrees round the axis."""
+        out = App.Rotation(V(0, 0, 1), turn).multVec(V(1, 0, 0))
+        box = side.BoundBox
+        return radius - max(V(x, y, 0).dot(out) for x in (box.XMin, box.XMax) for y in (box.YMin, box.YMax))
+
+    turn = max(APART_ROUND_TURNS, key=short_at)
+    short = short_at(turn)
+    cut = short * APART_ROUND_CUT
+    body = Part.makeBox(1, 1, 1, V(radius + 1, -0.5, height / 2))
+    tine = Part.makeBox(1 + cut, 0.5, 0.5, V(radius - cut, -0.25, height / 2 + 0.25))
+    for shape in (body, tine):
+        shape.rotate(V(0, 0, 0), V(0, 0, 1), turn)
+    piece = body.fuse(tine).removeSplitter()
+    geometry._kept_clear.clear()
+    apart = len(geometry._not_known_clear([piece], round_part, [[body, tine]]))
+    geometry._kept_clear.clear()
+    whole = len(geometry._not_known_clear([piece], round_part))
+    expect(short > d.TOLERANCE and cut > d.TOLERANCE and (apart, whole) == (1, 1),
+           "a tine cutting %.4f mm into a round part that carries a mesh, where its BoundBox stops %.4f mm short "
+           "of it, is not taken for clear" % (cut, short))
+
     def bulging(x, tip):
         """A plate with one side an arc, from x, 0 to x, MESHED_BOX, bulging to tip."""
         far = MESHED_BOX - x
@@ -2724,6 +4045,144 @@ def flank_slopes(result, p):
                for (s_high, z_high), (s_low, z_low) in zip(outline, outline[1:]) if z_high > z_low)
 
 
+def check_contour_pieces():
+    """The pieces of a cut as arrays (contour._Pieces): how far out they reach
+    at a height, which piece lies outermost with its value, and where the
+    run between two samples is lifted: every row of its tables."""
+    radius, share, tolerance = 0.2, d.CONTOUR_SHARE, d.TOLERANCE
+    heights = [0.0, 1.0, 2.0]
+
+    def open_piece(start, end):
+        """A piece of an open loop, which tells neither its side nor a mitre."""
+        return (start, end, 0.0, 0.0, None)
+
+    def reach(pieces, z, around=radius):
+        """How far out `pieces` reach at height z, asked of every piece."""
+        made = contour._Pieces(pieces, around)
+        return made.reach(made.stretches(heights), contour._stretch(heights, z), z)
+
+    def close(value, wanted):
+        return value is not None and abs(value - wanted) < tolerance
+
+    sloping, level = open_piece((0.0, 0.0), (1.0, 1.0)), open_piece((0.0, 1.0), (2.0, 1.0))
+    expect(close(reach([sloping], 0.5), 0.5 + radius * math.sqrt(2)) and close(reach([sloping], 0.5, 0.0), 0.5),
+           "at a height on a sloping piece the reach is the point on its line, the radius out along its "
+           "normal; with no radius the point of the piece itself: %s, %s"
+           % (reach([sloping], 0.5), reach([sloping], 0.5, 0.0)))
+    expect(close(reach([level], 1.0), 2.0 + radius) and close(reach([level], 1.0 + radius), 2.0)
+           and close(reach([level], 1.0 - radius), 2.0),
+           "at the height of a level piece the reach is its outer end and the radius; the radius above "
+           "and below it, where its two lines lie, its outer end: %s, %s, %s"
+           % (reach([level], 1.0), reach([level], 1.0 + radius), reach([level], 1.0 - radius)))
+    expect(reach([level], 1.0 + radius + BESIDE + tolerance) is None and reach([level], 0.5) is None
+           and reach([], 1.0) is None,
+           "above or below every piece by more than the radius, and of no pieces, there is no reach")
+    point = open_piece((1.0, 1.0), (1.0, 1.0))
+    made = contour._Pieces([point], radius)
+    expect(close(reach([point], 1.0), 1.0 + radius) and not made.has_line.any(),
+           "a piece without length reaches the radius round its one point and has no line: %s"
+           % reach([point], 1.0))
+    told = ((0.0, 0.0), (0.0, 2.0), 0.0, 0.0, (1.0, 0.0))
+    away = ((0.0, 0.0), (0.0, 2.0), 0.0, 0.0, (-1.0, 0.0))
+    lines = [int(contour._Pieces([piece], radius).has_line.sum()) for piece in (told, sloping, level)]
+    expect(lines == [1, 1, 2] and close(reach([told], 1.0), radius) and close(reach([away], 1.0), -radius),
+           "a piece of a loop that tells its side has one line, out of the part, a sloping piece of an open "
+           "loop one, a level one two; between its ends an upright piece reaches to its line, the radius to "
+           "the side its loop calls out of the part, be that out or in: %s, %s, %s"
+           % (lines, reach([told], 1.0), reach([away], 1.0)))
+
+    # Which piece lies outermost at a height, and what it tells: three pieces reaching as far out at
+    # most, so they stay in the order given, at one height each within the tolerance of the next and
+    # the last more than that past the first.
+    def crossing(at_half):
+        """A piece from the bed up to (2, 1) that lies `at_half` out at half a mm up."""
+        return open_piece((2 * at_half - 2.0, 0.0), (2.0, 1.0))
+
+    near, middle, far = (crossing(1.0 + step * tolerance) for step in (0.0, 0.8, 1.6))
+    tells = {near[0]: -3.0, middle[0]: -2.0, far[0]: -1.0}
+    halves = [0.0, 0.5, 1.0]
+
+    def facing(*pieces):
+        return contour._Pieces(list(pieces), 0.0).facing(halves, lambda piece: tells[piece[0]])[1]
+
+    up, down, alone, short = facing(near, middle, far), facing(far, middle, near), facing(middle), facing(far, near)
+    expect(close(up[0], 1.0 + 1.6 * tolerance) and up[1] == -3.0 and close(down[0], 1.0 + 1.6 * tolerance)
+           and down[1] == -2.0,
+           "three pieces at a height, each within the tolerance of the next: taken from the nearest up, the "
+           "smallest value of all three is kept; from the furthest down, the nearest is more than the "
+           "tolerance short and left out: %s, %s" % (up, down))
+    expect(alone == (alone[0], -2.0) and close(alone[0], 1.0 + 0.8 * tolerance) and short[1] == -1.0
+           and facing(near, far)[1] == -1.0,
+           "one piece at a height gives its reach and its value; a piece more than the tolerance short of "
+           "the furthest gives nothing, and one further than those before by more takes over with its "
+           "value alone: %s, %s, %s" % (alone, short, facing(near, far)))
+    # Many pieces at one height, reaching about as far, in no order: what is kept is what taking
+    # them one after the other keeps, by the rule as it reads.
+    many = [crossing(1.0 + tolerance * 2.5 * math.sin(7.0 * k)) for k in range(4 * contour.FIRST_BLOCK)]
+    values = {piece[0]: math.cos(3.0 * k) for k, piece in enumerate(many)}
+    reach_at_half, kept = None, None
+    for piece in many:
+        r, value = (piece[0][0] + 2.0) / 2, values[piece[0]]
+        if reach_at_half is None or r > reach_at_half + tolerance:
+            reach_at_half, kept = r, value
+        elif r >= reach_at_half - tolerance:
+            reach_at_half, kept = max(r, reach_at_half), min(value, kept)
+    found = contour._Pieces(many, 0.0).facing(halves, lambda piece: values[piece[0]])[1]
+    expect(len(set(values)) == len(many) and close(found[0], reach_at_half) and found[1] == kept,
+           "%d pieces at one height, reaching about as far in no order: the reach and the value kept are "
+           "those of taking them one after the other: %s, wanted %s" % (len(many), found, (reach_at_half, kept)))
+    expect(contour._Pieces([], 0.0).facing(halves, lambda piece: 0.0) == [None] * 3
+           and contour._Pieces([crossing(1.0)], 0.0).facing([2.0, 3.0, 4.0], lambda piece: 0.0) == [None] * 3,
+           "no piece at a height, no reach there")
+
+    # The run between two samples, lifted where a corner between them reaches past it.
+    wall = open_piece((0.0, 0.0), (0.0, 2.0))
+
+    def lifted(*pieces):
+        made = contour._Pieces(list(pieces), 0.0)
+        reaches = made.reaches(heights)
+        return reaches, made.lifted(reaches, heights)
+
+    def ledge(out):
+        """A level piece half a mm up, from the wall `out` out."""
+        return open_piece((0.0, 0.5), (out, 0.5))
+
+    smooth, corner = lifted(wall), lifted(wall, ledge(2.0))
+    expect(smooth == ([0.0] * 3, [0.0] * 3) and corner[0] == [0.0] * 3 and corner[1] == [2.0, 2.0, 0.0],
+           "a smooth contour is lifted nowhere; a ledge between two samples lifts both to where it reaches, "
+           "the sample above them stays: %s" % (corner,))
+    expect(lifted(wall, ledge(share))[1] == [0.0] * 3
+           and lifted(wall, ledge(share + BESIDE))[1][:2] == [share + BESIDE] * 2,
+           "a corner past the run between two samples by the share lifts nothing, one past it by more does")
+    started = lifted(open_piece((0.0, 0.3), (0.0, 2.0)))
+    empty = contour._Pieces([], radius)
+    expect(started == ([None, 0.0, 0.0], [0.0] * 3)
+           and lifted(open_piece((0.0, 1.3), (0.0, 2.0))) == ([None, None, 0.0], [None, 0.0, 0.0])
+           and empty.reaches(heights) == [None] * 3 and empty.lifted([None] * 3, heights) == [None] * 3,
+           "a sample without a reach, below where the contour starts, gets the most the pieces reach in the "
+           "stretch above it; one with nothing in either stretch beside it stays without; of no pieces "
+           "nothing reaches and nothing is lifted: %s" % (started,))
+
+    # Many pieces, most of them at the back: those not asked add nothing.
+    back = [open_piece((-5.0 - k * 0.01, 0.0), (-5.0 - k * 0.01, 2.0)) for k in range(3 * contour.FIRST_BLOCK)]
+    front = [wall, ledge(2.0)]
+    asked = []
+    real = contour._Pieces._between
+
+    def counted(self, numbers, low, high):
+        asked.append(len(numbers))
+        return real(self, numbers, low, high)
+
+    contour._Pieces._between = counted
+    try:
+        behind = lifted(*(back + front))
+    finally:
+        contour._Pieces._between = real
+    expect(behind == corner and sum(asked) < len(back),
+           "with hundreds of pieces behind the front the reach and the lift are those of the front alone, "
+           "and most of those behind are not asked: %d askings of %d pieces" % (sum(asked), len(back) + 2))
+
+
 def check_contour():
     """Under a whole round side the fin follows the contour of the part up to
     its top: over a step to a thinner part, a groove and a curved outline;
@@ -2906,6 +4365,62 @@ def check_contour():
         expect("contour_bridge" in str(error), "a negative bridge is refused: %s" % error)
     else:
         raise AssertionError("a negative contour bridge was accepted")
+
+
+def check_contour_upper_end():
+    """What turns away from the fin above the upper end of a round side, a
+    fillet or a low cone, carries no tine: the tines end below the edge of the
+    side. A part of its own above it, a collar stepping out and the side going
+    on in another face carry theirs: every row of the table of
+    contour.Contour._end_at_side()."""
+    p = FinParams(placement=d.PLACEMENT_CENTER)
+    rod = Part.makeCylinder(ROD_RADIUS, ROD_HEIGHT)
+    above = V(0, 0, ROD_HEIGHT)
+
+    def tine_tops(shape):
+        """How far above the upper edge of the side of ROD_RADIUS each tine of
+        the fin under it ends, `shape` stood on its lower rim; below it, negative."""
+        rim = next(e for e in shape.Edges if orient.is_rim(e) and abs(e.Curve.Radius - ROD_RADIUS) < d.TOLERANCE
+                   and e.BoundBox.ZMax < d.TOLERANCE)
+        side = round_side_of(shape)
+        plan = next(plan for plan in quick_stands.quick_plans(shape, [(rim, None)], [], p, d.TILT_ANGLE)
+                    if plan.number == side)
+        stood = moved(shape, plan.change)
+        result = geometry.build(stood, stood.Faces[side], p)
+        edge = result.frame.side_top_z - result.frame.bed_z
+        return [z + p.tine_height - edge for z in result.tine_z]
+
+    def cone(height):
+        return rod.fuse(Part.makeCone(ROD_RADIUS, ROD_RADIUS - UPPER_NARROWING, height, above)).removeSplitter()
+
+    top_rim = [e for e in rod.Edges if orient.is_rim(e) and e.BoundBox.ZMin > ROD_HEIGHT - d.TOLERANCE]
+    ending = [("a sharp edge", rod),
+              ("a fillet", rod.makeFillet(FILLET_RADIUS, top_rim)),
+              ("a cone lower than a part of its own", cone(UPPER_LOW))]
+    for name, shape in ending:
+        over = max(tine_tops(shape))
+        expect(-TINES_END_BELOW < over < d.TOLERANCE,
+               "the tines of a side ending in %s end below its upper edge: %.2f mm above it" % (name, over))
+    thinner = ROD_RADIUS - UPPER_NARROWING
+    running_on = cone(UPPER_LOW).fuse(
+        Part.makeCylinder(thinner, ROD_HEIGHT, above + V(0, 0, UPPER_LOW))).removeSplitter()
+    going_on = [("a cone as high as a part of its own", cone(UPPER_HIGH)),
+                ("a low cone running on into a thinner part", running_on),
+                ("a thinner part above an end face", rod.fuse(Part.makeCylinder(STEP_RADIUS, ROD_HEIGHT, above))
+                 .removeSplitter()),
+                ("a collar stepping out", rod.fuse(Part.makeCylinder(ROD_RADIUS + COLLAR_WIDER, UPPER_LOW, above))
+                 .removeSplitter()),
+                ("the side going on in another face", rod.fuse(Part.makeCylinder(ROD_RADIUS, UPPER_LOW, above)))]
+    for name, shape in going_on:
+        over = max(tine_tops(shape))
+        expect(over > d.TOLERANCE, "above a side with %s tines rest: %.2f mm above its upper edge" % (name, over))
+    # How far above the edge the low cone ends under the fin: up along the
+    # axis, and up again as it narrows towards it.
+    lean = math.radians(d.TILT_ANGLE)
+    cone_top = UPPER_LOW * math.sin(lean) + UPPER_NARROWING * math.cos(lean)
+    on_cone = [top for top in tine_tops(running_on) if d.TOLERANCE < top < cone_top]
+    expect(on_cone, "a low cone running on into a thinner part carries a tine itself: it ends %s mm above the edge, "
+                    "the cone %.2f" % (["%.2f" % top for top in on_cone], cone_top))
 
 
 def check_part_of_side():
@@ -3227,6 +4742,433 @@ def check_boss_on_face():
            "the two fins left beside the boss keep the gap, feet and all: %.2f mm" % closest)
 
 
+def check_straight_faces():
+    """The cuts through one planar face of straight edges are worked out from its
+    corners and are what the kernel cuts; every other face, and a cut through a
+    corner or along an edge, is left to the kernel."""
+    lean = App.Rotation(V(1, 0, 0), STRAIGHT_LEAN)
+
+    def face_of(*rings):
+        """A leaning face with the first of `rings`, lists of (x, y), as its outline and the others as holes."""
+        faces = [Part.Face(Part.makePolygon([lean.multVec(V(x, y, 0)) for x, y in ring + ring[:1]])) for ring in rings]
+        return faces[0].cut(faces[1:]).Faces[0] if len(faces) > 1 else faces[0]
+
+    frame = types.SimpleNamespace(along=V(1, 0, 0), bed_z=0.0)
+    cuts = {"span": 0, "bands": 0}
+    real_span, real_bands = tine_rows._span_cut, tine_rows._bands_cut
+
+    def span_cut(*args):
+        cuts["span"] += 1
+        return real_span(*args)
+
+    def bands_cut(*args):
+        cuts["bands"] += 1
+        return real_bands(*args)
+
+    def same(one, other):
+        """Whether two answers, None, a pair or a list of pairs, agree within STRAIGHT_SAME."""
+        if one is None or other is None:
+            return one is None and other is None
+        flat = [list(numpy.ravel(found)) for found in (one, other)]
+        return len(flat[0]) == len(flat[1]) and all(abs(a - b) <= STRAIGHT_SAME for a, b in zip(*flat))
+
+    wide, high, step = STRAIGHT_WIDE, STRAIGHT_HIGH, STRAIGHT_STEP
+    (near, far), (lower, upper) = STRAIGHT_HOLE_ACROSS, STRAIGHT_HOLE_UP
+    rectangle = [(0, 0), (wide, 0), (wide, high), (0, high)]
+
+    def hole(low, up):
+        """The square hole, from `low` to `up` up the face."""
+        return [(near, low), (far, low), (far, up), (near, up)]
+
+    faces = [("a rectangle", face_of(rectangle), 1),
+             ("a slanted quad", face_of([(0, 0), (wide, 0), *STRAIGHT_SLANTED_TOP]), 1),
+             ("a triangle", face_of([(0, 0), (wide, 0), (STRAIGHT_TIP, high)]), 1),
+             ("an L", face_of([(0, 0), (wide, 0), (wide, lower), (step, lower), (step, high), (0, high)]), 1),
+             ("a U lying on its side", face_of([(0, 0), (wide, 0), (wide, lower), (step, lower), (step, upper),
+                                                (wide, upper), (wide, high), (0, high)]), 2),
+             ("a rectangle with a square hole", face_of(rectangle, hole(lower, upper)), 2)]
+    tine_rows._span_cut, tine_rows._bands_cut = span_cut, bands_cut
+    try:
+        for name, face, most in faces:
+            top = face.BoundBox.ZMax
+            heights = [top * share for share in STRAIGHT_SHARES] + [-STRAIGHT_PAST, top + STRAIGHT_PAST]
+            places = STRAIGHT_PLACES
+            cuts["span"] = cuts["bands"] = 0
+            spans = [tine_rows._span_at(face, frame, height) for height in heights]
+            bands = [tine_rows._bands_at(frame, face, t) for t in places]
+            worked_out = dict(cuts)
+            expect(not worked_out["span"] and not worked_out["bands"]
+                   and all(same(found, real_span(face, frame, height)) for found, height in zip(spans, heights))
+                   and all(same(found, real_bands(frame, face, t)) for found, t in zip(bands, places))
+                   and max(len(found) for found in bands) == most and spans[-1] is None and bands[-1] == [],
+                   "%s: %d widths and %d cuts along a fin worked out as the kernel cuts them, no cut made, up to %d "
+                   "stretches, none past the face" % (name, len(spans), len(bands), max(len(found) for found in bands)))
+        # What is left to the kernel: counted, and answered as it answers.
+        plain = faces[0][1]
+        notched = faces[4][1]
+        round_hole = plain.cut(Part.Face(Part.Wire(Part.makeCircle(
+            STRAIGHT_ROUND_HOLE, lean.multVec(V(wide / 2, high / 2, 0)), lean.multVec(V(0, 0, 1)))))).Faces[0]
+        curved = Part.makeCylinder(*STRAIGHT_CURVED).Faces[0]
+        two = Part.makeCompound([plain, plain.translated(V(wide, 0, 0))])
+        top = plain.BoundBox.ZMax
+        left = [("a corner at the height", lambda: tine_rows._span_at(plain, frame, top), "span"),
+                ("an edge at the height", lambda: tine_rows._span_at(plain, frame, 0.0), "span"),
+                ("a corner nearer the height than CORNER_NEAR_CUT",
+                 lambda: tine_rows._span_at(plain, frame, top - tine_rows.CORNER_NEAR_CUT / 2), "span"),
+                ("an edge along the cut", lambda: tine_rows._bands_at(frame, notched, step), "bands"),
+                ("a corner in the cut", lambda: tine_rows._bands_at(frame, plain, wide), "bands"),
+                ("a round hole, the width", lambda: tine_rows._span_at(round_hole, frame, top / 2), "span"),
+                ("a round hole, along a fin", lambda: tine_rows._bands_at(frame, round_hole, wide / 2), "bands"),
+                ("a face that is not planar",
+                 lambda: tine_rows._span_at(curved, frame, STRAIGHT_CURVED[1] / 2), "span"),
+                ("two faces, the width", lambda: tine_rows._span_at(two, frame, top / 2), "span"),
+                ("two faces, along a fin", lambda: tine_rows._bands_at(frame, two, wide / 2), "bands")]
+        for name, ask, kind in left:
+            cuts["span"] = cuts["bands"] = 0
+            found = ask()
+            expect(cuts[kind] == 1, "%s: cut by the kernel (%s)" % (name, found))
+        expect(tine_rows._straight_outline(curved) is None and tine_rows._straight_outline(two) is None
+               and tine_rows._straight_outline(round_hole) is None
+               and [len(ring) for ring in tine_rows._straight_outline(faces[5][1])] == [4, 4],
+               "only one planar face of straight edges has corners to cut by, a hole as a ring of its own")
+        # A straight edge held as a spline is not a line: left to the kernel.
+        corners = [lean.multVec(V(x, y, 0)) for x, y in rectangle]
+        a, b = corners[3], corners[0]
+        spline = Part.BSplineCurve()
+        spline.interpolate([a, (a + b) / 2, b])
+        sides = [Part.makeLine(one, other) for one, other in zip(corners, corners[1:])] + [spline.toShape()]
+        splined = Part.Face(Part.Wire(sides))
+        cuts["span"] = 0
+        found = tine_rows._span_at(splined, frame, top / 2)
+        expect(tine_rows._straight_outline(splined) is None and cuts["span"] == 1
+               and same(found, tine_rows._span_at(plain, frame, top / 2)),
+               "a straight edge held as a spline is left to the kernel, with the same width: %s" % (found,))
+    finally:
+        tine_rows._span_cut, tine_rows._bands_cut = real_span, real_bands
+    # A stretch ending on a layer boundary: the same tines as by the cut.
+    rise = math.sin(math.radians(STRAIGHT_LEAN))
+    holed = face_of(rectangle, hole(*(layers * STRAIGHT_LAYER / rise for layers in STRAIGHT_HOLE_LAYERS)))
+    params = FinParams(layer_height=STRAIGHT_LAYER, tine_restart=True)
+    asked = (params, frame, holed, STRAIGHT_FIN_AT, d.FIN_THICKNESS_BASE, holed.BoundBox.ZMax, None)
+    worked_out = tine_rows.restarted_tines(*asked)
+    real = tine_rows._bands_at
+    tine_rows._bands_at = tine_rows._bands_cut
+    try:
+        cut = tine_rows.restarted_tines(*asked)
+    finally:
+        tine_rows._bands_at = real
+    ends = tine_rows._bands_at(frame, holed, STRAIGHT_BANDS_AT)
+    expect(worked_out == cut and worked_out and len(ends) == 2
+           and abs(ends[0][1] / STRAIGHT_LAYER - round(ends[0][1] / STRAIGHT_LAYER)) < d.TOLERANCE,
+           "a stretch ending on a layer boundary, at %.4f mm: the same %d tines worked out as by the cut"
+           % (ends[0][1], len(worked_out or [])))
+
+
+def check_enclosed():
+    """Which points lie inside a solid is told on its mesh as the kernel tells
+    it, and not told where the mesh cannot know; the kernel is asked of those
+    alone, and a search finds what it found without the mesh."""
+    edge, margin = ENCLOSED_EDGE, d.ENCLOSED_MARGIN
+    radius, height, bore = ENCLOSED_TUBE
+    inner = edge - 2 * ENCLOSED_WALL
+    cube = Part.makeBox(edge, edge, edge)
+    hollow = cube.cut(Part.makeBox(inner, inner, inner, V(ENCLOSED_WALL, ENCLOSED_WALL, ENCLOSED_WALL)))
+    tube = Part.makeCylinder(radius, height).cut(Part.makeCylinder(bore, height))
+
+    def kernel(solid, point):
+        return solid.isInside(point, d.TOLERANCE, False)
+
+    askew = tube.rotated(V(0, 0, 0), V(*ENCLOSED_ASKEW[0]), ENCLOSED_ASKEW[1])
+    for name, solid in (("a cube", cube), ("a hollow cube", hollow), ("a tube", tube), ("a tube askew", askew)):
+        mesh = shapes.enclosed_of(solid)
+        box = solid.BoundBox
+        axes = [numpy.linspace(low - ENCLOSED_PAST, high + ENCLOSED_PAST, ENCLOSED_GRID)
+                for low, high in ((box.XMin, box.XMax), (box.YMin, box.YMax), (box.ZMin, box.ZMax))]
+        grid = [V(x, y, z) for x in axes[0] for y in axes[1] for z in axes[2]]
+        told = mesh.told(grid)
+        wrong = sum(found is not None and found != kernel(solid, point) for found, point in zip(told, grid))
+        known = sum(found is not None for found in told)
+        expect(mesh.closed and not wrong and 2 * known > len(grid) and True in told and False in told,
+               "%s: %d of %d points told on the mesh, %d of them other than the kernel tells" %
+               (name, known, len(grid), wrong))
+
+    mesh = shapes.Enclosed(askew)
+    aimed = math.ceil(math.sqrt(len(mesh.a) / shapes.ENCLOSED_PER_CELL))
+    cells = [mesh._grid(axes) for axes in shapes.ENCLOSED_RAYS]
+    named_most = shapes.ENCLOSED_CELL_NAMINGS * len(mesh.a)
+    expect(all(grid.count < aimed and (len(grid.triangles) <= named_most or grid.count == 1) for grid in cells),
+           "the long triangles of a tube askew are sorted into a coarser grid than aimed at, %s cells a side "
+           "instead of %d" % ([grid.count for grid in cells], aimed))
+    mesh = shapes.enclosed_of(cube)
+    deep = V(*(edge * share for share in ENCLOSED_DEEP))
+    centre = V(edge / 2, edge / 2, edge / 2)
+    expect(mesh.told([deep, V(deep.x, deep.y, -ENCLOSED_PAST), centre]) == [True, False, None] and mesh.told([]) == [],
+           "a point deep in a cube is inside, one below it outside, its centre, every ray from which runs "
+           "through a diagonal of a face, not told; no points, no answers")
+    by_wall = [V(deep.x, deep.y, edge + side * off * margin) for off in ENCLOSED_OFF_UNTOLD for side in (-1, 1)]
+    clear = [V(deep.x, deep.y, edge + side * ENCLOSED_OFF_TOLD * margin) for side in (-1, 1)]
+    expect(mesh.told(by_wall) == [None] * len(by_wall) and mesh.told(clear) == [True, False],
+           "points within the margin of a face of the cube, on either side, are not told of; %g margins off they are"
+           % ENCLOSED_OFF_TOLD)
+    expect(shapes.enclosed_of(hollow).told([V(*(edge * share for share in ENCLOSED_IN_HOLLOW))]) == [False],
+           "a point in the hollow of a cube is outside it")
+    # A round hollow: the triangles cut into the bore, a point just in it is not said to be inside.
+    turn, up = math.radians(ENCLOSED_TUBE_AT[0]), height * ENCLOSED_TUBE_AT[1]
+
+    def in_tube(off):
+        return V((bore + off) * math.cos(turn), (bore + off) * math.sin(turn), up)
+
+    mesh = shapes.enclosed_of(tube)
+    in_bore = [in_tube(-off * margin) for off in ENCLOSED_OFF_UNTOLD]
+    expect(mesh.told(in_bore) == [None] * len(in_bore)
+           and mesh.told([in_tube(-ENCLOSED_OFF_TOLD * margin), in_tube(ENCLOSED_OFF_TOLD * margin)]) == [False, True],
+           "points in the bore of a tube within the margin of its wall are not told of; %g margins off it they are "
+           "outside, as far in the wall inside" % ENCLOSED_OFF_TOLD)
+    # No closed mesh, or none at all: nothing told.
+    shell = Part.Shell(cube.Faces[:-1])
+    most, triangles = d.ENCLOSED_MOST, len(shapes.Enclosed(cube).a)
+    try:
+        d.ENCLOSED_MOST = triangles
+        just_fits = shapes.enclosed_of(cube)
+        d.ENCLOSED_MOST = triangles - 1
+        too_large = shapes.enclosed_of(cube)
+    finally:
+        d.ENCLOSED_MOST = most
+    try:
+        shapes.mesh_arrays(cube, d.ENCLOSED_DEFLECTION, most=triangles - 1)
+        counted = False
+    except shapes.TooManyPairs:
+        counted = True
+    expect(not shapes.Enclosed(shell).closed and shapes.Enclosed(shell).told([deep]) == [None]
+           and shapes.Enclosed(cube.Faces[0]).told([deep]) == [None],
+           "a cube with a face missing and a single face tell of no point")
+    expect(just_fits is not None and too_large is None and counted
+           and len(shapes.mesh_arrays(cube, d.ENCLOSED_DEFLECTION, most=triangles)[1]) == triangles,
+           "a solid of as many triangles as the most has a mesh, with one more it has none, told as it is meshed")
+
+    # A solid settled with its mesh, or without one: the kernel is asked of what the mesh does not tell of alone.
+    real_inside, real_enclosed, real_clock = geometry._inside, geometry.enclosed_of, geometry._clock
+    worth, slow = d.ENCLOSED_WORTH, d.ENCLOSED_KERNEL_SLOW
+    calls, meshes = [], []
+    geometry._inside = lambda solid, point: calls.append(1) or real_inside(solid, point)
+
+    def standing(solid, with_mesh=None):
+        """`solid` as _any_inside() knows it, afresh: asking still, or settled with its mesh or without one."""
+        geometry._kept_solids_in.clear()
+        found = geometry._solids_in(solid)[0]
+        if with_mesh is not None:
+            found.settled, found.mesh = True, real_enclosed(solid) if with_mesh else None
+        return found
+
+    def any_inside(solid, points, with_mesh=True):
+        """What _any_inside() says and how often it asked the kernel for it."""
+        del calls[:]
+        standing(solid, with_mesh)
+        return geometry._any_inside(solid, points), len(calls)
+
+    class Clock:
+        """A clock that goes on by `took` seconds over each call of the kernel timed by it."""
+
+        def __init__(self):
+            self.now, self.took, self.read = 0.0, 0.0, 0
+
+        def __call__(self):
+            self.read += 1
+            if self.read % 2 == 0:
+                self.now += self.took
+            return self.now
+
+    clock = Clock()
+
+    def settled(solid, took):
+        """`solid` asked of a point the kernel takes `took` for until it is settled, and of how many."""
+        found = standing(solid)
+        clock.took = took
+        del calls[:], meshes[:]
+        while not found.settled and len(calls) < ENCLOSED_ASKED_MOST:
+            geometry._any_inside(solid, [in_bore[1]])
+        return found, len(calls)
+
+    try:
+        outside = V(deep.x, deep.y, -ENCLOSED_PAST)
+        expect([any_inside(cube, points) for points in ([], [outside], [deep], [outside, deep])]
+               == [(False, 0), (False, 0), (True, 0), (True, 0)]
+               and any_inside(tube, [in_tube(-ENCLOSED_OFF_TOLD * margin)]) == (False, 0),
+               "no points, points outside the box, points the mesh tells of: the kernel is not asked")
+        in_wall = in_tube(ENCLOSED_OFF_TOLD * margin)
+        expect(any_inside(cube, [by_wall[2], outside]) == (True, 1) and any_inside(tube, [in_bore[1]]) == (False, 1)
+               and any_inside(cube, [deep, by_wall[2]]) == (True, 0)
+               and any_inside(cube, [by_wall[2], deep], with_mesh=False) == (True, 1)
+               and any_inside(tube, [in_bore[1], in_wall], with_mesh=False) == (True, 2),
+               "a point the mesh does not tell of is asked of the kernel, unless another is told to be inside; "
+               "without a mesh each is asked until one is inside")
+
+        # How a solid is settled, on a clock of the test: once, by what the kernel took until then.
+        geometry._clock = clock
+        geometry.enclosed_of = lambda solid: meshes.append(1) or real_enclosed(solid)
+        took = slow * ENCLOSED_QUICK_SHARE
+        found, asked = settled(tube, took)
+        clock.took, read = worth, clock.read
+        later = geometry._any_inside(tube, [in_bore[1], in_wall])
+        expect(asked == math.ceil(worth / took) and found.mesh is None and not meshes and later
+               and clock.read == read,
+               "a quick kernel: settled after %d points, as many as take what a mesh is worth, without a mesh; "
+               "none is made when it turns slow after, and it is timed no more" % asked)
+        took = slow * ENCLOSED_SLOW_SHARE
+        found, asked = settled(tube, took)
+        del calls[:]
+        read = clock.read
+        on_mesh = geometry._any_inside(tube, [in_tube(-ENCLOSED_OFF_TOLD * margin)]), len(calls)
+        untold = geometry._any_inside(tube, [in_bore[1]]), len(calls)
+        expect(asked == math.ceil(worth / took) and found.mesh is not None and len(meshes) == 1
+               and on_mesh == (False, 0) and untold == (False, 1) and clock.read == read,
+               "a slow kernel: settled after %d points with a mesh, made once; a point it tells of is not asked of "
+               "the kernel, one it does not is, timed no more" % asked)
+        found, asked = settled(tube, worth)
+        expect(asked == 1 and found.mesh is not None and len(meshes) == 1,
+               "a kernel taking what a mesh is worth for one point: a mesh after that point")
+        geometry.enclosed_of = lambda solid: meshes.append(1)
+        found, asked = settled(tube, took)
+        again = [geometry._any_inside(tube, [in_bore[1], in_wall]) for _ in range(3)]
+        expect(found.settled and found.mesh is None and len(meshes) == 1 and all(again),
+               "a slow kernel on a solid too large for a mesh: one is tried once, and the kernel asked from then on")
+
+        # A search under a face with a boss: the same answers with the mesh as without, fewer asked.
+        def searched(shape, params, with_mesh):
+            answers = []
+            real_sure = geometry._Places.surely_in_part
+
+            def sure(self, t, own, half_foot=None):
+                answers.append(real_sure(self, t, own, half_foot))
+                return answers[-1]
+
+            del calls[:]
+            geometry._kept_solids_in.clear()
+            geometry.enclosed_of = real_enclosed if with_mesh else lambda solid: None
+            geometry._Places.surely_in_part = sure
+            try:
+                geometry.build(shape, lower_left_face(shape), params)
+                outcome = "built"
+            except face_frame.FinError:
+                outcome = "refused"
+            finally:
+                geometry._Places.surely_in_part = real_sure
+            return outcome, answers, len(calls)
+
+        # A mesh is worth it from the first point on, however quick the kernel.
+        geometry._clock, d.ENCLOSED_WORTH, d.ENCLOSED_KERNEL_SLOW = real_clock, 0.0, 0.0
+        bossed = bossed_cube((BOSS_MIDDLE, EDGE / 2))
+        for name, params in (("the default gap", FinParams(placement=d.PLACEMENT_CENTER)),
+                             ("a gap within the margin of the mesh",
+                              FinParams(placement=d.PLACEMENT_CENTER, gap=ENCLOSED_NARROW_GAP,
+                                        tine_clearance=ENCLOSED_NARROW_CLEARANCE))):
+            on_mesh, by_kernel = searched(bossed, params, True), searched(bossed, params, False)
+            expect(on_mesh[:2] == by_kernel[:2] and any(on_mesh[1]) and on_mesh[2] < by_kernel[2],
+                   "%s, %s: %d places asked, told alike with the mesh and without; the kernel asked %d times "
+                   "instead of %d" % (name, on_mesh[0], len(on_mesh[1]), on_mesh[2], by_kernel[2]))
+    finally:
+        geometry._inside, geometry.enclosed_of, geometry._clock = real_inside, real_enclosed, real_clock
+        d.ENCLOSED_WORTH, d.ENCLOSED_KERNEL_SLOW = worth, slow
+        geometry._kept_solids_in.clear()
+
+
+def check_surely_in_part():
+    """A place where the fin would stand in what stands out of the face is told
+    from points of the fin, before it is built: only where the measure of the
+    fin built says the same, with points the fin as built holds or comes near."""
+    asked, built_at = [], []
+    real_sure, real_body = geometry._Places.surely_in_part, geometry._Places._body
+
+    def sure(self, t, own, half_foot=None):
+        found = real_sure(self, t, own, half_foot)
+        asked.append((self, t, own, found))
+        return found
+
+    def body(self, t, height, half_foot):
+        built_at.append((self, t, height))
+        return real_body(self, t, height, half_foot)
+
+    def searched(shape, params, **more):
+        """What a build under the face of `shape` asked, and what it made of it."""
+        del asked[:], built_at[:]
+        geometry._Places.surely_in_part, geometry._Places._body = sure, body
+        try:
+            geometry.build(shape, lower_left_face(shape), params, **more)
+            outcome = "built"
+        except face_frame.FinError:
+            outcome = "refused"
+        finally:
+            geometry._Places.surely_in_part, geometry._Places._body = real_sure, real_body
+        return outcome, list(asked), list(built_at)
+
+    wide = bossed_cube((BOSS_WIDE, EDGE / 2))
+    middle = bossed_cube((BOSS_MIDDLE, EDGE / 2))
+    cases = [("the default foot", middle, FinParams(placement=d.PLACEMENT_CENTER), {}),
+             ("a rectangular foot", middle, FinParams(placement=d.PLACEMENT_CENTER, foot_shape=d.FOOT_RECTANGLE), {}),
+             ("no foot", middle, FinParams(placement=d.PLACEMENT_CENTER, foot_shape=d.FOOT_NONE), {}),
+             ("a height of its own", middle, FinParams(placement=d.PLACEMENT_CENTER), {"heights": {1: EDGE / 3}}),
+             ("a boss over the whole face", wide, FinParams(placement=d.PLACEMENT_CENTER), {})]
+    for name, shape, params, more in cases:
+        outcome, places, bodies = searched(shape, params, **more)
+        told = [(self, t, own) for self, t, own, found in places if found]
+        wrong, outside, far, points = 0, 0, 0, 0
+        for self, t, own, found in places:
+            height = self.reach(t, own)
+            if height <= d.TOLERANCE:
+                continue
+            solid = real_body(self, t, height, self.half_foot)
+            front = geometry.in_front_of(self.part, self.whole_face)
+            wrong += found and solid.distToShape(front)[0] >= params.gap - d.TOLERANCE
+            # Three by three: one inside the fin, one beside it on either side.
+            for number, point in enumerate(self.sure_points(t, height, self.half_foot)):
+                points += 1
+                if number % 3 == 0:
+                    outside += not solid.isInside(point, d.TOLERANCE, False)
+                else:
+                    far += solid.distToShape(Part.Vertex(point))[0] >= params.gap - d.TOLERANCE
+        built_where_told = [1 for self, t, own in told if (self, t, self.reach(t, own)) in
+                            [(places_, at, height) for places_, at, height in bodies]]
+        expect(told and not wrong and not outside and not far and points and not built_where_told,
+               "%s, %s: %d of %d places told to stand in the part, %d of them clear by the measure; of %d points "
+               "%d outside the fin, %d as far off as the gap; fins built where it was told %d"
+               % (name, outcome, len(told), len(places), wrong, points, outside, far, len(built_where_told)))
+    # Told once, kept: the place is not asked of the kernel again.
+    outcome, places, _ = searched(wide, FinParams(placement=d.PLACEMENT_CENTER))
+    self, t, own, _ = next(place for place in places if place[3])
+    real_inside = geometry._inside
+    calls = []
+    geometry._inside = lambda solid, point: calls.append(1) or real_inside(solid, point)
+    try:
+        again = self.surely_in_part(t, own)
+        # A point on the surface of what stands out, and a kernel that cannot tell.
+        front = geometry.in_front_of(self.part, self.whole_face)
+        on_surface = front.Vertexes[0].Point
+        deep = front.Solids[0].CenterOfMass
+        expect(again and not calls, "a place told to stand in the part is not asked again")
+        expect(real_inside(front.Solids[0], deep) and not real_inside(front.Solids[0], on_surface),
+               "a point inside what stands out is inside it, one on its surface is not")
+
+        class Failing:
+            def isInside(self, *args):
+                raise Part.OCCError("no classifier")
+        expect(real_inside(Failing(), deep) is False, "where the kernel cannot tell, a point is not said to be inside")
+    finally:
+        geometry._inside = real_inside
+    # Nothing in front of the face, a fin without a height, a round side: not said.
+    cube = tilted_cube()
+    outcome, places, _ = searched(cube, FinParams(placement=d.PLACEMENT_CENTER))
+    expect(outcome == "built" and not any(found for *_, found in places),
+           "a plain face: no place told to stand in the part (%d asked)" % len(places))
+    expect(self.sure_points(t, 0.0, self.half_foot) == [], "a fin without a height has no points to ask")
+    # What stands out in two solids: each is asked by itself.
+    two = bossed_cube((BOSS_RADII[0], EDGE / 4), (BOSS_RADII[0], 3 * EDGE / 4))
+    frame = face_frame.frame_of(two, lower_left_face(two))
+    front = geometry.in_front_of(two, frame)
+    hits = [sum(real_inside(solid, other.CenterOfMass) for solid in front.Solids) for other in front.Solids]
+    expect(len(front.Solids) == 2 and hits == [1, 1],
+           "two bosses stand out as two solids, a point in one is inside that one alone: %s" % hits)
+
+
 def tapered(top_half, height):
     """A part whose face, leaning 45 degrees, tapers from TAPER_BASE_HALF at
     the bed to `top_half` at `height`, and that face."""
@@ -3254,7 +5196,125 @@ def check_narrow_reason():
                    "restart %s, a face tapering to %g mm at %g mm: %s" % (restart, 2 * top_half, height, named))
 
 
+def check_built_kept():
+    """geometry.build() keeps the fins it built and hands them out again where
+    the same is asked, measured against the table of its inputs."""
+    cube = tilted_cube()
+    number = next(i for i, each in enumerate(cube.Faces) if each.isSame(lower_left_face(cube)))
+    face, p = cube.Faces[number], FinParams()
+    made = []
+    real_made, real_key, real_language = geometry._build_reaching, geometry.part_key, geometry.language
+    foreign = Part.makeBox(1, 1, 1).Faces[0]
+    # What a build made is given, for a test: with a face carried that is none of the part.
+    carrying = []
+
+    def making(*args):
+        made.append(args)
+        result = real_made(*args)
+        return dataclasses.replace(result, carried=list(carrying)) if carrying else result
+
+    def asked(part, face, params=p, **edits):
+        """What build() gives and whether it was made for it."""
+        before = len(made)
+        return geometry.build(part, face, params, **edits), len(made) > before
+
+    geometry._build_reaching = making
+    geometry.BUILT_KEPT = BUILT_KEPT_IN_USE
+    geometry.forget_built()
+    try:
+        first, built = asked(cube, face)
+        again, built_again = asked(cube, face)
+        expect(built and not built_again and again is not first and again.fins.Volume == first.fins.Volume
+               and again.numbers == first.numbers and again.warnings == first.warnings
+               and len(again.carried) == 1 and again.carried[0].isSame(face),
+               "the same asked again gives the fins kept, a result of its own, and builds nothing")
+        again.warnings.append("changed")
+        again.starts.clear()
+        again.along.x += 1.0
+        third, built = asked(cube, face)
+        expect(not built and third.warnings == first.warnings and third.starts == first.starts
+               and third.along == first.along, "the fins handed out changed, those kept stay as built")
+        copy = cube.copy()
+        other, built = asked(copy, copy.Faces[number])
+        expect(not built and other.carried[0].isSame(copy.Faces[number]) and not other.carried[0].isSame(face),
+               "another shape of the part as it stands gets the fins kept, carrying its own faces")
+        for name, params, edits in (("another parameter", dataclasses.replace(p, tine_clearance=0.0), {}),
+                                    ("a fin moved by hand", p, {"shifts": {first.numbers[0]: SHIFT}})):
+            _, built = asked(cube, face, params, **edits)
+            _, built_again = asked(cube, face, params, **edits)
+            expect(built and not built_again, "%s is built, and kept as well" % name)
+        elsewhere = moved(cube, App.Placement(V(SHIFT, 0, 0), App.Rotation()))
+        _, built = asked(elsewhere, elsewhere.Faces[number])
+        expect(built, "the part standing elsewhere is built")
+        _, built = asked(cube, cube.copy().Faces[number])
+        _, built_again = asked(cube, cube.copy().Faces[number])
+        expect(built and built_again, "a face that is none of the part is built every time")
+        key_of_cube = shapes.part_key(cube)
+        geometry.part_key = lambda shape: key_of_cube[:-1] + ("as if the same",)
+        geometry.forget_built()
+        try:
+            _, built = asked(cube, face)
+            alike, built_alike = asked(elsewhere, elsewhere.Faces[number])
+            _, built_after = asked(elsewhere, elsewhere.Faces[number])
+        finally:
+            geometry.part_key = real_key
+        expect(built and built_alike and not built_after and alike.carried[0].isSame(elsewhere.Faces[number]),
+               "a part with the key of one built before, its face another by its centre, is built and kept "
+               "in its place")
+        geometry.forget_built()
+        carrying.append(foreign)
+        try:
+            _, built = asked(cube, face)
+            _, built_again = asked(cube, face)
+        finally:
+            del carrying[:]
+        expect(built and built_again, "fins carrying a face that is none of the part are not kept")
+        refused = []
+        for _ in range(2):
+            before = len(made)
+            try:
+                geometry.build(cube, face, FinParams(placement=d.PLACEMENT_CORNERS, fin_thickness=TOO_THICK))
+            except face_frame.FinError:
+                refused.append(len(made) > before)
+        expect(refused == [True, True], "a build refused is built and refused again: %s" % refused)
+        asked(cube, face)
+        geometry.language = lambda: "another"
+        try:
+            _, built = asked(cube, face)
+        finally:
+            geometry.language = real_language
+        expect(built and real_language() is None,
+               "said in another language, the fins are built anew; without the window FreeCAD tells none")
+        turned = cube.copy()
+        key = shapes.part_key(turned)
+        expect(shapes.part_key(turned) is key, "the key of a shape asked again is the one kept")
+        turned.Placement = App.Placement(V(SHIFT, 0, 0), App.Rotation()).multiply(turned.Placement)
+        expect(shapes.part_key(turned) != key, "a shape moved since is keyed anew")
+        geometry.forget_built()
+        geometry.BUILT_KEPT = 1
+        asked(cube, face)
+        asked(cube, face, dataclasses.replace(p, tine_clearance=0.0))
+        _, built = asked(cube, face)
+        expect(built, "past as many as are kept the oldest goes, and is built again")
+        geometry.BUILT_KEPT = BUILT_KEPT_IN_USE
+        asked(cube, face)
+        geometry.forget_built()
+        _, built = asked(cube, face)
+        expect(built, "fins forgotten are built again")
+        geometry.BUILT_KEPT = 0
+        _, built = asked(cube, face)
+        expect(built, "with none kept every build is made, also one kept before")
+    finally:
+        geometry._build_reaching = real_made
+        geometry.BUILT_KEPT = 0
+        geometry.forget_built()
+
+
 def main():
+    # What is built is tested here: every build is made, none taken from the
+    # fins kept, or a test that swaps a part of the build would get the fins
+    # built before it. check_built_kept() tests the keeping itself.
+    geometry.BUILT_KEPT = 0
     cube = tilted_cube()
     face = lower_left_face(cube)
 
@@ -3324,6 +5384,7 @@ def main():
 
     steep = geometry.build(cube, face, FinParams())
     expect(not any("inclined" in w for w in steep.warnings), "45 degrees gives no angle warning")
+    expect(not tine_rows._outlined, "the face a build asked the corners of is forgotten as the build ends")
 
     shape_regression(cube, face)
 
@@ -3368,14 +5429,23 @@ def main():
     check_quick_plan()
     check_quick_plans()
     check_prism_side()
+    check_cut_heights()
+    check_faces_at()
+    check_starts()
     check_islands()
+    check_island_boxes()
+    check_first_layers()
+    check_bridge_lines()
+    check_bridge_faces()
     check_bridges()
     check_no_fragile_calls()
     check_printable_plans()
     check_centres()
     check_stability()
     check_round_side()
+    check_contour_pieces()
     check_contour()
+    check_contour_upper_end()
     check_known_clear()
     check_meshed_distance()
     check_settled_clear()
@@ -3389,7 +5459,11 @@ def main():
     check_merged_clearance(cube, face)
     check_fin_at(cube, face)
     check_boss_on_face()
+    check_straight_faces()
+    check_surely_in_part()
+    check_enclosed()
     check_narrow_reason()
+    check_built_kept()
     print("all checks passed", file=sys.__stdout__)
 
 

@@ -4,232 +4,232 @@
 <context>
     <name>App::Property</name>
     <message>
-        <location filename="../feature.py" line="138"/>
+        <location filename="../feature.py" line="144"/>
         <source>Slicer</source>
         <translation>Slicer</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="139"/>
+        <location filename="../feature.py" line="145"/>
         <source>Connection</source>
         <translation>Verbindung</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="140"/>
+        <location filename="../feature.py" line="146"/>
         <source>Tines</source>
         <translation>Zinken</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="141"/>
+        <location filename="../feature.py" line="147"/>
         <source>Fin</source>
         <translation>Finne</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="142"/>
+        <location filename="../feature.py" line="148"/>
         <source>Placement of fins</source>
         <translation>Lage der Finnen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="143"/>
+        <location filename="../feature.py" line="149"/>
         <source>Foot</source>
         <translation>Fuß</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="144"/>
+        <location filename="../feature.py" line="150"/>
         <source>Counter fin</source>
         <translation>Gegenfinne</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="145"/>
+        <location filename="../feature.py" line="151"/>
         <source>Source</source>
         <translation>Quelle</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="146"/>
+        <location filename="../feature.py" line="152"/>
         <source>Result</source>
         <translation>Ergebnis</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="236"/>
+        <location filename="../feature.py" line="242"/>
         <source>Nozzle diameter of the print profile</source>
         <translation>Düsendurchmesser im Druckprofil</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="244"/>
+        <location filename="../feature.py" line="250"/>
         <source>Layer height of the print profile</source>
         <translation>Schichthöhe im Druckprofil</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="248"/>
+        <location filename="../feature.py" line="254"/>
         <source>Height of the first layer</source>
         <translation>Höhe der ersten Schicht</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="257"/>
+        <location filename="../feature.py" line="263"/>
         <source>separate: fins are their own object and only touch the part; merged: fins and part become one body</source>
         <translation>getrennt: die Finnen sind ein eigenes Objekt und berühren das Teil nur; verbunden: Finnen und Teil werden ein Körper</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="268"/>
+        <location filename="../feature.py" line="274"/>
         <source>Distance between the end of a tine and the face, along the face normal, smaller than the gap; the tines are as much shorter, the fin stays where it is. 0 = the tine touches the face. More leaves fainter marks and separate beads in the slicer, too much and the tine does not hold: find the value by a test print.</source>
         <translation>Abstand zwischen dem Ende einer Zinke und der Fläche, senkrecht zur Fläche gemessen, kleiner als der Spalt; die Zinken sind um so viel kürzer, die Finne bleibt, wo sie ist. 0 = die Zinke berührt die Fläche. Mehr hinterlässt schwächere Spuren und getrennte Raupen im Slicer, zu viel und die Zinke hält nicht: den Wert mit einem Testdruck finden.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="276"/>
+        <location filename="../feature.py" line="282"/>
         <source>Vertical distance between tines, at least the tine height plus one layer</source>
         <translation>Senkrechter Abstand der Zinken, mindestens die Zinkenhöhe plus eine Schicht</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="240"/>
+        <location filename="../feature.py" line="246"/>
         <source>Bead width, the extrusion width of the outer perimeter</source>
         <translation>Raupenbreite, die Extrusionsbreite der Außenwand</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="252"/>
+        <location filename="../feature.py" line="258"/>
         <source>Width of the brim the slicer prints round the part and the fins on the bed, 0 without. Check stability counts it as part of the footprint.</source>
         <translation>Breite des Brims, den der Slicer um Teil und Finnen auf dem Bett druckt, 0 ohne. Standfestigkeit prüfen zählt ihn zur Standfläche.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="263"/>
+        <location filename="../feature.py" line="269"/>
         <source>Gap between fin and face that the tines reach across, along the face normal; a tine clearance makes the tines as much shorter</source>
         <translation>Spalt zwischen Finne und Fläche, über den die Zinken reichen, senkrecht zur Fläche gemessen; ein Abstand Zinke zum Teil macht die Zinken um so viel kürzer</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="281"/>
+        <location filename="../feature.py" line="287"/>
         <source>Start the tine grid anew at the lower edge of the face under each fin and above every interruption it reaches over, so a short face or one above a hole still gets tines; off, one grid counts from the bed for every fin</source>
         <translation>Zinkenraster an der Unterkante der Fläche unter jeder Finne und über jeder Unterbrechung, über die sie hinwegreicht, neu beginnen, damit auch eine kurze Fläche oder eine über einem Loch Zinken bekommt; aus: ein Raster vom Bett aus für alle Finnen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="288"/>
+        <location filename="../feature.py" line="294"/>
         <source>Height of the lowest tine above the bed, 0 = on the top of the foot</source>
         <translation>Höhe der untersten Zinke über dem Bett, 0 = auf der Oberkante des Fußes</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="292"/>
+        <location filename="../feature.py" line="298"/>
         <source>Tine height in layers</source>
         <translation>Höhe einer Zinke in Schichten</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="296"/>
+        <location filename="../feature.py" line="302"/>
         <source>Tine width in beads</source>
         <translation>Breite einer Zinke in Raupen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="300"/>
+        <location filename="../feature.py" line="306"/>
         <source>Number of tines per fin, 0 = as many as fit</source>
         <translation>Zinken je Finne, 0 = so viele wie passen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="304"/>
+        <location filename="../feature.py" line="310"/>
         <source>Wall thickness of a fin, 0 = from its height</source>
         <translation>Wandstärke einer Finne, 0 = aus ihrer Höhe</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="308"/>
+        <location filename="../feature.py" line="314"/>
         <source>Height of the fins, 0 = top of the highest tine. A lower value leaves out the tines above it; the fins reach at most to just below the top of the face.</source>
         <translation>Höhe der Finnen, 0 = Oberkante der höchsten Zinke. Ein kleinerer Wert lässt die Zinken darüber weg; die Finnen reichen höchstens bis knapp unter die Oberkante der Fläche.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="314"/>
+        <location filename="../feature.py" line="320"/>
         <source>Under the round side of a part standing on its rim: the fin follows the contour of the part up to its top, over steps, cones, fillets and curves, keeping the gap; off, it stands under the round side alone</source>
         <translation>Unter der runden Seite eines Teils, das auf seinem Rand steht: die Finne folgt der Kontur des Teils bis nach oben, über Stufen, Kegel, Rundungen und Kurven, und hält dabei den Spalt; aus: sie steht nur unter der runden Seite</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="321"/>
+        <location filename="../feature.py" line="327"/>
         <source>When the fin follows the contour: recesses in it lower than this, such as small chamfers, fillets, holes and grooves, the fin spans straight instead of following them, and leaves out its tines there; a pocket in one face that no tine rests in, whatever its size, as well. 0 = follow every recess.</source>
         <translation>Wenn die Finne der Kontur folgt: Einbuchtungen, die niedriger sind als dieser Wert, etwa kleine Fasen, Rundungen, Löcher und Nuten, überspannt die Finne gerade, statt ihnen zu folgen, und lässt dort ihre Zinken weg; ebenso eine Tasche in einer Fläche, in der keine Zinke anliegt, gleich wie groß. 0 = jeder Einbuchtung folgen.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="329"/>
+        <location filename="../feature.py" line="335"/>
         <source>When the fin follows the contour: the distance it keeps from the part over faces looking up, where no tine rests, so it cannot stick to the part there; never less than the gap, a smaller value keeps the gap</source>
         <translation>Wenn die Finne der Kontur folgt: der Abstand, den sie zum Teil über nach oben zeigenden Flächen hält, an denen keine Zinke anliegt, damit sie dort nicht am Teil festklebt; nie weniger als der Spalt, ein kleinerer Wert behält den Spalt</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="336"/>
+        <location filename="../feature.py" line="342"/>
         <source>Under the whole round side of a part standing on its rim: one fin under its lowest line; one parallel to it on each side instead, which widen the footprint against tipping sideways but start to hold higher up; or all three. Those beside it need Follow the contour. Their feet may overlap and are joined on export.</source>
         <translation>Unter der ganzen runden Seite eines Teils, das auf seinem Rand steht: eine Finne unter der untersten Linie; stattdessen je eine parallele zu jeder Seite, die die Standfläche gegen seitliches Kippen vergrößern, aber erst weiter oben halten; oder alle drei. Die seitlichen brauchen Kontur folgen. Ihre Füße dürfen sich überlappen und werden beim Export verbunden.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="344"/>
+        <location filename="../feature.py" line="350"/>
         <source>With two or three fins under a round side: how far round the side from the lowest line the two side fins stand, in degrees. Further round they stand further apart, but hold the part only from higher up. The arrow of a side fin moves that fin; with Shift held while dragging, both.</source>
         <translation>Bei zwei oder drei Finnen unter einer runden Seite: wie weit die beiden Seitenfinnen von der untersten Linie aus um die Seite herum stehen, in Grad. Weiter herum stehen sie weiter auseinander, halten das Teil aber erst weiter oben. Der Pfeil einer Seitenfinne verschiebt diese Finne; mit gedrückter Umschalttaste beim Ziehen beide.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="352"/>
+        <location filename="../feature.py" line="358"/>
         <source>Width of the flat top of a fin</source>
         <translation>Breite der flachen Oberseite einer Finne</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="356"/>
+        <location filename="../feature.py" line="362"/>
         <source>auto: by face length; center: one fin; ends: two fins; corners: two fins on the face ends, each tine whole on the face and flush with its end, so the tine marks merge with the edges; the fin reaches a little past the end; left corner, right corner: one such fin on that end, left and right as seen from outside, looking at the face; distributed: FinCount fins</source>
         <translation>automatisch: nach Flächenlänge; mittig: eine Finne; Enden: zwei Finnen; Ecken: zwei Finnen an den Flächenenden, jede Zinke liegt ganz auf der Fläche und schließt bündig mit ihrem Ende ab, so verschwinden die Spuren der Zinken in den Kanten; die Finne ragt etwas über das Ende hinaus; linke Ecke, rechte Ecke: eine solche Finne an diesem Ende, links und rechts von außen auf die Fläche gesehen; verteilt: Anzahl Finnen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="366"/>
+        <location filename="../feature.py" line="372"/>
         <source>Number of fins for distributed placement</source>
         <translation>Anzahl der Finnen bei verteilter Lage</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="370"/>
+        <location filename="../feature.py" line="376"/>
         <source>Distance of the outer fins from the face ends</source>
         <translation>Abstand der äußeren Finnen von den Enden der Fläche</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="374"/>
+        <location filename="../feature.py" line="380"/>
         <source>Automatic placement: one fin per this much face length</source>
         <translation>Automatische Lage: eine Finne je so viel Flächenlänge</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="378"/>
+        <location filename="../feature.py" line="384"/>
         <source>Shape of the foot on the bed</source>
         <translation>Form des Fußes auf dem Bett</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="382"/>
+        <location filename="../feature.py" line="388"/>
         <source>Height of the foot, rounded to whole layers</source>
         <translation>Höhe des Fußes, auf ganze Schichten gerundet</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="386"/>
+        <location filename="../feature.py" line="392"/>
         <source>How far the foot reaches past the outer end of the fin</source>
         <translation>Wie weit der Fuß über das äußere Ende der Finne hinausreicht</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="390"/>
+        <location filename="../feature.py" line="396"/>
         <source>Foot width as a share of its length</source>
         <translation>Breite des Fußes als Anteil seiner Länge</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="394"/>
+        <location filename="../feature.py" line="400"/>
         <source>Half width of the foot, 0 = from FootWidthRatio</source>
         <translation>Halbe Breite des Fußes, 0 = aus dem Breitenanteil</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="398"/>
+        <location filename="../feature.py" line="404"/>
         <source>Tines of the counter fin, 0 = as many as the main fin. The counter fin only has to stop the part from tipping over, so it may be smaller.</source>
         <translation>Zinken der Gegenfinne, 0 = so viele wie die Hauptfinne. Die Gegenfinne muss nur das Umkippen des Teils verhindern und darf deshalb kleiner sein.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="451"/>
+        <location filename="../feature.py" line="457"/>
         <source>Part and the face the fins support</source>
         <translation>Teil und die Fläche, die die Finnen stützen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="453"/>
+        <location filename="../feature.py" line="459"/>
         <source>Outermost container of the part, so moving it rebuilds the fins</source>
         <translation>Äußerster Container des Teils, damit ein Verschieben die Finnen neu berechnet</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="458"/>
+        <location filename="../feature.py" line="464"/>
         <source>Optional face on the opposite side for a small counter fin</source>
         <translation>Optionale Fläche auf der Gegenseite für eine kleine Gegenfinne</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="473"/>
+        <location filename="../feature.py" line="479"/>
         <source>Faces of the part that overhang too flatly and carry no fins</source>
         <translation>Flächen des Teils, die zu flach überhängen und keine Finnen tragen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="479"/>
+        <location filename="../feature.py" line="485"/>
         <source>Where the part would start printing in the air</source>
         <translation>Wo das Teil in der Luft zu drucken beginnen würde</translation>
     </message>
@@ -429,7 +429,7 @@
         <translation>STEP exportieren</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="181"/>
+        <location filename="../feature.py" line="187"/>
         <source>Enter the values of the print profile you will slice with. Tines and fin are sized in beads and layers of this profile.</source>
         <translation>Die Werte des Druckprofils eintragen, mit dem gesliced wird. Zinken und Finne werden in Raupen und Schichten dieses Profils bemessen.</translation>
     </message>
@@ -499,312 +499,317 @@
         <translation>%s des zusammengefügten Teils passt zu keiner Fläche des Teils selbst</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="184"/>
+        <location filename="../feature.py" line="140"/>
+        <source>An expression sets the placement of the fins and moves them off the part: remove it, the fins follow their part by themselves.</source>
+        <translation>Ein Ausdruck setzt die Platzierung der Finnen und rückt sie vom Teil weg: entferne ihn, die Finnen folgen ihrem Teil von selbst.</translation>
+    </message>
+    <message>
+        <location filename="../feature.py" line="190"/>
         <source>Separate keeps the fins a separate object that only touches the part and breaks off cleanly. Merged prints fins and part as one body. A tine clearance keeps the ends of the tines that far from the face.</source>
         <translation>Getrennt hält die Finnen als eigenes Objekt, das das Teil nur berührt und sauber abbricht. Verbunden druckt Finnen und Teil als einen Körper. Ein Abstand Zinke zum Teil hält die Enden der Zinken so weit von der Fläche fern.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="188"/>
+        <location filename="../feature.py" line="194"/>
         <source>Tines are the small horizontal contacts between fin and part. The highest tine sets the height of the fin.</source>
         <translation>Zinken sind die kleinen waagerechten Kontakte zwischen Finne und Teil. Die höchste Zinke bestimmt die Höhe der Finne.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="191"/>
+        <location filename="../feature.py" line="197"/>
         <source>0 means automatic: the thickness grows with the height, the height ends at the highest tine.</source>
         <translation>0 heißt automatisch: die Dicke wächst mit der Höhe, die Höhe endet an der höchsten Zinke.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="194"/>
+        <location filename="../feature.py" line="200"/>
         <source>Automatic places one fin per face length set below, a single fin in the centre.</source>
         <translation>Automatisch setzt eine Finne je unten eingestellter Flächenlänge, eine einzelne Finne mittig.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="197"/>
+        <location filename="../feature.py" line="203"/>
         <source>The foot holds the fin on the bed. It is narrowed automatically so that the feet of neighbouring fins never touch.</source>
         <translation>Der Fuß hält die Finne auf dem Bett. Er wird automatisch schmaler, damit sich die Füße benachbarter Finnen nie berühren.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="200"/>
+        <location filename="../feature.py" line="206"/>
         <source>A fin on the opposite face, against tipping away, as large as the main fin. It only has to stop the part from tipping over, so fewer tines are enough to make it smaller. Add it with Add counter fin, or select a second face when adding the fins.</source>
         <translation>Eine Finne auf der Gegenseite gegen Wegkippen, so groß wie die Hauptfinne. Sie muss nur das Umkippen verhindern, weniger Zinken machen sie kleiner. Mit Gegenfinne hinzufügen ergänzen, oder beim Hinzufügen der Finnen eine zweite Fläche auswählen.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="215"/>
+        <location filename="../feature.py" line="221"/>
         <source>separate, touching only</source>
         <translation>getrennt, nur berührend</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="216"/>
+        <location filename="../feature.py" line="222"/>
         <source>merged into the part</source>
         <translation>mit dem Teil verbunden</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="217"/>
+        <location filename="../feature.py" line="223"/>
         <source>automatic</source>
         <translation>automatisch</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="218"/>
+        <location filename="../feature.py" line="224"/>
         <source>one in the centre</source>
         <translation>eine mittig</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="219"/>
+        <location filename="../feature.py" line="225"/>
         <source>two at the ends</source>
         <translation>zwei an den Enden</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="220"/>
+        <location filename="../feature.py" line="226"/>
         <source>two on the corners</source>
         <translation>zwei auf den Ecken</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="221"/>
+        <location filename="../feature.py" line="227"/>
         <source>one on the left corner</source>
         <translation>eine auf der linken Ecke</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="222"/>
+        <location filename="../feature.py" line="228"/>
         <source>one on the right corner</source>
         <translation>eine auf der rechten Ecke</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="223"/>
+        <location filename="../feature.py" line="229"/>
         <source>distributed</source>
         <translation>verteilt</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="224"/>
+        <location filename="../feature.py" line="230"/>
         <source>oval</source>
         <translation>oval</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="225"/>
+        <location filename="../feature.py" line="231"/>
         <source>rectangle</source>
         <translation>rechteckig</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="226"/>
+        <location filename="../feature.py" line="232"/>
         <source>none</source>
         <translation>keiner</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="227"/>
+        <location filename="../feature.py" line="233"/>
         <source>one, under its lowest line</source>
         <translation>eine, unter der untersten Linie</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="235"/>
+        <location filename="../feature.py" line="241"/>
         <source>Nozzle diameter</source>
         <translation>Düsendurchmesser</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="239"/>
+        <location filename="../feature.py" line="245"/>
         <source>Bead width</source>
         <translation>Raupenbreite</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="243"/>
+        <location filename="../feature.py" line="249"/>
         <source>Layer height</source>
         <translation>Schichthöhe</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="247"/>
+        <location filename="../feature.py" line="253"/>
         <source>First layer height</source>
         <translation>Höhe der ersten Schicht</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="251"/>
+        <location filename="../feature.py" line="257"/>
         <source>Brim width</source>
         <translation>Brim-Breite</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="256"/>
+        <location filename="../feature.py" line="262"/>
         <source>Connection</source>
         <translation>Verbindung</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="262"/>
+        <location filename="../feature.py" line="268"/>
         <source>Gap</source>
         <translation>Spalt</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="267"/>
+        <location filename="../feature.py" line="273"/>
         <source>Tine clearance</source>
         <translation>Abstand Zinke zum Teil</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="275"/>
+        <location filename="../feature.py" line="281"/>
         <source>Tine spacing</source>
         <translation>Zinkenabstand</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="280"/>
+        <location filename="../feature.py" line="286"/>
         <source>Restart tines after an interruption</source>
         <translation>Zinken nach Unterbrechung neu beginnen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="313"/>
+        <location filename="../feature.py" line="319"/>
         <source>Follow the contour</source>
         <translation>Kontur folgen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="320"/>
+        <location filename="../feature.py" line="326"/>
         <source>Bridge recesses up to</source>
         <translation>Einbuchtungen überbrücken bis</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="328"/>
+        <location filename="../feature.py" line="334"/>
         <source>Gap without tines</source>
         <translation>Spalt ohne Zinken</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="335"/>
+        <location filename="../feature.py" line="341"/>
         <source>Fins under a round side</source>
         <translation>Finnen unter einer runden Seite</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="343"/>
+        <location filename="../feature.py" line="349"/>
         <source>Angle of the side fins</source>
         <translation>Winkel der Seitenfinnen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="381"/>
+        <location filename="../feature.py" line="387"/>
         <source>Foot height</source>
         <translation>Fußhöhe</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="385"/>
+        <location filename="../feature.py" line="391"/>
         <source>Foot reach</source>
         <translation>Fußüberstand</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="1643"/>
+        <location filename="../feature.py" line="1680"/>
         <source>The main fins are removed; the counter fin is the main fin now, with its changes by hand.</source>
         <translation>Die Hauptfinnen sind entfernt; die Gegenfinne ist jetzt die Hauptfinne, mit ihren Änderungen von Hand.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="287"/>
+        <location filename="../feature.py" line="293"/>
         <source>Tine first</source>
         <translation>Erste Zinke</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="228"/>
+        <location filename="../feature.py" line="234"/>
         <source>two, one on each side of that line</source>
         <translation>zwei, je eine zu jeder Seite dieser Linie</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="229"/>
+        <location filename="../feature.py" line="235"/>
         <source>three, that line and each side of it</source>
         <translation>drei, diese Linie und je eine zu jeder Seite</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="291"/>
+        <location filename="../feature.py" line="297"/>
         <source>Tine layers</source>
         <translation>Zinkenhöhe in Schichten</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="295"/>
+        <location filename="../feature.py" line="301"/>
         <source>Tine width beads</source>
         <translation>Zinkenbreite in Raupen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="299"/>
+        <location filename="../feature.py" line="305"/>
         <source>Tine count</source>
         <translation>Zinkenanzahl</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="303"/>
+        <location filename="../feature.py" line="309"/>
         <source>Fin thickness</source>
         <translation>Finnendicke</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="307"/>
+        <location filename="../feature.py" line="313"/>
         <source>Fin height</source>
         <translation>Finnenhöhe</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="351"/>
+        <location filename="../feature.py" line="357"/>
         <source>Top width</source>
         <translation>Breite der Oberseite</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="355"/>
+        <location filename="../feature.py" line="361"/>
         <source>Fin placement</source>
         <translation>Lage der Finnen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="365"/>
+        <location filename="../feature.py" line="371"/>
         <source>Fin count</source>
         <translation>Anzahl Finnen</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="369"/>
+        <location filename="../feature.py" line="375"/>
         <source>End inset</source>
         <translation>Randabstand</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="373"/>
+        <location filename="../feature.py" line="379"/>
         <source>Face length per fin</source>
         <translation>Flächenlänge je Finne</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="377"/>
+        <location filename="../feature.py" line="383"/>
         <source>Foot shape</source>
         <translation>Fußform</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="389"/>
+        <location filename="../feature.py" line="395"/>
         <source>Foot width ratio</source>
         <translation>Breitenanteil des Fußes</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="393"/>
+        <location filename="../feature.py" line="399"/>
         <source>Foot half width</source>
         <translation>Halbe Fußbreite</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="397"/>
+        <location filename="../feature.py" line="403"/>
         <source>Counter tine count</source>
         <translation>Zinken der Gegenfinne</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="409"/>
+        <location filename="../feature.py" line="415"/>
         <source>Not used without a foot.</source>
         <translation>Ohne Fuß nicht verwendet.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="412"/>
+        <location filename="../feature.py" line="418"/>
         <source>Only used with distributed placement.</source>
         <translation>Nur bei verteilter Lage verwendet.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="414"/>
+        <location filename="../feature.py" line="420"/>
         <source>Only used with automatic placement.</source>
         <translation>Nur bei automatischer Lage verwendet.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="416"/>
+        <location filename="../feature.py" line="422"/>
         <source>Not used with one fin in the centre or fins on the corners.</source>
         <translation>Nicht verwendet bei einer Finne in der Mitte oder Finnen auf den Ecken.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="422"/>
+        <location filename="../feature.py" line="428"/>
         <source>Only used while Foot half width is 0.</source>
         <translation>Nur verwendet, solange Halbe Fußbreite 0 ist.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="424"/>
+        <location filename="../feature.py" line="430"/>
         <source>Only used with a counter fin.</source>
         <translation>Nur mit Gegenfinne verwendet.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="426"/>
+        <location filename="../feature.py" line="432"/>
         <source>Not used with fins merged into the part: they need their tines on the face, or they would be loose bodies.</source>
         <translation>Nicht verwendet bei Finnen, die mit dem Teil verbunden werden: Ihre Zinken müssen auf der Fläche sitzen, sonst wären sie lose Körper.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="506"/>
+        <location filename="../feature.py" line="512"/>
         <source>no face selected on %s</source>
         <translation>keine Fläche an %s gewählt</translation>
     </message>
@@ -864,13 +869,13 @@
         <translation>Farben nach Höhe: grün steht sicher, gelb ist kippgefährdet (Kippwinkel unter %.0f Grad), rot kippt ab dort.</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="946"/>
+        <location filename="../feature.py" line="957"/>
         <source>Main fin: %s</source>
         <translation>Hauptfinne: %s</translation>
     </message>
     <message>
-        <location filename="../feature.py" line="905"/>
-        <location filename="../feature.py" line="950"/>
+        <location filename="../feature.py" line="913"/>
+        <location filename="../feature.py" line="961"/>
         <source>Counter fin: %s</source>
         <translation>Gegenfinne: %s</translation>
     </message>

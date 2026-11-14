@@ -134,6 +134,12 @@ COUNTER_ROUND_SIDE = QT_TRANSLATE_NOOP(
 NOTE_LAID_FLAT = QT_TRANSLATE_NOOP(
     "FinSnap", "The part lies flat again: the fins keep their last shape until the part is moved, for example "
     "stood on its edge again; then they are rebuilt.")
+# The property that places the fins, and what is said where an expression
+# holds it, so the fins are built where they stand but shown moved by it.
+PLACEMENT = "Placement"
+NOTE_PLACEMENT_HELD = QT_TRANSLATE_NOOP(
+    "FinSnap", "An expression sets the placement of the fins and moves them off the part: remove it, the fins "
+    "follow their part by themselves.")
 
 GROUP_SLICER = QT_TRANSLATE_NOOP("App::Property", "Slicer")
 GROUP_CONNECTION = QT_TRANSLATE_NOOP("App::Property", "Connection")
@@ -733,8 +739,15 @@ def set_bridges(obj, found):
         setattr(obj, name, Part.makeCompound(regions) if regions else Part.Shape())
 
 
+# The property set_overhangs() writes last: what shows the overhangs hangs on
+# both it writes, and waits for this one, so it shows them once.
+OVERHANGS_WRITTEN_LAST = UNPRINTABLE_OVERHANGS
+
+
 def set_overhangs(obj, rated):
-    """Keep `rated`, from overhangs_of(), in the properties of `obj`."""
+    """Keep `rated`, from overhangs_of(), in the properties of `obj`: the
+    names of the faces first, those of them too flat to print last
+    (OVERHANGS_WRITTEN_LAST)."""
     setattr(obj, OVERHANGS, [name for name, _ in rated])
     hidden_property(obj, UNPRINTABLE_OVERHANGS, "App::PropertyStringList")
     setattr(obj, UNPRINTABLE_OVERHANGS, [name for name, level in rated if level == limits.UNPRINTABLE])
@@ -768,8 +781,6 @@ def rebuild_fins():
             document.recompute(fins)
 
 
-# Builds of one side kept during a drag; beyond these the oldest goes.
-REUSE_KEPT = 8
 # Answers of whole_elements() kept, with the shape each was worked out for,
 # by part, shape, placement and names asked.
 WHOLE_KEPT = 16
@@ -833,6 +844,40 @@ def stability_of(part_obj, p):
     return analysis.stability(part_obj, p, lambda: supports_of(part_obj, part_obj.Document))
 
 
+# The states FreeCAD gives an object changed since it was last recomputed,
+# and one of a file being read.
+TOUCHED = "Touched"
+RESTORING = "Restore"
+
+
+def changed_since_built(obj):
+    """Whether the fins `obj`, or anything they are built from, changed since
+    they were last recomputed, so that what they show is no longer what they
+    would be built as. FreeCAD marks only the object changed itself: fins
+    whose part moved, or whose part is a Body with a sketch changed, are not
+    touched before the next recompute.
+
+    INPUTS this has to withstand:
+      nothing changed since the recompute   ->  not changed
+      a property of the fins set            ->  changed
+      their part moved or given another
+        shape                               ->  changed
+      what their part is made of changed,
+        as a sketch of a Body               ->  changed
+    """
+    return any(TOUCHED in each.State for each in [obj] + obj.OutListRecursive)
+
+
+def keep_build(obj, keep):
+    """Have the fins `obj` keep their last build (execute()) for the arrows of
+    a task panel: one open, or one a command is about to open on the fins it
+    builds, which then shows that build instead of building again. Without
+    `keep` the build kept goes, as no panel holds it any more."""
+    obj.Proxy.editing = keep
+    if not keep:
+        obj.Proxy.results = {}
+
+
 class FinSnapFeature:
     def __init__(self, obj):
         obj.Proxy = self
@@ -849,33 +894,20 @@ class FinSnapFeature:
         return kept[name]
 
     def side_builder(self, obj, which):
-        """builder(obj, which); while a drag in the task panel lasts, with the
-        same part throughout, and taking a result built before with the same
-        changes by hand, keeping each new one. The panel sets `reuse` to {}
-        then and back to None after. During a drag only the changes by hand
-        of the dragged fin differ from step to step, so the trial build of a
-        step serves its real build, and the other side is built once. The
-        part is kept as well: the faces of a result belong to it."""
+        """builder(obj, which); while a drag in the task panel lasts, the one
+        of its first step, with the same part throughout: the faces of a
+        result belong to it. The panel sets `reuse` to {} then and back to
+        None after. During a drag only the changes by hand of the dragged fin
+        differ from step to step, and geometry.build() keeps what it built: the
+        trial build of a step serves its real build, and the other side is
+        built once."""
         if getattr(self, "reuse", None) is None:
             return builder(obj, which)
-        found, side = self.during_drag(which, lambda: (builder(obj, which), {}))
-        if found is None:
-            return None
-        part, build_fn = found
-
-        def build(left, shifts, heights):
-            key = edits_key(left, shifts, heights)
-            if key not in side:
-                # The latest few are enough; a long drag would hold every step.
-                while len(side) >= REUSE_KEPT:
-                    side.pop(next(iter(side)))
-                side[key] = build_fn(left, shifts, heights)
-            return side[key]
-        return part, build
+        return self.during_drag(which, lambda: builder(obj, which))
 
     def execute(self, obj):
-        # The last build, for the arrows of an open task panel only: a failed
-        # build leaves none, and without a panel none is kept.
+        # The last build, for the arrows of a task panel only (keep_build()): a
+        # failed build leaves none, and without a panel none is kept.
         self.results = {}
         # What each warning is about, a NoteTarget or None, in the same order;
         # kept as the results are, for the task panel to show it.
@@ -892,9 +924,11 @@ class FinSnapFeature:
             set_islands(obj, [])
             obj.Warnings = [translate("FinSnap", NOTE_LAID_FLAT)]
             return
+        # Before the build, so fins that fail to build are not left turned either.
+        held = [translate("FinSnap", NOTE_PLACEMENT_HELD)] if drop_placement(obj) else []
         p = params_of(obj)
         try:
-            notes = []
+            notes = list(held)
             part, build_main = self.side_builder(obj, MAIN)
             result = build_keeping_edits(obj, MAIN, build_main, notes)
             counter = None
@@ -907,6 +941,9 @@ class FinSnapFeature:
                     _, build_counter = counter_side
                     counter = build_keeping_edits(obj, COUNTER, build_counter, notes)
         except Exception:
+            # No warning of an earlier build is left on fins that failed; a placement
+            # held is said all the same: the fins shown are the last built, moved by it.
+            obj.Warnings = held
             # Built nothing, the fins carry no face; the overhang marks still
             # follow the part.
             hidden_property(obj, CARRIED, "App::PropertyStringList")
@@ -1000,7 +1037,7 @@ class FinSnapFeature:
         # its plane follows, or the old one would find the old face again.
         # Not while the file is read: the plane saved with it holds.
         sides = {link: which for which, link in SIDE_LINK.items()}
-        if prop in sides and "Restore" not in obj.State and PLANE_OF[sides[prop]] in obj.PropertiesList:
+        if prop in sides and RESTORING not in obj.State and PLANE_OF[sides[prop]] in obj.PropertiesList:
             keep_plane(obj, sides[prop])
 
     def onDocumentRestored(self, obj):  # noqa: N802 - FreeCAD API
@@ -1280,6 +1317,32 @@ def put_back_laid_flat(document, marks):
         obj.Shape = shape
 
 
+def drop_placement(obj):
+    """Put the placement of the fins `obj` back to none, as they are built
+    where they stand: one left on them would move them off the part. True
+    where an expression holds the placement: it would set it again at once,
+    so it is left, for a warning to say so.
+
+    INPUTS this has to withstand:
+      no placement                          ->  nothing changed, False
+      one left by the shape kept while the
+        part lay flat, or set by hand       ->  dropped, False
+      an expression on the placement or on
+        a part of it, as its base or angle  ->  left as it is, True
+      a placement set again from outside
+        on every recompute, as by a joint   ->  dropped each time: fins are no part
+                                                to move on their own, they follow
+                                                the part they stand at
+    """
+    if obj.Placement.isIdentity():
+        return False
+    # A path names the property first, then what of it: "Placement.Base.z".
+    if any(path.lstrip(".").split(".")[0] == PLACEMENT for path, _ in obj.ExpressionEngine):
+        return True
+    obj.Placement = App.Placement()
+    return False
+
+
 def still_laid_flat(obj):
     """Whether the part of the fins `obj` still lies where it was laid flat. Moved
     since, by Stand on edge or by hand, the fins are rebuilt: the marker is cleared.
@@ -1485,12 +1548,6 @@ def stored_mm(mm):
     """`mm` as a change by hand is stored: a value tried before and the same
     value stored compare equal."""
     return round(mm, d.LENGTH_DECIMALS)
-
-
-def edits_key(left, shifts, heights):
-    """The changes by hand of one side, as edits() gives them, as a key:
-    equal changes, equal key."""
-    return tuple(sorted(left)), tuple(sorted(shifts.items())), tuple(sorted(heights.items()))
 
 
 def _set_mm(obj, name, number, mm):

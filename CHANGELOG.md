@@ -11,6 +11,37 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-14
+
+### Changed
+
+- Bridges are found much faster: the lines across a free region are laid by arithmetic on its outline instead of a cut for every direction tried. Stairs of 40 steps under a slab take 0.8 s instead of 5.0 s, a round table in 500 flat sides, as a part from a mesh has them, 2.5 s instead of 10.4 s. A line touching the tip of a hole is no longer cut in two there, which gave too short a span. A span under a curved outline may differ by hundredths of a millimetre
+- The layers of a part are cut several at a time for its islands and bridges, at most eight, fewer on a part of many faces. With the faces of the part read once, the bridges of stairs of 40 steps take 0.5 s instead of 1.0 s, those of a comb of 40 teeth 5.4 s instead of 11.5 s, its islands 3.8 s instead of 4.4 s
+- The islands and the bridges of a part share the cuts of its layers, and the bridges worked out again, as when fins are changed, take them as they were cut: for stairs of 40 steps under a slab both checks take 0.8 s instead of 1.2 s and the bridges again 0.2 s instead of 0.5 s. The cuts are kept for the part as it stands that was checked last, up to 20000 edges, some forty to eighty megabytes, and dropped when a document is closed
+- The first layers of the islands of a part, shown in the air, are cut out of it together, up to 256 in one cut, instead of in a cut of the whole part for each island: the islands of a comb of 200 teeth take 5.5 s instead of 18.7 s, those of one of 60 teeth 1.3 s instead of 2.3 s, a single island 0.02 s as before
+- The lowest points of a part and the cuts of its layers are sorted by their boxes before the kernel is asked where an island starts, which tells most on round undersides, whose mesh has many lowest points: the islands of a comb of 200 round teeth take 3.7 s instead of 16.1 s, of 60 round teeth 0.9 s instead of 1.9 s, of 200 square teeth 4.5 s instead of 5.4 s
+- The faces a bridge lies under are told by the box around its free region before the kernel measures how far their corners are from it, and the lines of a region under no face that counts are not laid: the bridges of 64 tables side by side take 4.1 s instead of 16.0 s, with every second top carried by fins 3.1 s instead of 10.1 s
+- A free region of a layer is cut by the faces below near it alone, and its lines are checked against the supports near it alone, both picked by their boxes: the bridges of 64 tables side by side take 1.8 s instead of 4.3 s, of 196 tables 6.7 s instead of 36.6 s, stairs of 40 steps and a single table as before
+- The check of the stability clips the triangles crossing a layer all at once instead of one at a time, which tells on round walls, whose triangles reach over their whole height: 36 tables on round legs take 0.33 s instead of 1.2 s, a part that tips over early 0.012 s instead of 0.030 s, a plain box 4.8 ms instead of 5.3 ms
+- The contour a fin under a round side follows is worked out on arrays, all the pieces of a cut and all heights at once, instead of a piece and a height at a time: three fins on a stepped shaft with fillets are built in 12.4 s instead of 18.2 s, one fin there with every recess followed in 1.1 s instead of 2.3 s. What is built is the same
+- The marks on a part, for its overhangs, its islands and its bridges, are drawn once a build, each kind as the property it hangs on is written, instead of all of them again for each of seven properties: on a part with a hole and fillets that is 0.06 s a build instead of 0.4 s
+- A place where a fin would stand in what of the part stands out in front of the face is told from points of the fin, before the fin is built and its tines are measured against the part: Quick fins on the fillet of a round part, where two large faces take no fin at all, takes 18 s instead of 61 s (#243)
+- How wide a planar face of straight edges is at a height, and where it lies under a fin, is worked out from its corners instead of cut by the kernel; a cut through a corner or along an edge, and every other face, is cut as before: Quick fins on the fillet of a round part takes 12 s instead of 20 s (#243)
+- Whether a point of a fin lies in what of the part stands out in front of the face is told on a mesh of it, the points of a place at once, and asked of the kernel only where the mesh cannot tell, near its surface: Quick fins on the fillet of a round part takes 8.5 s instead of 10.7 s, and what it finds is the same (#243)
+- What stands out in front of a face is meshed for that only once the kernel has taken as long for it as a mesh costs to make, and was slow at it: a dome, of which the kernel tells a point in no time, and a solid asked of a few points are no longer meshed for nothing. A fin under a face with a dome of 400 mm radius is built in 2.9 s instead of 3.3 s, with one of 2 m radius in 27 s instead of 29 s (#247)
+- Whether a fin stands clear of the part is measured by its body and each of its tines, a tine against the faces of the part near it alone, instead of the fin whole, its many faces held against every face of the part: Quick fins on the fillet of a round part takes 7.8 s instead of 8.4 s (#243)
+- The end of a tine is measured against the faces of the part near it alone instead of all the faces the fins carry, which on a round part are all it has: Quick fins on the fillet of a round part takes 6.7 s instead of 7.8 s (#243)
+- The panel Quick fins opens shows the fins as the command built them instead of building them again: Quick fins on the fillet of a round part takes about 0.6 s less (#243)
+- The fins built last are kept and handed out again where the same part, face, parameters and changes by hand are asked for, and what tells a part from another is worked out once while the same part is asked, so Quick fins no longer builds anew the fin its search built: on the fillet of a round part it takes about 0.5 s less, and what is built is the same (#243)
+
+### Fixed
+
+- FreeCAD no longer freezes while a fin is dragged: a build tried to see whether the fin can stand lets FreeCAD's progress fire the timers of the panel, and one of them started a second build inside the first, which never returned. The timers, and what the panel does once an arrow is let go, now wait while FinSnap builds fins or checks a part, whoever asked for it, and while FreeCAD shows the progress of any operation
+- After an arrow is let go while its fins are still being built, the view turns with the middle mouse button right away again: FreeCAD drops the release of the mouse while it builds, so the navigation went on taking the left button as down until the next left click. The release is now sent to the view once the loss is noticed (#233)
+- Fins kept while their part is laid flat again are rebuilt at the part once it stands again, instead of turned off it and reaching below the bed; a placement set on the fins by hand no longer moves them off the part either, and one held by an expression is named in a warning
+- Islands and bridges are found when the underside lies right on the middle of a layer or within the tolerance of it, which they were not for every second tenth of a millimetre with 0.2 mm layers; just below a middle the check of the islands failed with "Null shape". Where something starts near the middle of a layer, what carries it is now cut a little under that middle
+- No tine sits on a fillet at the upper end of a round side any more, nor on a chamfer or a cone there that leans over the bed still and is lower than 5 mm: it turns away from the fin and needs no hold, so the tines end below the edge of the side, as before 0.14.0. A part of its own above the side, a collar and a side going on in another face keep their tines. The tines of such a fin lie at other heights than before: a fin height set by hand on it is undone with a note when the fins are built next (#222)
+
 ## [0.17.0] - 2026-11-10
 
 ### Changed
@@ -354,7 +385,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.18.0
 [0.17.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.17.0
 [0.16.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.16.1
 [0.16.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.16.0

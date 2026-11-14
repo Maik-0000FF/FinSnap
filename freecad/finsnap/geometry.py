@@ -97,8 +97,9 @@ INPUTS this has to withstand (build()):
 """
 
 import math
+import time
 from collections import namedtuple
-from dataclasses import dataclass, field, fields, replace
+from dataclasses import astuple, dataclass, field, fields, replace
 from functools import partial
 
 import FreeCAD as App
@@ -108,11 +109,12 @@ from . import contour as contours
 from . import defaults as d
 from . import orient
 from .face_frame import UP, FinError, Frame, HandEditError, beside_lowest, frame_of, in_plane, support_of
-from .i18n import QT_TRANSLATE_NOOP, translate
-from .shapes import TooManyPairs, between_rings, bounds, keep, meshed_of, shape_key
+from .i18n import QT_TRANSLATE_NOOP, language, translate
+from .shapes import (TooManyPairs, between_rings, bounds, boxed_faces, enclosed_of, forget_parts, keep, meshed_of,
+                     part_key, shape_key, working)
 from .tine_rows import (NARROW_AT_EVERY_TINE, TINE_CUTS_IN, TINE_MISSES, extent_at, face_tines, fin_stretch, flank_bend,
-                        restarted_tines, round_move, side_foot_start, side_tine, tine_end, tine_end_fault,
-                        tine_end_points, tine_start, tines_on_face, touching_at, wide_enough)
+                        forget_outline, restarted_tines, round_move, side_foot_start, side_tine, tine_end,
+                        tine_end_fault, tine_end_points, tine_start, tines_on_face, touching_at, wide_enough)
 
 NOTE_TOO_CLOSE = QT_TRANSLATE_NOOP("FinSnap", "a fin comes within %.3f mm of the part, closer than the %.3f mm it "
                                               "keeps from the face")
@@ -147,6 +149,30 @@ CLEAR_KEPT = 1024
 _kept_in_front = {}
 IN_FRONT_KEPT = 32
 IN_FRONT_SKIN = 1e-3
+# The solids of what stands out in front of a face, each with what is known of
+# it (_solids_in(), _Standing), by the shape in_front_of() keeps: of as many
+# as keep() holds by itself, which is more than a search goes through and
+# bounds what the meshes take in memory.
+_kept_solids_in = {}
+# The fins built last (build()), each with what tells that it was built from
+# the part asking (_Built), by what they are built from: the search of Quick
+# fins builds the fin its command then makes, and a drag in the task panel
+# builds the trial of a step and then the step. As many as a search of many
+# ways finds; past these the oldest goes first, and with 0 none is kept.
+_kept_built = {}
+BUILT_KEPT = 16
+# The clock the kernel is timed by as it tells points inside a solid
+# (_Standing._by_kernel()), in seconds; a test puts its own in its place.
+_clock = time.perf_counter
+# Where a fin is looked at for standing in what is in front of the face before it
+# is built (_Places.surely_in_part()): the shares of its blade's height and of its
+# width from the flank outward the points are taken at, by the flank, where a boss
+# on the face stands, and at the top and the outer edge, where a fin under an
+# overhang runs into it; and the share of the least distance allowed the points
+# beside it lie off it, so each is nearer the fin than that distance for sure.
+SURE_HEIGHT_SHARES = (0.99, 0.8, 0.5, 0.2)
+SURE_OUT_SHARES = (0.02, 0.98, 0.5)
+SURE_BESIDE_SHARE = 0.5
 # How a foot and a blade beside the lowest line look for where they keep the gap,
 # see _least_clear(): the first step out and how near it comes (mm).
 FOOT_SEARCH_STEP = 0.5
@@ -256,6 +282,59 @@ class FinResult:
     # By number, how far a fin moved by itself from its planned place (mm, as
     # starts); its start is planned plus its shift by hand plus this.
     moved: dict = field(default_factory=dict)
+
+
+# A face of a part by its number among the faces (from 0), with its area and
+# its centre: what a face found again by number is held against.
+_FaceMark = namedtuple("_FaceMark", "number area centre")
+# Fins kept: the FinResult, the marks of the face asked and the faces carried,
+# and of those marks the ones of the faces carried, in their order.
+_Built = namedtuple("_Built", "result marks carried")
+
+
+def edits_key(left, shifts, heights):
+    """The changes by hand of one side, as feature.edits() gives them, as a
+    key: equal changes, equal key."""
+    return tuple(sorted(left)), tuple(sorted(shifts.items())), tuple(sorted(heights.items()))
+
+
+def _mark_of(faces, face):
+    """The _FaceMark of `face` among `faces`, the faces of a part; None for a
+    face that is none of them."""
+    number = next((i for i, each in enumerate(faces) if each.isSame(face)), None)
+    return None if number is None else _FaceMark(number, face.Area, face.CenterOfMass)
+
+
+def _marked(faces, mark):
+    """Whether the face `mark` numbers among `faces` is the one it was taken of."""
+    if mark.number >= len(faces):
+        return False
+    face = faces[mark.number]
+    return abs(face.Area - mark.area) < d.TOLERANCE and face.CenterOfMass.distanceToPoint(mark.centre) < d.TOLERANCE
+
+
+def _apart(value):
+    """A copy of `value`, a FinResult or what it holds, sharing no list, dict
+    or vector with it, so that what is done to the one never shows in the
+    other. Shapes, frames and numbers are shared: those are not changed in place."""
+    if isinstance(value, FinResult):
+        return replace(value, **{each.name: _apart(getattr(value, each.name)) for each in fields(value)})
+    if isinstance(value, WarningTarget):
+        return WarningTarget(*(_apart(each) for each in value))
+    if isinstance(value, (list, tuple)):
+        return type(value)(_apart(each) for each in value)
+    if isinstance(value, dict):
+        return {key: _apart(each) for key, each in value.items()}
+    if isinstance(value, App.Vector):
+        return App.Vector(value)
+    return value
+
+
+def forget_built():
+    """Forget the fins kept (build()) and the parts keyed, and with them the
+    memory their shapes hold."""
+    _kept_built.clear()
+    forget_parts()
 
 
 def room_for_one_fin(p, frame, thickness):
@@ -895,10 +974,24 @@ def overlap_of(fins, part):
     return 0.0 if found > fins.Volume else found
 
 
-def _not_known_clear(pieces, part):
+def _not_known_clear(pieces, part, made_of=None):
     """Those of `pieces` that are not clear of `part`, each measured once for its
     shape: a fin moved leaves the others as they are, and measuring them all with
     every move takes longer than anything else about it.
+
+    `made_of` names for each piece the shapes it was fused from, its body first,
+    then the tines joined to it. A piece is as far off the part as the nearest of
+    them, and one by one they take a third of the time the piece takes whole,
+    its many faces held against every face of the part. The body is measured
+    against the part itself, which says 0 for a body inside it. A tine is
+    measured against the faces of the part near it by their boxes alone: joined
+    to a body that stands clear, it gets into the part through one of its faces
+    only, and a face further off than TOLERANCE by its box is not that face.
+    The boxes are those that touch the faces and the tine (boxed_faces(),
+    bounds()): BoundBox stops short of a round face once the part carries a
+    mesh, by what the mesh lies off it, and a tine cutting in just there would
+    be taken for clear. A face that has no such box, a fillet round a round
+    edge or a freeform face, is held against every tine.
 
     INPUTS this has to withstand:
       pieces clear of the part              ->  none
@@ -907,23 +1000,51 @@ def _not_known_clear(pieces, part):
       a piece mirrored onto the corners of
         one known clear                     ->  measured: shape_key() tells them apart
       the same shape, another part          ->  measured
+      no `made_of`                          ->  each piece measured whole
+      a body clear, every tine clear        ->  clear
+      a body clear, a tine touching the
+        part or reaching into it            ->  that piece
+      a body touching or in the part        ->  that piece, its tines not measured
+      a tine with no face of the part near  ->  clear, not asked of the kernel
+      a tine cutting into a round face of a
+        part that carries a mesh, where its
+        BoundBox stops short of the face    ->  that piece
+      a tine touching a face without a box,
+        as on a torus                       ->  that piece
     """
     # Its hash: a part of many corners would be held in full by every entry.
-    part_key = hash(shape_key(part))
+    part_hash = hash(part_key(part))
+    # The faces of the part with the boxes that touch them, made as the first tine is held against them.
+    boxed = []
 
-    def clear(piece):
-        return keep(_kept_clear, (part_key, shape_key(piece)),
-                    lambda: piece.distToShape(part)[0] > d.TOLERANCE, CLEAR_KEPT)
+    def faces_near(tine):
+        if not boxed:
+            boxed.append(boxed_faces(part))
+        reach = bounds(tine)
+        reach.enlarge(d.TOLERANCE)
+        return [face for face, box in boxed[0] if box is None or reach.intersect(box)]
 
-    return [piece for piece in pieces if not clear(piece)]
+    def tine_clear(tine):
+        near = faces_near(tine)
+        return not near or tine.distToShape(Part.makeCompound(near))[0] > d.TOLERANCE
+
+    def measured(shapes):
+        return shapes[0].distToShape(part)[0] > d.TOLERANCE and all(tine_clear(tine) for tine in shapes[1:])
+
+    def clear(piece, shapes):
+        return keep(_kept_clear, (part_hash, shape_key(piece)), lambda: measured(shapes), CLEAR_KEPT)
+
+    made_of = [[piece] for piece in pieces] if made_of is None else made_of
+    return [piece for piece, shapes in zip(pieces, made_of) if not clear(piece, shapes)]
 
 
-def check(p, part, pieces, bodies, slack=0.0):
+def check(p, part, pieces, bodies, slack=0.0, made_of=None):
     """Fins, of `pieces`, clear of the part, no closer than their distance from the
     face, give or take `slack`: along a contour, CONTOUR_TOLERANCE. That every tine
-    reaches the face is settled when the tines are chosen, by contact_share()."""
+    reaches the face is settled when the tines are chosen, by contact_share().
+    `made_of` names for each piece what it was fused from (_not_known_clear())."""
     if p.connection == d.CONNECTION_SEPARATE:
-        unsure = _not_known_clear(pieces, part)
+        unsure = _not_known_clear(pieces, part, made_of)
         overlap = overlap_of(Part.makeCompound(unsure), part) if unsure else 0.0
         if overlap > d.TOLERANCE:
             raise FinError(translate("FinSnap", "the fins overlap the part by %.4f mm³") % overlap)
@@ -934,6 +1055,7 @@ def check(p, part, pieces, bodies, slack=0.0):
             raise FinError(translate("FinSnap", NOTE_TOO_CLOSE) % (distance, p.gap))
 
 
+@working()
 def build(part, face, p, tine_count=None, left_out=(), shifts=None, heights=None):
     """Fins under `face` of `part`, reaching over a groove to the pieces beyond
     it. tine_count overrides p.tine_count (counter fin). Fins are named by their
@@ -946,9 +1068,54 @@ def build(part, face, p, tine_count=None, left_out=(), shifts=None, heights=None
     selected face alone, as they did before pieces were carried along. A
     change by hand that does not fit over the groove is refused instead: a
     drag never changes which faces the fins carry.
+
+    The fins built last are kept and handed out again where the same is asked,
+    as a copy of its own (_apart()) carrying the faces of the part asking.
+
+    INPUTS the keeping has to withstand:
+      the same part, face, parameters and
+        changes by hand as built before     ->  the fins kept, not built again
+      the same on another shape of the part
+        as it stands, as the search of
+        Quick fins and its command hold     ->  the fins kept, carrying the faces
+                                                of the shape asking
+      any of them another                   ->  built
+      a part with the key of one built
+        before whose face asked, or one
+        carried, is another by area or
+        centre                              ->  built, and kept in its place
+      `face` no face of `part`, or the fins
+        carry a face that is none           ->  built, not kept
+      a build refused                       ->  raised, nothing kept: asked again,
+                                                it is built and refused again
+      FreeCAD set to another language       ->  built: the warnings are said in it
+      the fins handed out changed after     ->  those kept stay as built
+      more kept than BUILT_KEPT             ->  the oldest goes, asked again it is built
+      BUILT_KEPT 0                          ->  built every time
     """
     p.validate()
     shifts, heights = shifts or {}, heights or {}
+    faces = part.Faces
+    asked = _mark_of(faces, face)
+    key = None if asked is None else (part_key(part), asked.number, astuple(p), tine_count,
+                                      edits_key(left_out, shifts, heights), language())
+    keeping = key is not None and BUILT_KEPT > 0
+    kept = _kept_built.get(key) if keeping else None
+    if kept is not None and all(_marked(faces, mark) for mark in kept.marks):
+        return replace(_apart(kept.result), carried=[faces[mark.number] for mark in kept.carried])
+    try:
+        result = _build_reaching(part, face, p, tine_count, left_out, shifts, heights)
+    finally:
+        forget_outline()
+    carried = [_mark_of(faces, each) for each in result.carried] if keeping else [None]
+    if None not in carried:
+        _kept_built.pop(key, None)
+        keep(_kept_built, key, lambda: _Built(_apart(result), [asked] + carried, carried), BUILT_KEPT)
+    return result
+
+
+def _build_reaching(part, face, p, tine_count, left_out, shifts, heights):
+    """build(), with the fins reaching over a groove where they can."""
     support = support_of(part, face)
     if support is face:
         return _build(part, face, face, p, tine_count, left_out, shifts, heights)
@@ -1041,6 +1208,87 @@ def _within(p, room):
     return replace(p, fin_height=room) if p.fin_height > room else p
 
 
+def _inside(solid, point):
+    """Whether `point` lies inside `solid`, not on its surface; False where the
+    kernel cannot tell."""
+    try:
+        return solid.isInside(point, d.TOLERANCE, False)
+    except Part.OCCError:
+        return False
+
+
+class _Standing:
+    """A solid of what stands out in front of a face, and how it is told which
+    points lie inside it. At first the kernel is asked, and timed. Once it has
+    taken ENCLOSED_WORTH for this solid altogether, about what a mesh costs, it
+    is settled for good: where the kernel took ENCLOSED_KERNEL_SLOW a point or
+    longer by then, the solid gets a mesh (enclosed_of()) that tells most
+    points from then on; else, or where it can have none, it stays with the
+    kernel. Settled once, as an average looked at again with every point could
+    tip, and a mesh refused would be made again.
+
+    Only the calls of the kernel are timed, not what picks the points. What
+    is said of a point is what the kernel says, whichever way it is told.
+
+    INPUTS this has to withstand (any_inside()):
+      no points, or none in the box         ->  False, nothing asked, no time counted
+      asking still, the kernel quick or slow,
+        less than ENCLOSED_WORTH taken      ->  the kernel asked of each point, timed
+      ENCLOSED_WORTH reached, the kernel as
+        slow as ENCLOSED_KERNEL_SLOW a point ->  a mesh made, used from the next points on
+      ENCLOSED_WORTH reached, the kernel
+        quicker than that, as on a dome     ->  no mesh, now or later, however slow
+                                                the kernel turns after
+      a mesh due, the solid too large for
+        one                                 ->  tried that once, no mesh, not tried again
+      with a mesh: a point it tells of      ->  its answer, the kernel not asked
+      with a mesh: a point it does not tell
+        of                                  ->  the kernel asked, no longer timed
+      the kernel cannot tell of a point     ->  False for it (_inside()), its time counted
+      a point found inside                  ->  True, no further point asked
+    """
+
+    def __init__(self, solid):
+        self.solid, self.box = solid, solid.BoundBox
+        self.mesh, self.settled = None, False
+        # What the kernel took for this solid while it was asking still (s), and of how many points.
+        self.spent, self.asked = 0.0, 0
+
+    def any_inside(self, points):
+        """Whether one of `points` lies inside the solid, not on its surface."""
+        near = [point for point in points if self.box.isInside(point)]
+        told = [None] * len(near) if self.mesh is None else self.mesh.told(near)
+        return any(found for found in told) or any(
+            self._by_kernel(point) for point, found in zip(near, told) if found is None)
+
+    def _by_kernel(self, point):
+        """Whether `point` lies inside, by the kernel; timed until it is settled how the solid is told."""
+        if self.settled:
+            return _inside(self.solid, point)
+        start = _clock()
+        found = _inside(self.solid, point)
+        self.spent += _clock() - start
+        self.asked += 1
+        if self.spent >= d.ENCLOSED_WORTH:
+            self.settled = True
+            if self.spent >= d.ENCLOSED_KERNEL_SLOW * self.asked:
+                self.mesh = enclosed_of(self.solid)
+        return found
+
+
+def _solids_in(front):
+    """The solids of `front`, each as a _Standing. Made once for a shape and
+    kept with it, so that no other takes its place in memory."""
+    return keep(_kept_solids_in, id(front), lambda: (front, [_Standing(solid) for solid in front.Solids]))[1]
+
+
+def _any_inside(front, points):
+    """Whether one of `points` lies inside a solid of `front`, not on its
+    surface, each solid asked by itself (_Standing.any_inside()), none once a
+    point is found inside one."""
+    return any(standing.any_inside(points) for standing in _solids_in(front))
+
+
 def in_front_of(part, frame):
     """What of `part` stands out in front of the plane of the planar face of
     `frame`, IN_FRONT_SKIN off it, as a boss does; None for nothing. Cut once
@@ -1062,7 +1310,7 @@ def in_front_of(part, frame):
         middle = frame.along.dot(box.Center)
         front = part.common(frame.section(middle - reach, ring, 2 * reach))
         return front if front.Volume > d.TOLERANCE else None
-    key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.n_out, frame.n_z, frame.c)
+    key = (part_key(part), tuple(frame.out), tuple(frame.along), frame.n_out, frame.n_z, frame.c)
     return keep(_kept_in_front, key, cut, IN_FRONT_KEPT)
 
 
@@ -1088,7 +1336,17 @@ class _Places:
         self.p, self.part, self.support, self.stretch, self.whole_face = p, part, support, stretch, whole_face
         self.thickness, self.half_foot, self.tine_z, self.face_narrow = thickness, half_foot, tine_z, face_narrow
         self.restart, self.count, self.slices = restart, count, slices
-        self._tines, self._contact, self._clear = {}, {}, {}
+        self._tines, self._contact, self._clear, self._surely_in = {}, {}, {}, {}
+        # What front() found, once it was asked.
+        self._front = []
+
+    def front(self):
+        """What of the part stands out in front of the face (in_front_of()), None
+        for nothing, asked once for all the places: asking again works out the
+        key of the part each time, which takes as long as telling a place."""
+        if not self._front:
+            self._front.append(in_front_of(self.part, self.whole_face))
+        return self._front[0]
 
     def reach(self, t, own):
         """How high the fin starting at t reaches above the bed: a height of
@@ -1126,10 +1384,76 @@ class _Places:
         half_foot = self.half_foot if half_foot is None else half_foot
         key = (t, height, half_foot)
         if key not in self._clear:
-            front = in_front_of(self.part, self.whole_face)
-            self._clear[key] = front is None or height <= d.TOLERANCE or self._body(t, height, half_foot).distToShape(
+            front = self.front()
+            self._clear[key] = front is None or height <= d.TOLERANCE or not self.surely_in_part(
+                t, own, half_foot) and self._body(t, height, half_foot).distToShape(
                 front)[0] >= self.p.gap - d.TOLERANCE
         return self._clear[key]
+
+    def surely_in_part(self, t, own, half_foot=None):
+        """Whether the fin starting at t stands in what of the part stands out in
+        front of the face, or nearer it than clear_at() allows, told without
+        building it: a point of the fin, or one beside it nearer than the least
+        distance allowed, lies inside. Only yes is an answer: no leaves it to
+        clear_at(), which measures the fin built. Asked before holds() where a
+        place is searched, as that cuts through the part for every tine.
+
+        INPUTS this has to withstand:
+          nothing in front of the face          ->  False, no point asked
+          a point of the fin inside what stands
+            out                                 ->  True: no fin built, no tine measured
+          the part beside the fin, a point
+            beside it inside                    ->  True: nearer than the gap
+          the part beside the fin, further off
+            than those points                   ->  False: measured as before
+          a point on the surface of what stands
+            out                                 ->  False: not sure
+          a fin without a height                ->  False
+          what stands out in several solids     ->  each asked by itself
+          a point the mesh of what stands out
+            tells of, where it has one
+            (_Standing)                         ->  not asked of the kernel
+          the kernel cannot tell where a point
+            lies                                ->  False for that solid
+          a fin with a foot, without one, with a
+            height of its own                   ->  every point inside the fin as built,
+                                                    or the given share of the gap off it
+          a frame along a contour or beside the
+            lowest line of a round side         ->  False, by decision: its blade has
+                                                    another shape, and it is measured
+        """
+        height = self.reach(t, own)
+        half_foot = self.half_foot if half_foot is None else half_foot
+        key = (t, height, half_foot)
+        if key not in self._surely_in:
+            front = self.front()
+            self._surely_in[key] = front is not None and _any_inside(front, self.sure_points(t, height, half_foot))
+        return self._surely_in[key]
+
+    def sure_points(self, t, height, half_foot):
+        """Points the fin starting at t, `height` high, holds or comes nearer than
+        the least distance clear_at() allows: in its blade at SURE_HEIGHT_SHARES
+        of its height above the foot and SURE_OUT_SHARES of its width there, and
+        in the middle of its foot, each in the middle of its thickness and
+        beside it on either side."""
+        p, frame = self.p, self.stretch
+        beside = (p.gap - d.TOLERANCE) * SURE_BESIDE_SHARE
+        if height <= d.TOLERANCE or beside <= 0 or frame.contour is not None or frame.flank_curve:
+            return []
+        middle = t + self.thickness / 2
+        _, low, s_from = _blade_ends(p, frame, t, height, self.thickness)
+        top, s_out = frame.bed_z + height, fin_out(p, frame, height)
+        # (s, z, how far to either side of the middle the fin reaches there)
+        held = []
+        if top - low > d.TOLERANCE:
+            for z in (low + (top - low) * share for share in SURE_HEIGHT_SHARES):
+                flank = flank_at(p, frame, z)
+                held += [(flank + (s_out - flank) * share, z, self.thickness / 2) for share in SURE_OUT_SHARES]
+        if s_from is not None and p.foot_height > d.TOLERANCE:
+            s_to = foot_span(p, frame, height)[1]
+            held.append(((s_from + s_to) / 2, frame.bed_z + p.foot_height / 2, max(half_foot, self.thickness / 2)))
+        return [frame.point(at, s, z) for s, z, half in held
+                for at in (middle, middle - half - beside, middle + half + beside)]
 
     def _body(self, t, height, half_foot):
         """The fin starting at t and `height` high, its foot `half_foot` wide to
@@ -1437,7 +1761,8 @@ def _plan(part, frame, support, p, all_z, face_height, reach, count, restart, le
                 raise refused(translate("FinSnap", NOTE_FIN_IN_PART) % number, HandEditError)
 
             def clear_and_resting(t, own=own):
-                return places.holds(t, own, p.tine_height) and places.clear_at(t, own)
+                return (not places.surely_in_part(t, own) and places.holds(t, own, p.tine_height)
+                        and places.clear_at(t, own))
             moved_to = nearest_place(whole_face, p.end_inset, clear_and_resting, t0, thickness, others)
             if moved_to is None:
                 # Named where it was planned, as the user knows it.
@@ -1638,6 +1963,8 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
     bodies = []
     all_tines = []
     pieces = []
+    # By piece, the body and the tines it is fused from.
+    made_of = []
     # Tines over the gap between two faces in one plane are named as over a recess.
     findings = _Found(gap_heights=set(plan.gap_z), side_missing=side_missing)
     edges = []
@@ -1647,7 +1974,7 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         faults, piece = None, None
         if fin.number in frames:
             planned_height, planned_tines = fin.height, sum(fin.on_face)
-            key = (shape_key(part), _shaping(p), fin.number, fin.t0, fin.height, tuple(fin.candidate_z),
+            key = (part_key(part), _shaping(p), fin.number, fin.t0, fin.height, tuple(fin.candidate_z),
                    tuple(fin.on_face), thickness, plan.half_foot, own_frame.tine_edges[0][0])
             side_found = keep(_kept_side_fins, key,
                               partial(_side_fin, p, part, surface, own_frame, fin, thickness, plan.half_foot),
@@ -1690,13 +2017,14 @@ def _build(part, face, support, p, tine_count, left_out, shifts, heights):
         # sits on the top of the foot, where foot, flank and tine share an edge,
         # and fusing them pairwise fails on that edge.
         pieces.append(body.multiFuse(kept).removeSplitter() if piece is None else piece)
+        made_of.append([body] + kept)
 
     if not built_fins:
         raise FinError(translate("FinSnap", NOTE_NO_SIDE_FIN))
     fins = Part.makeCompound(pieces)
     # Fins beside the lowest line were measured as they were built.
     measured = [body for fin, body in zip(built_fins, bodies) if fin.number not in frames]
-    check(p, part, pieces, measured, 0.0 if frame.contour is None else d.CONTOUR_TOLERANCE)
+    check(p, part, pieces, measured, 0.0 if frame.contour is None else d.CONTOUR_TOLERANCE, made_of)
     warnings, targets = _warnings(p, frame, plan, findings)
 
     numbers = [fin.number for fin in built_fins]
