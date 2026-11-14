@@ -5138,7 +5138,7 @@ def check_built_kept():
     number = next(i for i, each in enumerate(cube.Faces) if each.isSame(lower_left_face(cube)))
     face, p = cube.Faces[number], FinParams()
     made = []
-    real_made, real_key, real_translate = geometry._build_reaching, geometry.shape_key, geometry.translate
+    real_made, real_key, real_language = geometry._build_reaching, geometry.shape_key, geometry.language
     foreign = Part.makeBox(1, 1, 1).Faces[0]
     # What a build made is given, for a test: with a face carried that is none of the part.
     carrying = []
@@ -5213,12 +5213,13 @@ def check_built_kept():
                 refused.append(len(made) > before)
         expect(refused == [True, True], "a build refused is built and refused again: %s" % refused)
         asked(cube, face)
-        geometry.translate = lambda context, text: real_translate(context, text) + " "
+        geometry.language = lambda: "another"
         try:
             _, built = asked(cube, face)
         finally:
-            geometry.translate = real_translate
-        expect(built, "said in another language, the fins are built anew")
+            geometry.language = real_language
+        expect(built and real_language() is None,
+               "said in another language, the fins are built anew; without the window FreeCAD tells none")
         turned = cube.copy()
         key = geometry._part_key(turned)
         expect(geometry._part_key(turned) is key, "the key of a shape asked again is the one kept")

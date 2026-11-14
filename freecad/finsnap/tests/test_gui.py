@@ -46,6 +46,7 @@ FIN_SHIFT = 1.5  # how far a handle moves a fin along the face, in mm
 TOO_MANY_FINS = 50  # more fins than the face takes, so the build fails
 PART_MOVE = 5.0  # how far a part is moved to change it under its fins, in mm
 PAD_SIZE = 20.0  # the edge of a cube padded from a sketch, in mm
+OTHER_LANGUAGES = ("English", "German")  # two FreeCAD can switch between, one of them not the one shown
 AXIS_Z_RGB = (0.2, 0.2, 0.8)  # FreeCAD's standard colour of the z axis
 COLOR_TOLERANCE = 0.01
 BUILD_STEP = 0.5  # how far a fin moves at each step of a counted drag, in mm
@@ -738,6 +739,21 @@ def built_once_for_panel(doc):
         doc.recompute()
     finally:
         feature.FinSnapFeature.execute = real_execute
+
+
+def language_told():
+    """i18n.language() tells the language FreeCAD shows its texts in, and follows a switch."""
+    from freecad.finsnap import i18n
+    shown = Gui.getLocale()
+    other = next(name for name in OTHER_LANGUAGES if name != shown)
+    told = i18n.language()
+    Gui.setLocale(other)
+    try:
+        switched = i18n.language()
+    finally:
+        Gui.setLocale(shown)
+    expect(told == shown and switched == other and i18n.language() == shown,
+           "the language FreeCAD shows is told, also after a switch: %s, %s" % (told, switched))
 
 
 def checked_on_switch(doc):
@@ -2624,6 +2640,7 @@ def main():
     stands_reopened(doc, quick, facing)
     quick_on_pad(doc)
     built_once_for_panel(doc)
+    language_told()
     checked_on_switch(doc)
     island_marks(doc)
     limits_page(doc)

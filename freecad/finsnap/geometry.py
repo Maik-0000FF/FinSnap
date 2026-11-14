@@ -109,7 +109,7 @@ from . import contour as contours
 from . import defaults as d
 from . import orient
 from .face_frame import UP, FinError, Frame, HandEditError, beside_lowest, frame_of, in_plane, support_of
-from .i18n import QT_TRANSLATE_NOOP, translate
+from .i18n import QT_TRANSLATE_NOOP, language, translate
 from .shapes import (TooManyPairs, between_rings, bounds, boxed_faces, enclosed_of, keep, meshed_of, shape_key,
                      working)
 from .tine_rows import (NARROW_AT_EVERY_TINE, TINE_CUTS_IN, TINE_MISSES, extent_at, face_tines, fin_stretch, flank_bend,
@@ -1122,8 +1122,7 @@ def build(part, face, p, tine_count=None, left_out=(), shifts=None, heights=None
     faces = part.Faces
     asked = _mark_of(faces, face)
     key = None if asked is None else (_part_key(part), asked.number, astuple(p), tine_count,
-                                      edits_key(left_out, shifts, heights),
-                                      translate("FinSnap", NOTE_NO_SIDE_FIN))
+                                      edits_key(left_out, shifts, heights), language())
     keeping = key is not None and BUILT_KEPT > 0
     kept = _kept_built.get(key) if keeping else None
     if kept is not None and all(_marked(faces, mark) for mark in kept.marks):

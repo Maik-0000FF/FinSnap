@@ -30,7 +30,7 @@ All notable changes to FinSnap are listed here. The format follows
 - Whether a fin stands clear of the part is measured by its body and each of its tines, a tine against the faces of the part near it alone, instead of the fin whole, its many faces held against every face of the part: Quick fins on the fillet of a round part takes 7.8 s instead of 8.4 s (#243)
 - The end of a tine is measured against the faces of the part near it alone instead of all the faces the fins carry, which on a round part are all it has: Quick fins on the fillet of a round part takes 6.7 s instead of 7.8 s (#243)
 - The panel Quick fins opens shows the fins as the command built them instead of building them again: Quick fins on the fillet of a round part takes about 0.6 s less (#243)
-- The fins built last are kept and handed out again where the same part, face, parameters and changes by hand are asked for, so Quick fins no longer builds anew the fin its search built: on the fillet of a round part it takes about 0.6 s less, and what is built is the same (#243)
+- The fins built last are kept and handed out again where the same part, face, parameters and changes by hand are asked for, so Quick fins no longer builds anew the fin its search built: on the fillet of a round part it takes 0.3 to 0.6 s less, and what is built is the same (#243)
 
 ### Fixed
 
