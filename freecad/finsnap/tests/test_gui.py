@@ -46,6 +46,7 @@ FIN_SHIFT = 1.5  # how far a handle moves a fin along the face, in mm
 TOO_MANY_FINS = 50  # more fins than the face takes, so the build fails
 PART_MOVE = 5.0  # how far a part is moved to change it under its fins, in mm
 PAD_SIZE = 20.0  # the edge of a cube padded from a sketch, in mm
+OTHER_LANGUAGES = ("English", "German")  # two FreeCAD can switch between
 AXIS_Z_RGB = (0.2, 0.2, 0.8)  # FreeCAD's standard colour of the z axis
 COLOR_TOLERANCE = 0.01
 BUILD_STEP = 0.5  # how far a fin moves at each step of a counted drag, in mm
@@ -740,6 +741,21 @@ def built_once_for_panel(doc):
         feature.FinSnapFeature.execute = real_execute
 
 
+def language_told():
+    """i18n.language() tells the language FreeCAD shows its texts in, and follows a switch."""
+    from freecad.finsnap import i18n
+    shown = Gui.getLocale()
+    told = []
+    try:
+        for name in OTHER_LANGUAGES:
+            Gui.setLocale(name)
+            told.append(i18n.language())
+    finally:
+        Gui.setLocale(shown)  # where no language is set, the name told is none FreeCAD can be switched to
+    expect(tuple(told) == OTHER_LANGUAGES,
+           "the language FreeCAD shows is told, also after a switch: %s" % ", ".join(map(str, told)))
+
+
 def checked_on_switch(doc):
     """Quick fins with the checks while editing off lists its ways unchecked;
     switched on, they are rated in place, the row standing still marked, and
@@ -1350,6 +1366,8 @@ def timers_wait_for_builds(panel):
         return real_build(*args, **kwargs)
 
     value = panel.next_values(handles.UP, panel.built_value(handles.UP))
+    # The build tried is to be made: one kept from before would start none.
+    geometry.forget_built()
     geometry._build = firing
     try:
         timer.stop()
@@ -2622,6 +2640,7 @@ def main():
     stands_reopened(doc, quick, facing)
     quick_on_pad(doc)
     built_once_for_panel(doc)
+    language_told()
     checked_on_switch(doc)
     island_marks(doc)
     limits_page(doc)
@@ -3109,22 +3128,27 @@ def main():
     # build, and nothing is built twice. Afterwards every build is new, and
     # the arrow ends are tried once for each place of the fin.
     from freecad.finsnap import face_frame, geometry
-    real_build = geometry.build
-    builds = []
+    real_build, real_made = geometry.build, geometry._build_reaching
+    # The builds asked for, and those made: one asked again is kept, not made.
+    builds, made = [], []
 
     def counting(*args, **kwargs):
         builds.append(args)
         return real_build(*args, **kwargs)
 
-    geometry.build = counting
+    def making(*args):
+        made.append(args)
+        return real_made(*args)
+
+    geometry.build, geometry._build_reaching = counting, making
     try:
         moving.handle_started(handles.ALONG)
         steps = []
         for step in (1, 2):
             moving.handle_moved(handles.ALONG, step * BUILD_STEP)
-            del builds[:]
+            del made[:]
             moving.drag_step()
-            steps.append(len(builds))
+            steps.append(len(made))
         moving.finish_drag(handles.ALONG, 2 * BUILD_STEP)
         reuse_after = lined.Proxy.reuse
         del builds[:]
@@ -3142,7 +3166,7 @@ def main():
         tine_count.setValue(tine_count.value() - 1)
         moving.preview()
     finally:
-        geometry.build = real_build
+        geometry.build, geometry._build_reaching = real_build, real_made
     expect(steps == [1, 1], "each step of a drag builds once, not as trial and again for real: %s" % steps)
     expect(reuse_after is None, "after the drag, every build is made afresh")
     expect(first_ends == len(handles.KINDS) * 2 and same_ends == 0 and changed_ends > 0,

@@ -7,6 +7,7 @@ Run in FreeCAD, with this checkout installed as an addon (see CONTRIBUTING.md):
     freecad --console freecad/finsnap/tests/test_cube.py
 """
 
+import dataclasses
 import math
 import os
 import re
@@ -158,6 +159,9 @@ GROOVE_WIDTH = 2.0
 GROOVE_FROM = 8.0
 WIDE_BOX = 60.0          # long enough for a U profile with legs of a third each
 SHIFT = 1.5           # how far a fin is moved along the face by hand, in mm
+TOO_THICK = 30.0      # a fin too thick for one on each corner of the cube, in mm
+# As many fins built as FinSnap keeps; these tests keep none but where the keeping is tested.
+BUILT_KEPT_IN_USE = geometry.BUILT_KEPT
 MERGED_CLEARANCE = 0.3  # a tine clearance that merged fins must not take
 # A nozzle and bead so wide that no gap up to GAP_MAX makes the tines long
 # enough, and a layer it prints, in mm.
@@ -545,7 +549,7 @@ def check_corners(cube, face):
     check_corner_tines(sharp, leaning, "sharp box")
 
     try:
-        geometry.build(cube, face, FinParams(placement=d.PLACEMENT_CORNERS, fin_thickness=30.0))
+        geometry.build(cube, face, FinParams(placement=d.PLACEMENT_CORNERS, fin_thickness=TOO_THICK))
     except face_frame.FinError as error:
         expect("too short" in str(error) or "narrower" in str(error),
                "corner fins that would collide are refused: %s" % error)
@@ -5127,7 +5131,125 @@ def check_narrow_reason():
                    "restart %s, a face tapering to %g mm at %g mm: %s" % (restart, 2 * top_half, height, named))
 
 
+def check_built_kept():
+    """geometry.build() keeps the fins it built and hands them out again where
+    the same is asked, measured against the table of its inputs."""
+    cube = tilted_cube()
+    number = next(i for i, each in enumerate(cube.Faces) if each.isSame(lower_left_face(cube)))
+    face, p = cube.Faces[number], FinParams()
+    made = []
+    real_made, real_key, real_language = geometry._build_reaching, geometry.part_key, geometry.language
+    foreign = Part.makeBox(1, 1, 1).Faces[0]
+    # What a build made is given, for a test: with a face carried that is none of the part.
+    carrying = []
+
+    def making(*args):
+        made.append(args)
+        result = real_made(*args)
+        return dataclasses.replace(result, carried=list(carrying)) if carrying else result
+
+    def asked(part, face, params=p, **edits):
+        """What build() gives and whether it was made for it."""
+        before = len(made)
+        return geometry.build(part, face, params, **edits), len(made) > before
+
+    geometry._build_reaching = making
+    geometry.BUILT_KEPT = BUILT_KEPT_IN_USE
+    geometry.forget_built()
+    try:
+        first, built = asked(cube, face)
+        again, built_again = asked(cube, face)
+        expect(built and not built_again and again is not first and again.fins.Volume == first.fins.Volume
+               and again.numbers == first.numbers and again.warnings == first.warnings
+               and len(again.carried) == 1 and again.carried[0].isSame(face),
+               "the same asked again gives the fins kept, a result of its own, and builds nothing")
+        again.warnings.append("changed")
+        again.starts.clear()
+        again.along.x += 1.0
+        third, built = asked(cube, face)
+        expect(not built and third.warnings == first.warnings and third.starts == first.starts
+               and third.along == first.along, "the fins handed out changed, those kept stay as built")
+        copy = cube.copy()
+        other, built = asked(copy, copy.Faces[number])
+        expect(not built and other.carried[0].isSame(copy.Faces[number]) and not other.carried[0].isSame(face),
+               "another shape of the part as it stands gets the fins kept, carrying its own faces")
+        for name, params, edits in (("another parameter", dataclasses.replace(p, tine_clearance=0.0), {}),
+                                    ("a fin moved by hand", p, {"shifts": {first.numbers[0]: SHIFT}})):
+            _, built = asked(cube, face, params, **edits)
+            _, built_again = asked(cube, face, params, **edits)
+            expect(built and not built_again, "%s is built, and kept as well" % name)
+        elsewhere = moved(cube, App.Placement(V(SHIFT, 0, 0), App.Rotation()))
+        _, built = asked(elsewhere, elsewhere.Faces[number])
+        expect(built, "the part standing elsewhere is built")
+        _, built = asked(cube, cube.copy().Faces[number])
+        _, built_again = asked(cube, cube.copy().Faces[number])
+        expect(built and built_again, "a face that is none of the part is built every time")
+        key_of_cube = shapes.part_key(cube)
+        geometry.part_key = lambda shape: key_of_cube[:-1] + ("as if the same",)
+        geometry.forget_built()
+        try:
+            _, built = asked(cube, face)
+            alike, built_alike = asked(elsewhere, elsewhere.Faces[number])
+            _, built_after = asked(elsewhere, elsewhere.Faces[number])
+        finally:
+            geometry.part_key = real_key
+        expect(built and built_alike and not built_after and alike.carried[0].isSame(elsewhere.Faces[number]),
+               "a part with the key of one built before, its face another by its centre, is built and kept "
+               "in its place")
+        geometry.forget_built()
+        carrying.append(foreign)
+        try:
+            _, built = asked(cube, face)
+            _, built_again = asked(cube, face)
+        finally:
+            del carrying[:]
+        expect(built and built_again, "fins carrying a face that is none of the part are not kept")
+        refused = []
+        for _ in range(2):
+            before = len(made)
+            try:
+                geometry.build(cube, face, FinParams(placement=d.PLACEMENT_CORNERS, fin_thickness=TOO_THICK))
+            except face_frame.FinError:
+                refused.append(len(made) > before)
+        expect(refused == [True, True], "a build refused is built and refused again: %s" % refused)
+        asked(cube, face)
+        geometry.language = lambda: "another"
+        try:
+            _, built = asked(cube, face)
+        finally:
+            geometry.language = real_language
+        expect(built and real_language() is None,
+               "said in another language, the fins are built anew; without the window FreeCAD tells none")
+        turned = cube.copy()
+        key = shapes.part_key(turned)
+        expect(shapes.part_key(turned) is key, "the key of a shape asked again is the one kept")
+        turned.Placement = App.Placement(V(SHIFT, 0, 0), App.Rotation()).multiply(turned.Placement)
+        expect(shapes.part_key(turned) != key, "a shape moved since is keyed anew")
+        geometry.forget_built()
+        geometry.BUILT_KEPT = 1
+        asked(cube, face)
+        asked(cube, face, dataclasses.replace(p, tine_clearance=0.0))
+        _, built = asked(cube, face)
+        expect(built, "past as many as are kept the oldest goes, and is built again")
+        geometry.BUILT_KEPT = BUILT_KEPT_IN_USE
+        asked(cube, face)
+        geometry.forget_built()
+        _, built = asked(cube, face)
+        expect(built, "fins forgotten are built again")
+        geometry.BUILT_KEPT = 0
+        _, built = asked(cube, face)
+        expect(built, "with none kept every build is made, also one kept before")
+    finally:
+        geometry._build_reaching = real_made
+        geometry.BUILT_KEPT = 0
+        geometry.forget_built()
+
+
 def main():
+    # What is built is tested here: every build is made, none taken from the
+    # fins kept, or a test that swaps a part of the build would get the fins
+    # built before it. check_built_kept() tests the keeping itself.
+    geometry.BUILT_KEPT = 0
     cube = tilted_cube()
     face = lower_left_face(cube)
 
@@ -5275,6 +5397,7 @@ def main():
     check_surely_in_part()
     check_enclosed()
     check_narrow_reason()
+    check_built_kept()
     print("all checks passed", file=sys.__stdout__)
 
 

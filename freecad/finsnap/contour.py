@@ -59,7 +59,7 @@ import Part
 
 from . import defaults as d
 from .i18n import translate
-from .shapes import bounds, clear_meshes, keep, shape_key
+from .shapes import bounds, clear_meshes, keep, part_key
 
 # Places to which the ends of the pieces of a cut are compared, to join them.
 JOIN_DECIMALS = 4
@@ -922,7 +922,7 @@ def of(part, frame, p, width):
     """The contour of `part` under the round side of `frame`, through the
     middle of the side, where its one fin stands, at most `width` thick;
     kept for the same part, plane and parameters, worked out once."""
-    key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.along_min, frame.along_max, frame.bed_z,
+    key = (part_key(part), tuple(frame.out), tuple(frame.along), frame.along_min, frame.along_max, frame.bed_z,
            frame.face_bottom_z, frame.radius, width, p.layer_height, p.gap, p.clearance, p.contour_bridge,
            p.contour_gap)
     return keep(_kept, key, lambda: _worked_out(part, frame, p, width))
@@ -941,7 +941,7 @@ def beside(part, frame, p, nearest, furthest):
     round side of `frame`, as thick as from `nearest`, its edge nearest that
     line, to `furthest` along the face: the first cut, which it rests on, is
     the one at `nearest`, where the side reaches furthest out; kept as of() is."""
-    key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.bed_z, frame.face_bottom_z, frame.radius,
+    key = (part_key(part), tuple(frame.out), tuple(frame.along), frame.bed_z, frame.face_bottom_z, frame.radius,
            nearest, furthest, p.layer_height, p.gap, p.clearance, p.contour_bridge, p.contour_gap)
 
     def worked_out():
@@ -954,7 +954,7 @@ def beside(part, frame, p, nearest, furthest):
 def ends_at(part, frame, p, t, beside_line):
     """Where tines end in the upright plane at `t` along the face of `frame`
     (CutEnds), for one beside the lowest line; kept as of() is."""
-    key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.bed_z, t,
+    key = (part_key(part), tuple(frame.out), tuple(frame.along), frame.bed_z, t,
            p.layer_height, p.clearance)
     return keep(_kept_beside, key, lambda: CutEnds(cut_of(part, frame, t), p, beside_line), BESIDE_KEPT)
 
@@ -962,7 +962,7 @@ def ends_at(part, frame, p, t, beside_line):
 def across(part, frame, p, t):
     """The contour in the one upright plane at `t` along the face of `frame`,
     for what a tine beside the lowest line rests on; kept as of() is."""
-    key = (shape_key(part), tuple(frame.out), tuple(frame.along), frame.bed_z, frame.face_bottom_z, frame.radius, t,
+    key = (part_key(part), tuple(frame.out), tuple(frame.along), frame.bed_z, frame.face_bottom_z, frame.radius, t,
            p.layer_height, p.gap, p.clearance, p.contour_bridge, p.contour_gap)
     away = t - (frame.along_min + frame.along_max) / 2
     return keep(_kept_beside, key,

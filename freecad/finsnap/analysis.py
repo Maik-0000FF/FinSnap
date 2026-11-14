@@ -30,6 +30,7 @@ import FreeCAD as App
 
 from . import bridge
 from . import defaults as d
+from . import geometry
 from . import limits
 from . import overhang
 from . import stability as standing
@@ -448,12 +449,14 @@ def drop_stock():
 
 
 class DocumentClosed:
-    """Drops the cuts kept once a document is closed: they are those of a
-    part of some document, and are not to outlive it holding memory. Any
-    document closed drops them; cut anew, they are back with the next check."""
+    """Drops the cuts and the fins kept once a document is closed: they are
+    those of a part of some document, and are not to outlive it holding memory.
+    Any document closed drops them; cut or built anew, they are back with the
+    next check or build."""
 
     def slotDeletedDocument(self, document):  # noqa: N802 - FreeCAD API
         drop_stock()
+        geometry.forget_built()
 
 
 App.addDocumentObserver(DocumentClosed())

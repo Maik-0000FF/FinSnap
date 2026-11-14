@@ -781,8 +781,6 @@ def rebuild_fins():
             document.recompute(fins)
 
 
-# Builds of one side kept during a drag; beyond these the oldest goes.
-REUSE_KEPT = 8
 # Answers of whole_elements() kept, with the shape each was worked out for,
 # by part, shape, placement and names asked.
 WHOLE_KEPT = 16
@@ -896,29 +894,16 @@ class FinSnapFeature:
         return kept[name]
 
     def side_builder(self, obj, which):
-        """builder(obj, which); while a drag in the task panel lasts, with the
-        same part throughout, and taking a result built before with the same
-        changes by hand, keeping each new one. The panel sets `reuse` to {}
-        then and back to None after. During a drag only the changes by hand
-        of the dragged fin differ from step to step, so the trial build of a
-        step serves its real build, and the other side is built once. The
-        part is kept as well: the faces of a result belong to it."""
+        """builder(obj, which); while a drag in the task panel lasts, the one
+        of its first step, with the same part throughout: the faces of a
+        result belong to it. The panel sets `reuse` to {} then and back to
+        None after. During a drag only the changes by hand of the dragged fin
+        differ from step to step, and geometry.build() keeps what it built: the
+        trial build of a step serves its real build, and the other side is
+        built once."""
         if getattr(self, "reuse", None) is None:
             return builder(obj, which)
-        found, side = self.during_drag(which, lambda: (builder(obj, which), {}))
-        if found is None:
-            return None
-        part, build_fn = found
-
-        def build(left, shifts, heights):
-            key = edits_key(left, shifts, heights)
-            if key not in side:
-                # The latest few are enough; a long drag would hold every step.
-                while len(side) >= REUSE_KEPT:
-                    side.pop(next(iter(side)))
-                side[key] = build_fn(left, shifts, heights)
-            return side[key]
-        return part, build
+        return self.during_drag(which, lambda: builder(obj, which))
 
     def execute(self, obj):
         # The last build, for the arrows of a task panel only (keep_build()): a
@@ -1563,12 +1548,6 @@ def stored_mm(mm):
     """`mm` as a change by hand is stored: a value tried before and the same
     value stored compare equal."""
     return round(mm, d.LENGTH_DECIMALS)
-
-
-def edits_key(left, shifts, heights):
-    """The changes by hand of one side, as edits() gives them, as a key:
-    equal changes, equal key."""
-    return tuple(sorted(left)), tuple(sorted(shifts.items())), tuple(sorted(heights.items()))
 
 
 def _set_mm(obj, name, number, mm):

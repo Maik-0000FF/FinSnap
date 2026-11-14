@@ -61,6 +61,10 @@ SAME_PLACE = 1e-3
 SAME_DIRECTION = 1.0 - 1e-6
 # Places to which shape_key() rounds the measures and corners of a shape.
 KEY_DIGITS = 6
+# The parts asked for their key last, each as (part, where it stood, key)
+# (part_key()): the two sides of a drag and the part of a search.
+_keyed_parts = []
+PARTS_KEYED = 4
 # What keep() holds in one store at most, the oldest going first.
 KEPT = 8
 # A triangle whose cross product of two sides is no longer than this has no area (mm2).
@@ -158,6 +162,34 @@ def shape_key(shape):
         centre = None
     return (round(shape.Volume, KEY_DIGITS), round(shape.Area, KEY_DIGITS), len(shape.Faces), len(shape.Edges),
             corners, centre)
+
+
+def part_key(part):
+    """shape_key() of `part`, worked out once while the same shape is asked
+    again and again, as a search, a build and a drag ask: it goes through
+    every corner. For the shape a build is handed and hands on, not for one
+    taken from its object anew each time, which is another to this each time.
+
+    INPUTS this has to withstand:
+      a shape asked before, where it stood  ->  the key kept
+      another shape, or the same shape
+        handed over anew by FreeCAD         ->  worked out
+      a shape asked before, moved since     ->  worked out
+      more shapes than are kept             ->  the one asked longest ago goes
+    """
+    placement = part.Placement
+    for kept, stood, key in _keyed_parts:
+        if kept is part and stood == placement:
+            return key
+    del _keyed_parts[:max(0, len(_keyed_parts) - PARTS_KEYED + 1)]
+    _keyed_parts.append((part, placement, shape_key(part)))
+    return _keyed_parts[-1][2]
+
+
+def forget_parts():
+    """Forget the parts keyed (part_key()), and with them the memory their
+    shapes hold."""
+    del _keyed_parts[:]
 
 
 # How many builds and checks of FinSnap are under way in the kernel, one
