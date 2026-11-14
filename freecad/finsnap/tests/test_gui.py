@@ -1350,6 +1350,8 @@ def timers_wait_for_builds(panel):
         return real_build(*args, **kwargs)
 
     value = panel.next_values(handles.UP, panel.built_value(handles.UP))
+    # The build tried is to be made: one kept from before would start none.
+    geometry.forget_built()
     geometry._build = firing
     try:
         timer.stop()
@@ -3109,22 +3111,27 @@ def main():
     # build, and nothing is built twice. Afterwards every build is new, and
     # the arrow ends are tried once for each place of the fin.
     from freecad.finsnap import face_frame, geometry
-    real_build = geometry.build
-    builds = []
+    real_build, real_made = geometry.build, geometry._build_reaching
+    # The builds asked for, and those made: one asked again is kept, not made.
+    builds, made = [], []
 
     def counting(*args, **kwargs):
         builds.append(args)
         return real_build(*args, **kwargs)
 
-    geometry.build = counting
+    def making(*args):
+        made.append(args)
+        return real_made(*args)
+
+    geometry.build, geometry._build_reaching = counting, making
     try:
         moving.handle_started(handles.ALONG)
         steps = []
         for step in (1, 2):
             moving.handle_moved(handles.ALONG, step * BUILD_STEP)
-            del builds[:]
+            del made[:]
             moving.drag_step()
-            steps.append(len(builds))
+            steps.append(len(made))
         moving.finish_drag(handles.ALONG, 2 * BUILD_STEP)
         reuse_after = lined.Proxy.reuse
         del builds[:]
@@ -3142,7 +3149,7 @@ def main():
         tine_count.setValue(tine_count.value() - 1)
         moving.preview()
     finally:
-        geometry.build = real_build
+        geometry.build, geometry._build_reaching = real_build, real_made
     expect(steps == [1, 1], "each step of a drag builds once, not as trial and again for real: %s" % steps)
     expect(reuse_after is None, "after the drag, every build is made afresh")
     expect(first_ends == len(handles.KINDS) * 2 and same_ends == 0 and changed_ends > 0,

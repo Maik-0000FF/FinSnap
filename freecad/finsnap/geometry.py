@@ -99,7 +99,7 @@ INPUTS this has to withstand (build()):
 import math
 import time
 from collections import namedtuple
-from dataclasses import dataclass, field, fields, replace
+from dataclasses import astuple, dataclass, field, fields, replace
 from functools import partial
 
 import FreeCAD as App
@@ -154,6 +154,17 @@ IN_FRONT_SKIN = 1e-3
 # as keep() holds by itself, which is more than a search goes through and
 # bounds what the meshes take in memory.
 _kept_solids_in = {}
+# The fins built last (build()), each with what tells that it was built from
+# the part asking (_Built), by what they are built from: the search of Quick
+# fins builds the fin its command then makes, and a drag in the task panel
+# builds the trial of a step and then the step. As many as a search of many
+# ways finds; past these the oldest goes first, and with 0 none is kept.
+_kept_built = {}
+BUILT_KEPT = 16
+# The parts asked for their key last, each as (part, where it stood, key)
+# (_part_key()): the two sides of a drag and the part of a search.
+_keyed_parts = []
+PARTS_KEYED = 4
 # The clock the kernel is timed by as it tells points inside a solid
 # (_Standing._by_kernel()), in seconds; a test puts its own in its place.
 _clock = time.perf_counter
@@ -275,6 +286,79 @@ class FinResult:
     # By number, how far a fin moved by itself from its planned place (mm, as
     # starts); its start is planned plus its shift by hand plus this.
     moved: dict = field(default_factory=dict)
+
+
+# A face of a part by its number among the faces (from 0), with its area and
+# its centre: what a face found again by number is held against.
+_FaceMark = namedtuple("_FaceMark", "number area centre")
+# Fins kept: the FinResult, the marks of the face asked and the faces carried,
+# and of those marks the ones of the faces carried, in their order.
+_Built = namedtuple("_Built", "result marks carried")
+
+
+def edits_key(left, shifts, heights):
+    """The changes by hand of one side, as feature.edits() gives them, as a
+    key: equal changes, equal key."""
+    return tuple(sorted(left)), tuple(sorted(shifts.items())), tuple(sorted(heights.items()))
+
+
+def _part_key(part):
+    """shape_key() of `part`, worked out once while the same shape is asked
+    again and again, as a search and a drag ask: it goes through every corner.
+
+    INPUTS this has to withstand:
+      a shape asked before, where it stood  ->  the key kept
+      another shape, or the same shape
+        handed over anew by FreeCAD         ->  worked out
+      a shape asked before, moved since     ->  worked out
+      more shapes than are kept             ->  the one asked longest ago goes
+    """
+    placement = part.Placement
+    for kept, stood, key in _keyed_parts:
+        if kept is part and stood == placement:
+            return key
+    del _keyed_parts[:max(0, len(_keyed_parts) - PARTS_KEYED + 1)]
+    _keyed_parts.append((part, placement, shape_key(part)))
+    return _keyed_parts[-1][2]
+
+
+def _mark_of(faces, face):
+    """The _FaceMark of `face` among `faces`, the faces of a part; None for a
+    face that is none of them."""
+    number = next((i for i, each in enumerate(faces) if each.isSame(face)), None)
+    return None if number is None else _FaceMark(number, face.Area, face.CenterOfMass)
+
+
+def _marked(faces, mark):
+    """Whether the face `mark` numbers among `faces` is the one it was taken of."""
+    if mark.number >= len(faces):
+        return False
+    face = faces[mark.number]
+    return abs(face.Area - mark.area) < d.TOLERANCE and face.CenterOfMass.distanceToPoint(mark.centre) < d.TOLERANCE
+
+
+def _apart(value):
+    """A copy of `value`, a FinResult or what it holds, sharing no list, dict
+    or vector with it, so that what is done to the one never shows in the
+    other. Shapes, frames and numbers are shared: those are not changed in place."""
+    if isinstance(value, FinResult):
+        return replace(value, **{each.name: _apart(getattr(value, each.name)) for each in fields(value)})
+    if isinstance(value, WarningTarget):
+        return WarningTarget(*(_apart(each) for each in value))
+    if isinstance(value, (list, tuple)):
+        return type(value)(_apart(each) for each in value)
+    if isinstance(value, dict):
+        return {key: _apart(each) for key, each in value.items()}
+    if isinstance(value, App.Vector):
+        return App.Vector(value)
+    return value
+
+
+def forget_built():
+    """Forget the fins kept (build()) and the parts keyed, and with them the
+    memory their shapes hold."""
+    _kept_built.clear()
+    del _keyed_parts[:]
 
 
 def room_for_one_fin(p, frame, thickness):
@@ -1008,12 +1092,51 @@ def build(part, face, p, tine_count=None, left_out=(), shifts=None, heights=None
     selected face alone, as they did before pieces were carried along. A
     change by hand that does not fit over the groove is refused instead: a
     drag never changes which faces the fins carry.
+
+    The fins built last are kept and handed out again where the same is asked,
+    as a copy of its own (_apart()) carrying the faces of the part asking.
+
+    INPUTS the keeping has to withstand:
+      the same part, face, parameters and
+        changes by hand as built before     ->  the fins kept, not built again
+      the same on another shape of the part
+        as it stands, as the search of
+        Quick fins and its command hold     ->  the fins kept, carrying the faces
+                                                of the shape asking
+      any of them another                   ->  built
+      a part with the key of one built
+        before whose face asked, or one
+        carried, is another by area or
+        centre                              ->  built, and kept in its place
+      `face` no face of `part`, or the fins
+        carry a face that is none           ->  built, not kept
+      a build refused                       ->  raised, nothing kept: asked again,
+                                                it is built and refused again
+      FreeCAD set to another language       ->  built: the warnings are said in it
+      the fins handed out changed after     ->  those kept stay as built
+      more kept than BUILT_KEPT             ->  the oldest goes, asked again it is built
+      BUILT_KEPT 0                          ->  built every time
     """
     p.validate()
+    shifts, heights = shifts or {}, heights or {}
+    faces = part.Faces
+    asked = _mark_of(faces, face)
+    key = None if asked is None else (_part_key(part), asked.number, astuple(p), tine_count,
+                                      edits_key(left_out, shifts, heights),
+                                      translate("FinSnap", NOTE_NO_SIDE_FIN))
+    keeping = key is not None and BUILT_KEPT > 0
+    kept = _kept_built.get(key) if keeping else None
+    if kept is not None and all(_marked(faces, mark) for mark in kept.marks):
+        return replace(_apart(kept.result), carried=[faces[mark.number] for mark in kept.carried])
     try:
-        return _build_reaching(part, face, p, tine_count, left_out, shifts or {}, heights or {})
+        result = _build_reaching(part, face, p, tine_count, left_out, shifts, heights)
     finally:
         forget_outline()
+    carried = [_mark_of(faces, each) for each in result.carried] if keeping else [None]
+    if None not in carried:
+        _kept_built.pop(key, None)
+        keep(_kept_built, key, lambda: _Built(_apart(result), [asked] + carried, carried), BUILT_KEPT)
+    return result
 
 
 def _build_reaching(part, face, p, tine_count, left_out, shifts, heights):

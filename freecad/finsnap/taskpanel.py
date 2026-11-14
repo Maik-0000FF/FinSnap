@@ -2081,7 +2081,7 @@ class FinSnapTaskPanel:
         which = self.handled[0]
         part, faces = self.obj.Base if which == feature.MAIN else self.obj.CounterFace
         return (self.handled, repr(feature.params_of(self.obj)),
-                feature.edits_key(*feature.edits(self.obj, which)), tuple(faces),
+                geometry.edits_key(*feature.edits(self.obj, which)), tuple(faces),
                 part.Shape.hashCode(), str(part.getGlobalPlacement()))
 
     def untried_ends(self, kind):
