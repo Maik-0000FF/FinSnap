@@ -45,6 +45,7 @@ THICK_LAYER = 0.3  # a layer height other than the standard, to see the steps fo
 FIN_SHIFT = 1.5  # how far a handle moves a fin along the face, in mm
 TOO_MANY_FINS = 50  # more fins than the face takes, so the build fails
 PART_MOVE = 5.0  # how far a part is moved to change it under its fins, in mm
+PAD_SIZE = 20.0  # the edge of a cube padded from a sketch, in mm
 AXIS_Z_RGB = (0.2, 0.2, 0.8)  # FreeCAD's standard colour of the z axis
 COLOR_TOLERANCE = 0.01
 BUILD_STEP = 0.5  # how far a fin moves at each step of a counted drag, in mm
@@ -700,6 +701,30 @@ def built_once_for_panel(doc):
         expect(built == 1, "fins whose part moved since their build was kept are built: %d" % built)
         panel.reject()
         cube.Placement = stood
+        doc.recompute()
+
+        body = doc.addObject("PartDesign::Body", "OnceBody")
+        sketch = body.newObject("Sketcher::SketchObject", "OnceSketch")
+        corners = [App.Vector(x, y, 0) for x, y in ((0, 0), (PAD_SIZE, 0), (PAD_SIZE, PAD_SIZE), (0, PAD_SIZE))]
+        sketch.addGeometry([Part.LineSegment(start, end) for start, end in zip(corners, corners[1:] + corners[:1])])
+        pad = body.newObject("PartDesign::Pad", "OncePad")
+        pad.Profile = sketch
+        pad.Length = PAD_SIZE
+        doc.recompute()
+        side = next(i for i, f in enumerate(pad.Shape.Faces, 1) if f.normalAt(0, 0).y < -0.9)
+        select(pad, "Face%d" % side)
+        Gui.runCommand("FinSnap_QuickFins")
+        padded = next(o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is body)
+        padded.ViewObject.Proxy.panel.accept()
+        feature.keep_build(padded, True)
+        doc.recompute()
+        sketch.AttachmentOffset = App.Placement(App.Vector(PART_MOVE, 0, 0), App.Rotation())
+        expect(feature.TOUCHED not in padded.State, "fins on a Body whose sketch changed are not touched themselves")
+        panel, built = opened(padded)
+        expect(built == 1, "fins on a Body whose sketch changed since their build was kept are built: %d" % built)
+        panel.reject()
+        for name in (padded.Name, pad.Name, sketch.Name, body.Name):
+            doc.removeObject(name)
         doc.recompute()
         feature.keep_build(fins, True)
         fins.FinCount = TOO_MANY_FINS
