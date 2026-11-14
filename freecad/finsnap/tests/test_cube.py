@@ -4377,9 +4377,9 @@ def check_contour_upper_end():
     rod = Part.makeCylinder(ROD_RADIUS, ROD_HEIGHT)
     above = V(0, 0, ROD_HEIGHT)
 
-    def tines_at_top(shape):
-        """How far above the upper edge of the side of ROD_RADIUS the tines of
-        the fin under it end, `shape` stood on its lower rim; below it, negative."""
+    def tine_tops(shape):
+        """How far above the upper edge of the side of ROD_RADIUS each tine of
+        the fin under it ends, `shape` stood on its lower rim; below it, negative."""
         rim = next(e for e in shape.Edges if orient.is_rim(e) and abs(e.Curve.Radius - ROD_RADIUS) < d.TOLERANCE
                    and e.BoundBox.ZMax < d.TOLERANCE)
         side = round_side_of(shape)
@@ -4387,7 +4387,8 @@ def check_contour_upper_end():
                     if plan.number == side)
         stood = moved(shape, plan.change)
         result = geometry.build(stood, stood.Faces[side], p)
-        return max(result.tine_z) + p.tine_height - (result.frame.side_top_z - result.frame.bed_z)
+        edge = result.frame.side_top_z - result.frame.bed_z
+        return [z + p.tine_height - edge for z in result.tine_z]
 
     def cone(height):
         return rod.fuse(Part.makeCone(ROD_RADIUS, ROD_RADIUS - UPPER_NARROWING, height, above)).removeSplitter()
@@ -4397,21 +4398,29 @@ def check_contour_upper_end():
               ("a fillet", rod.makeFillet(FILLET_RADIUS, top_rim)),
               ("a cone lower than a part of its own", cone(UPPER_LOW))]
     for name, shape in ending:
-        over = tines_at_top(shape)
+        over = max(tine_tops(shape))
         expect(-TINES_END_BELOW < over < d.TOLERANCE,
                "the tines of a side ending in %s end below its upper edge: %.2f mm above it" % (name, over))
     thinner = ROD_RADIUS - UPPER_NARROWING
+    running_on = cone(UPPER_LOW).fuse(
+        Part.makeCylinder(thinner, ROD_HEIGHT, above + V(0, 0, UPPER_LOW))).removeSplitter()
     going_on = [("a cone as high as a part of its own", cone(UPPER_HIGH)),
-                ("a low cone running on into a thinner part", cone(UPPER_LOW).fuse(
-                    Part.makeCylinder(thinner, ROD_HEIGHT, above + V(0, 0, UPPER_LOW))).removeSplitter()),
+                ("a low cone running on into a thinner part", running_on),
                 ("a thinner part above an end face", rod.fuse(Part.makeCylinder(STEP_RADIUS, ROD_HEIGHT, above))
                  .removeSplitter()),
                 ("a collar stepping out", rod.fuse(Part.makeCylinder(ROD_RADIUS + COLLAR_WIDER, UPPER_LOW, above))
                  .removeSplitter()),
                 ("the side going on in another face", rod.fuse(Part.makeCylinder(ROD_RADIUS, UPPER_LOW, above)))]
     for name, shape in going_on:
-        over = tines_at_top(shape)
+        over = max(tine_tops(shape))
         expect(over > d.TOLERANCE, "above a side with %s tines rest: %.2f mm above its upper edge" % (name, over))
+    # How far above the edge the low cone ends under the fin: up along the
+    # axis, and up again as it narrows towards it.
+    lean = math.radians(d.TILT_ANGLE)
+    cone_top = UPPER_LOW * math.sin(lean) + UPPER_NARROWING * math.cos(lean)
+    on_cone = [top for top in tine_tops(running_on) if d.TOLERANCE < top < cone_top]
+    expect(on_cone, "a low cone running on into a thinner part carries a tine itself: it ends %s mm above the edge, "
+                    "the cone %.2f" % (["%.2f" % top for top in on_cone], cone_top))
 
 
 def check_part_of_side():
