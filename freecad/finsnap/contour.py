@@ -864,6 +864,10 @@ class Contour(_TineEnds):
             of their own past the edge        ->  no tine on it
           the same, CONTOUR_OWN_PART high or
             more, as a cone above the side    ->  as it is: a part of its own
+          a low cone running on into a part
+            of its own, no end face between   ->  as it is: tines rest from the edge
+                                                  up, on the cone as well, as below
+                                                  the side
           a thicker part above, stepping out  ->  as it is: it does not turn away
           the side going on above in the same
             line, as one cut into two faces   ->  as it is

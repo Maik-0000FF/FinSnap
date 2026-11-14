@@ -4400,7 +4400,12 @@ def check_contour_upper_end():
         over = tines_at_top(shape)
         expect(-TINES_END_BELOW < over < d.TOLERANCE,
                "the tines of a side ending in %s end below its upper edge: %.2f mm above it" % (name, over))
+    thinner = ROD_RADIUS - UPPER_NARROWING
     going_on = [("a cone as high as a part of its own", cone(UPPER_HIGH)),
+                ("a low cone running on into a thinner part", cone(UPPER_LOW).fuse(
+                    Part.makeCylinder(thinner, ROD_HEIGHT, above + V(0, 0, UPPER_LOW))).removeSplitter()),
+                ("a thinner part above an end face", rod.fuse(Part.makeCylinder(STEP_RADIUS, ROD_HEIGHT, above))
+                 .removeSplitter()),
                 ("a collar stepping out", rod.fuse(Part.makeCylinder(ROD_RADIUS + COLLAR_WIDER, UPPER_LOW, above))
                  .removeSplitter()),
                 ("the side going on in another face", rod.fuse(Part.makeCylinder(ROD_RADIUS, UPPER_LOW, above)))]
