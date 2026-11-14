@@ -289,8 +289,8 @@ MATRIX_HIGH_CASES = {"rod": ((d.ROUND_FINS_THREE, 45.0, 0.0, 35.0), (d.ROUND_FIN
 # How many tines a side fin has, by shape, for MATRIX_CASES and then MATRIX_HIGH_CASES.
 MATRIX_SIDE_TINES = {"rod": (7, 7, 7, 7, 7, 7, 7, 7), "tube": (7, 7, 7, 7), "step near the fins": (13, 7, 13, 7, 7),
                      "flange": (7, 7, 7, 6), "thin step": (7, 7, 7, 7, 7), "cone": (7, 7, 7, 7, 7),
-                     "fillet": (7, 7, 7, 7, 5),
-                     "large fillet": (5, 6, 5, 5)}
+                     "fillet": (6, 6, 6, 6, 5),
+                     "large fillet": (5, 5, 5, 5)}
 HEIGHT_ACROSS_FIN = 0.02  # how far above the height it says a fin may reach (mm)
 LARGE_FILLET_RADIUS = 9.5  # nearly the radius of the rod
 MESHED_BOX, MESHED_OFF = 10.0, 0.5  # a box measured by its mesh, and how far off it (mm)
@@ -347,6 +347,15 @@ NORMAL_DECIMALS = 6    # places to which the directions of faces are compared
 # ROD_HEIGHT, and on it a thinner one, or a body of revolution whose outline
 # runs through SPLINE_RADII, as far up again.
 STEP_RADIUS = 6.0
+# What ends a rod at the top, for the tines at the upper end of its side: a
+# fillet or a cone lower than CONTOUR_OWN_PART and a cone higher than it, each
+# cone narrowing so little that it leans over the bed still; a collar wider
+# than the rod and a piece of the same radius, both lower than it too.
+UPPER_LOW = 3.0
+UPPER_HIGH = 8.0
+UPPER_NARROWING = 0.5
+COLLAR_WIDER = 2.0
+TINES_END_BELOW = 1.0  # how far below the upper edge of a side its tines end at most (mm)
 # The thinner part only this high, the part stood on its free rim: about 6 mm
 # of it carry tines below the side, past CONTOUR_OWN_PART, or, lower, less.
 THIN_PART_CARRIES = 14.0
@@ -4358,6 +4367,62 @@ def check_contour():
         raise AssertionError("a negative contour bridge was accepted")
 
 
+def check_contour_upper_end():
+    """What turns away from the fin above the upper end of a round side, a
+    fillet or a low cone, carries no tine: the tines end below the edge of the
+    side. A part of its own above it, a collar stepping out and the side going
+    on in another face carry theirs: every row of the table of
+    contour.Contour._end_at_side()."""
+    p = FinParams(placement=d.PLACEMENT_CENTER)
+    rod = Part.makeCylinder(ROD_RADIUS, ROD_HEIGHT)
+    above = V(0, 0, ROD_HEIGHT)
+
+    def tine_tops(shape):
+        """How far above the upper edge of the side of ROD_RADIUS each tine of
+        the fin under it ends, `shape` stood on its lower rim; below it, negative."""
+        rim = next(e for e in shape.Edges if orient.is_rim(e) and abs(e.Curve.Radius - ROD_RADIUS) < d.TOLERANCE
+                   and e.BoundBox.ZMax < d.TOLERANCE)
+        side = round_side_of(shape)
+        plan = next(plan for plan in quick_stands.quick_plans(shape, [(rim, None)], [], p, d.TILT_ANGLE)
+                    if plan.number == side)
+        stood = moved(shape, plan.change)
+        result = geometry.build(stood, stood.Faces[side], p)
+        edge = result.frame.side_top_z - result.frame.bed_z
+        return [z + p.tine_height - edge for z in result.tine_z]
+
+    def cone(height):
+        return rod.fuse(Part.makeCone(ROD_RADIUS, ROD_RADIUS - UPPER_NARROWING, height, above)).removeSplitter()
+
+    top_rim = [e for e in rod.Edges if orient.is_rim(e) and e.BoundBox.ZMin > ROD_HEIGHT - d.TOLERANCE]
+    ending = [("a sharp edge", rod),
+              ("a fillet", rod.makeFillet(FILLET_RADIUS, top_rim)),
+              ("a cone lower than a part of its own", cone(UPPER_LOW))]
+    for name, shape in ending:
+        over = max(tine_tops(shape))
+        expect(-TINES_END_BELOW < over < d.TOLERANCE,
+               "the tines of a side ending in %s end below its upper edge: %.2f mm above it" % (name, over))
+    thinner = ROD_RADIUS - UPPER_NARROWING
+    running_on = cone(UPPER_LOW).fuse(
+        Part.makeCylinder(thinner, ROD_HEIGHT, above + V(0, 0, UPPER_LOW))).removeSplitter()
+    going_on = [("a cone as high as a part of its own", cone(UPPER_HIGH)),
+                ("a low cone running on into a thinner part", running_on),
+                ("a thinner part above an end face", rod.fuse(Part.makeCylinder(STEP_RADIUS, ROD_HEIGHT, above))
+                 .removeSplitter()),
+                ("a collar stepping out", rod.fuse(Part.makeCylinder(ROD_RADIUS + COLLAR_WIDER, UPPER_LOW, above))
+                 .removeSplitter()),
+                ("the side going on in another face", rod.fuse(Part.makeCylinder(ROD_RADIUS, UPPER_LOW, above)))]
+    for name, shape in going_on:
+        over = max(tine_tops(shape))
+        expect(over > d.TOLERANCE, "above a side with %s tines rest: %.2f mm above its upper edge" % (name, over))
+    # How far above the edge the low cone ends under the fin: up along the
+    # axis, and up again as it narrows towards it.
+    lean = math.radians(d.TILT_ANGLE)
+    cone_top = UPPER_LOW * math.sin(lean) + UPPER_NARROWING * math.cos(lean)
+    on_cone = [top for top in tine_tops(running_on) if d.TOLERANCE < top < cone_top]
+    expect(on_cone, "a low cone running on into a thinner part carries a tine itself: it ends %s mm above the edge, "
+                    "the cone %.2f" % (["%.2f" % top for top in on_cone], cone_top))
+
+
 def check_part_of_side():
     """The half round end of a slot takes one fin under its lowest line, and a
     counter fin goes under it or under the end face leaning the other way."""
@@ -5380,6 +5445,7 @@ def main():
     check_round_side()
     check_contour_pieces()
     check_contour()
+    check_contour_upper_end()
     check_known_clear()
     check_meshed_distance()
     check_settled_clear()

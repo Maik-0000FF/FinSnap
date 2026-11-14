@@ -108,6 +108,9 @@ class Frame:
     # Whether that curved side goes all the way round, so the part stands on
     # one point of its rim and turns about its axis to move the fin.
     whole_side: bool = False
+    # Where that curved side itself ends at its top, on its lowest line:
+    # face_top_z is raised to the top of the contour where the fin follows it.
+    side_top_z: float = None
     # The contour of the part the fin under that side follows
     # (contour.Contour), None where it stands under the side alone.
     contour: object = None
@@ -279,7 +282,7 @@ def _round_frame(part, face):
     line_box = bounds(line)
     return Frame(out=out, along=along, n_out=n.dot(out), n_z=n.z, c=n.dot(lowest), bed_z=bounds(part).ZMin,
                  along_min=middle - half_width, along_max=middle + half_width, face_top_z=line_box.ZMax,
-                 face_bottom_z=line_box.ZMin, radius=surface.Radius, whole_side=whole)
+                 face_bottom_z=line_box.ZMin, radius=surface.Radius, whole_side=whole, side_top_z=line_box.ZMax)
 
 
 def turn_of(face, mm):

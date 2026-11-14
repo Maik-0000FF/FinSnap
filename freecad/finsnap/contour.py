@@ -35,6 +35,10 @@ INPUTS this has to withstand (Contour):
                                             part; tines it holds off left out, as
                                             receded()
   chamfer the tilt stands upright       ->  followed, no tine on it
+  fillet or chamfer at the upper end of
+    the side, leaning over still, lower
+    than CONTOUR_OWN_PART               ->  followed, no tine on it: the tines end
+                                            below the edge of the side
   step to a thicker part above          ->  flank steps out, tines rest on it
   chamfer, fillet, hole or groove lower
     than the bridge                     ->  bridged: flank straight across, tines there
@@ -724,7 +728,7 @@ class Contour(_TineEnds):
     """The flank of the fin under a round side along the contour of the part,
     the heights its tines rest on and how far they reach; see the module."""
 
-    def __init__(self, cuts, p, above_bed=False, side_from=None):
+    def __init__(self, cuts, p, above_bed=False, side_from=None, side_to=None):
         """`cuts`, the lines of each cut across the thickness of the fin, the
         middle one first: that one, where the tines stand, gives the contour;
         the gap is kept from all of them, as a hole narrower than the fin
@@ -733,7 +737,10 @@ class Contour(_TineEnds):
         (height, slope) where the round side starts above what the part stands
         on, a fillet or a chamfer, and how far out its flank goes per mm up:
         below it the fin goes on in that line, down to its foot, with no tines,
-        as far off as the part asks, not along what the part stands on."""
+        as far off as the part asks, not along what the part stands on.
+        `side_to` is (height, slope) where the round side ends at its top, and
+        the same slope: what turns away from the fin above it, a fillet or a
+        chamfer, carries no tine (_end_at_side())."""
         mitred = [[piece for loop in loops_of(lines) for piece in loop_pieces(loop)] for lines in cuts]
         self.pieces = [piece for pieces in mitred for piece in pieces]
         front = front_of(loops_of(cuts[0]))
@@ -796,6 +803,7 @@ class Contour(_TineEnds):
                 self.flank_at[k] = max(self.flank_at[k],
                                        self.flank_at[start] - (self.heights[start] - self.heights[k]) * side_from[1])
                 self.resting[k] = False
+        self._end_at_side(side_to, clear, looks_up)
         # A pocket, a groove or a hole in one face, with no tine resting in
         # it: the flank runs straight past it, from where the tines rest
         # below to where they rest again on the same face above; with the
@@ -833,6 +841,61 @@ class Contour(_TineEnds):
 
     def _index(self, z):
         return min(len(self.heights) - 1, max(0, int(round(z / self.step))))
+
+    def _end_at_side(self, side_to, clear, looks_up):
+        """Let no tine rest on what turns away from the fin above the round
+        side: a fillet or a chamfer at its upper end leans over the bed still,
+        further and further upright, and needs no hold. The tines end `clear`
+        samples below the edge of the side, as they do below any other end of
+        what carries them. Only the tines: the flank follows the contour as
+        before. `side_to` is (height, slope) of the upper end of the side and
+        of its line, None for none; `looks_up` tells for each sample whether
+        the contour looks up there.
+
+        INPUTS this has to withstand:
+          the side ends in a sharp edge, an
+            end face or an upright chamfer
+            above it                          ->  as it is: nothing rests above the edge
+          a fillet running on from the side,
+            lower than CONTOUR_OWN_PART       ->  no tine on it, nor nearer the edge
+                                                  below it than `clear`
+          a chamfer or a cone leaning over
+            still, as low, its tines a stretch
+            of their own past the edge        ->  no tine on it
+          the same, CONTOUR_OWN_PART high or
+            more, as a cone above the side    ->  as it is: a part of its own
+          a low cone running on into a part
+            of its own, no end face between   ->  as it is: tines rest from the edge
+                                                  up, on the cone as well, as below
+                                                  the side
+          a thicker part above, stepping out  ->  as it is: it does not turn away
+          the side going on above in the same
+            line, as one cut into two faces   ->  as it is
+          a thinner part above an end face    ->  as it is: the contour looks up
+                                                  before its tines start
+          the side reaching the top of the
+            contour, or no `side_to`          ->  as it is
+        """
+        if side_to is None:
+            return
+        count = len(self.resting)
+        end = self._index(side_to[0])
+        # Where tines rest next from the edge up, with no face looking up before.
+        low = next((k for k in range(end, count) if self.resting[k]), None)
+        if low is None or any(looks_up[end:low]):
+            return
+        top = next((k for k in range(low, count) if not self.resting[k]), count)
+        if (top - 1 - end) * self.step >= d.CONTOUR_OWN_PART - d.TOLERANCE:
+            return
+        # The line of the side, from where the gap round the edge has not
+        # bent what the tines touch yet; how far what they touch lies behind it.
+        base = max(0, end - clear)
+        behind = [self.touched[base] + (self.heights[k] - self.heights[base]) * side_to[1] - self.touched[k]
+                  for k in range(low, top)]
+        if min(behind) < -d.TOLERANCE or behind[-1] <= d.TOLERANCE:
+            return
+        for k in range(base + 1, top):
+            self.resting[k] = False
 
     def _carries_tines(self, below):
         """Whether tines rest on a stretch at least CONTOUR_OWN_PART high
@@ -906,6 +969,13 @@ def clear_kept():
     clear_meshes()
 
 
+def _rise(frame, away):
+    """How much higher the same place along the axis of the round side of
+    `frame` lies in the upright plane `away` along the face from its lowest
+    line: further round, it lies higher up."""
+    return (frame.radius - math.sqrt(max(0.0, frame.radius ** 2 - away ** 2))) * -frame.n_z
+
+
 def side_from(frame, away=0.0):
     """Where the round side of `frame` starts above the bed, in the upright plane
     `away` along the face from its lowest line, and how far out a flank along
@@ -913,9 +983,16 @@ def side_from(frame, away=0.0):
     start = frame.face_bottom_z - frame.bed_z
     if start <= d.TOLERANCE:
         return None
-    # Further round, the same place along the axis lies higher up.
-    rise = (frame.radius - math.sqrt(max(0.0, frame.radius ** 2 - away ** 2))) * -frame.n_z
-    return start + rise, -frame.n_z / frame.n_out
+    return start + _rise(frame, away), -frame.n_z / frame.n_out
+
+
+def side_to(frame, away=0.0):
+    """Where the round side of `frame` ends at its top above the bed, in the
+    upright plane `away` along the face from its lowest line, and how far out
+    its line goes per mm up, for Contour; None for a frame that knows no such end."""
+    if frame.side_top_z is None:
+        return None
+    return frame.side_top_z - frame.bed_z + _rise(frame, away), -frame.n_z / frame.n_out
 
 
 def of(part, frame, p, width):
@@ -933,7 +1010,8 @@ def _worked_out(part, frame, p, width):
     middle = (frame.along_min + frame.along_max) / 2
     beside = [middle + width * (k / (d.CONTOUR_CUTS - 1) - 0.5) for k in range(d.CONTOUR_CUTS)]
     return Contour([cut_of(part, frame, middle)] + [cut_of(part, frame, t) for t in beside
-                                                    if abs(t - middle) > d.TOLERANCE], p, side_from=side_from(frame))
+                                                    if abs(t - middle) > d.TOLERANCE], p, side_from=side_from(frame),
+                   side_to=side_to(frame))
 
 
 def beside(part, frame, p, nearest, furthest):
@@ -947,7 +1025,8 @@ def beside(part, frame, p, nearest, furthest):
     def worked_out():
         planes = [nearest + (furthest - nearest) * k / (d.CONTOUR_CUTS - 1) for k in range(d.CONTOUR_CUTS)]
         away = nearest - (frame.along_min + frame.along_max) / 2
-        return Contour([cut_of(part, frame, t) for t in planes], p, above_bed=True, side_from=side_from(frame, away))
+        return Contour([cut_of(part, frame, t) for t in planes], p, above_bed=True, side_from=side_from(frame, away),
+                       side_to=side_to(frame, away))
     return keep(_kept_beside, key, worked_out, BESIDE_KEPT)
 
 
@@ -966,5 +1045,6 @@ def across(part, frame, p, t):
            p.layer_height, p.gap, p.clearance, p.contour_bridge, p.contour_gap)
     away = t - (frame.along_min + frame.along_max) / 2
     return keep(_kept_beside, key,
-                lambda: Contour([cut_of(part, frame, t)], p, above_bed=True, side_from=side_from(frame, away)),
+                lambda: Contour([cut_of(part, frame, t)], p, above_bed=True, side_from=side_from(frame, away),
+                                side_to=side_to(frame, away)),
                 BESIDE_KEPT)
