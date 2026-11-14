@@ -11,6 +11,8 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.18.0] - 2026-11-14
+
 ### Changed
 
 - Bridges are found much faster: the lines across a free region are laid by arithmetic on its outline instead of a cut for every direction tried. Stairs of 40 steps under a slab take 0.8 s instead of 5.0 s, a round table in 500 flat sides, as a part from a mesh has them, 2.5 s instead of 10.4 s. A line touching the tip of a hole is no longer cut in two there, which gave too short a span. A span under a curved outline may differ by hundredths of a millimetre
@@ -383,7 +385,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.17.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.18.0...HEAD
+[0.18.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.18.0
 [0.17.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.17.0
 [0.16.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.16.1
 [0.16.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.16.0
