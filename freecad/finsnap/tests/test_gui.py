@@ -633,6 +633,72 @@ def quick_on_pad(doc):
         doc.removeObject(name)
 
 
+def built_once_for_panel(doc):
+    """The panel a command opens on fins it built, their build kept, shows
+    that build; fins without a build kept, touched since or failed are built."""
+    from freecad.finsnap import commands, feature
+    from freecad.finsnap import defaults as d
+    builds = []
+    real_execute = feature.FinSnapFeature.execute
+
+    def counted(proxy, obj):
+        builds.append(obj.Name)
+        return real_execute(proxy, obj)
+
+    def opened(fins):
+        """The panel opened on `fins` and how often that built them."""
+        del builds[:]
+        Gui.ActiveDocument.setEdit(fins)
+        return fins.ViewObject.Proxy.panel, builds.count(fins.Name)
+
+    feature.FinSnapFeature.execute = counted
+    try:
+        box = doc.addObject("Part::Box", "OnceBox")
+        doc.recompute()
+        side = next(i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).y < -0.9)
+        select(box, "Face%d" % side)
+        Gui.runCommand("FinSnap_QuickFins")
+        quick = next(o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is box)
+        panel = quick.ViewObject.Proxy.panel
+        expect(builds.count(quick.Name) == 1 and quick.Proxy.results.get(feature.MAIN) is not None
+               and panel.status.text() and panel.handles.arrows.whichChild.getValue() == coin.SO_SWITCH_ALL,
+               "Quick fins builds its fins once, and the panel shows that build with its arrows: %d"
+               % builds.count(quick.Name))
+        panel.reject()
+        doc.removeObject(box.Name)
+
+        cube = doc.addObject("Part::Feature", "OnceCube")
+        cube.Shape = tilted_cube()
+        fins = feature.create(cube, face_name(cube, lower_left_face(cube.Shape)))
+        commands.ViewProviderFinSnap(fins.ViewObject)
+        fins.FinPlacement = d.PLACEMENT_DISTRIBUTED
+        fins.FinCount = 3
+        doc.recompute()
+        panel, built = opened(fins)
+        expect(built == 1 and fins.Proxy.results.get(feature.MAIN) is not None,
+               "fins opened with no build kept are built: %d" % built)
+        panel.reject()
+        expect(not fins.Proxy.editing and not fins.Proxy.results, "the panel closed, no build is kept")
+        feature.keep_build(fins, True)
+        doc.recompute()
+        fins.touch()
+        panel, built = opened(fins)
+        expect(built == 1, "fins touched since their build was kept are built: %d" % built)
+        panel.reject()
+        feature.keep_build(fins, True)
+        fins.FinCount = TOO_MANY_FINS
+        doc.recompute()
+        panel, built = opened(fins)
+        expect(built == 1 and panel.notes.isVisibleTo(panel.form) and not panel.status.text(),
+               "fins whose build failed are built by the panel, which says why: %d" % built)
+        panel.reject()
+        for name in (fins.Name, cube.Name):
+            doc.removeObject(name)
+        doc.recompute()
+    finally:
+        feature.FinSnapFeature.execute = real_execute
+
+
 def checked_on_switch(doc):
     """Quick fins with the checks while editing off lists its ways unchecked;
     switched on, they are rated in place, the row standing still marked, and
@@ -2514,6 +2580,7 @@ def main():
     chosen_stands(doc, quick, facing, messages)
     stands_reopened(doc, quick, facing)
     quick_on_pad(doc)
+    built_once_for_panel(doc)
     checked_on_switch(doc)
     island_marks(doc)
     limits_page(doc)
@@ -3109,9 +3176,12 @@ def main():
     del messages[:]
     blocked = feature.create(row, face_name(row, lower_left_face(row.Shape)))
     commands.ViewProviderFinSnap(blocked.ViewObject)
+    feature.keep_build(blocked, True)
     doc.recompute()
-    blocked_name = blocked.Name
+    blocked_name, blocked_proxy = blocked.Name, blocked.Proxy
     commands._edit_new(blocked)
+    expect(not blocked_proxy.editing and not blocked_proxy.results,
+           "fins whose panel did not open keep no build")
     expect(blocked_name not in [o.Name for o in doc.Objects] and len(messages) == 1
            and App.Qt.translate("FinSnap", commands.NOTE_BUSY) in messages[0],
            "new fins that cannot be edited while another task panel is open go again, with a message")

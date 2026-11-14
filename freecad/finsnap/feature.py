@@ -846,6 +846,20 @@ def stability_of(part_obj, p):
     return analysis.stability(part_obj, p, lambda: supports_of(part_obj, part_obj.Document))
 
 
+# The state FreeCAD gives an object changed since it was last recomputed.
+TOUCHED = "Touched"
+
+
+def keep_build(obj, keep):
+    """Have the fins `obj` keep their last build (execute()) for the arrows of
+    a task panel: one open, or one a command is about to open on the fins it
+    builds, which then shows that build instead of building again. Without
+    `keep` the build kept goes, as no panel holds it any more."""
+    obj.Proxy.editing = keep
+    if not keep:
+        obj.Proxy.results = {}
+
+
 class FinSnapFeature:
     def __init__(self, obj):
         obj.Proxy = self
@@ -887,8 +901,8 @@ class FinSnapFeature:
         return part, build
 
     def execute(self, obj):
-        # The last build, for the arrows of an open task panel only: a failed
-        # build leaves none, and without a panel none is kept.
+        # The last build, for the arrows of a task panel only (keep_build()): a
+        # failed build leaves none, and without a panel none is kept.
         self.results = {}
         # What each warning is about, a NoteTarget or None, in the same order;
         # kept as the results are, for the task panel to show it.

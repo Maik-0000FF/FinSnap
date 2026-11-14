@@ -646,6 +646,8 @@ class QuickFins:
         feature.keep_quick_start(fins, obj, before, [n for _, n in edges], [n for _, n in faces])
         ViewProviderFinSnap(fins.ViewObject)
         doc.commitTransaction()
+        # Built once: the panel opened below shows this build.
+        feature.keep_build(fins, True)
         doc.recompute()
         _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside, plan.line))
         # Cancel deletes the fins and stands the part as it stood before.
@@ -903,11 +905,15 @@ def _edit_new(fins, on_cancel=None, stands=None):
     # What was selected to make the fins is used up; left selected, the panel
     # would take a face of it for a counter fin, such as one now on the bed.
     Gui.Selection.clearSelection()
+    opened = False
     try:
         opened = Gui.ActiveDocument.setEdit(fins)
     finally:
         # Only for this opening: a later Cancel must not delete fins long kept.
         proxy.created, proxy.on_cancel, proxy.stands = False, None, None
+        if not opened:
+            # No panel holds the build the command kept for it.
+            feature.keep_build(fins, False)
     # Without a panel there is no Cancel: what the command did is undone at
     # once, as Cancel would. Without a 3D view, setEdit has said why.
     if not opened:
