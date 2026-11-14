@@ -44,6 +44,7 @@ QUICK_LENGTH = 80.0  # a face this long gets two fins with automatic placement
 THICK_LAYER = 0.3  # a layer height other than the standard, to see the steps follow
 FIN_SHIFT = 1.5  # how far a handle moves a fin along the face, in mm
 TOO_MANY_FINS = 50  # more fins than the face takes, so the build fails
+PART_MOVE = 5.0  # how far a part is moved to change it under its fins, in mm
 AXIS_Z_RGB = (0.2, 0.2, 0.8)  # FreeCAD's standard colour of the z axis
 COLOR_TOLERANCE = 0.01
 BUILD_STEP = 0.5  # how far a fin moves at each step of a counted drag, in mm
@@ -685,6 +686,21 @@ def built_once_for_panel(doc):
         panel, built = opened(fins)
         expect(built == 1, "fins touched since their build was kept are built: %d" % built)
         panel.reject()
+        feature.keep_build(fins, True)
+        doc.recompute()
+        panel, built = opened(fins)
+        expect(built == 0, "fins built with their build kept and nothing changed since are shown as built: %d" % built)
+        panel.reject()
+        feature.keep_build(fins, True)
+        doc.recompute()
+        stood = cube.Placement
+        cube.Placement = App.Placement(App.Vector(PART_MOVE, 0, 0), App.Rotation()).multiply(stood)
+        expect(feature.TOUCHED not in fins.State, "fins whose part moved are not touched themselves")
+        panel, built = opened(fins)
+        expect(built == 1, "fins whose part moved since their build was kept are built: %d" % built)
+        panel.reject()
+        cube.Placement = stood
+        doc.recompute()
         feature.keep_build(fins, True)
         fins.FinCount = TOO_MANY_FINS
         doc.recompute()

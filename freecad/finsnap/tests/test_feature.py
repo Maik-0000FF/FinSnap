@@ -1309,7 +1309,7 @@ def stability_by_limits(doc):
     # goes out of date once the limits change.
     checked = check.record(box, [], check.STABILITY, level, "note", None)
     feature.follow_limits()
-    expect(checked.OutOfDate and "Touched" not in checked.State,
+    expect(checked.OutOfDate and feature.TOUCHED not in checked.State,
            "new limits put the check of a part without fins out of date")
     doc.removeObject(checked.Name)
     doc.removeObject(box.Name)
@@ -1324,7 +1324,8 @@ def check_objects(doc):
     doc.recompute()
     found = check.record(cube, [], check.STABILITY, analysis.STANDS, "note", None)
     again = check.record(cube, [], check.STABILITY, analysis.STANDS, "note again", None)
-    expect(found is again and not found.OutOfDate and found.Result == "note again" and "Touched" not in found.State,
+    expect(found is again and not found.OutOfDate and found.Result == "note again"
+           and feature.TOUCHED not in found.State,
            "checking a part again fills the same check, up to date and not touched")
     fins = feature.create(cube, face_name(cube.Shape, lower_left_face(cube.Shape)))
     doc.recompute()

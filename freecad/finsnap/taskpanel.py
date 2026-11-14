@@ -1158,13 +1158,14 @@ class FinSnapTaskPanel:
             opened                              ->  shown as built
           that build failed, so none is kept    ->  built, the reason shown
           fins opened again, no build kept      ->  built
-          the fins or their part changed since
-            the build, so the fins are touched  ->  built
+          the fins, their part or what it is
+            made of changed since the build
+            (feature.changed_since_built())     ->  built
           a field holds another value than the
             fins are built with                 ->  built
         """
         kept = getattr(self.obj.Proxy, "results", {}).get(feature.MAIN)
-        return kept is not None and feature.TOUCHED not in self.obj.State and not self.differs()
+        return kept is not None and not feature.changed_since_built(self.obj) and not self.differs()
 
     def find_stands(self, opened):
         """Work out the ways Quick fins found, the first time their folded
