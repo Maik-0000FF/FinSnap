@@ -5138,7 +5138,7 @@ def check_built_kept():
     number = next(i for i, each in enumerate(cube.Faces) if each.isSame(lower_left_face(cube)))
     face, p = cube.Faces[number], FinParams()
     made = []
-    real_made, real_key, real_language = geometry._build_reaching, geometry.shape_key, geometry.language
+    real_made, real_key, real_language = geometry._build_reaching, geometry.part_key, geometry.language
     foreign = Part.makeBox(1, 1, 1).Faces[0]
     # What a build made is given, for a test: with a face carried that is none of the part.
     carrying = []
@@ -5184,15 +5184,15 @@ def check_built_kept():
         _, built = asked(cube, cube.copy().Faces[number])
         _, built_again = asked(cube, cube.copy().Faces[number])
         expect(built and built_again, "a face that is none of the part is built every time")
-        key_of_cube = geometry._part_key(cube)
-        geometry.shape_key = lambda shape: key_of_cube[:-1] + ("as if the same",)
+        key_of_cube = shapes.part_key(cube)
+        geometry.part_key = lambda shape: key_of_cube[:-1] + ("as if the same",)
         geometry.forget_built()
         try:
             _, built = asked(cube, face)
             alike, built_alike = asked(elsewhere, elsewhere.Faces[number])
             _, built_after = asked(elsewhere, elsewhere.Faces[number])
         finally:
-            geometry.shape_key = real_key
+            geometry.part_key = real_key
         expect(built and built_alike and not built_after and alike.carried[0].isSame(elsewhere.Faces[number]),
                "a part with the key of one built before, its face another by its centre, is built and kept "
                "in its place")
@@ -5221,10 +5221,10 @@ def check_built_kept():
         expect(built and real_language() is None,
                "said in another language, the fins are built anew; without the window FreeCAD tells none")
         turned = cube.copy()
-        key = geometry._part_key(turned)
-        expect(geometry._part_key(turned) is key, "the key of a shape asked again is the one kept")
+        key = shapes.part_key(turned)
+        expect(shapes.part_key(turned) is key, "the key of a shape asked again is the one kept")
         turned.Placement = App.Placement(V(SHIFT, 0, 0), App.Rotation()).multiply(turned.Placement)
-        expect(geometry._part_key(turned) != key, "a shape moved since is keyed anew")
+        expect(shapes.part_key(turned) != key, "a shape moved since is keyed anew")
         geometry.forget_built()
         geometry.BUILT_KEPT = 1
         asked(cube, face)
