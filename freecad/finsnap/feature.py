@@ -846,6 +846,40 @@ def stability_of(part_obj, p):
     return analysis.stability(part_obj, p, lambda: supports_of(part_obj, part_obj.Document))
 
 
+# The states FreeCAD gives an object changed since it was last recomputed,
+# and one of a file being read.
+TOUCHED = "Touched"
+RESTORING = "Restore"
+
+
+def changed_since_built(obj):
+    """Whether the fins `obj`, or anything they are built from, changed since
+    they were last recomputed, so that what they show is no longer what they
+    would be built as. FreeCAD marks only the object changed itself: fins
+    whose part moved, or whose part is a Body with a sketch changed, are not
+    touched before the next recompute.
+
+    INPUTS this has to withstand:
+      nothing changed since the recompute   ->  not changed
+      a property of the fins set            ->  changed
+      their part moved or given another
+        shape                               ->  changed
+      what their part is made of changed,
+        as a sketch of a Body               ->  changed
+    """
+    return any(TOUCHED in each.State for each in [obj] + obj.OutListRecursive)
+
+
+def keep_build(obj, keep):
+    """Have the fins `obj` keep their last build (execute()) for the arrows of
+    a task panel: one open, or one a command is about to open on the fins it
+    builds, which then shows that build instead of building again. Without
+    `keep` the build kept goes, as no panel holds it any more."""
+    obj.Proxy.editing = keep
+    if not keep:
+        obj.Proxy.results = {}
+
+
 class FinSnapFeature:
     def __init__(self, obj):
         obj.Proxy = self
@@ -887,8 +921,8 @@ class FinSnapFeature:
         return part, build
 
     def execute(self, obj):
-        # The last build, for the arrows of an open task panel only: a failed
-        # build leaves none, and without a panel none is kept.
+        # The last build, for the arrows of a task panel only (keep_build()): a
+        # failed build leaves none, and without a panel none is kept.
         self.results = {}
         # What each warning is about, a NoteTarget or None, in the same order;
         # kept as the results are, for the task panel to show it.
@@ -1018,7 +1052,7 @@ class FinSnapFeature:
         # its plane follows, or the old one would find the old face again.
         # Not while the file is read: the plane saved with it holds.
         sides = {link: which for which, link in SIDE_LINK.items()}
-        if prop in sides and "Restore" not in obj.State and PLANE_OF[sides[prop]] in obj.PropertiesList:
+        if prop in sides and RESTORING not in obj.State and PLANE_OF[sides[prop]] in obj.PropertiesList:
             keep_plane(obj, sides[prop])
 
     def onDocumentRestored(self, obj):  # noqa: N802 - FreeCAD API

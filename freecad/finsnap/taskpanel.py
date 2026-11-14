@@ -938,7 +938,7 @@ class FinSnapTaskPanel:
             for widget in self.key_widgets:
                 widget.installEventFilter(self.fin_keys)
         # The fins keep their last build for the arrows while the panel is open.
-        obj.Proxy.editing = True
+        feature.keep_build(obj, True)
         Gui.Selection.addObserver(self)
         self.form.setWindowTitle("%s (%s)" % (translate("FinSnap", "FinSnap parameters"), application()))
         layout = QtWidgets.QVBoxLayout(self.form)
@@ -1143,7 +1143,29 @@ class FinSnapTaskPanel:
         self.update_steps()
         self.update_enabled()
         self.update_marks()
-        self.preview()
+        if self.built_as_shown():
+            self.show_result()
+        else:
+            self.preview()
+
+    def built_as_shown(self):
+        """Whether the fins stand built with what the fields hold, that build
+        kept for the arrows: the panel opening on them shows it as it is.
+
+        INPUTS this has to withstand:
+          fins a command built with their build
+            kept (feature.keep_build()), then
+            opened                              ->  shown as built
+          that build failed, so none is kept    ->  built, the reason shown
+          fins opened again, no build kept      ->  built
+          the fins, their part or what it is
+            made of changed since the build
+            (feature.changed_since_built())     ->  built
+          a field holds another value than the
+            fins are built with                 ->  built
+        """
+        kept = getattr(self.obj.Proxy, "results", {}).get(feature.MAIN)
+        return kept is not None and not feature.changed_since_built(self.obj) and not self.differs()
 
     def find_stands(self, opened):
         """Work out the ways Quick fins found, the first time their folded
@@ -2548,9 +2570,8 @@ class FinSnapTaskPanel:
         # wrappers PySide could hand out again for a new view.
         self.key_widgets, self.fin_keys = [], None
         self.handles.remove()
-        self.obj.Proxy.editing = False
+        feature.keep_build(self.obj, False)
         self.obj.Proxy.reuse = None
-        self.obj.Proxy.results = {}
 
     def leave_edit(self):
         """Leave edit mode once the panel is closed, as FreeCAD's own panels do."""
