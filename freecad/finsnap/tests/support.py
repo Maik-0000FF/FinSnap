@@ -135,15 +135,21 @@ def run(main, gui=False):
 
     The saved standard for new fins and the limits of the checks are pointed
     at groups of their own while the test runs, and removed afterwards, so a
-    test never reads or changes those of the person running it. A crash in
+    test never reads or changes those of the person running it. The checks of
+    islands and bridges while editing are on while the test runs, as they are
+    where never set, and afterwards as that person left them. A crash in
     native code prints the Python stack that led to it."""
     faulthandler.enable(file=sys.__stdout__)
-    from freecad.finsnap import limits, presets
+    from freecad.finsnap import analysis, limits, presets
     presets.STANDARD_GROUP = TEST_STANDARD_GROUP
     presets.PROFILES_GROUP = TEST_PROFILES_GROUP
     presets.reset()
     limits.LIMITS_GROUP = TEST_LIMITS_GROUP
     limits.reset()
+    preferences = App.ParamGet(presets.PREFERENCES)
+    checks_set = analysis.ISLANDS_WHILE_EDITING in preferences.GetBools()
+    checks_were = analysis.checks_while_editing()
+    analysis.set_checks_while_editing(True)
     try:
         require_checkout(main)
         main()
@@ -153,9 +159,13 @@ def run(main, gui=False):
         traceback.print_exc(file=sys.__stdout__)
         print("FAILED:", error, file=sys.__stdout__)
         result = 1
-    App.ParamGet(presets.PREFERENCES).RemGroup(TEST_STANDARD_GROUP)
-    App.ParamGet(presets.PREFERENCES).RemGroup(TEST_PROFILES_GROUP)
-    App.ParamGet(presets.PREFERENCES).RemGroup(TEST_LIMITS_GROUP)
+    preferences.RemGroup(TEST_STANDARD_GROUP)
+    preferences.RemGroup(TEST_PROFILES_GROUP)
+    preferences.RemGroup(TEST_LIMITS_GROUP)
+    if checks_set:
+        analysis.set_checks_while_editing(checks_were)
+    else:
+        preferences.RemBool(analysis.ISLANDS_WHILE_EDITING)
     sys.__stdout__.flush()
     if gui:
         os._exit(result)
