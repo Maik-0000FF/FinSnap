@@ -308,11 +308,19 @@ def check_params(part_obj):
 
 
 def check_step(doc):
-    """The step on the undo stack of `doc` a check made or checked again by a
-    command is, which Undo takes back. None of its own while a task panel is
-    open: opening one would end the step of the edit under way half done, so
-    the check is part of that edit, kept by OK and dropped by Cancel."""
-    if Gui.Control.activeDialog():
+    """The step on the undo stack of `doc` a check made or checked again is,
+    which Undo takes back.
+
+    INPUTS this has to withstand:
+      no step under way: a command, a double
+        click on a check, the panel of fins
+        just made                           ->  a step of its own
+      a step under way, as the one of the
+        edit after a double click on fins   ->  part of that step, kept by OK and
+                                                dropped by Cancel with it: one
+                                                opened here would end it half done
+    """
+    if doc.HasPendingTransaction:
         return contextlib.nullcontext()
     return feature.transaction(doc, translate("FinSnap", CHECK_STEP))
 
@@ -847,8 +855,11 @@ def _same_mm(a, b):
 
 
 class FinSnapTaskPanel:
-    def __init__(self, obj, created=False, on_cancel=None, stands=None, later=None):
+    def __init__(self, obj, created=False, on_cancel=None, stands=None, later=None, step=None):
         self.obj = obj
+        # The step on the undo stack opened for this edit alone, by its
+        # number, None where there is none: the one Cancel drops.
+        self.step = step
         # The profile active as the panel opened, for Cancel; None for the standard one.
         self.opened_profile = presets.active_profile()
         # When the probe for an operation of FreeCAD first said one runs with
@@ -2596,7 +2607,8 @@ class FinSnapTaskPanel:
         fins as they are built now, and say so below the button."""
         if self.timer.isActive() or self.differs():
             self.preview()
-        level, note = check_stability(self.obj.Base[0], feature.params_of(self.obj))
+        with check_step(self.obj.Document):
+            level, note = check_stability(self.obj.Base[0], feature.params_of(self.obj))
         self.stability.setText(note)
         self.stability.setStyleSheet(NOTE_STYLE % STABILITY_FRAMES[level])
         self.stability.show()
@@ -2668,19 +2680,28 @@ class FinSnapTaskPanel:
                                                     made, renamed or deleted stay so
           the one active on opening deleted     ->  the standard profile
           fins edited after a double click,
-            FreeCAD's step of the edit under
-            way                               ->  that step dropped, with all it
+            the step opened for the edit
+            under way                         ->  that step dropped, with all it
                                                     holds: none is left on the undo
                                                     stack for an edit cancelled
+          the same, that step ended since by
+            another one opened                ->  put back as above; the other step
+                                                    is not touched
+          fins edited, a step under way that
+            was not opened for this edit, as
+            FreeCAD keeps one after a command
+            that opened a panel                 ->  put back as above; that step may
+                                                    hold what made the fins and is
+                                                    never dropped
           fins edited, no step under way        ->  put back as above, no step made
         """
-        # Before the panel closes: leaving edit mode ends FreeCAD's step of
-        # the edit, and what is put back after it would stand outside it.
+        # Before the panel closes: leaving edit mode ends the step of the
+        # edit, and what is put back after it would stand outside it.
         self.timer.stop()
         self.release_handles()
-        doc = self.obj.Document
-        if not self.created and doc.HasPendingTransaction:
-            doc.abortTransaction()
+        under_way = App.getActiveTransaction()
+        if self.step is not None and under_way is not None and under_way[1] == self.step:
+            self.obj.Document.abortTransaction()
         self.close()
         presets.activate(self.opened_profile)
         if self.created:

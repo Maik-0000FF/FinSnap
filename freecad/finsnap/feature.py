@@ -1283,7 +1283,7 @@ def transaction(doc, name):
                                                 as for every step opened: who must
                                                 not end it opens none, as onDelete
                                                 for the last fins and a check
-                                                while a task panel is open
+                                                during an edit
     """
     doc.openTransaction(name)
     try:

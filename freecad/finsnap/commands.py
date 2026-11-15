@@ -52,6 +52,8 @@ FILTER_STEP = QT_TRANSLATE_NOOP("FinSnap", "STEP files (*.step *.stp)")
 NOTE_SELECT_PART = QT_TRANSLATE_NOOP("FinSnap", "Select a part, or its fins, to check whether it stays standing "
                                                 "while it is printed.")
 # Said when new fins cannot be edited because another task panel is open.
+# The step on the undo stack an edit of fins opened by a double click is.
+EDIT_STEP = QT_TRANSLATE_NOOP("FinSnap", "Edit fins")
 NOTE_BUSY = QT_TRANSLATE_NOOP("FinSnap", "Another task panel is open. Close it first, then make the fins again.")
 EXTENSIONS_STEP = (".step", ".stp")
 PREF_LINEAR = "MeshLinearDeflection"
@@ -254,12 +256,14 @@ class ViewProviderFinSnap:
         created, self.created = getattr(self, "created", False), False
         on_cancel, self.on_cancel = getattr(self, "on_cancel", None), None
         stands, self.stands = getattr(self, "stands", None), None
+        step, self.edit_step = getattr(self, "edit_step", None), None
         # Fins opened again: the ways Quick fins found, worked out anew only
         # once their folded section is opened, as that takes a while.
         later = (functools.partial(stands_again, vobj.Object)
                  if stands is None and not created and feature.quick_start(vobj.Object) is not None else None)
         try:
-            panel = FinSnapTaskPanel(vobj.Object, created=created, on_cancel=on_cancel, stands=stands, later=later)
+            panel = FinSnapTaskPanel(vobj.Object, created=created, on_cancel=on_cancel, stands=stands, later=later,
+                                     step=step)
         except handles.NoView as error:
             _message(str(error))
             return False
@@ -270,6 +274,32 @@ class ViewProviderFinSnap:
             return False
         # Kept while editing: the Delete key on a fin goes to the panel then.
         self.panel = panel
+        return True
+
+    def doubleClicked(self, vobj):  # noqa: N802 - FreeCAD API
+        """Edit the fins in a step of their own on the undo stack, which OK
+        keeps and Cancel drops. Opened here rather than left to FreeCAD: only
+        a step known to hold nothing but this edit may be dropped, and one
+        FreeCAD has under way can hold what made the fins.
+
+        SITUATIONS this has to withstand:
+          the panel opens                       ->  the step under way until OK or Cancel
+          another task panel is open, or there
+            is no 3D view                       ->  no panel, the step dropped, empty
+          a step under way before, as FreeCAD
+            keeps one after a command           ->  ended first, as by any step opened
+        """
+        doc = vobj.Object.Document
+        doc.openTransaction(translate("FinSnap", EDIT_STEP))
+        self.edit_step = App.getActiveTransaction()[1]
+        opened = False
+        try:
+            opened = Gui.getDocument(doc).setEdit(vobj.Object)
+        finally:
+            # Only for this opening: a panel opened later another way has no step of its own.
+            self.edit_step = None
+            if not opened:
+                doc.abortTransaction()
         return True
 
     def unsetEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API

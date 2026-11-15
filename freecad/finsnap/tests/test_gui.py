@@ -798,6 +798,33 @@ def undo_and_cancel(messages):
            and not doc.HasPendingTransaction and not Gui.Control.activeDialog(),
            "Quick fins that fail say why and leave the part as it stood, no step open: %s" % messages)
     del messages[:]
+
+    # A check in the panel of fins just made, where no step is under way, is a
+    # step of its own; Escape in the 3D view then cancels as the button does.
+    from PySide import QtCore, QtGui
+    select(other, "Face%d" % side)
+    Gui.runCommand("FinSnap_QuickFins")
+    fresh = next(o for o in doc.Objects if feature.is_fins(o) and o.Base[0] is other)
+    panel = fresh.ViewObject.Proxy.panel
+    stack = list(doc.UndoNames)
+    panel.check_stability()
+    stable = check.find(other, check.STABILITY)
+    # FreeCAD 1.1 keeps a step under way while such a panel is open, which the
+    # check is part of then; later versions keep none, and it is a step of its own.
+    expect(stable is not None and (doc.HasPendingTransaction or len(doc.UndoNames) == len(stack) + 1),
+           "Check stability in the panel of fins just made is in a step on the undo stack: %s"
+           % doc.UndoNames[:2])
+    for pressed in (QtCore.QEvent.KeyPress, QtCore.QEvent.KeyRelease):
+        QtWidgets.QApplication.sendEvent(panel.key_widgets[0],
+                                         QtGui.QKeyEvent(pressed, QtCore.Qt.Key_Escape, QtCore.Qt.NoModifier))
+    Gui.updateGui()
+    expect(fresh.Name not in [o.Name for o in doc.Objects] and other.Placement.isSame(lying, d.TOLERANCE)
+           and panel.released and not Gui.Control.activeDialog()
+           and App.Qt.translate("FinSnap", "Cancel fins") in doc.UndoNames[:1],
+           "Escape in the 3D view cancels fins just made as the Cancel button does: %s" % doc.UndoNames[:2])
+    while check.find(other, check.STABILITY) is not None and doc.UndoCount:
+        doc.undo()
+    expect(check.find(other, check.STABILITY) is None, "and Undo takes the check made in the panel back")
     App.closeDocument(doc.Name)
 
 

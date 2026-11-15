@@ -20,8 +20,8 @@ All notable changes to FinSnap are listed here. The format follows
 - The ends of the tines of a side fin under a round side no longer keep the contour of an earlier build, with another gap or another place of the fin; no part is known on which this changed the fins (#197)
 - Cancel in a panel opened by a double click leaves no step on the undo stack: the values were put back after the step of the edit was ended, which left a step behind that Undo and Redo walked through (#199)
 - Undo after the last fin was deleted in the 3D view stands the part again with its fins: the part laid back stood outside the step of the Delete, so Undo brought the fins back under a part lying flat (#199)
-- A command that fails halfway leaves nothing behind: Quick fins that could not be built left the part stood and a step open on the undo stack. Quick fins now says why and puts the part back, and Stand on edge, Lay flat again and the fins deleted or cancelled in the panel take back what they did when they fail (#199)
-- Check stability, Check bridges, Check part and a double click on a check are steps on the undo stack, which Undo takes back; while a task panel is open they are part of its edit (#199)
+- A command that fails halfway leaves nothing behind: Quick fins that failed while the part was stood or the fins were made left the part stood and a step open on the undo stack. Quick fins now says why and puts the part back, and Stand on edge, Lay flat again and the fins deleted or cancelled in the panel take back what they did when they fail (#199)
+- Check stability, Check bridges, Check part and a double click on a check are steps on the undo stack, which Undo takes back, as is Check stability in the panel of fins just made; during the edit after a double click on fins they are part of its step, kept by OK and dropped by Cancel (#199)
 
 ## [0.18.0] - 2026-11-14
 
