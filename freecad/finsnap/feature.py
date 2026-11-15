@@ -24,8 +24,8 @@ from . import orient
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
-from .shapes import (bounds, face_in_plane, face_like, face_name, global_placement, global_shape, in_plane, moved,
-                     outermost, part_of, plane_of)
+from .shapes import (bounds, container_of, face_in_plane, face_like, face_name, global_placement, global_shape,
+                     in_plane, moved, outermost, part_of, plane_of)
 
 TYPE_NAME = "FinSnap"
 # Result property listing the faces that overhang without fins; the view
@@ -1075,6 +1075,8 @@ class FinSnapFeature:
 
     def onDocumentRestored(self, obj):  # noqa: N802 - FreeCAD API
         obj.Proxy = self
+        # A file saved before the fins followed their part into a container.
+        follow_container(obj)
         if OVERHANGS not in obj.PropertiesList:
             add_overhangs(obj)
         hidden_property(obj, UNPRINTABLE_OVERHANGS, "App::PropertyStringList")
@@ -1249,8 +1251,7 @@ def create(base, face_ref, counter=None):
     obj = doc.addObject("Part::FeaturePython", TYPE_NAME)
     FinSnapFeature(obj)
     obj.Base = (base, [face_ref])
-    if outermost(base) is not base:
-        obj.Container = outermost(base)
+    obj.Container = container_of(base)
     if counter:
         obj.CounterFace = (counter[0], [counter[1]])
     for which in (MAIN, COUNTER):
@@ -1260,6 +1261,142 @@ def create(base, face_ref, counter=None):
         if other is not obj and is_fins(other) and other.Base and other.Base[0] is base:
             other.touch()
     return obj
+
+
+# The property of a container that holds what lies in it.
+HELD_IN = "Group"
+
+
+def follow_containers(container, changed):
+    """After what `container` holds changed by the objects `changed`, those
+    put into it or taken out: link the fins and the checks this reaches to the
+    outermost container their part lies in now (Container), so moving that
+    container rebuilds the fins and marks the checks out of date. A part can
+    be put into a container, or taken out of one, long after they were made.
+
+    Found through what links to the container, to its outermost container
+    and to the objects changed, never by looking through the document: a
+    container filled with thousands of objects, one at a time, asks this each
+    time.
+
+    INPUTS this has to withstand:
+      a part put into a container           ->  its fins, which link the part, link
+                                                that container and are built anew
+                                                at the next recompute; its checks
+                                                link it and are out of date then
+      a container put into another          ->  the fins of what it holds, which
+                                                link it, link the outer one
+      a part or a container taken out, at
+        any depth                           ->  its fins, which link the outermost
+                                                container of where it lay, link
+                                                what holds it now, or none
+      fins and checks whose part lies as
+        before                              ->  nothing written, not built anew
+      objects no fins or checks link        ->  nothing looked at but their links
+      an object deleted from the container  ->  passed over
+      fins without a part, a check whose
+        part is gone                        ->  left as they are
+      fins read from a file saved before
+        their part was followed             ->  set right as they are read
+                                                (onDocumentRestored()); a check
+                                                of such a file when it is checked
+                                                again or its part is put elsewhere
+    """
+    for linked in {container, outermost(container), *changed}:
+        try:
+            users = linked.InList
+        except ReferenceError:
+            continue
+        for user in users:
+            if is_fins(user) or check.is_check(user):
+                follow_container(user)
+
+
+def follow_container(obj):
+    """Link `obj`, fins or a check, to the outermost container its part lies
+    in now; written only where it differs, so nothing is built anew for it."""
+    part = _part_linked(obj)
+    if part is not None and obj.Container is not container_of(part):
+        obj.Container = container_of(part)
+
+
+def _part_linked(obj):
+    """The part `obj`, fins or a check, belongs to; None where it has none."""
+    if is_fins(obj):
+        return obj.Base[0] if obj.Base else None
+    return obj.Part
+
+
+def leave_container(container):
+    """Before `container` is deleted: the fins and the checks that link it
+    link what holds their part once it is gone. What a container held stays
+    in the document and lies in no container of its own then, whatever held
+    the one deleted.
+
+    INPUTS this has to withstand:
+      the one container of a part deleted   ->  its fins and checks link none
+      the outer of two deleted              ->  they link the inner one, which a
+                                                move of rebuilds the fins after
+      the inner of two deleted              ->  nothing here: they link the outer
+                                                one, which loses what it held
+                                                (follow_containers())
+      an object that is no container, or
+        one nothing links                   ->  nothing done
+    """
+    for user in container.InList:
+        if not (is_fins(user) or check.is_check(user)) or user.Container is not container:
+            continue
+        part = _part_linked(user)
+        if part is None:
+            continue
+        # The container of the part that lies in the one deleted itself.
+        below = part
+        while below.getParentGeoFeatureGroup() not in (None, container):
+            below = below.getParentGeoFeatureGroup()
+        user.Container = None if below is part else below
+
+
+class ContainerWatch:
+    """Document observer: when what a container holds changes, the fins
+    follow their part into it or out of it (follow_containers())."""
+
+    def __init__(self):
+        # The container about to change and what it holds, to tell what
+        # changed; and the one that changed last with what it holds since, so
+        # a container filled one object at a time is not read twice each time.
+        self.before = None
+        self.last = None
+
+    def slotBeforeChangeObject(self, obj, prop):  # noqa: N802 - FreeCAD API
+        if prop == HELD_IN:
+            known = self.last is not None and self.last[0] is obj
+            self.before = self.last if known else (obj, obj.Group)
+
+    def slotChangedObject(self, obj, prop):  # noqa: N802 - FreeCAD API
+        if prop != HELD_IN:
+            return
+        before, self.before, self.last = self.before, None, None
+        document = obj.Document
+        # Not while a document is read, when not every object is there yet, nor
+        # while a step of its undo stack is taken back or made again, which
+        # holds the link itself.
+        if document is None or document.Restoring or document.Transacting:
+            return
+        # Not told what it held before: everything it holds counts as changed.
+        held = before[1] if before is not None and before[0] is obj else []
+        holds = obj.Group
+        self.last = (obj, holds)
+        # Mostly one object more at the end, told without comparing them all.
+        added = holds[len(held):] if holds[:len(held)] == held else None
+        follow_containers(obj, set(held).symmetric_difference(holds) if added is None else added)
+
+    def slotDeletedObject(self, obj):  # noqa: N802 - FreeCAD API
+        document = obj.Document
+        if document is not None and not (document.Restoring or document.Transacting):
+            leave_container(obj)
+
+
+App.addDocumentObserver(ContainerWatch())
 
 
 def fins_of(owner, document):

@@ -78,6 +78,7 @@ BRIDGE_TINES = 2  # tines a counter fin has at least below and above a bore it b
 CENTRE_TOLERANCE = 0.5  # how far from the middle of a face a fin planned in its middle may stand, in mm
 FILLET_RADIUS = 2.0  # a fillet on a corner of a test part, in mm
 EXACT_DISTANCE = 1e-9  # how far a point of the tube may move and it still stands alike, in mm
+FILLED_WITH = 20  # objects put into a container one at a time, to see what that looks at
 LINK_ASIDE = 60.0  # how far a link stands from the part it links to, clear of its fins, in mm
 
 
@@ -1420,6 +1421,99 @@ def error_of_the_build_is_kept(doc):
     doc.removeObject(cube.Name)
 
 
+def fins_follow_into_a_container(doc):
+    """Fins and a check follow their part into a container it is put into
+    after they were made, and out of it again: moving the container rebuilds
+    the fins where the part stands and marks the check out of date."""
+    cube = doc.addObject("Part::Feature", "Grouped")
+    cube.Shape = tilted_cube()
+    fins = feature.create(cube, face_name(cube.Shape, lower_left_face(cube.Shape)))
+    checked = check.record(cube, [fins], check.STABILITY, analysis.STANDS, "note", None)
+    doc.recompute()
+    checked.OutOfDate = False
+
+    def at_the_part():
+        return abs(fins.Shape.distToShape(global_shape(cube))[0] - fins.TineClearance.Value) < d.TOLERANCE
+
+    aside = App.Placement(App.Vector(LINK_ASIDE, 0, 0), App.Rotation())
+    inner = doc.addObject("App::Part", "Inner")
+    inner.addObject(cube)
+    expect(fins.Container is inner and checked.Container is inner,
+           "fins and a check link the container their part is put into")
+    doc.recompute()
+    checked.OutOfDate = False
+    inner.Placement = aside
+    doc.recompute()
+    expect(at_the_part() and checked.OutOfDate,
+           "the container moved, the fins stand at the part again and its check is out of date")
+    outer = doc.addObject("App::Part", "Outer")
+    outer.addObject(inner)
+    doc.recompute()
+    outer.Placement = aside
+    doc.recompute()
+    expect(fins.Container is outer and checked.Container is outer and at_the_part(),
+           "the container put into another, they link the outer one, and its move rebuilds the fins")
+    # Fins whose part lies as before are not written to, so not built anew.
+    other = doc.addObject("Part::Feature", "Ungrouped")
+    outer.addObject(other)
+    expect(feature.TOUCHED not in fins.State, "another object put into the container leaves the fins as built")
+    # A container filled with objects no fins link looks at none of the fins
+    # of the document, however many there are: what it costs does not grow
+    # with them.
+    asked = []
+    follow_container = feature.follow_container
+
+    def counted(obj):
+        asked.append(obj.Name)
+        follow_container(obj)
+
+    feature.follow_container = counted
+    try:
+        filled = doc.addObject("App::Part", "Filled")
+        loose = [doc.addObject("App::FeaturePython", "Loose") for _ in range(FILLED_WITH)]
+        for one in loose:
+            filled.addObject(one)
+        filled.removeObject(loose[0])
+    finally:
+        feature.follow_container = follow_container
+    expect(not asked and feature.TOUCHED not in fins.State,
+           "a container filled with %d objects no fins link asks nothing of the fins there are: %s"
+           % (FILLED_WITH, asked))
+    for obj in loose + [filled]:
+        doc.removeObject(obj.Name)
+    inner.removeObject(cube)
+    doc.recompute()
+    expect(fins.Container is None and checked.Container is None and at_the_part(),
+           "the part taken out of every container, they link none and the fins stand at it")
+    # A file saved with the link of before the part was put into a container.
+    inner.addObject(cube)
+    doc.recompute()
+    fins.Container = None
+    doc.recompute()
+    path = os.path.join(tempfile.mkdtemp(), "grouped.FCStd")
+    doc.saveCopy(path)
+    reread = App.openDocument(path)
+    try:
+        again = reread.getObject(fins.Name)
+        expect(reread is not doc and again.Container is not None and again.Container.Name == outer.Name,
+               "fins read from a file saved with an old link follow their part's container")
+    finally:
+        App.closeDocument(reread.Name)
+        App.setActiveDocument(doc.Name)
+    fins.Container = outer
+    # The outer of the two deleted: what it held stays, and the fins follow
+    # the inner one from then on.
+    doc.removeObject(outer.Name)
+    doc.recompute()
+    linked = fins.Container is inner and checked.Container is inner
+    inner.Placement = aside.multiply(inner.Placement)
+    doc.recompute()
+    expect(linked and at_the_part(),
+           "the outer of two containers deleted, they link the inner one, and its move rebuilds the fins")
+    for obj in (checked, fins, cube, other, inner):
+        doc.removeObject(obj.Name)
+
+
 def steps_on_the_undo_stack(doc):
     """feature.transaction(): a step of its own, which an error takes back."""
     undo_mode = doc.UndoMode
@@ -1620,6 +1714,7 @@ def main():
     error_of_the_build_is_kept(doc)
     fins_on_a_link(doc)
     steps_on_the_undo_stack(doc)
+    fins_follow_into_a_container(doc)
     step_with_offset_curves()
     print("all checks passed", file=sys.__stdout__)
 

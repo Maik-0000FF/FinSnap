@@ -662,6 +662,13 @@ def outermost(obj):
         obj = parent
 
 
+def container_of(obj):
+    """The outermost container `obj` lies in, whose placement moves it; None
+    where it lies in none."""
+    owner = outermost(obj)
+    return None if owner is obj else owner
+
+
 def part_of(obj):
     """The object whose shape is the part `obj` belongs to: the Body of a
     feature inside a PartDesign Body, which holds the shape with every feature
