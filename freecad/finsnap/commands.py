@@ -30,8 +30,8 @@ from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_
                     ICON_BRIDGES)
 from .presets import PREFERENCES
 from .shapes import FACE_PREFIX, global_shape, moved, outermost, part_of
-from .taskpanel import (DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, check_bridges, check_params, check_part,
-                        check_stability, check_step, discard_created)
+from .taskpanel import (DEGREE_SUFFIX, EDIT_STEP, LENGTH_SUFFIX, FinSnapTaskPanel, check_bridges, check_params,
+                        check_part, check_stability, check_step, discard_created)
 from .version import NAME
 
 EDGE_PREFIX = "Edge"
@@ -52,9 +52,9 @@ FILTER_STEP = QT_TRANSLATE_NOOP("FinSnap", "STEP files (*.step *.stp)")
 NOTE_SELECT_PART = QT_TRANSLATE_NOOP("FinSnap", "Select a part, or its fins, to check whether it stays standing "
                                                 "while it is printed.")
 # Said when new fins cannot be edited because another task panel is open.
-# The step on the undo stack an edit of fins opened by a double click is.
-EDIT_STEP = QT_TRANSLATE_NOOP("FinSnap", "Edit fins")
 NOTE_BUSY = QT_TRANSLATE_NOOP("FinSnap", "Another task panel is open. Close it first, then make the fins again.")
+# Said when fins are double clicked to edit them while a task panel is open.
+NOTE_PANEL_OPEN = QT_TRANSLATE_NOOP("FinSnap", "Another task panel is open. Close it first, then edit the fins.")
 EXTENSIONS_STEP = (".step", ".stp")
 PREF_LINEAR = "MeshLinearDeflection"
 PREF_ANGULAR = "MeshAngularDeflection"
@@ -284,11 +284,18 @@ class ViewProviderFinSnap:
 
         SITUATIONS this has to withstand:
           the panel opens                       ->  the step under way until OK or Cancel
-          another task panel is open, or there
-            is no 3D view                       ->  no panel, the step dropped, empty
+          a task panel is open, of these fins,
+            of other fins or any other          ->  said so, nothing else: that panel
+                                                    and the step of its edit stay as
+                                                    they are, where a step opened
+                                                    here would end that one
+          there is no 3D view                   ->  no panel, the step dropped, empty
           a step under way before, as FreeCAD
             keeps one after a command           ->  ended first, as by any step opened
         """
+        if Gui.Control.activeDialog():
+            _message(translate("FinSnap", NOTE_PANEL_OPEN))
+            return True
         doc = vobj.Object.Document
         doc.openTransaction(translate("FinSnap", EDIT_STEP))
         self.edit_step = App.getActiveTransaction()[1]

@@ -50,6 +50,7 @@ PAD_SIZE = 20.0  # the edge of a cube padded from a sketch, in mm
 EXPORT_TOLERANCE = 1e-5  # how far a corner written to a 3MF file may lie from the shape, six places written, in mm
 VERTEX = re.compile(r'<vertex x="([^"]+)" y="([^"]+)" z="([^"]+)"/>')  # a corner of a mesh in a 3MF file
 GAP_EDIT = 0.2  # how much the gap is changed in a panel to see it put back, in mm
+OTHER_STEP = "Another step"  # a step on the undo stack opened by someone else, and what it changes
 FAILS = "made to fail"  # the error of a build stopped on purpose
 LINK_ASIDE = 60.0  # how far a link stands from the part it links to, and its container from the origin, in mm
 OTHER_LANGUAGES = ("English", "German")  # two FreeCAD can switch between
@@ -746,6 +747,31 @@ def undo_and_cancel(messages):
     doc.recompute()
     expect(abs(kept - gap - GAP_EDIT) < d.TOLERANCE and abs(fins.Gap.Value - gap) < d.TOLERANCE
            and doc.UndoNames == made, "OK after a double click is one step, which Undo takes back")
+
+    # A double click while the panel is open leaves it and its step alone.
+    fins.ViewObject.doubleClicked()
+    panel = fins.ViewObject.Proxy.panel
+    stack = list(doc.UndoNames)
+    fins.ViewObject.doubleClicked()
+    expect(len(messages) == 1 and fins.ViewObject.Proxy.panel is panel and not panel.released
+           and doc.UndoNames == stack and doc.HasPendingTransaction,
+           "a double click on fins while a task panel is open says so and leaves panel and step: %s" % messages)
+    del messages[:]
+    # A step opened by someone else during the edit ends that of the edit:
+    # Cancel puts the fins back all the same, and does not drop the other step.
+    panel.widgets["Gap"].setValue(gap + GAP_EDIT)
+    panel.preview()
+    doc.openTransaction(OTHER_STEP)
+    cube.Label = OTHER_STEP
+    panel.reject()
+    doc.recompute()
+    expect(abs(fins.Gap.Value - gap) < d.TOLERANCE and cube.Label == OTHER_STEP and OTHER_STEP in doc.UndoNames,
+           "Cancel after another step ended that of the edit puts the fins back and keeps the other step: %s"
+           % doc.UndoNames[:3])
+    while doc.UndoNames != made and doc.UndoCount:
+        doc.undo()
+    doc.recompute()
+    expect(doc.UndoNames == made and abs(fins.Gap.Value - gap) < d.TOLERANCE, "and Undo walks back to the fins as made")
 
     # A check made by its command is a step of its own.
     select(cube)

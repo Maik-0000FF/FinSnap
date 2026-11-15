@@ -168,6 +168,9 @@ SECTION_PREFERENCES = presets.PREFERENCES + "/PanelSections"
 # The section to edit the fins in, open the first time, as it holds what is
 # most often changed; the others start folded away.
 EDIT_SECTION = QT_TRANSLATE_NOOP("FinSnap", "Edit fins")
+# The step on the undo stack an edit of fins opened by a double click is,
+# named as the section it is mostly made in.
+EDIT_STEP = EDIT_SECTION
 RESET_SIGN = "↺"
 # Icon buttons: icon size, the gap to the text and the margin inside, in pixels.
 BUTTON_ICON_SIZE = 20
