@@ -796,6 +796,39 @@ def set_islands(obj, found):
     setattr(obj, ISLANDS_UNCUT, [island.point for island in found if island.first is None])
 
 
+def mark_without_fins(obj, p):
+    """The marks of `obj` after a build that failed: the overhangs and bridges
+    of its part as it stands, no face carried by these fins, no islands.
+
+    Called while the error of the build is on its way out, which no error of
+    a check may replace: it is what the user has to read.
+
+    INPUTS this has to withstand:
+      a part the checks can work on         ->  its overhangs, and with the checks
+                                                while editing on its bridges
+      a part without a shape, or with an
+        empty one                           ->  no marks, nothing raised, the
+                                                error of the check in the log
+      parameters validate() refuses, on
+        which a check fails                 ->  the same
+      the same, the checks going through    ->  the marks they find
+      any other error of a check, also of
+        the kernel                          ->  no marks, nothing raised, the
+                                                error of the check in the log
+    """
+    editing = analysis.checks_while_editing()
+    try:
+        spans = bridges_of(obj.Base[0], obj.Document, p) if editing else []
+        rated = overhangs_of(obj.Base[0], obj.Document, p, editing)
+    except Exception as error:
+        # Not lost all the same: a fault in the checks would go unseen otherwise.
+        App.Console.PrintLog("FinSnap: no marks after the failed build, %s: %s\n" % (type(error).__name__, error))
+        spans, rated = [], []
+    set_overhangs(obj, rated)
+    set_bridges(obj, spans)
+    set_islands(obj, [])
+
+
 def islands_of(obj, p):
     """analysis.islands() of the part of `obj`; while the checks while editing
     are off, none are worked out: [], and the fins say nothing of islands."""
@@ -929,6 +962,8 @@ class FinSnapFeature:
         held = [translate("FinSnap", NOTE_PLACEMENT_HELD)] if drop_placement(obj) else []
         p = params_of(obj)
         try:
+            # First, so parameters refused are named as such, whatever else fails with them.
+            p.validate()
             notes = list(held)
             part, build_main = self.side_builder(obj, MAIN)
             result = build_keeping_edits(obj, MAIN, build_main, notes)
@@ -949,11 +984,7 @@ class FinSnapFeature:
             # follow the part.
             hidden_property(obj, CARRIED, "App::PropertyStringList")
             setattr(obj, CARRIED, [])
-            editing = analysis.checks_while_editing()
-            spans = bridges_of(obj.Base[0], obj.Document, p) if editing else []
-            set_overhangs(obj, overhangs_of(obj.Base[0], obj.Document, p, editing))
-            set_bridges(obj, spans)
-            set_islands(obj, [])
+            mark_without_fins(obj, p)
             raise
         # Named on the part itself, the counter face as well: a split side was
         # built on the shape with its halves joined.
