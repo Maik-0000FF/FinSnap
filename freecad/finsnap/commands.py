@@ -396,6 +396,28 @@ def _message(text):
     QtWidgets.QMessageBox.information(Gui.getMainWindow(), NAME, text)
 
 
+def _free_to_change():
+    """Whether a command may stand a part or make or change fins now: there
+    is a document, and no task panel is open.
+
+    A command run beside an open panel of fins is a step of its own on the
+    undo stack, which ends the step of the edit under way: Cancel in the
+    panel then puts back what it found and the command is silently gone,
+    and the fields of the panel never showed what it did.
+
+    INPUTS this has to withstand:
+      no document open                      ->  no
+      a document, no task panel open        ->  yes
+      the panel of fins open, of these or
+        of others                           ->  no: what the command does is done
+                                                in the panel, or after it closed
+      another task panel open, of FreeCAD
+        or of another workbench             ->  no: the fins made could not be
+                                                edited, and would go again
+    """
+    return App.ActiveDocument is not None and not Gui.Control.activeDialog()
+
+
 class TiltOntoEdge:
     """Stand a part on an edge, or lay one of its faces onto the bed.
 
@@ -434,7 +456,7 @@ class TiltOntoEdge:
                     "it on that rim, leaning to the front.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
-        return App.ActiveDocument is not None
+        return _free_to_change()
 
     def Activated(self):  # noqa: N802 - FreeCAD API
         picked, edges, faces = _picked()
@@ -645,7 +667,7 @@ class QuickFins:
                     "in the air are left out while one without is found.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
-        return App.ActiveDocument is not None
+        return _free_to_change()
 
     def Activated(self):  # noqa: N802 - FreeCAD API
         picked, edges, faces = _picked()
@@ -972,7 +994,7 @@ class AddFins:
                     "opposite side for a counter fin")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
-        return App.ActiveDocument is not None
+        return _free_to_change()
 
     def Activated(self):  # noqa: N802 - FreeCAD API
         faces = _selected_faces()
@@ -1005,7 +1027,8 @@ class AddCounterFin:
                     "fin, clear its face in the property view.")}
 
     def IsActive(self):  # noqa: N802 - FreeCAD API
-        return any(feature.is_fins(o) for o in Gui.Selection.getSelection()) or bool(_selected_faces())
+        return _free_to_change() and (any(feature.is_fins(o) for o in Gui.Selection.getSelection())
+                                      or bool(_selected_faces()))
 
     def Activated(self):  # noqa: N802 - FreeCAD API
         doc = App.ActiveDocument

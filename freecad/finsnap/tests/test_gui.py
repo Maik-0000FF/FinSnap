@@ -854,6 +854,37 @@ def undo_and_cancel(messages):
     App.closeDocument(doc.Name)
 
 
+def commands_wait_for_the_panel(messages):
+    """While a task panel is open, the commands that stand a part or make or
+    change fins are inactive and do nothing; they are active again once it
+    is closed. In a document of its own."""
+    from freecad.finsnap import commands, feature
+    doc = App.newDocument("FinSnapWaits")
+    cube = doc.addObject("Part::Feature", "WaitsCube")
+    cube.Shape = tilted_cube()
+    doc.recompute()
+    changing = (commands.TiltOntoEdge, commands.QuickFins, commands.AddFins, commands.AddCounterFin)
+    select(cube, face_name(cube, lower_left_face(cube.Shape)))
+    free = [command().IsActive() for command in changing]
+    Gui.runCommand("FinSnap_AddFins")
+    fins = next(o for o in doc.Objects if feature.is_fins(o))
+    panel = fins.ViewObject.Proxy.panel
+    select(fins)
+    waiting = [command().IsActive() for command in changing]
+    expect(all(free) and not any(waiting) and commands.LayFlat().IsActive(),
+           "the commands that change fins are inactive while a task panel is open, Lay flat again, which "
+           "closes the panel itself, is not: %s, %s" % (free, waiting))
+    stack, counter = list(doc.UndoNames), fins.CounterFace
+    Gui.runCommand("FinSnap_AddCounterFin")
+    expect(fins.CounterFace == counter and doc.UndoNames == stack and not messages and not panel.released
+           and Gui.Control.activeDialog(),
+           "Add counter fin run beside the open panel does nothing, and the panel stays: %s" % messages)
+    panel.accept()
+    select(fins)
+    expect(all(command().IsActive() for command in changing), "the panel closed, they are active again")
+    App.closeDocument(doc.Name)
+
+
 def built_once_for_panel(doc):
     """The panel a command opens on fins it built, their build kept, shows
     that build; fins without a build kept, touched since or failed are built."""
@@ -2859,6 +2890,7 @@ def main():
     quick_on_pad(doc)
     commands_on_a_link(doc, messages, os.path.join(folder, "link.3mf"))
     undo_and_cancel(messages)
+    commands_wait_for_the_panel(messages)
     built_once_for_panel(doc)
     language_told()
     checked_on_switch(doc)
