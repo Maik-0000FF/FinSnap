@@ -963,6 +963,9 @@ def _edit_new(fins, on_cancel=None, stands=None):
     proxy.created, proxy.on_cancel, proxy.stands = True, on_cancel, stands
     # Another task panel open keeps the fins' panel from opening; said below,
     # as FreeCAD says nothing then.
+    # The commands that make fins are inactive while a task panel is open
+    # (_free_to_change()), so none is busy when they call this. Kept as a
+    # safeguard for who calls a command past that, as a macro does.
     busy = Gui.Control.activeDialog()
     # What was selected to make the fins is used up; left selected, the panel
     # would take a face of it for a counter fin, such as one now on the bed.

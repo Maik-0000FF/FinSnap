@@ -859,6 +859,7 @@ def commands_wait_for_the_panel(messages):
     change fins are inactive and do nothing; they are active again once it
     is closed. In a document of its own."""
     from freecad.finsnap import commands, feature
+    from freecad.finsnap import defaults as d
     doc = App.newDocument("FinSnapWaits")
     cube = doc.addObject("Part::Feature", "WaitsCube")
     cube.Shape = tilted_cube()
@@ -879,6 +880,21 @@ def commands_wait_for_the_panel(messages):
     expect(fins.CounterFace == counter and doc.UndoNames == stack and not messages and not panel.released
            and Gui.Control.activeDialog(),
            "Add counter fin run beside the open panel does nothing, and the panel stays: %s" % messages)
+    # The other three, each with what it would take: another part to stand or to make fins on.
+    other = doc.addObject("Part::Feature", "WaitsBox")
+    other.Shape = Part.makeBox(PAD_SIZE, PAD_SIZE, PAD_SIZE, App.Vector(LINK_ASIDE, 0, 0))
+    doc.recompute()
+    lying, objects, stack = App.Placement(other.Placement), len(doc.Objects), list(doc.UndoNames)
+    side = next(i for i, f in enumerate(other.Shape.Faces, 1) if f.normalAt(0, 0).y < -0.9)
+    edge = next(i for i, e in enumerate(other.Shape.Edges, 1)
+                if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE)
+    for name, picked in (("FinSnap_Tilt", "Edge%d" % edge), ("FinSnap_QuickFins", "Face%d" % side),
+                         ("FinSnap_AddFins", "Face%d" % side)):
+        select(other, picked)
+        Gui.runCommand(name)
+        expect(other.Placement.isSame(lying, d.TOLERANCE) and len(doc.Objects) == objects
+               and doc.UndoNames == stack and not messages and not panel.released,
+               "%s run beside the open panel does nothing: %s" % (name, messages))
     panel.accept()
     select(fins)
     expect(all(command().IsActive() for command in changing), "the panel closed, they are active again")
