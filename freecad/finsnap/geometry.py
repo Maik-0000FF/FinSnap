@@ -844,6 +844,8 @@ def _clear_of_part(p, part, frame, fin, thickness, half_foot):
       the same above all its tines          ->  ends at its last tine
       the same at its last tine             ->  ends at the tine below it
       no tine left                          ->  FinError, as check() says it
+      no tine left above the top of its
+        foot                                ->  the same: no blade is left
     """
     furthest = (d.GAP_MAX - p.gap) / frame.n_out
     needed = p.gap - d.CONTOUR_TOLERANCE
@@ -899,10 +901,11 @@ def _clear_of_part(p, part, frame, fin, thickness, half_foot):
         kept = [(z, whole) for z, whole in zip(fin.candidate_z, fin.on_face) if z <= lowest_close and whole]
         if kept and kept[-1][0] + p.tine_height >= fin.height - d.TOLERANCE:
             kept = kept[:-1]
-        if not kept:
+        # Ending no higher than its foot, it has no blade left to carry a tine.
+        if not kept or kept[-1][0] + p.tine_height <= p.foot_height + d.TOLERANCE:
             raise FinError(translate("FinSnap", NOTE_TOO_CLOSE) % (distance, p.gap))
         fin = fin._replace(candidate_z=[z for z, _ in kept], on_face=[whole for _, whole in kept],
-                           height=_on_foot(p, kept[-1][0] + p.tine_height))
+                           height=kept[-1][0] + p.tine_height)
 
 
 def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):

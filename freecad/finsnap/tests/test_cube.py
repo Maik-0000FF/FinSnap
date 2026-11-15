@@ -333,6 +333,8 @@ RIB_WIDTH = 1.0
 RIB_LENGTH = 30.0      # reaching past the fin
 RIB_INTO_PART = 1.0    # how far it starts inside the part
 RIB_HEIGHT_SHARE = 0.6 # how high up the side fin it stands
+THICK_FOOT = 3.0       # a foot reaching above the lowest tine of a side fin, in mm
+RIB_ABOVE_FOOT = 1.5   # how far above the top of that foot a rib stands, below the next tine, in mm
 THIN_STEP_RADIUS = 3.0 # a step thinner than the side fins stand from the lowest line
 FLANGE_RADIUS = 14.0   # a flange at the start of a rod
 FLANGE_HEIGHT = 2.0
@@ -3986,19 +3988,33 @@ def check_three_round_fins():
     # A rib beside the wall of a side fin, high up: moving out gains nothing there.
     stood, side = stood_on_free_rim(rod)
     free = geometry.build(stood, stood.Faces[side], three)
-    wall = free.positions[2] - RIB_OFF_WALL - RIB_WIDTH
+    def ribbed_at(free, level):
+        """The rod with a rib beside the wall of side fin 3 of `free`, `level`
+        above the bed, and the number of its round side."""
+        wall = free.positions[2] - RIB_OFF_WALL - RIB_WIDTH
+        low, high = free.frame.bed_z + level, free.frame.bed_z + level + RIB_WIDTH
+        start = free.frame.s_face(low) - RIB_INTO_PART
+        rib = free.frame.section(wall, [(start, low), (start + RIB_LENGTH, low), (start + RIB_LENGTH, high),
+                                        (start, high)], RIB_WIDTH)
+        ribbed = stood.fuse(rib)
+        return ribbed, round_side_of(ribbed)
+
     level = free.heights[3] * RIB_HEIGHT_SHARE
-    low, high = free.frame.bed_z + level, free.frame.bed_z + level + RIB_WIDTH
-    start = free.frame.s_face(low) - RIB_INTO_PART
-    rib = free.frame.section(wall, [(start, low), (start + RIB_LENGTH, low), (start + RIB_LENGTH, high), (start, high)],
-                             RIB_WIDTH)
-    ribbed = stood.fuse(rib).removeSplitter()
-    number = round_side_of(ribbed)
+    ribbed, number = ribbed_at(free, level)
     lowered = geometry.build(ribbed, ribbed.Faces[number], three)
     expect(lowered.heights[3] < level and lowered.heights[3] < free.heights[3] and lowered.heights[1] > level
            and any("end lower" in w for w in lowered.warnings),
            "a rib beside its wall: that side fin ends below it, said so, the other stays: %.1f, %.1f"
            % (lowered.heights[3], lowered.heights[1]))
+    # The rib just above a thick foot: the tine left below it lies under the
+    # top of the foot, so no blade is left to carry it.
+    thick = dataclasses.replace(three, tine_first=LOW_TINE, foot_thickness=THICK_FOOT)
+    free = geometry.build(stood, stood.Faces[side], thick)
+    ribbed, number = ribbed_at(free, THICK_FOOT + RIB_ABOVE_FOOT)
+    footed = geometry.build(ribbed, ribbed.Faces[number], thick)
+    expect(3 in free.heights and 3 not in footed.heights and 1 in footed.heights and footed.fins.isValid()
+           and any("left out" in w for w in footed.warnings),
+           "a rib just above a thick foot: that side fin is left out, said so, the others are built")
     # A shaft whose thin step ends the side fins lower than the fin between them.
     thin_step = rod.fuse(Part.makeCylinder(THIN_STEP_RADIUS, ROD_HEIGHT, V(0, 0, ROD_HEIGHT))).removeSplitter()
     stood, side = stood_on_free_rim(thin_step)
