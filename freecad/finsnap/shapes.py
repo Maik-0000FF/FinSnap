@@ -619,12 +619,37 @@ def moved(shape, change):
     return result
 
 
+def global_placement(obj):
+    """Where the shape of `obj` lies in the document, every container it
+    lies in counted.
+
+    INPUTS this has to withstand:
+      an object with a placement of its
+        own, in containers or not           ->  what FreeCAD says of it
+      a link, at the top of the document    ->  where the link puts its shape: its
+                                                own placement, with that of the
+                                                linked object where the link
+                                                keeps it (LinkTransform)
+      a link in a container                 ->  the same, moved by the container
+      a link without a shape                ->  the placement of the link itself
+    """
+    asked = getattr(obj, "getGlobalPlacement", None)
+    if asked is not None:
+        return asked()
+    # A link: FreeCAD answers for it only through its shape, which lies where
+    # the container of the link sees it.
+    shape = Part.getShape(obj, "", needSubElement=False, transform=True)
+    own = obj.Placement if shape.isNull() else shape.Placement
+    parent = obj.getParentGeoFeatureGroup()
+    return own if parent is None else global_placement(parent).multiply(own)
+
+
 def global_shape(obj):
     shape = Part.getShape(obj, "", needSubElement=False, transform=False)
     if shape.isNull():
         raise ValueError(translate("FinSnap", "%s has no shape") % obj.Label)
     shape = shape.copy()
-    shape.Placement = obj.getGlobalPlacement()
+    shape.Placement = global_placement(obj)
     return shape
 
 
@@ -635,6 +660,13 @@ def outermost(obj):
         if parent is None:
             return obj
         obj = parent
+
+
+def container_of(obj):
+    """The outermost container `obj` lies in, whose placement moves it; None
+    where it lies in none."""
+    owner = outermost(obj)
+    return None if owner is obj else owner
 
 
 def part_of(obj):

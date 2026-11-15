@@ -11,6 +11,22 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-11-15
+
+### Fixed
+
+- A fin is no longer built lower than its foot, which gave an invalid solid without any error: a fin height set below the foot is refused, and a fin that would end below it, with a single tine under the top of the foot or a height of its own, is as high as its foot (#192)
+- A side fin under a round side that the part comes too close to just above its foot no longer stops the build with an internal error: with no tine left above the top of its foot, it is left out with a warning, as one with no tine left at all
+- Fins that fail to build say why themselves: the overhangs and bridges of the part, looked for after the failure, no longer replace its message with an error of their own, as "Bnd_Box is void" on a part that became empty, and parameters out of range are named before anything is built (#195)
+- A part that is a link (App::Link) takes fins: adding fins to a face of a link failed with an AttributeError. The fins stand where the link puts its part, with the placement of the linked part where the link keeps it, also in a container, and follow the link when it is moved (#194)
+- The ends of the tines of a side fin under a round side no longer keep the contour of an earlier build, with another gap or another place of the fin; no part is known on which this changed the fins (#197)
+- Cancel in a panel opened by a double click leaves no step on the undo stack: the values were put back after the step of the edit was ended, which left a step behind that Undo and Redo walked through (#199)
+- Undo after the last fin was deleted in the 3D view stands the part again with its fins: the part laid back stood outside the step of the Delete, so Undo brought the fins back under a part lying flat (#199)
+- A command that fails halfway leaves nothing behind: Quick fins that failed while the part was stood or the fins were made left the part stood and a step open on the undo stack. Quick fins now says why and puts the part back, and Stand on edge, Lay flat again and the fins deleted or cancelled in the panel take back what they did when they fail (#199)
+- Check stability, Check bridges, Check part and a double click on a check are steps on the undo stack, which Undo takes back, as is Check stability in the panel of fins just made; during the edit after a double click on fins they are part of its step, kept by OK and dropped by Cancel (#199)
+- Fins follow a part put into a container after they were made: moving the container rebuilds them where the part stands, where they stayed behind and showed as up to date. They link the outermost container their part lies in as it is put into one, taken out, its container put into another or a container round it deleted, a check of the part is marked out of date the same way, and fins of a file saved before are set right as it is read (#193)
+- Stand on edge, Quick fins, Add fins and Add counter fin are inactive while a task panel is open: Add counter fin run beside the open panel of fins was put back by Cancel without a word, and the fields of the panel never showed it. Lay flat again stays active, as it closes the panel itself (#202)
+
 ## [0.18.0] - 2026-11-14
 
 ### Changed
@@ -385,7 +401,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.18.1
 [0.18.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.18.0
 [0.17.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.17.0
 [0.16.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.16.1

@@ -97,6 +97,8 @@ FEET_FINS = 5
 T_WEB, T_WEB_HIGH = 10.0, 10.0
 T_FLANGE, T_HIGH, T_DEEP = 70.0, 60.0, 10.0
 T_SLOT, T_SLOT_ABOVE_WEB = 16.0, 2.0
+LOW_TINE = 0.2         # a first tine below the top of the built-in foot, in mm
+BELOW_FOOT = 0.6       # a fin height below the top of the built-in foot and above that tine, in mm
 OUT_OF_REACH = 100.0   # a height or a width beyond any test part, in mm
 NOTCH_CLEAR = 1.0      # how far a notch in the end of a face stays from the grid tines, and its depth, in mm
 PIN_HOLE_RADIUS = 0.9  # a hole that splits the face under a tine, small enough to leave the tines beside it
@@ -331,6 +333,9 @@ RIB_WIDTH = 1.0
 RIB_LENGTH = 30.0      # reaching past the fin
 RIB_INTO_PART = 1.0    # how far it starts inside the part
 RIB_HEIGHT_SHARE = 0.6 # how high up the side fin it stands
+WIDE_GAP = 0.6         # a gap other than the built-in one, in mm
+THICK_FOOT = 3.0       # a foot reaching above the lowest tine of a side fin, in mm
+RIB_ABOVE_FOOT = 1.5   # how far above the top of that foot a rib stands, below the next tine, in mm
 THIN_STEP_RADIUS = 3.0 # a step thinner than the side fins stand from the lowest line
 FLANGE_RADIUS = 14.0   # a flange at the start of a rod
 FLANGE_HEIGHT = 2.0
@@ -537,6 +542,28 @@ def check_corner_tines(part, face, name):
     expect(max(lengths) - min(lengths) < d.TOLERANCE,
            "%s: all corner tines are equally long (%.3f to %.3f mm)" % (name, min(lengths), max(lengths)))
     return result, frame
+
+
+def check_fin_on_foot(cube, face):
+    """A fin is never lower than its foot: a height set below it is refused,
+    one that follows from the tines ends on the foot."""
+    foot = FinParams().foot_height
+    try:
+        FinParams(tine_first=LOW_TINE, fin_height=BELOW_FOOT).validate()
+    except ParamError as error:
+        expect("fin_height" in str(error), "a fin height below the foot is refused: %s" % error)
+    else:
+        raise AssertionError("a fin height below the foot was accepted")
+    FinParams(tine_first=LOW_TINE, fin_height=foot).validate()
+    FinParams(tine_first=LOW_TINE, fin_height=BELOW_FOOT, foot_shape=d.FOOT_NONE).validate()
+    for what, given in (("one tine below the foot", {"tine_count": 1}),
+                        ("a height of its own below the foot", {"heights": {1: BELOW_FOOT}})):
+        built = geometry.build(cube, face, FinParams(tine_first=LOW_TINE, placement=d.PLACEMENT_CENTER,
+                                                     tine_count=given.get("tine_count", d.TINE_COUNT_AUTO)),
+                               heights=given.get("heights"))
+        expect(built.fins.isValid() and built.fins.Volume > 0 and all(body.isValid() for body in built.bodies),
+               "a fin with %s is a valid solid" % what)
+        expect(abs(built.heights[1] - foot) < d.TOLERANCE, "a fin with %s is as high as its foot" % what)
 
 
 def check_corners(cube, face):
@@ -3962,19 +3989,48 @@ def check_three_round_fins():
     # A rib beside the wall of a side fin, high up: moving out gains nothing there.
     stood, side = stood_on_free_rim(rod)
     free = geometry.build(stood, stood.Faces[side], three)
-    wall = free.positions[2] - RIB_OFF_WALL - RIB_WIDTH
+    def ribbed_at(free, level):
+        """The rod with a rib beside the wall of side fin 3 of `free`, `level`
+        above the bed, and the number of its round side."""
+        wall = free.positions[2] - RIB_OFF_WALL - RIB_WIDTH
+        low, high = free.frame.bed_z + level, free.frame.bed_z + level + RIB_WIDTH
+        start = free.frame.s_face(low) - RIB_INTO_PART
+        rib = free.frame.section(wall, [(start, low), (start + RIB_LENGTH, low), (start + RIB_LENGTH, high),
+                                        (start, high)], RIB_WIDTH)
+        ribbed = stood.fuse(rib).removeSplitter()
+        return ribbed, round_side_of(ribbed)
+
     level = free.heights[3] * RIB_HEIGHT_SHARE
-    low, high = free.frame.bed_z + level, free.frame.bed_z + level + RIB_WIDTH
-    start = free.frame.s_face(low) - RIB_INTO_PART
-    rib = free.frame.section(wall, [(start, low), (start + RIB_LENGTH, low), (start + RIB_LENGTH, high), (start, high)],
-                             RIB_WIDTH)
-    ribbed = stood.fuse(rib).removeSplitter()
-    number = round_side_of(ribbed)
+    ribbed, number = ribbed_at(free, level)
     lowered = geometry.build(ribbed, ribbed.Faces[number], three)
     expect(lowered.heights[3] < level and lowered.heights[3] < free.heights[3] and lowered.heights[1] > level
            and any("end lower" in w for w in lowered.warnings),
            "a rib beside its wall: that side fin ends below it, said so, the other stays: %.1f, %.1f"
            % (lowered.heights[3], lowered.heights[1]))
+    # The rib just above a thick foot: the tine left below it lies under the
+    # top of the foot, so no blade is left to carry it.
+    thick = dataclasses.replace(three, tine_first=LOW_TINE, foot_thickness=THICK_FOOT)
+    free = geometry.build(stood, stood.Faces[side], thick)
+    ribbed, number = ribbed_at(free, THICK_FOOT + RIB_ABOVE_FOOT)
+    footed = geometry.build(ribbed, ribbed.Faces[number], thick)
+    expect(3 in free.heights and 3 not in footed.heights and 1 in footed.heights and footed.fins.isValid()
+           and any("left out" in w for w in footed.warnings),
+           "a rib just above a thick foot: that side fin is left out, said so, the others are built")
+    # The cuts the ends of the tines are measured on are kept from build to
+    # build, the contour of a fin is not: built with another gap, the ends
+    # stand in with the contour of that build, and the fins are those of a
+    # build that finds nothing kept.
+    stood, side = stood_on_free_rim(rod)
+    geometry.build(stood, stood.Faces[side], three)
+    wide = dataclasses.replace(three, gap=WIDE_GAP)
+    after = geometry.build(stood, stood.Faces[side], wide)
+    expect(all(ends.beside is after.frames[number].contour
+               for number in (1, 3) for ends in after.frames[number].tine_edges[1]),
+           "built again with another gap, the ends of the tines of a side fin stand in with its own contour")
+    contour.clear_kept()
+    fresh = geometry.build(stood, stood.Faces[side], wide)
+    expect(abs(after.fins.Volume - fresh.fins.Volume) < d.TOLERANCE and len(after.tines) == len(fresh.tines),
+           "and its fins are those of a build with nothing kept")
     # A shaft whose thin step ends the side fins lower than the fin between them.
     thin_step = rod.fuse(Part.makeCylinder(THIN_STEP_RADIUS, ROD_HEIGHT, V(0, 0, ROD_HEIGHT))).removeSplitter()
     stood, side = stood_on_free_rim(thin_step)
@@ -5399,6 +5455,7 @@ def main():
                "with a %.0f mm foot the lowest tine sits on it and is attached" % foot)
     low = geometry.build(cube, face, FinParams(foot_thickness=3.0, tine_first=1.0))
     expect(len(low.fins.Solids) == 1, "a tine set below the top of the foot still reaches into the fin")
+    check_fin_on_foot(cube, face)
     check_corners(cube, face)
     check_overhangs(cube, face)
     check_limits()

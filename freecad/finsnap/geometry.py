@@ -46,6 +46,11 @@ INPUTS this has to withstand (build()):
     face (narrow face or recess)        ->  those tines left out, warning
   face ending above the bed             ->  no tines below it
   manual fin_height below the first tine ->  FinError
+  manual fin_height below the top of
+    the foot                            ->  ParamError
+  a fin ending below the top of its
+    foot, by its highest tine left or
+    a height of its own                 ->  that fin as high as its foot
   fins standing closer than they are
     thick plus FOOT_CLEARANCE           ->  FinError: they would collide
   fin collides with other geometry of
@@ -839,6 +844,8 @@ def _clear_of_part(p, part, frame, fin, thickness, half_foot):
       the same above all its tines          ->  ends at its last tine
       the same at its last tine             ->  ends at the tine below it
       no tine left                          ->  FinError, as check() says it
+      no tine left above the top of its
+        foot                                ->  the same: no blade is left
     """
     furthest = (d.GAP_MAX - p.gap) / frame.n_out
     needed = p.gap - d.CONTOUR_TOLERANCE
@@ -894,7 +901,8 @@ def _clear_of_part(p, part, frame, fin, thickness, half_foot):
         kept = [(z, whole) for z, whole in zip(fin.candidate_z, fin.on_face) if z <= lowest_close and whole]
         if kept and kept[-1][0] + p.tine_height >= fin.height - d.TOLERANCE:
             kept = kept[:-1]
-        if not kept:
+        # Ending no higher than its foot, it has no blade left to carry a tine.
+        if not kept or kept[-1][0] + p.tine_height <= p.foot_height + d.TOLERANCE:
             raise FinError(translate("FinSnap", NOTE_TOO_CLOSE) % (distance, p.gap))
         fin = fin._replace(candidate_z=[z for z, _ in kept], on_face=[whole for _, whole in kept],
                            height=kept[-1][0] + p.tine_height)
@@ -933,6 +941,12 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
     return body, tines, outer_middle
 
 
+def _on_foot(p, height):
+    """`height` of a fin (mm, from the bed), at least that of its foot: lower,
+    its outline would cross itself and the solid would be invalid."""
+    return max(height, p.foot_height)
+
+
 def fin_at(p, result, number, height):
     """Fin `number` of `result` as it would be `height` high (mm, from the
     bed), with the tines that find the face up to that height, as a list of
@@ -948,7 +962,7 @@ def fin_at(p, result, number, height):
                                                 outline would cross itself
       no foot, height above 0               ->  the fin as high
     """
-    height = max(height, p.foot_height)
+    height = _on_foot(p, height)
     index = result.numbers.index(number)
     tine_z = [z for z in result.touching_z.get(number, []) if z + p.tine_height <= height + d.TOLERANCE]
     body, tines, _ = one_fin(p, result.frames.get(number, result.frame), result.positions[index], height,
@@ -1795,7 +1809,7 @@ def _plan(part, frame, support, p, all_z, face_height, reach, count, restart, le
         else:
             set_height = _within(p, room).fin_height if number in frames else p.fin_height
             fin_height = set_height if set_height > 0 else kept_z[-1] + p.tine_height
-        fins.append(PlannedFin(number, t0, fin_height, candidate_z, on_face, sorted(touching)))
+        fins.append(PlannedFin(number, t0, _on_foot(p, fin_height), candidate_z, on_face, sorted(touching)))
     if not fins and blocked:
         raise refused(translate("FinSnap", NOTE_BLOCKED_OR_BARE if fins_left_out else NOTE_ALL_BLOCKED))
     if not fins and fins_left_out and all_too_narrow:

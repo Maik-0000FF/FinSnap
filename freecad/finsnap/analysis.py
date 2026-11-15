@@ -36,7 +36,7 @@ from . import overhang
 from . import stability as standing
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .presets import PREFERENCES
-from .shapes import FACE_PREFIX, face_name, global_shape, keep, moved, shape_key, working
+from .shapes import FACE_PREFIX, face_name, global_placement, global_shape, keep, moved, shape_key, working
 
 # Parts as they stand are kept by stand_key(), at most KEPT of them (shapes.keep()).
 # What an entry keeps: the islands, None until worked out; the bridges, by
@@ -115,7 +115,7 @@ def stand_key(part_obj, p):
     """What the analysis of `part_obj` depends on: the part, its shape
     (shape_key()), where it stands and the layers of `p`."""
     return (part_obj.Document.Name, part_obj.Name, shape_key(part_obj.Shape),
-            tuple(part_obj.getGlobalPlacement().toMatrix().A), p.first_layer_height, p.layer_height)
+            tuple(global_placement(part_obj).toMatrix().A), p.first_layer_height, p.layer_height)
 
 
 def _analysis(part_obj, p):

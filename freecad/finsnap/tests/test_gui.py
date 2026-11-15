@@ -13,6 +13,7 @@ else, from the selection to the written file, runs as in FreeCAD.
 import functools
 import math
 import os
+import re
 import sys
 import tempfile
 import types
@@ -46,6 +47,12 @@ FIN_SHIFT = 1.5  # how far a handle moves a fin along the face, in mm
 TOO_MANY_FINS = 50  # more fins than the face takes, so the build fails
 PART_MOVE = 5.0  # how far a part is moved to change it under its fins, in mm
 PAD_SIZE = 20.0  # the edge of a cube padded from a sketch, in mm
+EXPORT_TOLERANCE = 1e-5  # how far a corner written to a 3MF file may lie from the shape, six places written, in mm
+VERTEX = re.compile(r'<vertex x="([^"]+)" y="([^"]+)" z="([^"]+)"/>')  # a corner of a mesh in a 3MF file
+GAP_EDIT = 0.2  # how much the gap is changed in a panel to see it put back, in mm
+OTHER_STEP = "Another step"  # a step on the undo stack opened by someone else, and what it changes
+FAILS = "made to fail"  # the error of a build stopped on purpose
+LINK_ASIDE = 60.0  # how far a link stands from the part it links to, and its container from the origin, in mm
 OTHER_LANGUAGES = ("English", "German")  # two FreeCAD can switch between
 AXIS_Z_RGB = (0.2, 0.2, 0.8)  # FreeCAD's standard colour of the z axis
 COLOR_TOLERANCE = 0.01
@@ -634,6 +641,264 @@ def quick_on_pad(doc):
         fins[0].ViewObject.Proxy.panel.reject()
     for name in (box.Name, body.Name):
         doc.removeObject(name)
+
+
+def commands_on_a_link(doc, messages, written):
+    """The commands on a link to a part, in a container that is moved and
+    turned: Quick fins stands the link and puts the fins under its face, the
+    part is checked and exported where the link puts it, and Lay flat again
+    brings the container back. The file is `written` to that path."""
+    from freecad.finsnap import check, feature
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap.shapes import global_shape, outermost
+    box = doc.addObject("Part::Feature", "LinkedBox")
+    box.Shape = Part.makeBox(PAD_SIZE, PAD_SIZE, PAD_SIZE)
+    group = doc.addObject("App::Part", "LinkGroup")
+    lying = App.Placement(App.Vector(0, -LINK_ASIDE, 0), App.Rotation(UP, TUBE_ANGLE))
+    group.Placement = lying
+    link = doc.addObject("App::Link", "BoxLink")
+    link.LinkedObject = box
+    link.Placement = App.Placement(App.Vector(LINK_ASIDE, 0, 0), App.Rotation())
+    group.addObject(link)
+    doc.recompute()
+    side = next(i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).y < -0.9)
+    select(link, "Face%d" % side)
+    Gui.runCommand("FinSnap_QuickFins")
+    fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is link]
+    expect(not messages and len(fins) == 1 and fins[0].isValid() and fins[0].Shape.Solids
+           and outermost(link) is group and not group.Placement.isSame(lying, d.TOLERANCE)
+           and abs(fins[0].Shape.distToShape(global_shape(link))[0] - feature.params_of(fins[0]).clearance)
+           < d.TOLERANCE,
+           "Quick fins on a face of a link stands its container and puts the fins under the link: %s" % messages)
+    fins = fins[0]
+    expect(fins.ViewObject.Proxy.panel.accept(), "OK keeps the fins of a link")
+
+    select(link)
+    Gui.runCommand("FinSnap_CheckPart")
+    whole = check.find(link, check.PART)
+    expect(whole is not None and len(messages) == 1, "Check part checks a link where it stands: %s" % messages)
+    del messages[:]
+
+    asked = QtWidgets.QFileDialog.getSaveFileName
+    QtWidgets.QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: (written, ""))
+    select(link)
+    Gui.Selection.addSelection(fins)
+    try:
+        Gui.runCommand("FinSnap_Export3MF")
+    finally:
+        QtWidgets.QFileDialog.getSaveFileName = asked
+    with zipfile.ZipFile(written) as archive:
+        model = archive.read("3D/3dmodel.model").decode()
+    # What is written reaches as far as link and fins do where they stand.
+    corners = [[float(value) for value in vertex] for vertex in VERTEX.findall(model)]
+    standing = global_shape(link).BoundBox
+    standing.add(fins.Shape.BoundBox)
+    reached = [reach(axis) for reach in (min, max) for axis in zip(*corners)]
+    wanted = [standing.XMin, standing.YMin, standing.ZMin, standing.XMax, standing.YMax, standing.ZMax]
+    expect(not messages and model.count("<object ") == 2 and corners
+           and all(abs(got - there) < EXPORT_TOLERANCE for got, there in zip(reached, wanted)),
+           "a link is exported with its fins, where it stands: %s" % messages)
+
+    ANSWERS.append(QtWidgets.QMessageBox.No)
+    select(link)
+    Gui.runCommand("FinSnap_LayFlat")
+    doc.recompute()
+    expect(not messages and group.Placement.isSame(lying, d.TOLERANCE) and feature.is_laid_flat(fins)
+           and abs(fins.Shape.distToShape(global_shape(link))[0] - feature.params_of(fins).clearance)
+           < d.TOLERANCE,
+           "Lay flat again brings the container of a link back, its fins kept with it: %s" % messages)
+    for obj in (whole, fins, link, group, box):
+        doc.removeObject(obj.Name)
+
+
+def undo_and_cancel(messages):
+    """What Cancel, Undo and an error leave on the undo stack, in a document
+    of its own: an edit cancelled leaves no step, the last fin deleted in
+    the 3D view comes back with its part standing, a command that fails
+    leaves nothing behind, and a check is a step Undo takes back."""
+    from freecad.finsnap import check, face_frame, feature
+    from freecad.finsnap import defaults as d
+    doc = App.newDocument("FinSnapUndo")
+    cube = doc.addObject("Part::Feature", "UndoCube")
+    cube.Shape = tilted_cube()
+    doc.recompute()
+    select(cube, face_name(cube, lower_left_face(cube.Shape)))
+    Gui.runCommand("FinSnap_AddFins")
+    fins = next(o for o in doc.Objects if feature.is_fins(o))
+    fins.ViewObject.Proxy.panel.accept()
+    made, gap = list(doc.UndoNames), fins.Gap.Value
+    # As a double click in the tree: FreeCAD opens a step for the edit.
+    fins.ViewObject.doubleClicked()
+    panel = fins.ViewObject.Proxy.panel
+    panel.widgets["Gap"].setValue(gap + GAP_EDIT)
+    panel.preview()
+    edited = fins.Gap.Value
+    panel.reject()
+    doc.recompute()
+    expect(abs(edited - gap - GAP_EDIT) < d.TOLERANCE and abs(fins.Gap.Value - gap) < d.TOLERANCE
+           and doc.UndoNames == made and not doc.RedoNames and not doc.HasPendingTransaction,
+           "Cancel after a double click puts the fins back and leaves no step of the edit: %s" % doc.UndoNames)
+    fins.ViewObject.doubleClicked()
+    panel = fins.ViewObject.Proxy.panel
+    panel.widgets["Gap"].setValue(gap + GAP_EDIT)
+    panel.accept()
+    kept = fins.Gap.Value
+    doc.undo()
+    doc.recompute()
+    expect(abs(kept - gap - GAP_EDIT) < d.TOLERANCE and abs(fins.Gap.Value - gap) < d.TOLERANCE
+           and doc.UndoNames == made, "OK after a double click is one step, which Undo takes back")
+
+    # A double click while the panel is open leaves it and its step alone.
+    fins.ViewObject.doubleClicked()
+    panel = fins.ViewObject.Proxy.panel
+    stack = list(doc.UndoNames)
+    fins.ViewObject.doubleClicked()
+    expect(len(messages) == 1 and fins.ViewObject.Proxy.panel is panel and not panel.released
+           and doc.UndoNames == stack and doc.HasPendingTransaction,
+           "a double click on fins while a task panel is open says so and leaves panel and step: %s" % messages)
+    del messages[:]
+    # A step opened by someone else during the edit ends that of the edit:
+    # Cancel puts the fins back all the same, and does not drop the other step.
+    panel.widgets["Gap"].setValue(gap + GAP_EDIT)
+    panel.preview()
+    doc.openTransaction(OTHER_STEP)
+    cube.Label = OTHER_STEP
+    panel.reject()
+    doc.recompute()
+    expect(abs(fins.Gap.Value - gap) < d.TOLERANCE and cube.Label == OTHER_STEP and OTHER_STEP in doc.UndoNames,
+           "Cancel after another step ended that of the edit puts the fins back and keeps the other step: %s"
+           % doc.UndoNames[:3])
+    while doc.UndoNames != made and doc.UndoCount:
+        doc.undo()
+    doc.recompute()
+    expect(doc.UndoNames == made and abs(fins.Gap.Value - gap) < d.TOLERANCE, "and Undo walks back to the fins as made")
+
+    # A check made by its command is a step of its own.
+    select(cube)
+    Gui.runCommand("FinSnap_CheckPart")
+    checked = check.find(cube, check.PART)
+    del messages[:]
+    stack = list(doc.UndoNames)
+    doc.undo()
+    expect(checked is not None and len(stack) == len(made) + 1 and check.find(cube, check.PART) is None
+           and doc.UndoNames == made, "Check part is one step, and Undo takes the check back: %s" % stack)
+
+    # The last fin deleted in the 3D view takes the object with it and lays
+    # the part back: Undo brings both back.
+    box = doc.addObject("Part::Feature", "UndoBox")
+    box.Shape = Part.makeBox(PAD_SIZE, PAD_SIZE, PAD_SIZE)
+    doc.recompute()
+    side = next(i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).y < -0.9)
+    select(box, "Face%d" % side)
+    Gui.runCommand("FinSnap_QuickFins")
+    quick = next(o for o in doc.Objects if feature.is_fins(o) and o.Base[0] is box)
+    quick.ViewObject.Proxy.panel.accept()
+    standing = App.Placement(box.Placement)
+    select(quick, "Face1")
+    Gui.runCommand("Std_Delete")
+    doc.recompute()
+    gone = quick.Name not in [o.Name for o in doc.Objects] and box.Placement.isIdentity()
+    doc.undo()
+    doc.recompute()
+    expect(gone and quick.Name in [o.Name for o in doc.Objects] and box.Placement.isSame(standing, d.TOLERANCE)
+           and quick.isValid(),
+           "the last fin deleted in the 3D view lays the part back, and Undo stands it again with its fins")
+
+    # Quick fins that fail after the part is stood: nothing is left of them.
+    other = doc.addObject("Part::Feature", "UndoOther")
+    other.Shape = Part.makeBox(PAD_SIZE, PAD_SIZE, PAD_SIZE, App.Vector(LINK_ASIDE, 0, 0))
+    doc.recompute()
+    lying, stack = App.Placement(other.Placement), list(doc.UndoNames)
+
+    def failing(*_):
+        raise face_frame.FinError(FAILS)
+
+    create = feature.create
+    feature.create = failing
+    try:
+        select(other, "Face%d" % side)
+        Gui.runCommand("FinSnap_QuickFins")
+    finally:
+        feature.create = create
+    expect(messages == [FAILS] and other.Placement.isSame(lying, d.TOLERANCE) and doc.UndoNames == stack
+           and not doc.HasPendingTransaction and not Gui.Control.activeDialog(),
+           "Quick fins that fail say why and leave the part as it stood, no step open: %s" % messages)
+    del messages[:]
+
+    # A check in the panel of fins just made, where no step is under way, is a
+    # step of its own; Escape in the 3D view then cancels as the button does.
+    from PySide import QtCore, QtGui
+    select(other, "Face%d" % side)
+    Gui.runCommand("FinSnap_QuickFins")
+    fresh = next(o for o in doc.Objects if feature.is_fins(o) and o.Base[0] is other)
+    panel = fresh.ViewObject.Proxy.panel
+    stack = list(doc.UndoNames)
+    panel.check_stability()
+    stable = check.find(other, check.STABILITY)
+    # FreeCAD 1.1 keeps a step under way while such a panel is open, which the
+    # check is part of then; later versions keep none, and it is a step of its own.
+    expect(stable is not None and (doc.HasPendingTransaction or len(doc.UndoNames) == len(stack) + 1),
+           "Check stability in the panel of fins just made is in a step on the undo stack: %s"
+           % doc.UndoNames[:2])
+    for pressed in (QtCore.QEvent.KeyPress, QtCore.QEvent.KeyRelease):
+        QtWidgets.QApplication.sendEvent(panel.key_widgets[0],
+                                         QtGui.QKeyEvent(pressed, QtCore.Qt.Key_Escape, QtCore.Qt.NoModifier))
+    Gui.updateGui()
+    expect(fresh.Name not in [o.Name for o in doc.Objects] and other.Placement.isSame(lying, d.TOLERANCE)
+           and panel.released and not Gui.Control.activeDialog()
+           and App.Qt.translate("FinSnap", "Cancel fins") in doc.UndoNames[:1],
+           "Escape in the 3D view cancels fins just made as the Cancel button does: %s" % doc.UndoNames[:2])
+    while check.find(other, check.STABILITY) is not None and doc.UndoCount:
+        doc.undo()
+    expect(check.find(other, check.STABILITY) is None, "and Undo takes the check made in the panel back")
+    App.closeDocument(doc.Name)
+
+
+def commands_wait_for_the_panel(messages):
+    """While a task panel is open, the commands that stand a part or make or
+    change fins are inactive and do nothing; they are active again once it
+    is closed. In a document of its own."""
+    from freecad.finsnap import commands, feature
+    from freecad.finsnap import defaults as d
+    doc = App.newDocument("FinSnapWaits")
+    cube = doc.addObject("Part::Feature", "WaitsCube")
+    cube.Shape = tilted_cube()
+    doc.recompute()
+    changing = (commands.TiltOntoEdge, commands.QuickFins, commands.AddFins, commands.AddCounterFin)
+    select(cube, face_name(cube, lower_left_face(cube.Shape)))
+    free = [command().IsActive() for command in changing]
+    Gui.runCommand("FinSnap_AddFins")
+    fins = next(o for o in doc.Objects if feature.is_fins(o))
+    panel = fins.ViewObject.Proxy.panel
+    select(fins)
+    waiting = [command().IsActive() for command in changing]
+    expect(all(free) and not any(waiting) and commands.LayFlat().IsActive(),
+           "the commands that change fins are inactive while a task panel is open, Lay flat again, which "
+           "closes the panel itself, is not: %s, %s" % (free, waiting))
+    stack, counter = list(doc.UndoNames), fins.CounterFace
+    Gui.runCommand("FinSnap_AddCounterFin")
+    expect(fins.CounterFace == counter and doc.UndoNames == stack and not messages and not panel.released
+           and Gui.Control.activeDialog(),
+           "Add counter fin run beside the open panel does nothing, and the panel stays: %s" % messages)
+    # The other three, each with what it would take: another part to stand or to make fins on.
+    other = doc.addObject("Part::Feature", "WaitsBox")
+    other.Shape = Part.makeBox(PAD_SIZE, PAD_SIZE, PAD_SIZE, App.Vector(LINK_ASIDE, 0, 0))
+    doc.recompute()
+    lying, objects, stack = App.Placement(other.Placement), len(doc.Objects), list(doc.UndoNames)
+    side = next(i for i, f in enumerate(other.Shape.Faces, 1) if f.normalAt(0, 0).y < -0.9)
+    edge = next(i for i, e in enumerate(other.Shape.Edges, 1)
+                if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE)
+    for name, picked in (("FinSnap_Tilt", "Edge%d" % edge), ("FinSnap_QuickFins", "Face%d" % side),
+                         ("FinSnap_AddFins", "Face%d" % side)):
+        select(other, picked)
+        Gui.runCommand(name)
+        expect(other.Placement.isSame(lying, d.TOLERANCE) and len(doc.Objects) == objects
+               and doc.UndoNames == stack and not messages and not panel.released,
+               "%s run beside the open panel does nothing: %s" % (name, messages))
+    panel.accept()
+    select(fins)
+    expect(all(command().IsActive() for command in changing), "the panel closed, they are active again")
+    App.closeDocument(doc.Name)
 
 
 def built_once_for_panel(doc):
@@ -2639,6 +2904,9 @@ def main():
     chosen_stands(doc, quick, facing, messages)
     stands_reopened(doc, quick, facing)
     quick_on_pad(doc)
+    commands_on_a_link(doc, messages, os.path.join(folder, "link.3mf"))
+    undo_and_cancel(messages)
+    commands_wait_for_the_panel(messages)
     built_once_for_panel(doc)
     language_told()
     checked_on_switch(doc)

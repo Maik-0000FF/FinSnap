@@ -25,7 +25,7 @@ from freecad.finsnap import (analysis, check, export_3mf, export_step, face_fram
 from freecad.finsnap import limits, presets
 from freecad.finsnap.params import FinParams, ParamError
 from freecad.finsnap.paths import PACKAGE_XML
-from freecad.finsnap.shapes import KEPT, bounds, global_shape, moved, outermost
+from freecad.finsnap.shapes import KEPT, bounds, global_placement, global_shape, moved, outermost
 
 V = App.Vector
 # The version as package.xml states it, read independently of the workbench.
@@ -78,6 +78,8 @@ BRIDGE_TINES = 2  # tines a counter fin has at least below and above a bore it b
 CENTRE_TOLERANCE = 0.5  # how far from the middle of a face a fin planned in its middle may stand, in mm
 FILLET_RADIUS = 2.0  # a fillet on a corner of a test part, in mm
 EXACT_DISTANCE = 1e-9  # how far a point of the tube may move and it still stands alike, in mm
+FILLED_WITH = 20  # objects put into a container one at a time, to see what that looks at
+LINK_ASIDE = 60.0  # how far a link stands from the part it links to, clear of its fins, in mm
 
 
 def face_name(shape, face):
@@ -1378,6 +1380,215 @@ def check_objects(doc):
     doc.removeObject(body.Name)
 
 
+def error_of_the_build_is_kept(doc):
+    """A build that fails says why itself: neither a check of the part run
+    after it nor anything tried before the parameters are validated replaces
+    its error."""
+    cube = doc.addObject("Part::Feature", "Failing")
+    cube.Shape = tilted_cube()
+    fins = feature.create(cube, face_name(cube.Shape, lower_left_face(cube.Shape)))
+    doc.recompute()
+    expect(fins.Shape.Solids and not fins.getStatusString().strip("Valid"), "the fins are built before they fail")
+
+    def failing(*_):
+        raise ZeroDivisionError("a check that fails")
+
+    checks = ("overhangs_of", "bridges_of")
+    kept = {name: getattr(feature, name) for name in checks}
+    fins.LayerHeight = 0
+    try:
+        for name in checks:
+            setattr(feature, name, failing)
+        doc.recompute()
+    finally:
+        for name, check_of in kept.items():
+            setattr(feature, name, check_of)
+    expect("layer_height" in fins.getStatusString() and not fins.Overhangs,
+           "parameters refused are named although the checks fail after them, no mark left: %s"
+           % fins.getStatusString())
+    fins.LayerHeight = d.LAYER_HEIGHT
+    doc.recompute()
+    expect(fins.Shape.Solids, "the fins are built again with the parameters set right")
+
+    # A part that became an empty shape: the checks have nothing to measure.
+    cube.Shape = Part.makeCompound([])
+    doc.recompute()
+    gone = App.Qt.translate("FinSnap", feature.NOTE_FACE_GONE) % cube.Label
+    expect(gone in fins.getStatusString() and not fins.Overhangs,
+           "on a part become empty the build says its face is gone, not what a check fails on: %s"
+           % fins.getStatusString())
+    doc.removeObject(fins.Name)
+    doc.removeObject(cube.Name)
+
+
+def fins_follow_into_a_container(doc):
+    """Fins and a check follow their part into a container it is put into
+    after they were made, and out of it again: moving the container rebuilds
+    the fins where the part stands and marks the check out of date."""
+    cube = doc.addObject("Part::Feature", "Grouped")
+    cube.Shape = tilted_cube()
+    fins = feature.create(cube, face_name(cube.Shape, lower_left_face(cube.Shape)))
+    checked = check.record(cube, [fins], check.STABILITY, analysis.STANDS, "note", None)
+    doc.recompute()
+    checked.OutOfDate = False
+
+    def at_the_part():
+        return abs(fins.Shape.distToShape(global_shape(cube))[0] - fins.TineClearance.Value) < d.TOLERANCE
+
+    aside = App.Placement(App.Vector(LINK_ASIDE, 0, 0), App.Rotation())
+    inner = doc.addObject("App::Part", "Inner")
+    inner.addObject(cube)
+    expect(fins.Container is inner and checked.Container is inner,
+           "fins and a check link the container their part is put into")
+    doc.recompute()
+    checked.OutOfDate = False
+    inner.Placement = aside
+    doc.recompute()
+    expect(at_the_part() and checked.OutOfDate,
+           "the container moved, the fins stand at the part again and its check is out of date")
+    outer = doc.addObject("App::Part", "Outer")
+    outer.addObject(inner)
+    doc.recompute()
+    outer.Placement = aside
+    doc.recompute()
+    expect(fins.Container is outer and checked.Container is outer and at_the_part(),
+           "the container put into another, they link the outer one, and its move rebuilds the fins")
+    # Fins whose part lies as before are not written to, so not built anew.
+    other = doc.addObject("Part::Feature", "Ungrouped")
+    outer.addObject(other)
+    expect(feature.TOUCHED not in fins.State, "another object put into the container leaves the fins as built")
+    # A container filled with objects no fins link looks at none of the fins
+    # of the document, however many there are: what it costs does not grow
+    # with them.
+    asked = []
+    follow_container = feature.follow_container
+
+    def counted(obj):
+        asked.append(obj.Name)
+        follow_container(obj)
+
+    feature.follow_container = counted
+    try:
+        filled = doc.addObject("App::Part", "Filled")
+        loose = [doc.addObject("App::FeaturePython", "Loose") for _ in range(FILLED_WITH)]
+        for one in loose:
+            filled.addObject(one)
+        filled.removeObject(loose[0])
+    finally:
+        feature.follow_container = follow_container
+    expect(not asked and feature.TOUCHED not in fins.State,
+           "a container filled with %d objects no fins link asks nothing of the fins there are: %s"
+           % (FILLED_WITH, asked))
+    for obj in loose + [filled]:
+        doc.removeObject(obj.Name)
+    inner.removeObject(cube)
+    doc.recompute()
+    expect(fins.Container is None and checked.Container is None and at_the_part(),
+           "the part taken out of every container, they link none and the fins stand at it")
+    # A file saved with the link of before the part was put into a container.
+    inner.addObject(cube)
+    doc.recompute()
+    fins.Container = None
+    doc.recompute()
+    path = os.path.join(tempfile.mkdtemp(), "grouped.FCStd")
+    doc.saveCopy(path)
+    reread = App.openDocument(path)
+    try:
+        again = reread.getObject(fins.Name)
+        expect(reread is not doc and again.Container is not None and again.Container.Name == outer.Name,
+               "fins read from a file saved with an old link follow their part's container")
+    finally:
+        App.closeDocument(reread.Name)
+        App.setActiveDocument(doc.Name)
+    fins.Container = outer
+    # The outer of the two deleted: what it held stays, and the fins follow
+    # the inner one from then on.
+    doc.removeObject(outer.Name)
+    doc.recompute()
+    linked = fins.Container is inner and checked.Container is inner
+    inner.Placement = aside.multiply(inner.Placement)
+    doc.recompute()
+    expect(linked and at_the_part(),
+           "the outer of two containers deleted, they link the inner one, and its move rebuilds the fins")
+    for obj in (checked, fins, cube, other, inner):
+        doc.removeObject(obj.Name)
+
+
+def steps_on_the_undo_stack(doc):
+    """feature.transaction(): a step of its own, which an error takes back."""
+    undo_mode = doc.UndoMode
+    doc.UndoMode = 1
+    box = doc.addObject("Part::Feature", "Stepped")
+    doc.recompute()
+    doc.clearUndos()
+    try:
+        with feature.transaction(doc, "First"):
+            box.Label = "first"
+        expect(doc.UndoNames == ["First"] and not doc.HasPendingTransaction and box.Label == "first",
+               "what is done in a transaction is one step on the undo stack: %s" % doc.UndoNames)
+        try:
+            with feature.transaction(doc, "Failing"):
+                box.Label = "failing"
+                raise ZeroDivisionError("a step that fails")
+        except ZeroDivisionError:
+            pass
+        expect(doc.UndoNames == ["First"] and not doc.HasPendingTransaction and box.Label == "first",
+               "an error in a transaction puts back what it changed and leaves no step open: %s" % doc.UndoNames)
+        doc.openTransaction("Under way")
+        box.Label = "under way"
+        with feature.transaction(doc, "Second"):
+            box.Label = "second"
+        expect(doc.UndoNames == ["Second", "Under way", "First"] and not doc.HasPendingTransaction,
+               "a step under way is ended as a transaction opens: %s" % doc.UndoNames)
+    finally:
+        doc.UndoMode = undo_mode
+    doc.removeObject(box.Name)
+
+
+def fins_on_a_link(doc):
+    """A link to a part takes fins as the part itself does, where the link
+    puts it: keeping the placement of the linked part or with one of its own,
+    at the top of the document or in a container."""
+    cube = doc.addObject("Part::Feature", "Linked")
+    cube.Shape = tilted_cube()
+    tilt = App.Placement(cube.Placement)
+    name = face_name(cube.Shape, lower_left_face(cube.Shape))
+    aside = App.Placement(App.Vector(LINK_ASIDE, 0, 0), App.Rotation())
+    group = doc.addObject("App::Part", "LinkGroup")
+    group.Placement = App.Placement(App.Vector(0, -LINK_ASIDE, 0), App.Rotation())
+    made = []
+    for what, placement, keeps, container in (("keeping the placement of its part", aside, True, None),
+                                              ("with a placement of its own", aside.multiply(tilt), False, None),
+                                              ("in a container", tilt, False, group)):
+        link = doc.addObject("App::Link", "Link")
+        link.LinkedObject = cube
+        link.LinkTransform = keeps
+        link.Placement = placement
+        if container is not None:
+            container.addObject(link)
+        doc.recompute()
+        fins = feature.create(link, name)
+        doc.recompute()
+        expect(fins.Shape.Solids and abs(fins.Shape.distToShape(global_shape(link))[0] - fins.TineClearance.Value)
+               < d.TOLERANCE and fins.Shape.distToShape(global_shape(cube))[0] > LINK_ASIDE / 2,
+               "a link %s takes fins where it stands, not where its part does" % what)
+        owner = outermost(link)
+        owner.Placement = aside.multiply(owner.Placement)
+        doc.recompute()
+        expect(fins.Shape.Solids and abs(fins.Shape.distToShape(global_shape(link))[0] - fins.TineClearance.Value)
+               < d.TOLERANCE, "the fins follow a link %s moved afterwards" % what)
+        made += [fins, link]
+    # A link to nothing has no shape to ask: it lies where it is put itself.
+    empty = doc.addObject("App::Link", "Link")
+    empty.Placement = aside
+    group.addObject(empty)
+    doc.recompute()
+    expect(global_placement(empty).isSame(group.Placement.multiply(aside), d.TOLERANCE),
+           "a link without a shape lies where its own placement and its container put it")
+    for obj in made + [empty, group, cube]:
+        doc.removeObject(obj.Name)
+
+
 def fins_follow_the_body(doc):
     """Fins under a face of a Pad stand under the face of its Body, and
     follow a chamfer or a fillet added after them: rebuilt on the new shape,
@@ -1500,6 +1711,10 @@ def main():
     stability_by_limits(doc)
     bridges_apart(doc)
     fins_follow_the_body(doc)
+    error_of_the_build_is_kept(doc)
+    fins_on_a_link(doc)
+    steps_on_the_undo_stack(doc)
+    fins_follow_into_a_container(doc)
     step_with_offset_curves()
     print("all checks passed", file=sys.__stdout__)
 

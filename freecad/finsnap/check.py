@@ -27,7 +27,7 @@ import Part
 
 from . import limits
 from .i18n import QT_TRANSLATE_NOOP, translate
-from .shapes import outermost
+from .shapes import container_of
 
 TYPE_NAME = "FinSnapCheck"
 STABILITY, PART, BRIDGES = "stability", "part", "bridges"
@@ -177,8 +177,7 @@ def record(part_obj, fins, kind, level, note, shown, cut=None, overhangs=(), isl
         obj.Part = part_obj
         obj.Kind = kind
     # Set each time: the part may have moved into a container, or out of one.
-    owner = outermost(part_obj)
-    obj.Container = owner if owner is not part_obj else None
+    obj.Container = container_of(part_obj)
     obj.Label = translate("FinSnap", LABELS[kind]) % part_obj.Label
     obj.Fins = list(fins)
     obj.Result = note
