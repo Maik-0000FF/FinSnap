@@ -692,7 +692,7 @@ def commands_on_a_link(doc, messages, written):
     standing.add(fins.Shape.BoundBox)
     reached = [reach(axis) for reach in (min, max) for axis in zip(*corners)]
     wanted = [standing.XMin, standing.YMin, standing.ZMin, standing.XMax, standing.YMax, standing.ZMax]
-    expect(not messages and model.count("<object ") == 2
+    expect(not messages and model.count("<object ") == 2 and corners
            and all(abs(got - there) < EXPORT_TOLERANCE for got, there in zip(reached, wanted)),
            "a link is exported with its fins, where it stands: %s" % messages)
 
