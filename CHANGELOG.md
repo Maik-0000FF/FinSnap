@@ -11,6 +11,11 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Fixed
+
+- A fin is no longer built lower than its foot, which gave an invalid solid without any error: a fin height set below the foot is refused, and a fin that would end below it, with a single tine under the top of the foot or a height of its own, is as high as its foot (#192)
+- A side fin under a round side that the part comes too close to just above its foot no longer stops the build with an internal error: with no tine left above the top of its foot, it is left out with a warning, as one with no tine left at all
+
 ## [0.18.0] - 2026-11-14
 
 ### Changed

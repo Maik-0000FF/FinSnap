@@ -313,7 +313,8 @@ PROPERTIES = (
          QT_TRANSLATE_NOOP("FinSnap", "Fin height"),
          QT_TRANSLATE_NOOP("App::Property",
                            "Height of the fins, 0 = top of the highest tine. A lower value leaves out the "
-                           "tines above it; the fins reach at most to just below the top of the face."),
+                           "tines above it; the fins reach at most to just below the top of the face and are "
+                           "at least as high as their foot."),
          "fin_height", None, STEP_HEIGHT),
     Prop("FollowContour", BOOL, GROUP_FIN,
          QT_TRANSLATE_NOOP("FinSnap", "Follow the contour"),

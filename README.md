@@ -254,7 +254,7 @@ The file is a ZIP archive; the content above sits in `3D/3dmodel.model`. A slice
 | | Tine width beads | 1 | Tine width in beads |
 | | Tine count | 0 = as many as fit | Tines per fin |
 | Fin | Fin thickness | 0 = 1 mm up to 100 mm of height, 1 mm per 100 mm above, at least 2 beads | Wall thickness |
-| | Fin height | 0 = top of the highest tine that finds the face | Height of the fin. Tines over a recess are left out, and the fin ends at the highest tine left. A lower value leaves out the tines above it; at most just below the top of the face |
+| | Fin height | 0 = top of the highest tine that finds the face | Height of the fin. Tines over a recess are left out, and the fin ends at the highest tine left. A lower value leaves out the tines above it; at most just below the top of the face, at least as high as the foot |
 | | Top width | 2 mm | Width of the flat top of the fin, instead of a tip |
 | | Fins under a round side | one | One fin under the lowest line; two, parallel to it on each side, which need **Follow the contour**; or all three. Their flanks follow the radius of the side, keeping the gap across them, and their tines stay level but run straight at its axis, ending on the side; where the part comes closer they stand further out or end lower, and one that finds no room is left out with a note; feet that overlap are joined on export |
 | | Angle of the side fins | 30 degrees | How far round the side from the lowest line the two side fins stand, at most 45 degrees |
