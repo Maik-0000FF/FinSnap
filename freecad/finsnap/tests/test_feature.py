@@ -78,6 +78,7 @@ BRIDGE_TINES = 2  # tines a counter fin has at least below and above a bore it b
 CENTRE_TOLERANCE = 0.5  # how far from the middle of a face a fin planned in its middle may stand, in mm
 FILLET_RADIUS = 2.0  # a fillet on a corner of a test part, in mm
 EXACT_DISTANCE = 1e-9  # how far a point of the tube may move and it still stands alike, in mm
+FILLED_WITH = 20  # objects put into a container one at a time, to see what that looks at
 LINK_ASIDE = 60.0  # how far a link stands from the part it links to, clear of its fins, in mm
 
 
@@ -1456,6 +1457,30 @@ def fins_follow_into_a_container(doc):
     other = doc.addObject("Part::Feature", "Ungrouped")
     outer.addObject(other)
     expect(feature.TOUCHED not in fins.State, "another object put into the container leaves the fins as built")
+    # A container filled with objects no fins link looks at none of the fins
+    # of the document, however many there are: what it costs does not grow
+    # with them.
+    asked = []
+    follow_container = feature.follow_container
+
+    def counted(obj):
+        asked.append(obj.Name)
+        follow_container(obj)
+
+    feature.follow_container = counted
+    try:
+        filled = doc.addObject("App::Part", "Filled")
+        loose = [doc.addObject("App::FeaturePython", "Loose") for _ in range(FILLED_WITH)]
+        for one in loose:
+            filled.addObject(one)
+        filled.removeObject(loose[0])
+    finally:
+        feature.follow_container = follow_container
+    expect(not asked and feature.TOUCHED not in fins.State,
+           "a container filled with %d objects no fins link asks nothing of the fins there are: %s"
+           % (FILLED_WITH, asked))
+    for obj in loose + [filled]:
+        doc.removeObject(obj.Name)
     inner.removeObject(cube)
     doc.recompute()
     expect(fins.Container is None and checked.Container is None and at_the_part(),
@@ -1476,7 +1501,16 @@ def fins_follow_into_a_container(doc):
         App.closeDocument(reread.Name)
         App.setActiveDocument(doc.Name)
     fins.Container = outer
-    for obj in (checked, fins, cube, other, inner, outer):
+    # The outer of the two deleted: what it held stays, and the fins follow
+    # the inner one from then on.
+    doc.removeObject(outer.Name)
+    doc.recompute()
+    linked = fins.Container is inner and checked.Container is inner
+    inner.Placement = aside.multiply(inner.Placement)
+    doc.recompute()
+    expect(linked and at_the_part(),
+           "the outer of two containers deleted, they link the inner one, and its move rebuilds the fins")
+    for obj in (checked, fins, cube, other, inner):
         doc.removeObject(obj.Name)
 
 
