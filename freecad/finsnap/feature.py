@@ -807,18 +807,22 @@ def mark_without_fins(obj, p):
       a part the checks can work on         ->  its overhangs, and with the checks
                                                 while editing on its bridges
       a part without a shape, or with an
-        empty one                           ->  no marks, nothing raised
+        empty one                           ->  no marks, nothing raised, the
+                                                error of the check in the log
       parameters validate() refuses, on
-        which a check fails                 ->  no marks, nothing raised
+        which a check fails                 ->  the same
       the same, the checks going through    ->  the marks they find
       any other error of a check, also of
-        the kernel                          ->  no marks, nothing raised
+        the kernel                          ->  no marks, nothing raised, the
+                                                error of the check in the log
     """
     editing = analysis.checks_while_editing()
     try:
         spans = bridges_of(obj.Base[0], obj.Document, p) if editing else []
         rated = overhangs_of(obj.Base[0], obj.Document, p, editing)
-    except Exception:
+    except Exception as error:
+        # Not lost all the same: a fault in the checks would go unseen otherwise.
+        App.Console.PrintLog("FinSnap: no marks after the failed build, %s: %s\n" % (type(error).__name__, error))
         spans, rated = [], []
     set_overhangs(obj, rated)
     set_bridges(obj, spans)
