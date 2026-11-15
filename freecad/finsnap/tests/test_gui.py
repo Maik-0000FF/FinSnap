@@ -46,6 +46,7 @@ FIN_SHIFT = 1.5  # how far a handle moves a fin along the face, in mm
 TOO_MANY_FINS = 50  # more fins than the face takes, so the build fails
 PART_MOVE = 5.0  # how far a part is moved to change it under its fins, in mm
 PAD_SIZE = 20.0  # the edge of a cube padded from a sketch, in mm
+LINK_ASIDE = 60.0  # how far a link stands from the part it links to, and its container from the origin, in mm
 OTHER_LANGUAGES = ("English", "German")  # two FreeCAD can switch between
 AXIS_Z_RGB = (0.2, 0.2, 0.8)  # FreeCAD's standard colour of the z axis
 COLOR_TOLERANCE = 0.01
@@ -634,6 +635,64 @@ def quick_on_pad(doc):
         fins[0].ViewObject.Proxy.panel.reject()
     for name in (box.Name, body.Name):
         doc.removeObject(name)
+
+
+def commands_on_a_link(doc, messages, written):
+    """The commands on a link to a part, in a container that is moved and
+    turned: Quick fins stands the link and puts the fins under its face, the
+    part is checked and exported where the link puts it, and Lay flat again
+    brings the container back. The file is `written` to that path."""
+    from freecad.finsnap import check, feature
+    from freecad.finsnap import defaults as d
+    from freecad.finsnap.shapes import global_shape, outermost
+    box = doc.addObject("Part::Feature", "LinkedBox")
+    box.Shape = Part.makeBox(PAD_SIZE, PAD_SIZE, PAD_SIZE)
+    group = doc.addObject("App::Part", "LinkGroup")
+    lying = App.Placement(App.Vector(0, -LINK_ASIDE, 0), App.Rotation(UP, TUBE_ANGLE))
+    group.Placement = lying
+    link = doc.addObject("App::Link", "BoxLink")
+    link.LinkedObject = box
+    link.Placement = App.Placement(App.Vector(LINK_ASIDE, 0, 0), App.Rotation())
+    group.addObject(link)
+    doc.recompute()
+    side = next(i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).y < -0.9)
+    select(link, "Face%d" % side)
+    Gui.runCommand("FinSnap_QuickFins")
+    fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is link]
+    expect(not messages and len(fins) == 1 and fins[0].isValid() and fins[0].Shape.Solids
+           and outermost(link) is group and not group.Placement.isSame(lying, d.TOLERANCE)
+           and abs(fins[0].Shape.distToShape(global_shape(link))[0] - feature.params_of(fins[0]).clearance)
+           < d.TOLERANCE,
+           "Quick fins on a face of a link stands its container and puts the fins under the link: %s" % messages)
+    fins = fins[0]
+    expect(fins.ViewObject.Proxy.panel.accept(), "OK keeps the fins of a link")
+
+    select(link)
+    Gui.runCommand("FinSnap_CheckPart")
+    whole = check.find(link, check.PART)
+    expect(whole is not None and len(messages) == 1, "Check part checks a link where it stands: %s" % messages)
+    del messages[:]
+
+    asked = QtWidgets.QFileDialog.getSaveFileName
+    QtWidgets.QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: (written, ""))
+    select(link)
+    Gui.Selection.addSelection(fins)
+    Gui.runCommand("FinSnap_Export3MF")
+    QtWidgets.QFileDialog.getSaveFileName = asked
+    with zipfile.ZipFile(written) as archive:
+        model = archive.read("3D/3dmodel.model").decode()
+    expect(not messages and model.count("<object ") == 2, "a link is exported with its fins: %s" % messages)
+
+    ANSWERS.append(QtWidgets.QMessageBox.No)
+    select(link)
+    Gui.runCommand("FinSnap_LayFlat")
+    doc.recompute()
+    expect(not messages and group.Placement.isSame(lying, d.TOLERANCE) and feature.is_laid_flat(fins)
+           and abs(fins.Shape.distToShape(global_shape(link))[0] - feature.params_of(fins).clearance)
+           < d.TOLERANCE,
+           "Lay flat again brings the container of a link back, its fins kept with it: %s" % messages)
+    for obj in (whole, fins, link, group, box):
+        doc.removeObject(obj.Name)
 
 
 def built_once_for_panel(doc):
@@ -2639,6 +2698,7 @@ def main():
     chosen_stands(doc, quick, facing, messages)
     stands_reopened(doc, quick, facing)
     quick_on_pad(doc)
+    commands_on_a_link(doc, messages, os.path.join(folder, "link.3mf"))
     built_once_for_panel(doc)
     language_told()
     checked_on_switch(doc)
