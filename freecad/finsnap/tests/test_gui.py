@@ -49,6 +49,8 @@ PART_MOVE = 5.0  # how far a part is moved to change it under its fins, in mm
 PAD_SIZE = 20.0  # the edge of a cube padded from a sketch, in mm
 EXPORT_TOLERANCE = 1e-5  # how far a corner written to a 3MF file may lie from the shape, six places written, in mm
 VERTEX = re.compile(r'<vertex x="([^"]+)" y="([^"]+)" z="([^"]+)"/>')  # a corner of a mesh in a 3MF file
+GAP_EDIT = 0.2  # how much the gap is changed in a panel to see it put back, in mm
+FAILS = "made to fail"  # the error of a build stopped on purpose
 LINK_ASIDE = 60.0  # how far a link stands from the part it links to, and its container from the origin, in mm
 OTHER_LANGUAGES = ("English", "German")  # two FreeCAD can switch between
 AXIS_Z_RGB = (0.2, 0.2, 0.8)  # FreeCAD's standard colour of the z axis
@@ -706,6 +708,97 @@ def commands_on_a_link(doc, messages, written):
            "Lay flat again brings the container of a link back, its fins kept with it: %s" % messages)
     for obj in (whole, fins, link, group, box):
         doc.removeObject(obj.Name)
+
+
+def undo_and_cancel(messages):
+    """What Cancel, Undo and an error leave on the undo stack, in a document
+    of its own: an edit cancelled leaves no step, the last fin deleted in
+    the 3D view comes back with its part standing, a command that fails
+    leaves nothing behind, and a check is a step Undo takes back."""
+    from freecad.finsnap import check, face_frame, feature
+    from freecad.finsnap import defaults as d
+    doc = App.newDocument("FinSnapUndo")
+    cube = doc.addObject("Part::Feature", "UndoCube")
+    cube.Shape = tilted_cube()
+    doc.recompute()
+    select(cube, face_name(cube, lower_left_face(cube.Shape)))
+    Gui.runCommand("FinSnap_AddFins")
+    fins = next(o for o in doc.Objects if feature.is_fins(o))
+    fins.ViewObject.Proxy.panel.accept()
+    made, gap = list(doc.UndoNames), fins.Gap.Value
+    # As a double click in the tree: FreeCAD opens a step for the edit.
+    fins.ViewObject.doubleClicked()
+    panel = fins.ViewObject.Proxy.panel
+    panel.widgets["Gap"].setValue(gap + GAP_EDIT)
+    panel.preview()
+    edited = fins.Gap.Value
+    panel.reject()
+    doc.recompute()
+    expect(abs(edited - gap - GAP_EDIT) < d.TOLERANCE and abs(fins.Gap.Value - gap) < d.TOLERANCE
+           and doc.UndoNames == made and not doc.RedoNames and not doc.HasPendingTransaction,
+           "Cancel after a double click puts the fins back and leaves no step of the edit: %s" % doc.UndoNames)
+    fins.ViewObject.doubleClicked()
+    panel = fins.ViewObject.Proxy.panel
+    panel.widgets["Gap"].setValue(gap + GAP_EDIT)
+    panel.accept()
+    kept = fins.Gap.Value
+    doc.undo()
+    doc.recompute()
+    expect(abs(kept - gap - GAP_EDIT) < d.TOLERANCE and abs(fins.Gap.Value - gap) < d.TOLERANCE
+           and doc.UndoNames == made, "OK after a double click is one step, which Undo takes back")
+
+    # A check made by its command is a step of its own.
+    select(cube)
+    Gui.runCommand("FinSnap_CheckPart")
+    checked = check.find(cube, check.PART)
+    del messages[:]
+    stack = list(doc.UndoNames)
+    doc.undo()
+    expect(checked is not None and len(stack) == len(made) + 1 and check.find(cube, check.PART) is None
+           and doc.UndoNames == made, "Check part is one step, and Undo takes the check back: %s" % stack)
+
+    # The last fin deleted in the 3D view takes the object with it and lays
+    # the part back: Undo brings both back.
+    box = doc.addObject("Part::Feature", "UndoBox")
+    box.Shape = Part.makeBox(PAD_SIZE, PAD_SIZE, PAD_SIZE)
+    doc.recompute()
+    side = next(i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).y < -0.9)
+    select(box, "Face%d" % side)
+    Gui.runCommand("FinSnap_QuickFins")
+    quick = next(o for o in doc.Objects if feature.is_fins(o) and o.Base[0] is box)
+    quick.ViewObject.Proxy.panel.accept()
+    standing = App.Placement(box.Placement)
+    select(quick, "Face1")
+    Gui.runCommand("Std_Delete")
+    doc.recompute()
+    gone = quick.Name not in [o.Name for o in doc.Objects] and box.Placement.isIdentity()
+    doc.undo()
+    doc.recompute()
+    expect(gone and quick.Name in [o.Name for o in doc.Objects] and box.Placement.isSame(standing, d.TOLERANCE)
+           and quick.isValid(),
+           "the last fin deleted in the 3D view lays the part back, and Undo stands it again with its fins")
+
+    # Quick fins that fail after the part is stood: nothing is left of them.
+    other = doc.addObject("Part::Feature", "UndoOther")
+    other.Shape = Part.makeBox(PAD_SIZE, PAD_SIZE, PAD_SIZE, App.Vector(LINK_ASIDE, 0, 0))
+    doc.recompute()
+    lying, stack = App.Placement(other.Placement), list(doc.UndoNames)
+
+    def failing(*_):
+        raise face_frame.FinError(FAILS)
+
+    create = feature.create
+    feature.create = failing
+    try:
+        select(other, "Face%d" % side)
+        Gui.runCommand("FinSnap_QuickFins")
+    finally:
+        feature.create = create
+    expect(messages == [FAILS] and other.Placement.isSame(lying, d.TOLERANCE) and doc.UndoNames == stack
+           and not doc.HasPendingTransaction and not Gui.Control.activeDialog(),
+           "Quick fins that fail say why and leave the part as it stood, no step open: %s" % messages)
+    del messages[:]
+    App.closeDocument(doc.Name)
 
 
 def built_once_for_panel(doc):
@@ -2712,6 +2805,7 @@ def main():
     stands_reopened(doc, quick, facing)
     quick_on_pad(doc)
     commands_on_a_link(doc, messages, os.path.join(folder, "link.3mf"))
+    undo_and_cancel(messages)
     built_once_for_panel(doc)
     language_told()
     checked_on_switch(doc)

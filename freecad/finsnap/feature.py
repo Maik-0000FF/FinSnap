@@ -9,6 +9,7 @@ reading them back into FinParams and building the task panel all walk this
 table, so a new parameter is added in exactly one place (plus its default).
 """
 
+import contextlib
 from collections import namedtuple
 
 import FreeCAD as App
@@ -1267,6 +1268,32 @@ def fins_of(owner, document):
             if is_fins(obj) and obj.Base and outermost(obj.Base[0]) is owner]
 
 
+@contextlib.contextmanager
+def transaction(doc, name):
+    """What is done while this lasts is one step on the undo stack of `doc`,
+    named `name`; an error leaves no step open for the next action and
+    nothing half done.
+
+    INPUTS this has to withstand:
+      the block ends                        ->  one step named `name`
+      the block raises                      ->  what it changed is put back, no step
+                                                left open, the error raised on
+      a step under way, FreeCAD's own of a
+        command, an edit or a Delete        ->  ended by FreeCAD as this one opens,
+                                                as for every step opened: who must
+                                                not end it opens none, as onDelete
+                                                for the last fins and a check
+                                                while a task panel is open
+    """
+    doc.openTransaction(name)
+    try:
+        yield
+    except BaseException:
+        doc.abortTransaction()
+        raise
+    doc.commitTransaction()
+
+
 def hidden_property(obj, name, kind):
     """Add the hidden result property `name` to `obj` if it has none yet."""
     if name not in obj.PropertiesList:
@@ -1733,6 +1760,29 @@ NOTE_COUNTER_PROMOTED = QT_TRANSLATE_NOOP("FinSnap", "The main fins are removed;
                                                      "now, with its changes by hand.")
 
 
+def _gone_with(obj, fins):
+    """What goes with `fins`, as (MAIN or COUNTER, number), of the fins `obj`
+    has built: the numbers built and those picked, by side, and whether
+    every main fin goes and every counter fin, where one is built."""
+    picked = set(fins)
+    built = {MAIN: set(), COUNTER: set()}
+    for tag in getattr(obj, FIN_TAGS, []):
+        which, number = tag_fin(tag)
+        built[which].add(number)
+    gone = {which: {n for w, n in picked if w == which} for which in built}
+    main_gone = bool(built[MAIN]) and built[MAIN] <= gone[MAIN]
+    counter_gone = not built[COUNTER] or built[COUNTER] <= gone[COUNTER]
+    return built, gone, main_gone, counter_gone
+
+
+def leaves_none(obj, fins):
+    """Whether removing `fins`, as (MAIN or COUNTER, number), would leave `obj`
+    without any fin: asked before anything is changed, where remove_fins()
+    would answer FINS_ALL_GONE."""
+    _, _, main_gone, counter_gone = _gone_with(obj, fins)
+    return main_gone and counter_gone
+
+
 def remove_fins(obj, fins):
     """Leave out the fins in `fins`, as (MAIN or COUNTER, number), and say
     what was done: FINS_LEFT_OUT; COUNTER_PROMOTED where the last main fins
@@ -1756,14 +1806,7 @@ def remove_fins(obj, fins):
       a fin twice                           ->  as once
       empty                                 ->  nothing changed, FINS_LEFT_OUT
     """
-    picked = set(fins)
-    built = {MAIN: set(), COUNTER: set()}
-    for tag in getattr(obj, FIN_TAGS, []):
-        which, number = tag_fin(tag)
-        built[which].add(number)
-    gone = {which: {n for w, n in picked if w == which} for which in built}
-    main_gone = bool(built[MAIN]) and built[MAIN] <= gone[MAIN]
-    counter_gone = not built[COUNTER] or built[COUNTER] <= gone[COUNTER]
+    built, gone, main_gone, counter_gone = _gone_with(obj, fins)
     if main_gone and counter_gone:
         return FINS_ALL_GONE
     if main_gone:

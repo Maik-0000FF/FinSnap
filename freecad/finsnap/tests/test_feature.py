@@ -1420,6 +1420,37 @@ def error_of_the_build_is_kept(doc):
     doc.removeObject(cube.Name)
 
 
+def steps_on_the_undo_stack(doc):
+    """feature.transaction(): a step of its own, which an error takes back."""
+    undo_mode = doc.UndoMode
+    doc.UndoMode = 1
+    box = doc.addObject("Part::Feature", "Stepped")
+    doc.recompute()
+    doc.clearUndos()
+    try:
+        with feature.transaction(doc, "First"):
+            box.Label = "first"
+        expect(doc.UndoNames == ["First"] and not doc.HasPendingTransaction and box.Label == "first",
+               "what is done in a transaction is one step on the undo stack: %s" % doc.UndoNames)
+        try:
+            with feature.transaction(doc, "Failing"):
+                box.Label = "failing"
+                raise ZeroDivisionError("a step that fails")
+        except ZeroDivisionError:
+            pass
+        expect(doc.UndoNames == ["First"] and not doc.HasPendingTransaction and box.Label == "first",
+               "an error in a transaction puts back what it changed and leaves no step open: %s" % doc.UndoNames)
+        doc.openTransaction("Under way")
+        box.Label = "under way"
+        with feature.transaction(doc, "Second"):
+            box.Label = "second"
+        expect(doc.UndoNames == ["Second", "Under way", "First"] and not doc.HasPendingTransaction,
+               "a step under way is ended as a transaction opens: %s" % doc.UndoNames)
+    finally:
+        doc.UndoMode = undo_mode
+    doc.removeObject(box.Name)
+
+
 def fins_on_a_link(doc):
     """A link to a part takes fins as the part itself does, where the link
     puts it: keeping the placement of the linked part or with one of its own,
@@ -1588,6 +1619,7 @@ def main():
     fins_follow_the_body(doc)
     error_of_the_build_is_kept(doc)
     fins_on_a_link(doc)
+    steps_on_the_undo_stack(doc)
     step_with_offset_curves()
     print("all checks passed", file=sys.__stdout__)
 
