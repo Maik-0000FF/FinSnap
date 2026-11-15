@@ -25,7 +25,7 @@ from freecad.finsnap import (analysis, check, export_3mf, export_step, face_fram
 from freecad.finsnap import limits, presets
 from freecad.finsnap.params import FinParams, ParamError
 from freecad.finsnap.paths import PACKAGE_XML
-from freecad.finsnap.shapes import KEPT, bounds, global_shape, moved, outermost
+from freecad.finsnap.shapes import KEPT, bounds, global_placement, global_shape, moved, outermost
 
 V = App.Vector
 # The version as package.xml states it, read independently of the workbench.
@@ -1453,7 +1453,14 @@ def fins_on_a_link(doc):
         expect(fins.Shape.Solids and abs(fins.Shape.distToShape(global_shape(link))[0] - fins.TineClearance.Value)
                < d.TOLERANCE, "the fins follow a link %s moved afterwards" % what)
         made += [fins, link]
-    for obj in made + [group, cube]:
+    # A link to nothing has no shape to ask: it lies where it is put itself.
+    empty = doc.addObject("App::Link", "Link")
+    empty.Placement = aside
+    group.addObject(empty)
+    doc.recompute()
+    expect(global_placement(empty).isSame(group.Placement.multiply(aside), d.TOLERANCE),
+           "a link without a shape lies where its own placement and its container put it")
+    for obj in made + [empty, group, cube]:
         doc.removeObject(obj.Name)
 
 
