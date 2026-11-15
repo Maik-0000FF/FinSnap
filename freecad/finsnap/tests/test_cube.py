@@ -3996,7 +3996,7 @@ def check_three_round_fins():
         start = free.frame.s_face(low) - RIB_INTO_PART
         rib = free.frame.section(wall, [(start, low), (start + RIB_LENGTH, low), (start + RIB_LENGTH, high),
                                         (start, high)], RIB_WIDTH)
-        ribbed = stood.fuse(rib)
+        ribbed = stood.fuse(rib).removeSplitter()
         return ribbed, round_side_of(ribbed)
 
     level = free.heights[3] * RIB_HEIGHT_SHARE
