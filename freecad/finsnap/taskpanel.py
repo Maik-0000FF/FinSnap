@@ -8,6 +8,7 @@ group, so it never falls out of step with the object. Each section folds
 away and opens again as it was left.
 """
 
+import contextlib
 import functools
 import html
 import math
@@ -167,6 +168,9 @@ SECTION_PREFERENCES = presets.PREFERENCES + "/PanelSections"
 # The section to edit the fins in, open the first time, as it holds what is
 # most often changed; the others start folded away.
 EDIT_SECTION = QT_TRANSLATE_NOOP("FinSnap", "Edit fins")
+# The step on the undo stack an edit of fins opened by a double click is,
+# named as the section it is mostly made in.
+EDIT_STEP = EDIT_SECTION
 RESET_SIGN = "↺"
 # Icon buttons: icon size, the gap to the text and the margin inside, in pixels.
 BUTTON_ICON_SIZE = 20
@@ -230,6 +234,8 @@ STABILITY_TIP = QT_TRANSLATE_NOOP(
 NOTE_STABILITY_OUTDATED = QT_TRANSLATE_NOOP("FinSnap", "Changed since the stability check: check again.")
 # Said on a double click on a check whose part is gone.
 NOTE_PART_GONE = QT_TRANSLATE_NOOP("FinSnap", "The part of this check is gone; delete the check.")
+# The step on the undo stack a check made or checked again by a command is.
+CHECK_STEP = QT_TRANSLATE_NOOP("FinSnap", "Check part")
 DRAWINGS = (
     (SIDE_VIEW, QT_TRANSLATE_NOOP("FinSnap", "Side view")),
     (TOP_VIEW, QT_TRANSLATE_NOOP("FinSnap", "Top view")),
@@ -304,6 +310,24 @@ def check_params(part_obj):
     return feature.params_of(fins[0]) if fins else presets.standard()
 
 
+def check_step(doc):
+    """The step on the undo stack of `doc` a check made or checked again is,
+    which Undo takes back.
+
+    INPUTS this has to withstand:
+      no step under way: a command, a double
+        click on a check, the panel of fins
+        just made                           ->  a step of its own
+      a step under way, as the one of the
+        edit after a double click on fins   ->  part of that step, kept by OK and
+                                                dropped by Cancel with it: one
+                                                opened here would end it half done
+    """
+    if doc.HasPendingTransaction:
+        return contextlib.nullcontext()
+    return feature.transaction(doc, translate("FinSnap", CHECK_STEP))
+
+
 def check_again(check_obj):
     """Check the part of `check_obj`, a check in the tree, again, as it was
     checked: its stability, its bridges or the whole part. Returns the note
@@ -369,7 +393,8 @@ class ViewProviderCheck:
         if vobj.Object.Part is None:
             note = translate("FinSnap", NOTE_PART_GONE)
         else:
-            note = check_again(vobj.Object)
+            with check_step(vobj.Object.Document):
+                note = check_again(vobj.Object)
         QtWidgets.QMessageBox.information(Gui.getMainWindow(), NAME, note)
         return True
 
@@ -506,8 +531,7 @@ def discard_created(obj, on_cancel=None):
     not open. One step on the undo stack, after the one that made the fins; a
     failure in between leaves no transaction open for the next action."""
     doc = obj.Document
-    doc.openTransaction(translate("FinSnap", "Cancel fins"))
-    try:
+    with feature.transaction(doc, translate("FinSnap", "Cancel fins")):
         # Fins just made stood at no turn: a part turned about its round side
         # in the panel turns back, in the same step.
         if feature.on_round_side(obj):
@@ -515,10 +539,6 @@ def discard_created(obj, on_cancel=None):
         doc.removeObject(obj.Name)
         if on_cancel is not None:
             on_cancel()
-    except Exception:
-        doc.abortTransaction()
-        raise
-    doc.commitTransaction()
     doc.recompute()
 
 
@@ -838,8 +858,11 @@ def _same_mm(a, b):
 
 
 class FinSnapTaskPanel:
-    def __init__(self, obj, created=False, on_cancel=None, stands=None, later=None):
+    def __init__(self, obj, created=False, on_cancel=None, stands=None, later=None, step=None):
         self.obj = obj
+        # The step on the undo stack opened for this edit alone, by its
+        # number, None where there is none: the one Cancel drops.
+        self.step = step
         # The profile active as the panel opened, for Cancel; None for the standard one.
         self.opened_profile = presets.active_profile()
         # When the probe for an operation of FreeCAD first said one runs with
@@ -1484,10 +1507,9 @@ class FinSnapTaskPanel:
         """Close the panel and delete the fins object, as deleting it in the tree does."""
         self.close()
         doc = self.obj.Document
-        doc.openTransaction(translate("FinSnap", "Delete fins"))
-        feature.prepare_delete(self.obj)
-        doc.removeObject(self.obj.Name)
-        doc.commitTransaction()
+        with feature.transaction(doc, translate("FinSnap", "Delete fins")):
+            feature.prepare_delete(self.obj)
+            doc.removeObject(self.obj.Name)
         doc.recompute()
 
     def reset(self):
@@ -2588,7 +2610,8 @@ class FinSnapTaskPanel:
         fins as they are built now, and say so below the button."""
         if self.timer.isActive() or self.differs():
             self.preview()
-        level, note = check_stability(self.obj.Base[0], feature.params_of(self.obj))
+        with check_step(self.obj.Document):
+            level, note = check_stability(self.obj.Base[0], feature.params_of(self.obj))
         self.stability.setText(note)
         self.stability.setStyleSheet(NOTE_STYLE % STABILITY_FRAMES[level])
         self.stability.show()
@@ -2659,7 +2682,29 @@ class FinSnapTaskPanel:
           another profile chosen or made        ->  the one active on opening again; those
                                                     made, renamed or deleted stay so
           the one active on opening deleted     ->  the standard profile
+          fins edited after a double click,
+            the step opened for the edit
+            under way                         ->  that step dropped, with all it
+                                                    holds: none is left on the undo
+                                                    stack for an edit cancelled
+          the same, that step ended since by
+            another one opened                ->  put back as above; the other step
+                                                    is not touched
+          fins edited, a step under way that
+            was not opened for this edit, as
+            FreeCAD keeps one after a command
+            that opened a panel                 ->  put back as above; that step may
+                                                    hold what made the fins and is
+                                                    never dropped
+          fins edited, no step under way        ->  put back as above, no step made
         """
+        # Before the panel closes: leaving edit mode ends the step of the
+        # edit, and what is put back after it would stand outside it.
+        self.timer.stop()
+        self.release_handles()
+        under_way = App.getActiveTransaction()
+        if self.step is not None and under_way is not None and under_way[1] == self.step:
+            self.obj.Document.abortTransaction()
         self.close()
         presets.activate(self.opened_profile)
         if self.created:

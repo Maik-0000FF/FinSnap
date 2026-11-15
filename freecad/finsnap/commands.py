@@ -30,8 +30,8 @@ from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_
                     ICON_BRIDGES)
 from .presets import PREFERENCES
 from .shapes import FACE_PREFIX, global_shape, moved, outermost, part_of
-from .taskpanel import (DEGREE_SUFFIX, LENGTH_SUFFIX, FinSnapTaskPanel, check_bridges, check_params, check_part,
-                        check_stability, discard_created)
+from .taskpanel import (DEGREE_SUFFIX, EDIT_STEP, LENGTH_SUFFIX, FinSnapTaskPanel, check_bridges, check_params,
+                        check_part, check_stability, check_step, discard_created)
 from .version import NAME
 
 EDGE_PREFIX = "Edge"
@@ -53,6 +53,8 @@ NOTE_SELECT_PART = QT_TRANSLATE_NOOP("FinSnap", "Select a part, or its fins, to 
                                                 "while it is printed.")
 # Said when new fins cannot be edited because another task panel is open.
 NOTE_BUSY = QT_TRANSLATE_NOOP("FinSnap", "Another task panel is open. Close it first, then make the fins again.")
+# Said when fins are double clicked to edit them while a task panel is open.
+NOTE_PANEL_OPEN = QT_TRANSLATE_NOOP("FinSnap", "Another task panel is open. Close it first, then edit the fins.")
 EXTENSIONS_STEP = (".step", ".stp")
 PREF_LINEAR = "MeshLinearDeflection"
 PREF_ANGULAR = "MeshAngularDeflection"
@@ -254,12 +256,14 @@ class ViewProviderFinSnap:
         created, self.created = getattr(self, "created", False), False
         on_cancel, self.on_cancel = getattr(self, "on_cancel", None), None
         stands, self.stands = getattr(self, "stands", None), None
+        step, self.edit_step = getattr(self, "edit_step", None), None
         # Fins opened again: the ways Quick fins found, worked out anew only
         # once their folded section is opened, as that takes a while.
         later = (functools.partial(stands_again, vobj.Object)
                  if stands is None and not created and feature.quick_start(vobj.Object) is not None else None)
         try:
-            panel = FinSnapTaskPanel(vobj.Object, created=created, on_cancel=on_cancel, stands=stands, later=later)
+            panel = FinSnapTaskPanel(vobj.Object, created=created, on_cancel=on_cancel, stands=stands, later=later,
+                                     step=step)
         except handles.NoView as error:
             _message(str(error))
             return False
@@ -270,6 +274,39 @@ class ViewProviderFinSnap:
             return False
         # Kept while editing: the Delete key on a fin goes to the panel then.
         self.panel = panel
+        return True
+
+    def doubleClicked(self, vobj):  # noqa: N802 - FreeCAD API
+        """Edit the fins in a step of their own on the undo stack, which OK
+        keeps and Cancel drops. Opened here rather than left to FreeCAD: only
+        a step known to hold nothing but this edit may be dropped, and one
+        FreeCAD has under way can hold what made the fins.
+
+        SITUATIONS this has to withstand:
+          the panel opens                       ->  the step under way until OK or Cancel
+          a task panel is open, of these fins,
+            of other fins or any other          ->  said so, nothing else: that panel
+                                                    and the step of its edit stay as
+                                                    they are, where a step opened
+                                                    here would end that one
+          there is no 3D view                   ->  no panel, the step dropped, empty
+          a step under way before, as FreeCAD
+            keeps one after a command           ->  ended first, as by any step opened
+        """
+        if Gui.Control.activeDialog():
+            _message(translate("FinSnap", NOTE_PANEL_OPEN))
+            return True
+        doc = vobj.Object.Document
+        doc.openTransaction(translate("FinSnap", EDIT_STEP))
+        self.edit_step = App.getActiveTransaction()[1]
+        opened = False
+        try:
+            opened = Gui.getDocument(doc).setEdit(vobj.Object)
+        finally:
+            # Only for this opening: a panel opened later another way has no step of its own.
+            self.edit_step = None
+            if not opened:
+                doc.abortTransaction()
         return True
 
     def unsetEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API
@@ -317,16 +354,17 @@ class ViewProviderFinSnap:
                 # onDelete still runs.
                 panel.once_free(functools.partial(panel.remove_fins, fins))
                 return False
-            obj.Document.openTransaction(translate("FinSnap", "Remove fin"))
-            done = feature.remove_fins(obj, fins)
-            if done != feature.FINS_ALL_GONE:
-                obj.Document.commitTransaction()
+            # Asked first: the last fins of all take the object with them, in
+            # the step of FreeCAD's Delete. A step opened here and ended
+            # again would end that one, and the part laid back below would
+            # stand outside any step: Undo left it flat.
+            if not feature.leaves_none(obj, fins):
+                with feature.transaction(obj.Document, translate("FinSnap", "Remove fin")):
+                    done = feature.remove_fins(obj, fins)
                 obj.Document.recompute()
                 if done == feature.COUNTER_PROMOTED:
                     _message(translate("FinSnap", feature.NOTE_COUNTER_PROMOTED))
                 return False
-            # The last fins of all: nothing was changed, the object goes as a whole.
-            obj.Document.abortTransaction()
         self.close_panel()
         feature.prepare_delete(obj)
         return True
@@ -434,9 +472,8 @@ class TiltOntoEdge:
             _message(str(error))
             return
         doc = App.ActiveDocument
-        doc.openTransaction(translate("FinSnap", "Stand on edge"))
-        _stand(obj, change)
-        doc.commitTransaction()
+        with feature.transaction(doc, translate("FinSnap", "Stand on edge")):
+            _stand(obj, change)
         doc.recompute()
         _show_on_bed(orient.side_direction(change, edge, chosen if len(chosen) == 2 else ()))
         _report_overhangs(obj)
@@ -551,16 +588,15 @@ class LayFlat:
                 proxy = getattr(fins.ViewObject, "Proxy", None)
                 if isinstance(proxy, ViewProviderFinSnap):
                     proxy.close_panel()
-        doc.openTransaction(translate("FinSnap", "Lay flat again"))
-        for owner in owners:
-            change = orient.back_to_flat(owner)
-            for fins in feature.fins_of(owner, doc):
-                if delete:
-                    doc.removeObject(fins.Name)
-                else:
-                    feature.keep_laid_flat(fins, change)
-            orient.lay_back(owner)
-        doc.commitTransaction()
+        with feature.transaction(doc, translate("FinSnap", "Lay flat again")):
+            for owner in owners:
+                change = orient.back_to_flat(owner)
+                for fins in feature.fins_of(owner, doc):
+                    if delete:
+                        doc.removeObject(fins.Name)
+                    else:
+                        feature.keep_laid_flat(fins, change)
+                orient.lay_back(owner)
         doc.recompute()
         _show_on_bed()
 
@@ -631,21 +667,25 @@ class QuickFins:
             return
         plan, fin_face = plans[0].plan, plans[0].face
         doc = App.ActiveDocument
-        doc.openTransaction(translate("FinSnap", "Quick fins"))
         owner = outermost(obj)
         before = orient.snapshot(owner)
         # Standing the part rebuilds its other fins laid flat; Cancel gives them back.
         laid_flat = feature.laid_flat_marks(owner, doc)
         # Standing it anew forgets how far it was turned about a round side; Cancel notes it again.
         turns = feature.round_turns(owner, doc)
-        _stand(obj, plan.change)
-        _keep_checked(obj, plans[0])
-        # The main fin only; a counter fin is added in the panel or with Add counter fin.
-        fins = feature.create(obj, fin_face)
-        fins.FinPlacement = p.placement
-        feature.keep_quick_start(fins, obj, before, [n for _, n in edges], [n for _, n in faces])
-        ViewProviderFinSnap(fins.ViewObject)
-        doc.commitTransaction()
+        try:
+            with feature.transaction(doc, translate("FinSnap", "Quick fins")):
+                _stand(obj, plan.change)
+                _keep_checked(obj, plans[0])
+                # The main fin only; a counter fin is added in the panel or with Add counter fin.
+                fins = feature.create(obj, fin_face)
+                fins.FinPlacement = p.placement
+                feature.keep_quick_start(fins, obj, before, [n for _, n in edges], [n for _, n in faces])
+                ViewProviderFinSnap(fins.ViewObject)
+        except (orient.OrientError, face_frame.FinError, ValueError, Part.OCCError) as error:
+            # Nothing is left of it: the part stands as before, no fins are made.
+            _message(str(error))
+            return
         # Built once: the panel opened below shows this build.
         feature.keep_build(fins, True)
         doc.recompute()
@@ -942,15 +982,13 @@ class AddFins:
         base, face_name = faces[0]
         counter = faces[1] if len(faces) == 2 else None
         doc = App.ActiveDocument
-        doc.openTransaction(translate("FinSnap", "Add fins"))
         try:
-            obj = feature.create(base, face_name, counter)
+            with feature.transaction(doc, translate("FinSnap", "Add fins")):
+                obj = feature.create(base, face_name, counter)
+                ViewProviderFinSnap(obj.ViewObject)
         except (ValueError, Part.OCCError) as error:
-            doc.abortTransaction()
             _message(translate("FinSnap", feature.NOTE_NO_COUNTER_ON_FACE) % error)
             return
-        ViewProviderFinSnap(obj.ViewObject)
-        doc.commitTransaction()
         _edit_new(obj)
 
 
@@ -983,17 +1021,15 @@ class AddCounterFin:
             _message(translate("FinSnap", "The face for the counter fin has to belong to the part the fins "
                                           "stand under."))
             return
-        doc.openTransaction(translate("FinSnap", "Add counter fin"))
         try:
-            if faces:
-                found = feature.add_counter(fins[0], faces[0][0], faces[0][1])
-            else:
-                found = feature.add_counter(fins[0])
+            with feature.transaction(doc, translate("FinSnap", "Add counter fin")):
+                if faces:
+                    found = feature.add_counter(fins[0], faces[0][0], faces[0][1])
+                else:
+                    found = feature.add_counter(fins[0])
         except face_frame.FinError as error:
-            doc.abortTransaction()
             _message(translate("FinSnap", feature.NOTE_NO_COUNTER_ON_FACE) % error)
             return
-        doc.commitTransaction()
         if found is None:
             _message(translate("FinSnap", feature.NOTE_NO_OPPOSITE))
             return
@@ -1196,7 +1232,9 @@ def _run_check(run):
     if checked is None:
         _message(translate("FinSnap", NOTE_SELECT_PART))
         return
-    _message(run(*checked)[1])
+    with check_step(checked[0].Document):
+        note = run(*checked)[1]
+    _message(note)
 
 
 def _checked_part(obj):
