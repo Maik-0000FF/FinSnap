@@ -13,6 +13,7 @@ else, from the selection to the written file, runs as in FreeCAD.
 import functools
 import math
 import os
+import re
 import sys
 import tempfile
 import types
@@ -46,6 +47,8 @@ FIN_SHIFT = 1.5  # how far a handle moves a fin along the face, in mm
 TOO_MANY_FINS = 50  # more fins than the face takes, so the build fails
 PART_MOVE = 5.0  # how far a part is moved to change it under its fins, in mm
 PAD_SIZE = 20.0  # the edge of a cube padded from a sketch, in mm
+EXPORT_TOLERANCE = 1e-5  # how far a corner written to a 3MF file may lie from the shape, six places written, in mm
+VERTEX = re.compile(r'<vertex x="([^"]+)" y="([^"]+)" z="([^"]+)"/>')  # a corner of a mesh in a 3MF file
 LINK_ASIDE = 60.0  # how far a link stands from the part it links to, and its container from the origin, in mm
 OTHER_LANGUAGES = ("English", "German")  # two FreeCAD can switch between
 AXIS_Z_RGB = (0.2, 0.2, 0.8)  # FreeCAD's standard colour of the z axis
@@ -677,11 +680,21 @@ def commands_on_a_link(doc, messages, written):
     QtWidgets.QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: (written, ""))
     select(link)
     Gui.Selection.addSelection(fins)
-    Gui.runCommand("FinSnap_Export3MF")
-    QtWidgets.QFileDialog.getSaveFileName = asked
+    try:
+        Gui.runCommand("FinSnap_Export3MF")
+    finally:
+        QtWidgets.QFileDialog.getSaveFileName = asked
     with zipfile.ZipFile(written) as archive:
         model = archive.read("3D/3dmodel.model").decode()
-    expect(not messages and model.count("<object ") == 2, "a link is exported with its fins: %s" % messages)
+    # What is written reaches as far as link and fins do where they stand.
+    corners = [[float(value) for value in vertex] for vertex in VERTEX.findall(model)]
+    standing = global_shape(link).BoundBox
+    standing.add(fins.Shape.BoundBox)
+    reached = [reach(axis) for reach in (min, max) for axis in zip(*corners)]
+    wanted = [standing.XMin, standing.YMin, standing.ZMin, standing.XMax, standing.YMax, standing.ZMax]
+    expect(not messages and model.count("<object ") == 2
+           and all(abs(got - there) < EXPORT_TOLERANCE for got, there in zip(reached, wanted)),
+           "a link is exported with its fins, where it stands: %s" % messages)
 
     ANSWERS.append(QtWidgets.QMessageBox.No)
     select(link)
