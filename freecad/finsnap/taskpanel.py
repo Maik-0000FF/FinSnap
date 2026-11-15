@@ -32,7 +32,7 @@ from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
 from .paths import (ICON_CHECK_OUTDATED, ICON_CHECK_PART, ICON_COUNTER, ICON_REMOVE_COUNTER, ICON_REMOVE_FIN,
                     ICON_RESET_FINS, ICON_STABILITY, SIDE_VIEW, TOP_VIEW)
-from .shapes import FACE_PREFIX, at_work, global_shape, outermost, working
+from .shapes import FACE_PREFIX, at_work, global_placement, global_shape, outermost, working
 from .version import NAME, application
 
 # Upper limits of the input fields; generous, the geometry rejects nonsense.
@@ -2082,7 +2082,7 @@ class FinSnapTaskPanel:
         part, faces = self.obj.Base if which == feature.MAIN else self.obj.CounterFace
         return (self.handled, repr(feature.params_of(self.obj)),
                 geometry.edits_key(*feature.edits(self.obj, which)), tuple(faces),
-                part.Shape.hashCode(), str(part.getGlobalPlacement()))
+                part.Shape.hashCode(), str(global_placement(part)))
 
     def untried_ends(self, kind):
         """The ends of the arrow of `kind` shown until update_ends() has tried

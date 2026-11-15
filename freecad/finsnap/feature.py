@@ -23,7 +23,7 @@ from . import orient
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
-from .shapes import (bounds, face_in_plane, face_like, face_name, global_shape, in_plane, moved,
+from .shapes import (bounds, face_in_plane, face_like, face_name, global_placement, global_shape, in_plane, moved,
                      outermost, part_of, plane_of)
 
 TYPE_NAME = "FinSnap"
@@ -521,7 +521,7 @@ def _face(link, plane=()):
 def _named_in_plane(part, name, plane):
     """`name` if it names the face of `part` in `plane`, kept in the
     coordinates of the part; else the name of the largest face in it."""
-    placement = part.getGlobalPlacement()
+    placement = global_placement(part)
     point, normal = placement.multVec(plane[0]), placement.Rotation.multVec(plane[1])
     shape = global_shape(part)
     try:
@@ -563,7 +563,7 @@ def keep_plane(obj, which):
     if plane is None:
         setattr(obj, PLANE_OF[which], [])
         return
-    inverse = link[0].getGlobalPlacement().inverse()
+    inverse = global_placement(link[0]).inverse()
     setattr(obj, PLANE_OF[which], [inverse.multVec(plane[0]), inverse.Rotation.multVec(plane[1])])
 
 
@@ -602,7 +602,7 @@ def whole_elements(obj, names):
     own = getattr(obj, "Shape", None)
     if own is None:
         return _join_elements(obj, names)
-    key = (obj.Document.Name, obj.Name, own.hashCode(), tuple(obj.getGlobalPlacement().toMatrix().A),
+    key = (obj.Document.Name, obj.Name, own.hashCode(), tuple(global_placement(obj).toMatrix().A),
            tuple(names))
     kept = _whole_kept.get(key)
     if kept is None or not kept[0].isSame(own):
