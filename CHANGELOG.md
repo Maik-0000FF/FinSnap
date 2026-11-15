@@ -16,6 +16,7 @@ All notable changes to FinSnap are listed here. The format follows
 - A fin is no longer built lower than its foot, which gave an invalid solid without any error: a fin height set below the foot is refused, and a fin that would end below it, with a single tine under the top of the foot or a height of its own, is as high as its foot (#192)
 - A side fin under a round side that the part comes too close to just above its foot no longer stops the build with an internal error: with no tine left above the top of its foot, it is left out with a warning, as one with no tine left at all
 - Fins that fail to build say why themselves: the overhangs and bridges of the part, looked for after the failure, no longer replace its message with an error of their own, as "Bnd_Box is void" on a part that became empty, and parameters out of range are named before anything is built (#195)
+- A part that is a link (App::Link) takes fins: adding fins to a face of a link failed with an AttributeError. The fins stand where the link puts its part, with the placement of the linked part where the link keeps it, also in a container, and follow the link when it is moved (#194)
 
 ## [0.18.0] - 2026-11-14
 

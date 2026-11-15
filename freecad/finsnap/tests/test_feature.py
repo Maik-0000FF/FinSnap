@@ -78,6 +78,7 @@ BRIDGE_TINES = 2  # tines a counter fin has at least below and above a bore it b
 CENTRE_TOLERANCE = 0.5  # how far from the middle of a face a fin planned in its middle may stand, in mm
 FILLET_RADIUS = 2.0  # a fillet on a corner of a test part, in mm
 EXACT_DISTANCE = 1e-9  # how far a point of the tube may move and it still stands alike, in mm
+LINK_ASIDE = 60.0  # how far a link stands from the part it links to, clear of its fins, in mm
 
 
 def face_name(shape, face):
@@ -1419,6 +1420,43 @@ def error_of_the_build_is_kept(doc):
     doc.removeObject(cube.Name)
 
 
+def fins_on_a_link(doc):
+    """A link to a part takes fins as the part itself does, where the link
+    puts it: keeping the placement of the linked part or with one of its own,
+    at the top of the document or in a container."""
+    cube = doc.addObject("Part::Feature", "Linked")
+    cube.Shape = tilted_cube()
+    tilt = App.Placement(cube.Placement)
+    name = face_name(cube.Shape, lower_left_face(cube.Shape))
+    aside = App.Placement(App.Vector(LINK_ASIDE, 0, 0), App.Rotation())
+    group = doc.addObject("App::Part", "LinkGroup")
+    group.Placement = App.Placement(App.Vector(0, -LINK_ASIDE, 0), App.Rotation())
+    made = []
+    for what, placement, keeps, container in (("keeping the placement of its part", aside, True, None),
+                                              ("with a placement of its own", aside.multiply(tilt), False, None),
+                                              ("in a container", tilt, False, group)):
+        link = doc.addObject("App::Link", "Link")
+        link.LinkedObject = cube
+        link.LinkTransform = keeps
+        link.Placement = placement
+        if container is not None:
+            container.addObject(link)
+        doc.recompute()
+        fins = feature.create(link, name)
+        doc.recompute()
+        expect(fins.Shape.Solids and abs(fins.Shape.distToShape(global_shape(link))[0] - fins.TineClearance.Value)
+               < d.TOLERANCE and fins.Shape.distToShape(global_shape(cube))[0] > LINK_ASIDE / 2,
+               "a link %s takes fins where it stands, not where its part does" % what)
+        owner = outermost(link)
+        owner.Placement = aside.multiply(owner.Placement)
+        doc.recompute()
+        expect(fins.Shape.Solids and abs(fins.Shape.distToShape(global_shape(link))[0] - fins.TineClearance.Value)
+               < d.TOLERANCE, "the fins follow a link %s moved afterwards" % what)
+        made += [fins, link]
+    for obj in made + [group, cube]:
+        doc.removeObject(obj.Name)
+
+
 def fins_follow_the_body(doc):
     """Fins under a face of a Pad stand under the face of its Body, and
     follow a chamfer or a fillet added after them: rebuilt on the new shape,
@@ -1542,6 +1580,7 @@ def main():
     bridges_apart(doc)
     fins_follow_the_body(doc)
     error_of_the_build_is_kept(doc)
+    fins_on_a_link(doc)
     step_with_offset_curves()
     print("all checks passed", file=sys.__stdout__)
 
