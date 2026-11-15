@@ -897,7 +897,7 @@ def _clear_of_part(p, part, frame, fin, thickness, half_foot):
         if not kept:
             raise FinError(translate("FinSnap", NOTE_TOO_CLOSE) % (distance, p.gap))
         fin = fin._replace(candidate_z=[z for z, _ in kept], on_face=[whole for _, whole in kept],
-                           height=kept[-1][0] + p.tine_height)
+                           height=_on_foot(p, kept[-1][0] + p.tine_height))
 
 
 def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
@@ -933,6 +933,12 @@ def one_fin(p, frame, t0, height, thickness, half_foot, tine_z):
     return body, tines, outer_middle
 
 
+def _on_foot(p, height):
+    """`height` of a fin (mm, from the bed), at least that of its foot: lower,
+    its outline would cross itself and the solid would be invalid."""
+    return max(height, p.foot_height)
+
+
 def fin_at(p, result, number, height):
     """Fin `number` of `result` as it would be `height` high (mm, from the
     bed), with the tines that find the face up to that height, as a list of
@@ -948,7 +954,7 @@ def fin_at(p, result, number, height):
                                                 outline would cross itself
       no foot, height above 0               ->  the fin as high
     """
-    height = max(height, p.foot_height)
+    height = _on_foot(p, height)
     index = result.numbers.index(number)
     tine_z = [z for z in result.touching_z.get(number, []) if z + p.tine_height <= height + d.TOLERANCE]
     body, tines, _ = one_fin(p, result.frames.get(number, result.frame), result.positions[index], height,
@@ -1795,7 +1801,7 @@ def _plan(part, frame, support, p, all_z, face_height, reach, count, restart, le
         else:
             set_height = _within(p, room).fin_height if number in frames else p.fin_height
             fin_height = set_height if set_height > 0 else kept_z[-1] + p.tine_height
-        fins.append(PlannedFin(number, t0, fin_height, candidate_z, on_face, sorted(touching)))
+        fins.append(PlannedFin(number, t0, _on_foot(p, fin_height), candidate_z, on_face, sorted(touching)))
     if not fins and blocked:
         raise refused(translate("FinSnap", NOTE_BLOCKED_OR_BARE if fins_left_out else NOTE_ALL_BLOCKED))
     if not fins and fins_left_out and all_too_narrow:

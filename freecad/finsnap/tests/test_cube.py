@@ -97,6 +97,8 @@ FEET_FINS = 5
 T_WEB, T_WEB_HIGH = 10.0, 10.0
 T_FLANGE, T_HIGH, T_DEEP = 70.0, 60.0, 10.0
 T_SLOT, T_SLOT_ABOVE_WEB = 16.0, 2.0
+LOW_TINE = 0.2         # a first tine below the top of the built-in foot, in mm
+BELOW_FOOT = 0.6       # a fin height below the top of the built-in foot and above that tine, in mm
 OUT_OF_REACH = 100.0   # a height or a width beyond any test part, in mm
 NOTCH_CLEAR = 1.0      # how far a notch in the end of a face stays from the grid tines, and its depth, in mm
 PIN_HOLE_RADIUS = 0.9  # a hole that splits the face under a tine, small enough to leave the tines beside it
@@ -537,6 +539,28 @@ def check_corner_tines(part, face, name):
     expect(max(lengths) - min(lengths) < d.TOLERANCE,
            "%s: all corner tines are equally long (%.3f to %.3f mm)" % (name, min(lengths), max(lengths)))
     return result, frame
+
+
+def check_fin_on_foot(cube, face):
+    """A fin is never lower than its foot: a height set below it is refused,
+    one that follows from the tines ends on the foot."""
+    foot = FinParams().foot_height
+    try:
+        FinParams(tine_first=LOW_TINE, fin_height=BELOW_FOOT).validate()
+    except ParamError as error:
+        expect("fin_height" in str(error), "a fin height below the foot is refused: %s" % error)
+    else:
+        raise AssertionError("a fin height below the foot was accepted")
+    FinParams(tine_first=LOW_TINE, fin_height=foot).validate()
+    FinParams(tine_first=LOW_TINE, fin_height=BELOW_FOOT, foot_shape=d.FOOT_NONE).validate()
+    for what, given in (("one tine below the foot", {"tine_count": 1}),
+                        ("a height of its own below the foot", {"heights": {1: BELOW_FOOT}})):
+        built = geometry.build(cube, face, FinParams(tine_first=LOW_TINE, placement=d.PLACEMENT_CENTER,
+                                                     tine_count=given.get("tine_count", d.TINE_COUNT_AUTO)),
+                               heights=given.get("heights"))
+        expect(built.fins.isValid() and built.fins.Volume > 0 and all(body.isValid() for body in built.bodies),
+               "a fin with %s is a valid solid" % what)
+        expect(abs(built.heights[1] - foot) < d.TOLERANCE, "a fin with %s is as high as its foot" % what)
 
 
 def check_corners(cube, face):
@@ -5399,6 +5423,7 @@ def main():
                "with a %.0f mm foot the lowest tine sits on it and is attached" % foot)
     low = geometry.build(cube, face, FinParams(foot_thickness=3.0, tine_first=1.0))
     expect(len(low.fins.Solids) == 1, "a tine set below the top of the foot still reaches into the fin")
+    check_fin_on_foot(cube, face)
     check_corners(cube, face)
     check_overhangs(cube, face)
     check_limits()

@@ -145,6 +145,15 @@ class FinParams:
 
         if self.placement == d.PLACEMENT_DISTRIBUTED and self.fin_count < 1:
             raise ParamError(translate("FinSnap", "fin_count must be at least 1"))
+        # A fin height set by hand against the foot (mm, both from the bed):
+        #   0, automatic                  ->  accepted: the plan keeps the fin on its foot
+        #   above 0, below the foot       ->  ParamError: the outline would cross itself
+        #   the height of the foot, more  ->  accepted
+        #   no foot                       ->  accepted, whatever the height
+        #   negative, not finite          ->  refused above
+        if 0 < self.fin_height < self.foot_height - d.TOLERANCE:
+            raise ParamError(translate("FinSnap", "fin_height %.2f mm is lower than the foot (%.2f mm)")
+                             % (self.fin_height, self.foot_height))
         if self.fin_thickness > 0 and self.tine_width > self.fin_thickness:
             raise ParamError(translate("FinSnap", "tines (%.2f mm) are wider than the fin (%.2f mm)")
                              % (self.tine_width, self.fin_thickness))
