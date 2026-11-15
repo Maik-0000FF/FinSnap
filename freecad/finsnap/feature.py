@@ -24,8 +24,8 @@ from . import orient
 from . import presets
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .params import FinParams
-from .shapes import (bounds, face_in_plane, face_like, face_name, global_placement, global_shape, in_plane, moved,
-                     outermost, part_of, plane_of)
+from .shapes import (bounds, container_of, face_in_plane, face_like, face_name, global_placement, global_shape,
+                     in_plane, moved, outermost, part_of, plane_of)
 
 TYPE_NAME = "FinSnap"
 # Result property listing the faces that overhang without fins; the view
@@ -1075,6 +1075,8 @@ class FinSnapFeature:
 
     def onDocumentRestored(self, obj):  # noqa: N802 - FreeCAD API
         obj.Proxy = self
+        # A file saved before the fins followed their part into a container.
+        follow_container(obj)
         if OVERHANGS not in obj.PropertiesList:
             add_overhangs(obj)
         hidden_property(obj, UNPRINTABLE_OVERHANGS, "App::PropertyStringList")
@@ -1249,8 +1251,7 @@ def create(base, face_ref, counter=None):
     obj = doc.addObject("Part::FeaturePython", TYPE_NAME)
     FinSnapFeature(obj)
     obj.Base = (base, [face_ref])
-    if outermost(base) is not base:
-        obj.Container = outermost(base)
+    obj.Container = container_of(base)
     if counter:
         obj.CounterFace = (counter[0], [counter[1]])
     for which in (MAIN, COUNTER):
@@ -1260,6 +1261,65 @@ def create(base, face_ref, counter=None):
         if other is not obj and is_fins(other) and other.Base and other.Base[0] is base:
             other.touch()
     return obj
+
+
+# The property of a container that holds what lies in it.
+HELD_IN = "Group"
+
+
+def follow_containers(document):
+    """Link the fins and the checks of `document` to the outermost container
+    their part lies in now (Container), so moving that container rebuilds the
+    fins and marks the checks out of date: a part can be put into a
+    container, or taken out of one, long after they were made.
+
+    INPUTS this has to withstand:
+      a part put into a container           ->  its fins link that container and
+                                                are built anew at the next
+                                                recompute, its checks link it and
+                                                are out of date then
+      that container put into another       ->  they link the outer one
+      a part taken out of every container   ->  they link none
+      fins and checks whose part lies as
+        before                              ->  nothing written, not built anew
+      fins without a part, a check whose
+        part is gone                        ->  left as they are
+      fins read from a file saved before
+        their part was followed             ->  set right as they are read
+                                                (onDocumentRestored()); a check
+                                                of such a file when it is checked
+                                                again or its part is put elsewhere
+    """
+    for obj in document.Objects:
+        if is_fins(obj) or check.is_check(obj):
+            follow_container(obj)
+
+
+def follow_container(obj):
+    """Link `obj`, fins or a check, to the outermost container its part lies
+    in now; written only where it differs, so nothing is built anew for it."""
+    if is_fins(obj):
+        part = obj.Base[0] if obj.Base else None
+    else:
+        part = obj.Part
+    if part is not None and obj.Container is not container_of(part):
+        obj.Container = container_of(part)
+
+
+class ContainerWatch:
+    """Document observer: when what a container holds changes, the fins
+    follow their part into it or out of it (follow_containers())."""
+
+    def slotChangedObject(self, obj, prop):  # noqa: N802 - FreeCAD API
+        document = obj.Document
+        # Not while a document is read, when not every object is there yet, nor
+        # while a step of its undo stack is taken back or made again, which
+        # holds the link itself.
+        if prop == HELD_IN and document is not None and not (document.Restoring or document.Transacting):
+            follow_containers(document)
+
+
+App.addDocumentObserver(ContainerWatch())
 
 
 def fins_of(owner, document):
