@@ -333,6 +333,7 @@ RIB_WIDTH = 1.0
 RIB_LENGTH = 30.0      # reaching past the fin
 RIB_INTO_PART = 1.0    # how far it starts inside the part
 RIB_HEIGHT_SHARE = 0.6 # how high up the side fin it stands
+WIDE_GAP = 0.6         # a gap other than the built-in one, in mm
 THICK_FOOT = 3.0       # a foot reaching above the lowest tine of a side fin, in mm
 RIB_ABOVE_FOOT = 1.5   # how far above the top of that foot a rib stands, below the next tine, in mm
 THIN_STEP_RADIUS = 3.0 # a step thinner than the side fins stand from the lowest line
@@ -4015,6 +4016,21 @@ def check_three_round_fins():
     expect(3 in free.heights and 3 not in footed.heights and 1 in footed.heights and footed.fins.isValid()
            and any("left out" in w for w in footed.warnings),
            "a rib just above a thick foot: that side fin is left out, said so, the others are built")
+    # The cuts the ends of the tines are measured on are kept from build to
+    # build, the contour of a fin is not: built with another gap, the ends
+    # stand in with the contour of that build, and the fins are those of a
+    # build that finds nothing kept.
+    stood, side = stood_on_free_rim(rod)
+    geometry.build(stood, stood.Faces[side], three)
+    wide = dataclasses.replace(three, gap=WIDE_GAP)
+    after = geometry.build(stood, stood.Faces[side], wide)
+    expect(all(ends.beside is after.frames[number].contour
+               for number in (1, 3) for ends in after.frames[number].tine_edges[1]),
+           "built again with another gap, the ends of the tines of a side fin stand in with its own contour")
+    contour.clear_kept()
+    fresh = geometry.build(stood, stood.Faces[side], wide)
+    expect(abs(after.fins.Volume - fresh.fins.Volume) < d.TOLERANCE and len(after.tines) == len(fresh.tines),
+           "and its fins are those of a build with nothing kept")
     # A shaft whose thin step ends the side fins lower than the fin between them.
     thin_step = rod.fuse(Part.makeCylinder(THIN_STEP_RADIUS, ROD_HEIGHT, V(0, 0, ROD_HEIGHT))).removeSplitter()
     stood, side = stood_on_free_rim(thin_step)

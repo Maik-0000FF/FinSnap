@@ -55,6 +55,7 @@ INPUTS this has to withstand (Contour):
 """
 
 import bisect
+import copy
 import math
 
 import numpy
@@ -710,15 +711,26 @@ class CutEnds(_TineEnds):
     """The ends of tines along one cut, and nothing else: a Contour works out a
     flank at every height as well, which a tine does not need and which takes
     many times as long on a tall part. Where the cut has nothing at a height,
-    `beside`, the Contour of its fin, says where its flank stands."""
+    `beside`, the Contour of its fin, says where its flank stands.
 
-    def __init__(self, lines, p, beside):
+    The cut is worked out once and kept (ends_at()); the Contour is that of
+    one build, and belongs to none of what is kept: along() gives the ends
+    of the cut for it."""
+
+    def __init__(self, lines, p):
         pieces = [piece for loop in loops_of(lines) for piece in loop_pieces(loop)]
-        self.beside = beside
+        self.beside = None
         top = max(max(start[1], end[1]) for start, end, *_ in pieces)
         self.step = p.layer_height / d.CONTOUR_SAMPLES_PER_LAYER
         self.heights = [k * self.step for k in range(int(math.ceil(top / self.step)) + 1)]
         self._keep_clear(pieces, p.clearance)
+
+    def along(self, beside):
+        """These ends for the fin whose Contour is `beside`: the same cut,
+        nothing of it worked out again."""
+        ends = copy.copy(self)
+        ends.beside = beside
+        return ends
 
     def flank(self, z):
         return self.beside.flank(z)
@@ -1032,10 +1044,13 @@ def beside(part, frame, p, nearest, furthest):
 
 def ends_at(part, frame, p, t, beside_line):
     """Where tines end in the upright plane at `t` along the face of `frame`
-    (CutEnds), for one beside the lowest line; kept as of() is."""
+    (CutEnds), for one beside the lowest line, whose Contour is `beside_line`.
+    The cut is kept as of() is, by what it follows from alone; the Contour,
+    which follows from more (the gap, the bridge, where the fin stands), is
+    that of this call."""
     key = (part_key(part), tuple(frame.out), tuple(frame.along), frame.bed_z, t,
            p.layer_height, p.clearance)
-    return keep(_kept_beside, key, lambda: CutEnds(cut_of(part, frame, t), p, beside_line), BESIDE_KEPT)
+    return keep(_kept_beside, key, lambda: CutEnds(cut_of(part, frame, t), p), BESIDE_KEPT).along(beside_line)
 
 
 def across(part, frame, p, t):

@@ -17,6 +17,7 @@ All notable changes to FinSnap are listed here. The format follows
 - A side fin under a round side that the part comes too close to just above its foot no longer stops the build with an internal error: with no tine left above the top of its foot, it is left out with a warning, as one with no tine left at all
 - Fins that fail to build say why themselves: the overhangs and bridges of the part, looked for after the failure, no longer replace its message with an error of their own, as "Bnd_Box is void" on a part that became empty, and parameters out of range are named before anything is built (#195)
 - A part that is a link (App::Link) takes fins: adding fins to a face of a link failed with an AttributeError. The fins stand where the link puts its part, with the placement of the linked part where the link keeps it, also in a container, and follow the link when it is moved (#194)
+- The ends of the tines of a side fin under a round side no longer keep the contour of an earlier build, with another gap or another place of the fin; no part is known on which this changed the fins (#197)
 
 ## [0.18.0] - 2026-11-14
 
