@@ -11,6 +11,8 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.18.1] - 2026-11-15
+
 ### Fixed
 
 - A fin is no longer built lower than its foot, which gave an invalid solid without any error: a fin height set below the foot is refused, and a fin that would end below it, with a single tine under the top of the foot or a height of its own, is as high as its foot (#192)
@@ -399,7 +401,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.18.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.18.1...HEAD
+[0.18.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.18.1
 [0.18.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.18.0
 [0.17.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.17.0
 [0.16.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.16.1
