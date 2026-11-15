@@ -46,6 +46,11 @@ INPUTS this has to withstand (build()):
     face (narrow face or recess)        ->  those tines left out, warning
   face ending above the bed             ->  no tines below it
   manual fin_height below the first tine ->  FinError
+  manual fin_height below the top of
+    the foot                            ->  ParamError
+  a fin ending below the top of its
+    foot, by its highest tine left or
+    a height of its own                 ->  that fin as high as its foot
   fins standing closer than they are
     thick plus FOOT_CLEARANCE           ->  FinError: they would collide
   fin collides with other geometry of
