@@ -1378,6 +1378,47 @@ def check_objects(doc):
     doc.removeObject(body.Name)
 
 
+def error_of_the_build_is_kept(doc):
+    """A build that fails says why itself: neither a check of the part run
+    after it nor anything tried before the parameters are validated replaces
+    its error."""
+    cube = doc.addObject("Part::Feature", "Failing")
+    cube.Shape = tilted_cube()
+    fins = feature.create(cube, face_name(cube.Shape, lower_left_face(cube.Shape)))
+    doc.recompute()
+    expect(fins.Shape.Solids and not fins.getStatusString().strip("Valid"), "the fins are built before they fail")
+
+    def failing(*_):
+        raise ZeroDivisionError("a check that fails")
+
+    checks = ("overhangs_of", "bridges_of")
+    kept = {name: getattr(feature, name) for name in checks}
+    fins.LayerHeight = 0
+    try:
+        for name in checks:
+            setattr(feature, name, failing)
+        doc.recompute()
+    finally:
+        for name, check_of in kept.items():
+            setattr(feature, name, check_of)
+    expect("layer_height" in fins.getStatusString() and not fins.Overhangs,
+           "parameters refused are named although the checks fail after them, no mark left: %s"
+           % fins.getStatusString())
+    fins.LayerHeight = d.LAYER_HEIGHT
+    doc.recompute()
+    expect(fins.Shape.Solids, "the fins are built again with the parameters set right")
+
+    # A part that became an empty shape: the checks have nothing to measure.
+    cube.Shape = Part.makeCompound([])
+    doc.recompute()
+    gone = App.Qt.translate("FinSnap", feature.NOTE_FACE_GONE) % cube.Label
+    expect(gone in fins.getStatusString() and not fins.Overhangs,
+           "on a part become empty the build says its face is gone, not what a check fails on: %s"
+           % fins.getStatusString())
+    doc.removeObject(fins.Name)
+    doc.removeObject(cube.Name)
+
+
 def fins_follow_the_body(doc):
     """Fins under a face of a Pad stand under the face of its Body, and
     follow a chamfer or a fillet added after them: rebuilt on the new shape,
@@ -1500,6 +1541,7 @@ def main():
     stability_by_limits(doc)
     bridges_apart(doc)
     fins_follow_the_body(doc)
+    error_of_the_build_is_kept(doc)
     step_with_offset_curves()
     print("all checks passed", file=sys.__stdout__)
 
