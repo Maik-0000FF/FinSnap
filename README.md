@@ -199,7 +199,7 @@ FinSnap writes every body to STEP as NURBS surfaces. FreeCAD's own STEP export (
 
 ### Tine clearance
 
-With **Tine clearance** at 0, the tines touch the face, and a print shows faint marks where they stood. A clearance lets them end that far short of the face, measured along the face normal, so the slicer prints the tine and the part as separate beads. The fin stays at the **gap** from the face; the tines are as much shorter. A clearance as large as the gap leaves no tine and is refused.
+With **Tine clearance** at 0, the built-in value, the tines touch the face, the slicer joins tine and part, and a print shows faint marks where they stood. A clearance lets them end that far short of the face, measured along the face normal, so the slicer prints the tine and the part as separate beads. The fin stays at the **gap** from the face; the tines are as much shorter. A clearance as large as the gap leaves no tine and is refused.
 
 ```
 part face | clearance | tines | fin
@@ -225,7 +225,7 @@ Whether a tine still holds the part across that distance depends on how far the 
 1. Tilt a small test part, for example a 20 mm cube, add fins with the separate connection and the default gap.
 2. Make copies of fins and part with tine clearances of **0, 0.03, 0.05 and 0.08 mm** and print them with the profile you will use.
 3. For each one check: does the part stand without wobbling, and does the fin come off without force? Look at the marks the tines left on the face.
-4. Take the largest clearance that still holds the part. A bead swells by a few hundredths of a millimetre while printing; once the clearance is wider than that, the tine no longer reaches the face and the fin stops holding. Test prints with 0.25 mm tines held with 0.04 mm and with the built-in 0.05 mm, which with the built-in gap of 0.3 mm leaves the tines that long; check it with your own profile.
+4. Take the largest clearance that still holds the part. A bead swells by a few hundredths of a millimetre while printing; once the clearance is wider than that, the tine no longer reaches the face and the fin stops holding. In test prints 0.25 mm tines, the built-in gap, did better touching the face, the built-in clearance of 0 with the slicer joining tine and part, than fins merged into the part; ending 0.04 or 0.05 mm short of the face they held too. Check it with your own profile.
 5. Save it with **Save to profile** in the panel, so new fins start with it.
 
 ## What the 3MF file contains
@@ -245,8 +245,8 @@ The file is a ZIP archive; the content above sits in `3D/3dmodel.model`. A slice
 |---|---|---|---|
 | Slicer | Nozzle diameter, bead width, layer height, first layer height | | Values of the print profile |
 | Connection | Connection | separate | separate or merged |
-| | Gap | 0.3 mm | Distance between fin and face, along the face normal, at most 2 mm; the tines reach across it |
-| | Tine clearance | 0.05 mm | Distance from the end of the tines to the face, along the face normal, smaller than the gap; the tines are as much shorter, 0 = touching. See [Tine clearance](#tine-clearance) |
+| | Gap | 0.25 mm | Distance between fin and face, along the face normal, at most 2 mm; the tines reach across it |
+| | Tine clearance | 0 mm | Distance from the end of the tines to the face, along the face normal, smaller than the gap; the tines are as much shorter, 0 = touching. See [Tine clearance](#tine-clearance) |
 | Tines | Tine spacing | 5 mm | Vertical distance between tines, at least the tine height plus one layer |
 | | Restart tines after an interruption | on | Start the tines of each fin anew at the lower edge of the face and above every interruption it reaches over, spread evenly up to the top of the face; off, one grid counts from the bed for every fin |
 | | Tine first | 0 = on the top of the foot | Height of the lowest tine |

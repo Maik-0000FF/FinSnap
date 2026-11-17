@@ -1056,17 +1056,47 @@ def check(p, part, pieces, bodies, slack=0.0, made_of=None):
     """Fins, of `pieces`, clear of the part, no closer than their distance from the
     face, give or take `slack`: along a contour, CONTOUR_TOLERANCE. That every tine
     reaches the face is settled when the tines are chosen, by contact_share().
-    `made_of` names for each piece what it was fused from (_not_known_clear())."""
+    `made_of` names for each piece what it was fused from (_not_known_clear()).
+
+    Tines that touch the face, with no tine clearance, can reach into it by the
+    contour they end on, which only comes within `slack` of a curved face: an
+    overlap as deep as that over the ends of their tines (_touching_overlap())
+    is taken for touching.
+
+    OVERLAPS this has to withstand:
+      none                                  ->  passed
+      tines touching a curved face, ending
+        on a contour within `slack` of it   ->  passed
+      a fin cutting into the part deeper    ->  FinError naming the volume
+      no `made_of`, or no `slack`           ->  TOLERANCE allowed, as before
+    """
     if p.connection == d.CONNECTION_SEPARATE:
         unsure = _not_known_clear(pieces, part, made_of)
         overlap = overlap_of(Part.makeCompound(unsure), part) if unsure else 0.0
-        if overlap > d.TOLERANCE:
+        if overlap > _touching_overlap(p, pieces, unsure, made_of, slack):
             raise FinError(translate("FinSnap", "the fins overlap the part by %.4f mm³") % overlap)
 
     for body in bodies:
         distance = body.distToShape(part)[0]
         if distance < p.gap - slack - d.TOLERANCE:
             raise FinError(translate("FinSnap", NOTE_TOO_CLOSE) % (distance, p.gap))
+
+
+def touching_volume(p, tines, slack):
+    """The volume of the part fins of `tines` tines may hold and still only
+    touch it (mm3): each tine `slack` deep over its end, tine width by tine
+    height; TOLERANCE at least."""
+    return max(d.TOLERANCE, tines * p.tine_width * p.tine_height * slack)
+
+
+def _touching_overlap(p, pieces, unsure, made_of, slack):
+    """touching_volume() of the `unsure` of `pieces`, their tines as `made_of`
+    lists them after the body; TOLERANCE where it is not known."""
+    if made_of is None:
+        return d.TOLERANCE
+    tines = sum(len(shapes) - 1 for piece, shapes in zip(pieces, made_of)
+                if any(piece.isSame(other) for other in unsure))
+    return touching_volume(p, tines, slack)
 
 
 @working()
