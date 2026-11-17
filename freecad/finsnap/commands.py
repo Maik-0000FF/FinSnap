@@ -67,6 +67,9 @@ MESH_LINEAR_DECIMALS = 3
 MESH_ANGULAR_DECIMALS = 1
 FINS_SUFFIX = "_fins"
 STATUS_TIMEOUT_MS = 10000
+# FreeCAD's edit modes, see Std_UserEditMode: the default one, which a double
+# click starts and which opens the panel of the fins; the others are FreeCAD's own.
+EDIT_MODE_DEFAULT, EDIT_MODE_TRANSFORM, EDIT_MODE_CUTTING, EDIT_MODE_COLOR = range(4)
 # What an export writes, and the fins it leaves out because their part lies flat.
 Export = namedtuple("Export", "shapes left_out")
 
@@ -251,7 +254,18 @@ class ViewProviderFinSnap:
         return [handles.overhang_faces([shape.getElement(name) for name in chosen], level)
                 for level, chosen in levels if chosen]
 
-    def setEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API
+    def setEdit(self, vobj, mode=EDIT_MODE_DEFAULT):  # noqa: N802 - FreeCAD API
+        """Open the panel of the fins in the default edit mode.
+
+        MODES this has to withstand:
+          default, by a double click or a command  ->  the panel, True
+          Transform, Cutting, Color per face, from
+            the context menu                       ->  None: FreeCAD's own edit
+          default, another task panel open         ->  False, that one kept
+          default, no 3D view                      ->  said so, False
+        """
+        if mode != EDIT_MODE_DEFAULT:
+            return None
         # Fins just made by a command are deleted again by Cancel.
         # Another task dialog is open: FreeCAD keeps that one.
         if Gui.Control.activeDialog():
@@ -312,7 +326,11 @@ class ViewProviderFinSnap:
                 doc.abortTransaction()
         return True
 
-    def unsetEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API
+    def unsetEdit(self, vobj, mode=EDIT_MODE_DEFAULT):  # noqa: N802 - FreeCAD API
+        # Another edit mode is FreeCAD's own, as setEdit() left it: so is
+        # closing its dialog, which is no panel of the fins.
+        if mode != EDIT_MODE_DEFAULT:
+            return None
         # Edit mode can end without OK or Cancel; the arrows, the see-through
         # look and the listeners of the panel go with it all the same.
         panel, self.panel = getattr(self, "panel", None), None
