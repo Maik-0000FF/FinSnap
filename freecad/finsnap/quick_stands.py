@@ -30,6 +30,9 @@ NO_STAND_FOR_FACE = QT_TRANSLATE_NOOP("FinSnap", "the part cannot stand so that 
 # radians; for an angle this small it also bounds the sine and the cosine that
 # stand for it. Solids converted from a mesh or a STEP file are rarely exact.
 PRISM_ANGLE_TOLERANCE = math.radians(d.RIGHT_ANGLE_TOLERANCE)
+# Points each edge of a face is sampled at to measure how wide the face is
+# (is_chamfer()): the ends and enough between them for the bulge of an arc.
+ACROSS_SAMPLES = 9
 
 
 class EdgeSet:
@@ -234,7 +237,10 @@ def quick_plan(shape, edges, faces, p, angle_deg):
                                                 angle_deg; one fin under it
       one rounded face (fillet)             ->  the part rests on it; fins under the
                                                 largest leaning face
-      one chamfer, wide or narrow           ->  as a rounded face: the part rests on it
+      one chamfer, no wider than the faces
+        beside it (is_chamfer())            ->  as a rounded face: the part rests on it
+      a side beside a chamfer               ->  as any planar face: it leans and takes
+                                                the fins
       a face and one of its edges           ->  stood on that edge, the face leaning
                                                 angle_deg; fins under it
       a face and an edge of another face    ->  OrientError from stand()
@@ -518,35 +524,67 @@ def _stood_on_end(shape, face, number, axis, p):
 def is_chamfer(shape, face):
     """Whether planar `face` sits between two planar faces of `shape` like a
     chamfer: its normal turned part of the way from one neighbour's normal to
-    the other's, whatever the angle or the two widths of the chamfer.
+    the other's, whatever the angle or the two widths of the chamfer, and the
+    face no wider across than either neighbour, measured across the edge it
+    shares with it. The normals alone cannot tell a chamfer from the side
+    beside it: the normal of that side lies between those of the chamfer and
+    of the face on its other edge as well. The chamfer is the narrow one.
 
     INPUTS this has to withstand:
       chamfer on the edge of a box, equal or
-        unequal widths, wide or narrow      ->  True
+        unequal widths                      ->  True
       chamfer at another angle than 45      ->  True
       side of a box                         ->  False: no two neighbours with its
                                                 normal between theirs
+      side or bottom of a box beside a
+        chamfer, or between two of them     ->  False: wider than the chamfer
+      chamfer wider across than the rest
+        of a side beside it                 ->  False; that rest is taken for the
+                                                chamfer, as the narrow one
       side of a prism of five sides or more ->  True: it lies between its neighbours
-                                                too; quick_plans() asks prism_axis()
+                                                too, as wide as they are;
+                                                quick_plans() asks prism_axis()
                                                 first; to put fins under the side of
                                                 an uneven one, select it with one of
                                                 its edges
       rounded face                          ->  False
+      an edge of no length                  ->  passed over
     """
     if face.findPlane() is None:
         return False
     normal = middle_normal(face)
-    beside = [middle_normal(other) for other in _flat_beside(_flat_by_edge(shape), face, face.Edges)]
-    for i, first in enumerate(beside):
-        for second in beside[i + 1:]:
+    by_edge = _flat_by_edge(shape)
+    # Each neighbour as (its normal, whether `face` is no wider across the edge
+    # they share than it is).
+    beside = []
+    for edge in face.Edges:
+        along = edge.Vertexes[-1].Point - edge.Vertexes[0].Point
+        if along.Length < d.TOLERANCE:
+            continue
+        along.normalize()
+        for other in _flat_beside(by_edge, face, [edge]):
+            other_normal = middle_normal(other)
+            narrow = _across(face, normal, along) <= _across(other, other_normal, along) + d.TOLERANCE
+            beside.append((other_normal, narrow))
+    for i, (first, first_narrow) in enumerate(beside):
+        for second, second_narrow in beside[i + 1:]:
             apart = first.getAngle(second)
             # Between them: in their plane, and the two angles to it adding up
             # to the angle between them, neither of them zero.
             in_between = abs(first.getAngle(normal) + normal.getAngle(second) - apart) < d.TOLERANCE
-            if d.TOLERANCE < apart < math.pi - d.TOLERANCE and in_between \
+            if d.TOLERANCE < apart < math.pi - d.TOLERANCE and in_between and first_narrow and second_narrow \
                     and min(first.getAngle(normal), second.getAngle(normal)) > d.TOLERANCE:
                 return True
     return False
+
+
+def _across(face, normal, along):
+    """How wide planar `face`, of outward `normal`, is across the direction
+    `along` in its plane: from the edge along it to the far side, its edges
+    sampled at ACROSS_SAMPLES points each, so a curved edge counts with its bulge."""
+    across = normal.cross(along)
+    reach = [point.dot(across) for edge in face.Edges for point in edge.discretize(ACROSS_SAMPLES)]
+    return max(reach) - min(reach)
 
 
 def _checked(shape, plan, p):

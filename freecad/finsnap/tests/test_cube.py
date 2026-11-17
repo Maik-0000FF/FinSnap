@@ -173,6 +173,8 @@ WIDE_LAYER = 1.0
 UP = V(0, 0, 1)
 BOX_SIDE = 20.0
 EDGE_ROUND = 3.0       # size of the chamfer or radius of the fillet on a box edge
+BOTTOM_CHAMFER = 2.0   # a chamfer on every edge of the bottom of a box
+WIDE_CHAMFER = 15.0    # a chamfer that leaves 5 mm of the sides of a 20 mm box beside it
 CHAMFER_LONG = 3.0     # the long leg of a chamfer of unequal widths on a rim, in mm
 CHAMFER_SHORT = 1.0    # its short leg
 # Bosses on the face of the tilted cube (bossed_cube()): how high they stand
@@ -2125,13 +2127,32 @@ def check_quick_plan():
     alone = quick_stands.quick_plan(chamfered, [], [(chamfered.Faces[bevel], bevel)], p, d.TILT_ANGLE)
     expect(quick_stands.is_chamfer(chamfered, chamfered.Faces[bevel]) and alone.number != bevel
            and abs(moved(chamfered, alone.change).Faces[bevel].normalAt(0, 0).z + 1) < 1e-6,
-           "a chamfer alone, however wide, carries the part instead of taking the fins")
+           "a chamfer alone carries the part instead of taking the fins")
     expect(not quick_stands.is_chamfer(box, box.Faces[front]), "a side of a box is no chamfer")
     uneven = box.makeChamfer(EDGE_ROUND, 2 * EDGE_ROUND, bottom_front)
     slope = [f for f in uneven.Faces if f.findPlane() is not None and -0.99 < f.normalAt(0, 0).z < -0.01
              and -0.99 < f.normalAt(0, 0).y < -0.01]
     expect(len(slope) == 1 and quick_stands.is_chamfer(uneven, slope[0]),
            "a chamfer of unequal widths, not at 45 degrees, is a chamfer too")
+    bottom = [i for i, f in enumerate(chamfered.Faces) if abs(f.normalAt(0, 0).z + 1) < 1e-6][0]
+    expect(not quick_stands.is_chamfer(chamfered, chamfered.Faces[side])
+           and not quick_stands.is_chamfer(chamfered, chamfered.Faces[bottom]),
+           "the side and the bottom beside a chamfer are no chamfers, though their normals lie between others")
+
+    # Every edge of the bottom chamfered: a side selected alone takes the fins.
+    rim = box.makeChamfer(BOTTOM_CHAMFER, [e for e in box.Edges if e.BoundBox.ZMax < d.TOLERANCE])
+    bevels = [i for i, f in enumerate(rim.Faces) if quick_stands.is_chamfer(rim, f)]
+    expect(len(bevels) == 4 and all(abs(rim.Faces[i].normalAt(0, 0).z + math.sqrt(0.5)) < 1e-6 for i in bevels),
+           "with the whole bottom chamfered only the four chamfers are chamfers: %s" % bevels)
+    largest = max(range(len(rim.Faces)), key=lambda i: rim.Faces[i].Area)
+    plan = quick_stands.quick_plan(rim, [], [(rim.Faces[largest], largest)], p, d.TILT_ANGLE)
+    expect(plan.number == largest, "a side above a chamfer, selected alone, takes the fins itself, not the chamfer")
+
+    wide = box.makeChamfer(WIDE_CHAMFER, bottom_front)
+    slant = [i for i, f in enumerate(wide.Faces) if abs(f.normalAt(0, 0).z + math.sqrt(0.5)) < 1e-6][0]
+    rest = [i for i, f in enumerate(wide.Faces) if abs(f.normalAt(0, 0).y + 1) < 1e-6][0]
+    expect(not quick_stands.is_chamfer(wide, wide.Faces[slant]) and quick_stands.is_chamfer(wide, wide.Faces[rest]),
+           "a chamfer wider than the rest of the side beside it: the narrow rest counts as the chamfer")
 
     filleted = box.makeFillet(EDGE_ROUND, bottom_front)
     fillet = [i for i, f in enumerate(filleted.Faces) if f.findPlane() is None][0]
