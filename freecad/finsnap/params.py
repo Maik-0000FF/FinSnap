@@ -40,6 +40,7 @@ INPUTS this has to withstand (validate()):
 """
 
 import math
+import sys
 from dataclasses import dataclass, fields
 
 from . import defaults as d
@@ -64,6 +65,8 @@ def fits_kind(value, kind):
       float field: 2.5, 2, NaN              ->  True; a whole number is a number too,
                                                 NaN is refused as not finite elsewhere
       float field: True, "2", None          ->  False
+      float field: a whole number past the
+        largest float, 10 ** 400            ->  False: no float can hold it
       int field: 2, -3                      ->  True
       int field: 2.0, 2.5, True, "2", None  ->  False
       int field: below PARAMETER_INT_MIN
@@ -77,7 +80,8 @@ def fits_kind(value, kind):
     if isinstance(value, bool) or kind is bool:
         return isinstance(value, bool) and kind is bool
     if kind is float:
-        return isinstance(value, (int, float))
+        # A whole number past the largest float has no float to stand for it.
+        return isinstance(value, float) or (isinstance(value, int) and abs(value) <= sys.float_info.max)
     if kind is int:
         return isinstance(value, int) and PARAMETER_INT_MIN <= value <= PARAMETER_INT_MAX
     return isinstance(value, kind)

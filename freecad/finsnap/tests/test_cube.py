@@ -18,7 +18,7 @@ import numpy
 
 import Part
 
-from freecad.finsnap.tests.support import (CHAMFER, EDGE, HALF_TURN, RECESS_RADIUS, TILT, expect, grooved,
+from freecad.finsnap.tests.support import (BEYOND_FLOAT, CHAMFER, EDGE, HALF_TURN, RECESS_RADIUS, TILT, expect, grooved,
                                            largest_facing, lower_left_face, run, slot_on_end, split_cylinder, tilted,
                                            tilted_cube)
 from freecad.finsnap import analysis
@@ -635,7 +635,8 @@ def check_limits():
            dict(tipping_angle=float("nan")),
            dict(overhang_critical=float("inf")), dict(bridge_critical=-1.0),
            dict(bridge_critical=12.0, bridge_unprintable=10.0),
-           dict(tipping_angle="3"), dict(tipping_angle=None), dict(tipping_angle=True))
+           dict(tipping_angle="3"), dict(tipping_angle=None), dict(tipping_angle=True),
+           dict(tipping_angle=BEYOND_FLOAT))
     for values in bad:
         try:
             limits.Limits(**values).validate()

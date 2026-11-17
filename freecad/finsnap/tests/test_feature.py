@@ -17,7 +17,7 @@ import zipfile
 
 import FreeCAD as App
 import Part
-from freecad.finsnap.tests.support import (STANDARD_THICKNESS, expect, lower_left_face, run, slot_on_end,
+from freecad.finsnap.tests.support import (BEYOND_FLOAT, STANDARD_THICKNESS, expect, lower_left_face, run, slot_on_end,
                                            split_cylinder, tilted_cube)
 from freecad.finsnap import defaults as d
 from freecad.finsnap import (analysis, check, export_3mf, export_step, face_frame, feature, geometry, orient, overhang,
@@ -378,7 +378,7 @@ def saved_standard(doc):
     presets.save(thin)
     for wrong in (dict(tine_count=2.5), dict(tine_count=True), dict(tine_count=PARAMETER_INT_MAX + 1),
                   dict(tine_count=PARAMETER_INT_MIN - 1), dict(follow_contour=1),
-                  dict(placement=None), dict(gap="1")):
+                  dict(placement=None), dict(gap="1"), dict(contour_bridge=BEYOND_FLOAT)):
         try:
             presets.save(dataclasses.replace(thin, **wrong))
         except ParamError:
