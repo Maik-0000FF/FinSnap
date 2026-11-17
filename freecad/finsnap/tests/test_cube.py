@@ -634,7 +634,8 @@ def check_limits():
            dict(tipping_angle=-0.1), dict(tipping_angle=91.0), dict(overhang_min_area=-1.0),
            dict(tipping_angle=float("nan")),
            dict(overhang_critical=float("inf")), dict(bridge_critical=-1.0),
-           dict(bridge_critical=12.0, bridge_unprintable=10.0))
+           dict(bridge_critical=12.0, bridge_unprintable=10.0),
+           dict(tipping_angle="3"), dict(tipping_angle=None), dict(tipping_angle=True))
     for values in bad:
         try:
             limits.Limits(**values).validate()
@@ -666,6 +667,15 @@ def check_limits():
         expect(False, "invalid limits are not saved")
     except limits.LimitError:
         expect(limits.current() == own, "invalid limits are not saved, the saved ones stay")
+    try:
+        limits.save(limits.Limits(tipping_angle="3"))
+        expect(False, "a limit that is no number is not saved")
+    except limits.LimitError:
+        expect(limits.current() == own, "a limit that is no number is not saved, the saved ones stay")
+    whole = limits.Limits(tipping_angle=3)
+    limits.save(whole)
+    expect(limits.current() == whole and isinstance(limits.current().tipping_angle, float),
+           "a whole number is a limit too, saved as a number with a fraction")
     limits.reset()
     expect(limits.current() == limits.Limits(), "reset: the built-in limits")
     for name, preset in limits.STRICTNESS.items():

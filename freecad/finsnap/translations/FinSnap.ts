@@ -1074,7 +1074,7 @@
     </message>
     <message>
         <location filename="../geometry.py" line="1657"/>
-        <location filename="../params.py" line="158"/>
+        <location filename="../params.py" line="195"/>
         <source>tines (%.2f mm) are wider than the fin (%.2f mm)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1246,113 +1246,118 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../limits.py" line="110"/>
-        <location filename="../params.py" line="97"/>
+        <location filename="../limits.py" line="115"/>
+        <location filename="../params.py" line="134"/>
         <source>%s is not a finite number</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../limits.py" line="113"/>
+        <location filename="../limits.py" line="118"/>
         <source>%s must lie between %.0f and %.0f degrees</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../limits.py" line="116"/>
+        <location filename="../limits.py" line="121"/>
         <source>overhang_unprintable must not be steeper than overhang_critical</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../limits.py" line="120"/>
+        <location filename="../limits.py" line="125"/>
         <source>%s must be 0 or greater</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../limits.py" line="122"/>
+        <location filename="../limits.py" line="127"/>
         <source>bridge_unprintable must not be shorter than bridge_critical</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../params.py" line="104"/>
+        <location filename="../params.py" line="52"/>
+        <source>%s holds a value of the wrong kind</source>
+        <translation type="unfinished"></translation>
+    </message>
+    <message>
+        <location filename="../params.py" line="141"/>
         <source>%s must be greater than 0</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../params.py" line="110"/>
+        <location filename="../params.py" line="147"/>
         <source>%s must be 0 (automatic) or greater</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../params.py" line="113"/>
+        <location filename="../params.py" line="150"/>
         <source>tine_clearance must be 0 (touching) or greater</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../params.py" line="115"/>
+        <location filename="../params.py" line="152"/>
         <source>gap must be at most %.1f mm, longer tines do not print straight</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../params.py" line="118"/>
+        <location filename="../params.py" line="155"/>
         <source>tine_clearance must be smaller than the gap</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../params.py" line="120"/>
+        <location filename="../params.py" line="157"/>
         <source>foot_overhang must be 0 or greater</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../params.py" line="122"/>
+        <location filename="../params.py" line="159"/>
         <source>brim_width must be 0 (no brim) or greater</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../params.py" line="124"/>
+        <location filename="../params.py" line="161"/>
         <source>contour_bridge must be 0 (follow every recess) or greater</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../params.py" line="126"/>
+        <location filename="../params.py" line="163"/>
         <source>round_fin_angle must be from %.0f up to %.0f degrees</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../params.py" line="129"/>
+        <location filename="../params.py" line="166"/>
         <source>bead_width is less than half the nozzle diameter</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../params.py" line="131"/>
+        <location filename="../params.py" line="168"/>
         <source>layer_height is greater than the nozzle diameter</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../params.py" line="133"/>
+        <location filename="../params.py" line="170"/>
         <source>tine_layers must be at least 1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../params.py" line="135"/>
+        <location filename="../params.py" line="172"/>
         <source>tine_width_beads must be at least 1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../params.py" line="137"/>
+        <location filename="../params.py" line="174"/>
         <source>tine_spacing %.2f mm leaves no free layer between the tines; it needs at least %.2f mm</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../params.py" line="144"/>
+        <location filename="../params.py" line="181"/>
         <source>%s must be one of %s</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../params.py" line="147"/>
+        <location filename="../params.py" line="184"/>
         <source>fin_count must be at least 1</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../params.py" line="155"/>
+        <location filename="../params.py" line="192"/>
         <source>fin_height %.2f mm is lower than the foot (%.2f mm)</source>
         <translation type="unfinished"></translation>
     </message>
@@ -1893,32 +1898,32 @@
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../presets.py" line="86"/>
+        <location filename="../presets.py" line="90"/>
         <source>Standard</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../presets.py" line="159"/>
+        <location filename="../presets.py" line="168"/>
         <source>there is no profile &quot;%s&quot;</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../presets.py" line="176"/>
+        <location filename="../presets.py" line="185"/>
         <source>a profile needs a name</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../presets.py" line="178"/>
+        <location filename="../presets.py" line="187"/>
         <source>the name of a profile cannot hold a slash or a control character</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../presets.py" line="180"/>
+        <location filename="../presets.py" line="189"/>
         <source>the name of a profile can have %d characters at most</source>
         <translation type="unfinished"></translation>
     </message>
     <message>
-        <location filename="../presets.py" line="185"/>
+        <location filename="../presets.py" line="194"/>
         <source>there is a profile &quot;%s&quot; already</source>
         <translation type="unfinished"></translation>
     </message>
