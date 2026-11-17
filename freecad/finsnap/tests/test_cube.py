@@ -293,10 +293,13 @@ FLANK_OUT_LITTLE = 0.2 # how far out a foot may make a side fin stand on a plain
 MATRIX_CASES = ((d.ROUND_FINS_TWO, 30.0, 0.0), (d.ROUND_FINS_THREE, 45.0, 0.0), (d.ROUND_FINS_THREE, 30.0, 3.0),
                 (d.ROUND_FINS_THREE, 45.0, 3.0))
 MATRIX_FIN_COUNTS = {d.ROUND_FINS_TWO: 2, d.ROUND_FINS_THREE: 3}
-# The gaps and tine clearances (mm) every shape is built with: the built-in
-# ones, tines touching the part; the ones before, tines ending short of it;
-# a wide gap with long tines.
-GAP_PAIRS = ((d.GAP, d.TINE_CLEARANCE), (0.3, 0.05), (1.0, 0.1))
+# The gap and tine clearance built in before (mm), tines ending short of the part.
+PREVIOUS_GAP, PREVIOUS_CLEARANCE = 0.3, 0.05
+# A wide gap with long tines (mm).
+LONG_TINES_GAP, LONG_TINES_CLEARANCE = 1.0, 0.1
+# The gaps and tine clearances every shape is built with: the built-in ones,
+# tines touching the part, then the two above.
+GAP_PAIRS = ((d.GAP, d.TINE_CLEARANCE), (PREVIOUS_GAP, PREVIOUS_CLEARANCE), (LONG_TINES_GAP, LONG_TINES_CLEARANCE))
 # Cases with a fin height set, above what the side fins can reach on some shapes.
 MATRIX_HIGH_CASES = {"rod": ((d.ROUND_FINS_THREE, 45.0, 0.0, 35.0), (d.ROUND_FINS_THREE, 30.0, 3.0, 35.0),
                              (d.ROUND_FINS_THREE, 30.0, 0.0, 30.0), (d.ROUND_FINS_THREE, 45.0, 2.0, 32.0)),
@@ -340,7 +343,7 @@ APART_ROUND_TURNS = (0.0, 90.0, 180.0, 270.0)
 APART_ROUND_CUT = 0.9
 MESHED_VOLUME_APART = 0.5  # mm3: found on the mesh and exactly, the fins stand within a resolution
 FLANK_OUT_MOVED = 0.05  # mm: a blade moved out by more than this has really moved
-MESHED_GAP = 0.3  # mm: the gap the side fins searched on a mesh were measured with
+MESHED_GAP = PREVIOUS_GAP  # the side fins searched on a mesh were measured with it
 SETTLE_RESOLUTION, SETTLE_MOST = 0.01, 2.0  # what check_settled_clear() searches to and up to
 GROOVE_WIDTH = 4.0     # a groove round a shaft
 TINE_NEAR_START = 6.0  # the first tine above a groove starts within this of the side (mm)

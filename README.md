@@ -225,7 +225,7 @@ Whether a tine still holds the part across that distance depends on how far the 
 1. Tilt a small test part, for example a 20 mm cube, add fins with the separate connection and the default gap.
 2. Make copies of fins and part with tine clearances of **0, 0.03, 0.05 and 0.08 mm** and print them with the profile you will use.
 3. For each one check: does the part stand without wobbling, and does the fin come off without force? Look at the marks the tines left on the face.
-4. Take the largest clearance that still holds the part. A bead swells by a few hundredths of a millimetre while printing; once the clearance is wider than that, the tine no longer reaches the face and the fin stops holding. In test prints 0.25 mm tines, the built-in gap, did better touching the face, the built-in clearance of 0 with the slicer joining tine and part, than fins merged into the part; ending 0.04 or 0.05 mm short of the face they held too. Check it with your own profile.
+4. Take the largest clearance that still holds the part. A bead swells by a few hundredths of a millimetre while printing; once the clearance is wider than that, the tine no longer reaches the face and the fin stops holding. In test prints, tines touching the face (the built-in clearance of 0, the slicer joining tine and part) did better than fins merged into the part; ending 0.04 or 0.05 mm short of the face they held too. Check it with your own profile.
 5. Save it with **Save to profile** in the panel, so new fins start with it.
 
 ## What the 3MF file contains

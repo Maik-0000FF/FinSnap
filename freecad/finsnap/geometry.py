@@ -148,6 +148,10 @@ SIDE_FINS_KEPT = 32
 # Past this the oldest go first, and a run with more fins measures them all again.
 _kept_clear = {}
 CLEAR_KEPT = 1024
+# How much of a part a fin not clear of it holds (mm3, _overlap_of_unsure()),
+# by the same key: tines touching the part leave no fin clear, and cutting
+# each anew with every build would take longer than building it.
+_kept_overlap = {}
 # What of a part stands out in front of the plane of a face (in_front_of()),
 # by part and plane; and how far in front of that plane it is cut from (mm):
 # a hair, so the face itself, lying in the plane, is not taken with it.
@@ -970,28 +974,30 @@ def fin_at(p, result, number, height):
     return [body] + tines
 
 
-def overlap_of(fins, part):
-    """How much of `fins` lies in `part` (mm3). Measured off first: what stands
-    clear of the part cannot lie in it, and the kernel, cutting a fin of many plane
-    faces, has been seen to give the whole part for it. More than the fins hold
-    is no answer either.
+def overlap_of(fins, part, touching=False):
+    """How much of `fins` lies in `part` (mm3). Measured off first, unless they
+    are known `touching` it: what stands clear of the part cannot lie in it, and
+    the kernel, cutting a fin of many plane faces, has been seen to give the whole
+    part for it. More than the fins hold is no answer either.
 
     INPUTS this has to withstand:
       fins clear of the part                ->  0, not asked of the kernel
       fins touching it, none inside         ->  0
       fins reaching into it                 ->  the volume inside
+      known touching                        ->  cut without measuring them off
       an answer larger than the fins        ->  0: says nothing of them
     """
-    if fins.distToShape(part)[0] > d.TOLERANCE:
+    if not touching and fins.distToShape(part)[0] > d.TOLERANCE:
         return 0.0
     found = fins.common(part).Volume
     return 0.0 if found > fins.Volume else found
 
 
-def _not_known_clear(pieces, part, made_of=None):
+def _not_known_clear(pieces, part, made_of=None, near=None):
     """Those of `pieces` that are not clear of `part`, each measured once for its
     shape: a fin moved leaves the others as they are, and measuring them all with
-    every move takes longer than anything else about it.
+    every move takes longer than anything else about it. `near`, a _Clearance of
+    `part`, keeps what is measured for _overlap_of_unsure() to ask again.
 
     `made_of` names for each piece the shapes it was fused from, its body first,
     then the tines joined to it. A piece is as far off the part as the nearest of
@@ -1026,30 +1032,82 @@ def _not_known_clear(pieces, part, made_of=None):
       a tine touching a face without a box,
         as on a torus                       ->  that piece
     """
-    # Its hash: a part of many corners would be held in full by every entry.
-    part_hash = hash(part_key(part))
-    # The faces of the part with the boxes that touch them, made as the first tine is held against them.
-    boxed = []
-
-    def faces_near(tine):
-        if not boxed:
-            boxed.append(boxed_faces(part))
-        reach = bounds(tine)
-        reach.enlarge(d.TOLERANCE)
-        return [face for face, box in boxed[0] if box is None or reach.intersect(box)]
-
-    def tine_clear(tine):
-        near = faces_near(tine)
-        return not near or tine.distToShape(Part.makeCompound(near))[0] > d.TOLERANCE
+    near = _Clearance(part) if near is None else near
 
     def measured(shapes):
-        return shapes[0].distToShape(part)[0] > d.TOLERANCE and all(tine_clear(tine) for tine in shapes[1:])
+        return near.body_clear(shapes[0]) and all(near.tine_clear(tine) for tine in shapes[1:])
 
     def clear(piece, shapes):
-        return keep(_kept_clear, (part_hash, shape_key(piece)), lambda: measured(shapes), CLEAR_KEPT)
+        return keep(_kept_clear, (near.part_hash, shape_key(piece)), lambda: measured(shapes), CLEAR_KEPT)
 
     made_of = [[piece] for piece in pieces] if made_of is None else made_of
     return [piece for piece, shapes in zip(pieces, made_of) if not clear(piece, shapes)]
+
+
+class _Clearance:
+    """Whether the body of a fin, or a tine joined to it, stands clear of `part`,
+    see _not_known_clear(); the faces of the part with their boxes are made as
+    the first tine is held against them."""
+
+    def __init__(self, part):
+        self.part = part
+        # Its hash: a part of many corners would be held in full by every entry.
+        self.part_hash = hash(part_key(part))
+        self.boxed = None
+        # Each shape asked once, by the object: check() asks _not_known_clear()
+        # and then _overlap_of_unsure() of the same bodies and tines.
+        self.answers = {}
+
+    def body_clear(self, body):
+        return self._once(body, lambda: body.distToShape(self.part)[0] > d.TOLERANCE)
+
+    def tine_clear(self, tine):
+        return self._once(tine, lambda: self._tine_measured(tine))
+
+    def _once(self, shape, measure):
+        if id(shape) not in self.answers:
+            # The shape kept with its answer, so its id stays its own.
+            self.answers[id(shape)] = (shape, measure())
+        return self.answers[id(shape)][1]
+
+    def _tine_measured(self, tine):
+        if self.boxed is None:
+            self.boxed = boxed_faces(self.part)
+        reach = bounds(tine)
+        reach.enlarge(d.TOLERANCE)
+        near = [face for face, box in self.boxed if box is None or reach.intersect(box)]
+        return not near or tine.distToShape(Part.makeCompound(near))[0] > d.TOLERANCE
+
+
+def _overlap_of_unsure(unsure, pieces, made_of, part, near=None):
+    """How much of `part` the `unsure` of `pieces` hold together (mm3), each
+    piece cut once for its shape. Where the body of a piece stands clear,
+    only its tines that do not are cut: the rest of it lies outside the part,
+    and a tine alone cuts in a fraction of the time the fused piece takes.
+    `near`, the _Clearance _not_known_clear() measured with, answers again
+    what it measured.
+
+    INPUTS this has to withstand:
+      none unsure                           ->  0, nothing cut
+      a body clear, tines touching the part ->  what those tines hold
+      a body touching or in the part        ->  what the whole piece holds
+      no `made_of`                          ->  each piece cut whole
+      a piece asked again, the same shape   ->  not cut again
+    """
+    if not unsure:
+        return 0.0
+    near = _Clearance(part) if near is None else near
+    made_of = [[piece] for piece in pieces] if made_of is None else made_of
+
+    def held(piece, shapes):
+        body, tines = shapes[0], shapes[1:]
+        if not tines or not near.body_clear(body):
+            return overlap_of(piece, part)
+        cut = [tine for tine in tines if not near.tine_clear(tine)]
+        return overlap_of(Part.makeCompound(cut), part, touching=True) if cut else 0.0
+
+    return sum(keep(_kept_overlap, (near.part_hash, shape_key(piece)), lambda: held(piece, shapes), CLEAR_KEPT)
+               for piece, shapes in zip(pieces, made_of) if any(piece.isSame(other) for other in unsure))
 
 
 def check(p, part, pieces, bodies, slack=0.0, made_of=None):
@@ -1071,8 +1129,9 @@ def check(p, part, pieces, bodies, slack=0.0, made_of=None):
       no `made_of`, or no `slack`           ->  TOLERANCE allowed, as before
     """
     if p.connection == d.CONNECTION_SEPARATE:
-        unsure = _not_known_clear(pieces, part, made_of)
-        overlap = overlap_of(Part.makeCompound(unsure), part) if unsure else 0.0
+        near = _Clearance(part)
+        unsure = _not_known_clear(pieces, part, made_of, near)
+        overlap = _overlap_of_unsure(unsure, pieces, made_of, part, near)
         if overlap > _touching_overlap(p, pieces, unsure, made_of, slack):
             raise FinError(translate("FinSnap", "the fins overlap the part by %.4f mm³") % overlap)
 
