@@ -3701,6 +3701,29 @@ def check_known_clear():
     expect(all(found == (expected, expected) for _, found, expected in told),
            "a fin by its body and its tine is told clear of the part as the fin whole: %s"
            % ", ".join("%s %s" % (name, "not clear" if found[0] else "clear") for name, found, _ in told))
+    # What a fin not clear holds of the part: its body clear, the tine alone is
+    # cut, once for the shape; its body in the part, the fin whole.
+    reaching, reaching_shapes = fin(body_at, MESHED_BOX - APART_TINE_IN)
+    geometry._kept_clear.clear()
+    geometry._kept_overlap.clear()
+    held = geometry._overlap_of_unsure([reaching], [reaching], [reaching_shapes], part)
+    by_tine = reaching_shapes[1].common(part).Volume
+    expect(abs(held - by_tine) < d.TOLERANCE and len(geometry._kept_overlap) == 1,
+           "a fin with its body clear holds what its tine alone holds: %.4f, %.4f" % (held, by_tine))
+    real_overlap = geometry.overlap_of
+
+    def no_cut(*_args, **_kwargs):
+        raise AssertionError("cut again")
+    geometry.overlap_of = no_cut
+    try:
+        again = geometry._overlap_of_unsure([reaching], [reaching], [reaching_shapes], part)
+    finally:
+        geometry.overlap_of = real_overlap
+    expect(again == held and len(geometry._kept_overlap) == 1, "the same fin asked again is not cut again")
+    inside, inside_shapes = fin(1.0, 1.0 - APART_TINE_IN)
+    whole = geometry._overlap_of_unsure([inside], [inside], [inside_shapes], part)
+    expect(abs(whole - inside.common(part).Volume) < d.TOLERANCE,
+           "a fin with its body in the part holds what the fin whole holds: %.4f" % whole)
     far_body = Part.makeBox(1, 1, 1, V(3 * MESHED_BOX, 0, 0))
     far_tine = Part.makeBox(1, 0.5, 0.5, V(3 * MESHED_BOX - 1, 0.25, 0.25))
     geometry._kept_clear.clear()
