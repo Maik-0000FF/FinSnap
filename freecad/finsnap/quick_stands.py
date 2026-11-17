@@ -237,8 +237,8 @@ def quick_plan(shape, edges, faces, p, angle_deg):
                                                 angle_deg; one fin under it
       one rounded face (fillet)             ->  the part rests on it; fins under the
                                                 largest leaning face
-      one chamfer, no wider than the faces
-        beside it (is_chamfer())            ->  as a rounded face: the part rests on it
+      one chamfer, wide or narrow
+        (is_chamfer())                      ->  as a rounded face: the part rests on it
       a side beside a chamfer               ->  as any planar face: it leans and takes
                                                 the fins
       a face and one of its edges           ->  stood on that edge, the face leaning
@@ -523,59 +523,91 @@ def _stood_on_end(shape, face, number, axis, p):
 
 def is_chamfer(shape, face):
     """Whether planar `face` sits between two planar faces of `shape` like a
-    chamfer: its normal turned part of the way from one neighbour's normal to
-    the other's, whatever the angle or the two widths of the chamfer, and the
-    face no wider across than either neighbour, measured across the edge it
-    shares with it. The normals alone cannot tell a chamfer from the side
-    beside it: the normal of that side lies between those of the chamfer and
-    of the face on its other edge as well. The chamfer is the narrow one.
+    chamfer.
+
+    First the angles: `face` is a candidate between two neighbours where its
+    normal lies between theirs, turned less than a right angle from each
+    (_chamfer_pairs()). The side beside a chamfer is none: its normal lies
+    between those of the chamfer and of the top, but square to the top.
+
+    Then, only where a neighbour is a candidate with `face` as well, the
+    width across the edge they share: the narrower of the two is the chamfer.
+    So the bottom between two chamfers is none, the chamfers are, however
+    wide a chamfer is against the rest of the side beside it.
 
     INPUTS this has to withstand:
       chamfer on the edge of a box, equal or
-        unequal widths                      ->  True
-      chamfer at another angle than 45      ->  True
-      side of a box                         ->  False: no two neighbours with its
-                                                normal between theirs
-      side or bottom of a box beside a
-        chamfer, or between two of them     ->  False: wider than the chamfer
-      chamfer wider across than the rest
-        of a side beside it                 ->  False; that rest is taken for the
-                                                chamfer, as the narrow one
-      side of a prism of five sides or more ->  True: it lies between its neighbours
-                                                too, as wide as they are;
-                                                quick_plans() asks prism_axis()
-                                                first; to put fins under the side of
-                                                an uneven one, select it with one of
-                                                its edges
-      rounded face                          ->  False
-      an edge of no length                  ->  passed over
+        unequal widths, at 45 degrees or not ->  True
+      chamfer wider across than the rest of
+        the side beside it, also half of a
+        thin plate                           ->  True; the rest is square to the
+                                                 face on its other edge
+      side of a box                          ->  False: no two neighbours with its
+                                                 normal between theirs
+      side of a box beside a chamfer         ->  False: square to the face on its
+                                                 other edge
+      bottom between chamfers on its edges   ->  False: a candidate, but the
+                                                 chamfers beside it are narrower
+      strip of a side between a chamfer on
+        either edge, narrower than they are  ->  True, the chamfers False: the
+                                                 narrow one wins, as the normals
+                                                 cannot tell
+      side of a prism of five sides or more  ->  True: between its neighbours and as
+                                                 wide as they are; quick_plans() asks
+                                                 prism_axis() first; to put fins under
+                                                 the side of an uneven one, select it
+                                                 with one of its edges
+      chamfer turned a right angle or more
+        from one neighbour                   ->  False: taken as a plain face
+      rounded face                           ->  False
+      an edge of no length                   ->  passed over
     """
     if face.findPlane() is None:
         return False
-    normal = middle_normal(face)
     by_edge = _flat_by_edge(shape)
-    # Each neighbour as (its normal, whether `face` is no wider across the edge
-    # they share than it is).
-    beside = []
+    return any(not any(_narrower_rival(by_edge, face, other, along) for other, along in pair)
+               for pair in _chamfer_pairs(by_edge, face))
+
+
+def _neighbours(by_edge, face):
+    """The planar faces in `by_edge` beside planar `face`, each once, as
+    (face, unit direction of the straight edge they share)."""
+    found = []
     for edge in face.Edges:
         along = edge.Vertexes[-1].Point - edge.Vertexes[0].Point
         if along.Length < d.TOLERANCE:
             continue
         along.normalize()
         for other in _flat_beside(by_edge, face, [edge]):
-            other_normal = middle_normal(other)
-            narrow = _across(face, normal, along) <= _across(other, other_normal, along) + d.TOLERANCE
-            beside.append((other_normal, narrow))
-    for i, (first, first_narrow) in enumerate(beside):
-        for second, second_narrow in beside[i + 1:]:
-            apart = first.getAngle(second)
-            # Between them: in their plane, and the two angles to it adding up
-            # to the angle between them, neither of them zero.
-            in_between = abs(first.getAngle(normal) + normal.getAngle(second) - apart) < d.TOLERANCE
-            if d.TOLERANCE < apart < math.pi - d.TOLERANCE and in_between and first_narrow and second_narrow \
-                    and min(first.getAngle(normal), second.getAngle(normal)) > d.TOLERANCE:
-                return True
-    return False
+            if not any(other.isSame(known) for known, _ in found):
+                found.append((other, along))
+    return found
+
+
+def _chamfer_pairs(by_edge, face):
+    """The pairs of neighbours (_neighbours()) `face` lies between like a
+    chamfer: its normal in the plane of theirs, the two angles to it adding up
+    to the angle between them, each above zero and below a right angle."""
+    normal = middle_normal(face)
+    beside = [(other, along, middle_normal(other)) for other, along in _neighbours(by_edge, face)]
+    pairs = []
+    for i, (first, first_along, first_normal) in enumerate(beside):
+        for second, second_along, second_normal in beside[i + 1:]:
+            apart = first_normal.getAngle(second_normal)
+            to_first, to_second = first_normal.getAngle(normal), normal.getAngle(second_normal)
+            if (d.TOLERANCE < apart < math.pi - d.TOLERANCE and abs(to_first + to_second - apart) < d.TOLERANCE
+                    and d.TOLERANCE < min(to_first, to_second) and max(to_first, to_second) < math.pi / 2):
+                pairs.append(((first, first_along), (second, second_along)))
+    return pairs
+
+
+def _narrower_rival(by_edge, face, other, along):
+    """Whether neighbour `other` lies between faces like a chamfer with `face`
+    one of them, and is narrower across the edge `along` they share: then it
+    is the chamfer, not `face`."""
+    rivals = any(any(known.isSame(face) for known, _ in pair) for pair in _chamfer_pairs(by_edge, other))
+    return rivals and (_across(other, middle_normal(other), along)
+                       < _across(face, middle_normal(face), along) - d.TOLERANCE)
 
 
 def _across(face, normal, along):

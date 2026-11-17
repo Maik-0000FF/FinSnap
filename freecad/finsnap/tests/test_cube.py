@@ -175,6 +175,13 @@ BOX_SIDE = 20.0
 EDGE_ROUND = 3.0       # size of the chamfer or radius of the fillet on a box edge
 BOTTOM_CHAMFER = 2.0   # a chamfer on every edge of the bottom of a box
 WIDE_CHAMFER = 15.0    # a chamfer that leaves 5 mm of the sides of a 20 mm box beside it
+PLATE_SIDE = 20.0      # a thin plate, square
+PLATE_THICKNESS = 2.0
+STRIP_CHAMFER = 0.8    # on both edges of a side of the plate, leaving a strip of 0.4 mm
+WEDGE_BASE, WEDGE_HEIGHT = 40.0, 20.0  # a prism with a sharp edge, its base a right triangle
+WEDGE_ANGLE = 60.0     # the angle at the base, leaving 30 degrees at the sharp edge
+ACUTE_EVEN = (2.0, 2.0)     # an even chamfer on the sharp edge
+ACUTE_UNEVEN = (1.0, 10.0)  # one turned past a right angle from one face beside it
 CHAMFER_LONG = 3.0     # the long leg of a chamfer of unequal widths on a rim, in mm
 CHAMFER_SHORT = 1.0    # its short leg
 # Bosses on the face of the tilted cube (bossed_cube()): how high they stand
@@ -2151,8 +2158,39 @@ def check_quick_plan():
     wide = box.makeChamfer(WIDE_CHAMFER, bottom_front)
     slant = [i for i, f in enumerate(wide.Faces) if abs(f.normalAt(0, 0).z + math.sqrt(0.5)) < 1e-6][0]
     rest = [i for i, f in enumerate(wide.Faces) if abs(f.normalAt(0, 0).y + 1) < 1e-6][0]
-    expect(not quick_stands.is_chamfer(wide, wide.Faces[slant]) and quick_stands.is_chamfer(wide, wide.Faces[rest]),
-           "a chamfer wider than the rest of the side beside it: the narrow rest counts as the chamfer")
+    expect(quick_stands.is_chamfer(wide, wide.Faces[slant]) and not quick_stands.is_chamfer(wide, wide.Faces[rest]),
+           "a chamfer wider than the rest of the side beside it stays the chamfer, the rest square to the bottom")
+
+    # A thin plate: a chamfer of half its thickness on a top edge, then one on
+    # either edge of the same side, leaving a strip narrower than they are.
+    plate = Part.makeBox(PLATE_SIDE, PLATE_SIDE, PLATE_THICKNESS)
+    front_top = [e for e in plate.Edges if e.BoundBox.ZMin > PLATE_THICKNESS - d.TOLERANCE
+                 and e.BoundBox.YMax < d.TOLERANCE]
+    front_bottom = [e for e in plate.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE]
+    half = plate.makeChamfer(PLATE_THICKNESS / 2, front_top)
+    bevel = [f for f in half.Faces if abs(f.normalAt(0, 0).z - math.sqrt(0.5)) < 1e-6]
+    front = [f for f in half.Faces if abs(f.normalAt(0, 0).y + 1) < 1e-6]
+    expect(len(bevel) == 1 and quick_stands.is_chamfer(half, bevel[0]) and not quick_stands.is_chamfer(half, front[0]),
+           "a chamfer of half a thin plate is the chamfer, the rest of the side beside it is none")
+    both = plate.makeChamfer(STRIP_CHAMFER, front_top + front_bottom)
+    slopes = [f for f in both.Faces if abs(abs(f.normalAt(0, 0).z) - math.sqrt(0.5)) < 1e-6]
+    strip = [f for f in both.Faces if abs(f.normalAt(0, 0).y + 1) < 1e-6]
+    expect(len(slopes) == 2 and quick_stands.is_chamfer(both, strip[0])
+           and not any(quick_stands.is_chamfer(both, f) for f in slopes),
+           "a strip between two chamfers, narrower than they are, counts as the chamfer instead")
+
+    # The sharp edge of a prism of 30 degrees: an even chamfer on it is one,
+    # one turned past a right angle from a face beside it is taken as a plain face.
+    wedge = Part.Face(Part.makePolygon([V(0, 0, 0), V(WEDGE_BASE, 0, 0),
+                                        V(0, WEDGE_BASE * math.tan(math.radians(WEDGE_ANGLE)), 0), V(0, 0, 0)])
+                      ).extrude(V(0, 0, WEDGE_HEIGHT))
+    sharp = max((e for e in wedge.Edges if e.BoundBox.ZLength > 1), key=lambda e: e.BoundBox.YMax)
+    sides = [f.normalAt(0, 0) for f in wedge.Faces]
+    for widths, wanted in ((ACUTE_EVEN, True), (ACUTE_UNEVEN, False)):
+        cut = wedge.makeChamfer(*widths, [sharp])
+        made = [f for f in cut.Faces if not any(f.normalAt(0, 0).isEqual(n, 1e-6) for n in sides)]
+        expect(len(made) == 1 and quick_stands.is_chamfer(cut, made[0]) == wanted,
+               "a chamfer %s on a sharp edge is %s" % (widths, "one" if wanted else "a plain face"))
 
     filleted = box.makeFillet(EDGE_ROUND, bottom_front)
     fillet = [i for i, f in enumerate(filleted.Faces) if f.findPlane() is None][0]
