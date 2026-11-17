@@ -32,7 +32,7 @@ from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_
 from .presets import PREFERENCES
 from .shapes import FACE_PREFIX, global_shape, moved, outermost, part_of
 from .taskpanel import (DEGREE_SUFFIX, EDIT_STEP, LENGTH_SUFFIX, FinSnapTaskPanel, check_bridges, check_params,
-                        check_part, check_stability, check_step, discard_created)
+                        check_part, check_stability, check_step, close_dialog_of, discard_created)
 from .version import NAME
 
 EDGE_PREFIX = "Edge"
@@ -318,7 +318,7 @@ class ViewProviderFinSnap:
         panel, self.panel = getattr(self, "panel", None), None
         if panel is not None:
             panel.release_handles()
-        Gui.Control.closeDialog()
+        close_dialog_of(vobj.Object.Document)
         return True
 
     def claimChildren(self):  # noqa: N802 - FreeCAD API
@@ -500,7 +500,7 @@ class TiltOntoEdge:
         with feature.transaction(doc, translate("FinSnap", "Stand on edge")):
             _stand(obj, change)
         doc.recompute()
-        _show_on_bed(orient.side_direction(change, edge, chosen if len(chosen) == 2 else ()))
+        _show_on_bed(doc, orient.side_direction(change, edge, chosen if len(chosen) == 2 else ()))
         _report_overhangs(obj)
 
 
@@ -522,8 +522,9 @@ def _stand(obj, change):
         feature.forget_turn(fins)
 
 
-def _show_on_bed(direction=None):
-    """Look at the turned part with the bed below, all of it in view.
+def _show_on_bed(doc, direction=None):
+    """Look at the turned part with the bed below, all of it in view, in the
+    3D view of `doc`, the document of the part, which need not be active.
 
     Along `direction`, the line the part stands on, the view shows the tilt
     angle in profile; without one it is isometric. The camera does not follow a
@@ -533,9 +534,8 @@ def _show_on_bed(direction=None):
     and viewIsometric() only start an animation when navigation animations are
     on, and fitAll() would then fit the part to where the camera started from.
     """
-    view = Gui.ActiveDocument.ActiveView if Gui.ActiveDocument else None
-    # The active view may be a spreadsheet or a drawing, which has no camera.
-    if view is None or not hasattr(view, "getCameraNode"):
+    view = handles.view_3d(doc)
+    if view is None:
         return
     # The camera looks along its -Z with +Y up: -Z onto the line of sight, +Y
     # towards the vertical, +X to the right of both.
@@ -623,7 +623,7 @@ class LayFlat:
                         feature.keep_laid_flat(fins, change)
                 orient.lay_back(owner)
         doc.recompute()
-        _show_on_bed()
+        _show_on_bed(doc)
 
 
 def _ask_delete_fins():
@@ -714,7 +714,7 @@ class QuickFins:
         # Built once: the panel opened below shows this build.
         feature.keep_build(fins, True)
         doc.recompute()
-        _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside, plan.line))
+        _show_on_bed(doc, orient.side_direction(plan.change, plan.edge, plan.beside, plan.line))
         # Cancel deletes the fins and stands the part as it stood before.
         _edit_new(fins, functools.partial(_put_back_quick, owner, before, laid_flat, turns),
                   QuickStands(obj, owner, before, plans))
@@ -875,7 +875,7 @@ class QuickStands:
         part, name = feature.on_part(self.obj, face)
         fins.Base = (part, [name])
         self.current = index
-        _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside, plan.line))
+        _show_on_bed(self.obj.Document, orient.side_direction(plan.change, plan.edge, plan.beside, plan.line))
 
     def keep_opened(self, fins):
         """Note how the part and `fins` stand when the ways are unfolded in

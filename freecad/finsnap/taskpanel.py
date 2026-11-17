@@ -310,6 +310,36 @@ def check_params(part_obj):
     return feature.params_of(fins[0]) if fins else presets.standard()
 
 
+def close_dialog_of(doc):
+    """Close the task dialog of `doc`, the active document or not.
+
+    FreeCAD's closeDialog() takes no document. Where one dialog serves every
+    document (1.1) it closes that one; where each document has its own, it
+    closes the dialog of the active document. So `doc` is made active for the
+    closing, and the document active before is made active again.
+
+    DOCUMENTS this has to withstand:
+      `doc` is the active document       ->  its dialog closed
+      another one is active, one dialog
+        for all                          ->  that dialog closed, the other
+                                             document active again
+      another one is active, a dialog
+        each                             ->  the dialog of `doc` closed, that of
+                                             the other one left open, the other
+                                             active again
+      no document active                 ->  the active dialog closed
+    """
+    active = App.ActiveDocument
+    if active is None or active is doc:
+        Gui.Control.closeDialog()
+        return
+    App.setActiveDocument(doc.Name)
+    try:
+        Gui.Control.closeDialog()
+    finally:
+        App.setActiveDocument(active.Name)
+
+
 def check_step(doc):
     """The step on the undo stack of `doc` a check made or checked again is,
     which Undo takes back.
@@ -1500,7 +1530,7 @@ class FinSnapTaskPanel:
         """Close the panel as it is: on OK, on Cancel, or before the fins object goes."""
         self.timer.stop()
         self.release_handles()
-        Gui.Control.closeDialog()
+        close_dialog_of(self.obj.Document)
         self.leave_edit()
 
     def delete_all(self):
@@ -2659,8 +2689,10 @@ class FinSnapTaskPanel:
         except ValueError as error:
             self.refuse(error)
             return False
+        # The document of the fins: another one may be active by now.
+        doc = self.obj.Document
         self.close()
-        App.ActiveDocument.recompute()
+        doc.recompute()
         return True
 
     def reject(self):

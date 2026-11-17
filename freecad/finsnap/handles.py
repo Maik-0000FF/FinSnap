@@ -502,6 +502,26 @@ class NoView(RuntimeError):
     """The document has no 3D view to show the arrows in."""
 
 
+def view_3d(doc):
+    """The 3D view of the App document `doc`, None if it has none open.
+
+    VIEWS this has to withstand:
+      the active view of `doc` is a 3D view    ->  that one
+      it is a drawing page or a spreadsheet    ->  the first 3D view of `doc`
+      `doc` is not the active document         ->  a view of `doc`, never one of
+                                                   the active document
+      `doc` has no 3D view, or no GUI document ->  None
+    """
+    gui_doc = Gui.getDocument(doc.Name) if doc is not None else None
+    if gui_doc is None:
+        return None
+    view = gui_doc.ActiveView
+    if hasattr(view, "getViewer"):
+        return view
+    views = gui_doc.mdiViewsOfType(VIEW_3D)
+    return views[0] if views else None
+
+
 # The arrows of every task panel open, so their objects can look as before
 # editing while their documents are saved (saving_document()).
 EDITING = []
@@ -672,14 +692,10 @@ class Handles:
     def __init__(self, vobj, on_start, on_move, on_done, on_double=None):
         # The 3D view of the document; the active view may be a drawing page
         # or a spreadsheet. Found first, so nothing is changed without one.
-        gui_doc = Gui.getDocument(vobj.Object.Document)
-        view = gui_doc.ActiveView
-        if not hasattr(view, "getViewer"):
-            views = gui_doc.mdiViewsOfType(VIEW_3D)
-            if not views:
-                raise NoView(translate("FinSnap", "No 3D view of %s is open to edit the fins in.")
-                             % vobj.Object.Document.Label)
-            view = views[0]
+        view = view_3d(vobj.Object.Document)
+        if view is None:
+            raise NoView(translate("FinSnap", "No 3D view of %s is open to edit the fins in.")
+                         % vobj.Object.Document.Label)
         self.vobj = vobj
         self.on_start, self.on_move, self.on_done = on_start, on_move, on_done
         self.on_double = on_double

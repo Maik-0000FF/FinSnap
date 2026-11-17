@@ -646,6 +646,63 @@ def quick_on_pad(doc):
         doc.removeObject(name)
 
 
+class OtherDialog:
+    """A task dialog of another document than that of the fins."""
+
+    def __init__(self):
+        self.form = QtWidgets.QWidget()
+
+
+def panel_with_another_document_active(doc):
+    """The panel of Quick fins open, then another document made active: a way
+    chosen turns the view of the fins' document, and OK recomputes that one."""
+    from freecad.finsnap import feature
+    box = doc.addObject("Part::Box", "OtherActiveBox")
+    doc.recompute()
+    side = next(i for i, f in enumerate(box.Shape.Faces, 1) if f.normalAt(0, 0).y < -0.9)
+    select(box, "Face%d" % side)
+    Gui.runCommand("FinSnap_QuickFins")
+    fins = next(o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is box)
+    panel = fins.ViewObject.Proxy.panel
+    def camera_turn(document):
+        """The orientation of the camera in the 3D view of `document`, as a quaternion."""
+        return Gui.getDocument(document.Name).ActiveView.getCameraNode().orientation.getValue().getValue()
+    other = App.newDocument("OtherActive")
+    try:
+        untouched = other.addObject("Part::Box", "Untouched")
+        App.setActiveDocument(other.Name)
+        other_before, own_before = camera_turn(other), camera_turn(doc)
+        expect(Gui.ActiveDocument.Document is other and panel.stand_list.rowCount() > 1,
+               "another document is active while the panel of Quick fins is open")
+        panel.stand_list.setCurrentCell(1, 0)
+        other_after, own_after = camera_turn(other), camera_turn(doc)
+        expect(other_after == other_before and own_after != own_before,
+               "another way chosen turns the view of the fins' document, not that of the active one: "
+               "active %s to %s, fins' %s to %s" % (other_before, other_after, own_before, own_after))
+        # Where each document has a task dialog of its own (newer FreeCAD than
+        # 1.1), the other one gets one too, which OK of the fins leaves open.
+        try:
+            Gui.Control.showDialog(OtherDialog())
+            own_dialog = True
+        except RuntimeError:
+            own_dialog = False
+        expect(panel.accept() and "Touched" in untouched.State and "Touched" not in fins.State,
+               "OK recomputes the document of the fins, not the active one")
+        expect(App.ActiveDocument is other and Gui.Control.activeDialog() == own_dialog,
+               "OK closes the panel of the fins, the other document stays active with its own dialog open: %s"
+               % own_dialog)
+        if own_dialog:
+            Gui.Control.closeDialog()
+    finally:
+        App.closeDocument(other.Name)
+        App.setActiveDocument(doc.Name)
+    for name in (fins.Name, box.Name):
+        doc.removeObject(name)
+    expect(App.ActiveDocument is doc and Gui.ActiveDocument.Document is doc and not Gui.Control.activeDialog(),
+           "afterwards the document of the tests is active again, no panel open: %s, %s, %s"
+           % (App.ActiveDocument.Name, Gui.ActiveDocument.Document.Name, Gui.Control.activeDialog()))
+
+
 def commands_on_a_link(doc, messages, written):
     """The commands on a link to a part, in a container that is moved and
     turned: Quick fins stands the link and puts the fins under its face, the
@@ -2907,6 +2964,7 @@ def main():
     chosen_stands(doc, quick, facing, messages)
     stands_reopened(doc, quick, facing)
     quick_on_pad(doc)
+    panel_with_another_document_active(doc)
     commands_on_a_link(doc, messages, os.path.join(folder, "link.3mf"))
     undo_and_cancel(messages)
     commands_wait_for_the_panel(messages)
