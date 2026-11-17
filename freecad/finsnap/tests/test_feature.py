@@ -9,6 +9,7 @@ Run in FreeCAD, with this checkout installed as an addon (see CONTRIBUTING.md):
 
 import dataclasses
 import os
+import reprlib
 import sys
 import tempfile
 # Audited: Parses package.xml and files the tests wrote.
@@ -382,9 +383,9 @@ def saved_standard(doc):
         try:
             presets.save(dataclasses.replace(thin, **wrong))
         except ParamError:
-            expect(presets.standard() == thin, "%s is refused, the saved standard stays" % wrong)
+            expect(presets.standard() == thin, "%s is refused, the saved standard stays" % reprlib.repr(wrong))
         else:
-            raise AssertionError("%s was saved" % wrong)
+            raise AssertionError("%s was saved" % reprlib.repr(wrong))
     whole = dataclasses.replace(thin, gap=1)
     presets.save(whole)
     expect(presets.standard() == whole and isinstance(presets.standard().gap, float),

@@ -11,6 +11,7 @@ import dataclasses
 import math
 import os
 import re
+import reprlib
 import sys
 import types
 
@@ -640,9 +641,9 @@ def check_limits():
     for values in bad:
         try:
             limits.Limits(**values).validate()
-            expect(False, "limits %s are refused" % values)
+            expect(False, "limits %s are refused" % reprlib.repr(values))
         except limits.LimitError:
-            expect(True, "limits %s are refused" % values)
+            expect(True, "limits %s are refused" % reprlib.repr(values))
 
     limits.reset()
     expect(limits.current() == limits.Limits(), "nothing saved: the built-in limits")
