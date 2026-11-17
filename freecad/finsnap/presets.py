@@ -24,6 +24,10 @@ INPUTS this has to withstand (standard()):
 INPUTS this has to withstand (save()):
   valid parameters                      ->  every field stored, the old ones replaced
   invalid parameters                    ->  ParamError, nothing stored
+  a value of another kind than its
+    field, or a whole number FreeCAD
+    cannot store                        ->  ParamError, what was saved kept
+  a whole number in a float field       ->  stored as a float
 
 INPUTS this has to withstand (reset()):
   anything saved                        ->  all of it removed, standard() is built-in
@@ -129,12 +133,17 @@ def save(params):
     """Make `params` the standard for new fins: the values of the active profile."""
     params.validate()
     group = _group()
-    group.Clear()
     accessors = _accessors(group)
     built_in = FinParams()
+    # Everything to write is taken first and checked by validate(), so no
+    # write fails once the group is cleared and loses what was saved.
+    entries = []
     for field in fields(FinParams):
-        write = accessors[type(getattr(built_in, field.name))][2]
-        write(field.name, getattr(params, field.name))
+        kind = type(getattr(built_in, field.name))
+        entries.append((accessors[kind][2], field.name, kind(getattr(params, field.name))))
+    group.Clear()
+    for write, name, value in entries:
+        write(name, value)
 
 
 def reset():

@@ -1453,7 +1453,7 @@
     </message>
     <message>
         <location filename="../geometry.py" line="1657"/>
-        <location filename="../params.py" line="158"/>
+        <location filename="../params.py" line="195"/>
         <source>tines (%.2f mm) are wider than the fin (%.2f mm)</source>
         <translation>die Zinken (%.2f mm) sind breiter als die Finne (%.2f mm)</translation>
     </message>
@@ -1640,113 +1640,118 @@
         <translation>eine gewölbte Fläche liegt nicht mit ihrer Kante auf dem Bett; wähle sie allein oder die beiden Flächen daneben</translation>
     </message>
     <message>
-        <location filename="../limits.py" line="110"/>
-        <location filename="../params.py" line="97"/>
+        <location filename="../limits.py" line="115"/>
+        <location filename="../params.py" line="134"/>
         <source>%s is not a finite number</source>
         <translation>%s ist keine endliche Zahl</translation>
     </message>
     <message>
-        <location filename="../limits.py" line="113"/>
+        <location filename="../limits.py" line="118"/>
         <source>%s must lie between %.0f and %.0f degrees</source>
         <translation>%s muss zwischen %.0f und %.0f Grad liegen</translation>
     </message>
     <message>
-        <location filename="../limits.py" line="116"/>
+        <location filename="../limits.py" line="121"/>
         <source>overhang_unprintable must not be steeper than overhang_critical</source>
         <translation>„Nicht druckbar unter“ darf bei Überhängen nicht steiler sein als „Kritisch unter“</translation>
     </message>
     <message>
-        <location filename="../limits.py" line="120"/>
+        <location filename="../limits.py" line="125"/>
         <source>%s must be 0 or greater</source>
         <translation>%s muss 0 oder größer sein</translation>
     </message>
     <message>
-        <location filename="../limits.py" line="122"/>
+        <location filename="../limits.py" line="127"/>
         <source>bridge_unprintable must not be shorter than bridge_critical</source>
         <translation>„Nicht druckbar über“ darf bei Brücken nicht kürzer sein als „Kritisch über“</translation>
     </message>
     <message>
-        <location filename="../params.py" line="104"/>
+        <location filename="../params.py" line="52"/>
+        <source>%s holds a value of the wrong kind</source>
+        <translation>%s enthält einen Wert der falschen Art</translation>
+    </message>
+    <message>
+        <location filename="../params.py" line="141"/>
         <source>%s must be greater than 0</source>
         <translation>%s muss größer als 0 sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="110"/>
+        <location filename="../params.py" line="147"/>
         <source>%s must be 0 (automatic) or greater</source>
         <translation>%s muss 0 (automatisch) oder größer sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="113"/>
+        <location filename="../params.py" line="150"/>
         <source>tine_clearance must be 0 (touching) or greater</source>
         <translation>der Abstand Zinke zum Teil muss 0 (berührend) oder größer sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="115"/>
+        <location filename="../params.py" line="152"/>
         <source>gap must be at most %.1f mm, longer tines do not print straight</source>
         <translation>der Spalt darf höchstens %.1f mm sein, längere Zinken lassen sich nicht gerade drucken</translation>
     </message>
     <message>
-        <location filename="../params.py" line="118"/>
+        <location filename="../params.py" line="155"/>
         <source>tine_clearance must be smaller than the gap</source>
         <translation>der Abstand Zinke zum Teil muss kleiner sein als der Spalt</translation>
     </message>
     <message>
-        <location filename="../params.py" line="120"/>
+        <location filename="../params.py" line="157"/>
         <source>foot_overhang must be 0 or greater</source>
         <translation>Fußüberstand muss 0 oder größer sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="122"/>
+        <location filename="../params.py" line="159"/>
         <source>brim_width must be 0 (no brim) or greater</source>
         <translation>die Brim-Breite muss 0 (kein Brim) oder größer sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="124"/>
+        <location filename="../params.py" line="161"/>
         <source>contour_bridge must be 0 (follow every recess) or greater</source>
         <translation>die Überbrückung muss 0 (jeder Einbuchtung folgen) oder größer sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="126"/>
+        <location filename="../params.py" line="163"/>
         <source>round_fin_angle must be from %.0f up to %.0f degrees</source>
         <translation>round_fin_angle muss von %.0f bis %.0f Grad reichen</translation>
     </message>
     <message>
-        <location filename="../params.py" line="129"/>
+        <location filename="../params.py" line="166"/>
         <source>bead_width is less than half the nozzle diameter</source>
         <translation>die Raupenbreite ist kleiner als der halbe Düsendurchmesser</translation>
     </message>
     <message>
-        <location filename="../params.py" line="131"/>
+        <location filename="../params.py" line="168"/>
         <source>layer_height is greater than the nozzle diameter</source>
         <translation>die Schichthöhe ist größer als der Düsendurchmesser</translation>
     </message>
     <message>
-        <location filename="../params.py" line="133"/>
+        <location filename="../params.py" line="170"/>
         <source>tine_layers must be at least 1</source>
         <translation>die Zinkenhöhe in Schichten muss mindestens 1 sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="135"/>
+        <location filename="../params.py" line="172"/>
         <source>tine_width_beads must be at least 1</source>
         <translation>Zinkenbreite in Raupen muss mindestens 1 sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="137"/>
+        <location filename="../params.py" line="174"/>
         <source>tine_spacing %.2f mm leaves no free layer between the tines; it needs at least %.2f mm</source>
         <translation>Zinkenabstand %.2f mm lässt keine freie Schicht zwischen den Zinken; nötig sind mindestens %.2f mm</translation>
     </message>
     <message>
-        <location filename="../params.py" line="144"/>
+        <location filename="../params.py" line="181"/>
         <source>%s must be one of %s</source>
         <translation>%s muss eines von %s sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="147"/>
+        <location filename="../params.py" line="184"/>
         <source>fin_count must be at least 1</source>
         <translation>Anzahl Finnen muss mindestens 1 sein</translation>
     </message>
     <message>
-        <location filename="../params.py" line="155"/>
+        <location filename="../params.py" line="192"/>
         <source>fin_height %.2f mm is lower than the foot (%.2f mm)</source>
         <translation>Finnenhöhe %.2f mm ist niedriger als der Fuß (%.2f mm)</translation>
     </message>
@@ -1893,32 +1898,32 @@
         <translation>das Teil reicht in der Ebene der Finne nicht bis zum Bett</translation>
     </message>
     <message>
-        <location filename="../presets.py" line="86"/>
+        <location filename="../presets.py" line="90"/>
         <source>Standard</source>
         <translation>Standard</translation>
     </message>
     <message>
-        <location filename="../presets.py" line="159"/>
+        <location filename="../presets.py" line="168"/>
         <source>there is no profile &quot;%s&quot;</source>
         <translation>es gibt kein Profil &quot;%s&quot;</translation>
     </message>
     <message>
-        <location filename="../presets.py" line="176"/>
+        <location filename="../presets.py" line="185"/>
         <source>a profile needs a name</source>
         <translation>ein Profil braucht einen Namen</translation>
     </message>
     <message>
-        <location filename="../presets.py" line="178"/>
+        <location filename="../presets.py" line="187"/>
         <source>the name of a profile cannot hold a slash or a control character</source>
         <translation>der Name eines Profils darf keinen Schrägstrich und kein Steuerzeichen enthalten</translation>
     </message>
     <message>
-        <location filename="../presets.py" line="180"/>
+        <location filename="../presets.py" line="189"/>
         <source>the name of a profile can have %d characters at most</source>
         <translation>der Name eines Profils darf höchstens %d Zeichen haben</translation>
     </message>
     <message>
-        <location filename="../presets.py" line="185"/>
+        <location filename="../presets.py" line="194"/>
         <source>there is a profile &quot;%s&quot; already</source>
         <translation>es gibt schon ein Profil &quot;%s&quot;</translation>
     </message>

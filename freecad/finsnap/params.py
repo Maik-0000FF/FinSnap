@@ -35,17 +35,56 @@ INPUTS this has to withstand (validate()):
   unknown connection / placement / foot ->  ParamError listing the choices
   tine wider than a manual fin_thickness ->  ParamError: tine would stick out
   NaN or infinity in any number         ->  ParamError naming the field
+  a value of another kind than its
+    field, see fits_kind()              ->  ParamError naming the field
 """
 
 import math
+import sys
 from dataclasses import dataclass, fields
 
 from . import defaults as d
-from .i18n import translate
+from .i18n import QT_TRANSLATE_NOOP, translate
+
+# The whole numbers FreeCAD's user parameters can hold: SetInt refuses any
+# past a signed 32-bit integer.
+PARAMETER_INT_MIN, PARAMETER_INT_MAX = -2 ** 31, 2 ** 31 - 1
+# Said when a field holds a value of another kind than it takes.
+WRONG_KIND = QT_TRANSLATE_NOOP("FinSnap", "%s holds a value of the wrong kind")
 
 
 class ParamError(ValueError):
     """The parameters cannot produce a printable fin."""
+
+
+def fits_kind(value, kind):
+    """Whether `value` can stand in a field of type `kind`, and be stored in
+    FreeCAD's user parameters as one.
+
+    VALUES this has to withstand:
+      float field: 2.5, 2, NaN              ->  True; a whole number is a number too,
+                                                NaN is refused as not finite elsewhere
+      float field: True, "2", None          ->  False
+      float field: a whole number past the
+        largest float, 10 ** 400            ->  False: no float can hold it
+      int field: 2, -3                      ->  True
+      int field: 2.0, 2.5, True, "2", None  ->  False
+      int field: below PARAMETER_INT_MIN
+        or past PARAMETER_INT_MAX           ->  False: FreeCAD cannot store it
+      bool field: True, False               ->  True
+      bool field: 1, 0, "yes", None         ->  False
+      str field: "", "x"                    ->  True
+      str field: 2, None                    ->  False
+    """
+    # A bool is an int to Python, so it is told apart first.
+    if isinstance(value, bool) or kind is bool:
+        return isinstance(value, bool) and kind is bool
+    if kind is float:
+        # A whole number past the largest float has no float to stand for it.
+        return isinstance(value, float) or (isinstance(value, int) and abs(value) <= sys.float_info.max)
+    if kind is int:
+        return isinstance(value, int) and PARAMETER_INT_MIN <= value <= PARAMETER_INT_MAX
+    return isinstance(value, kind)
 
 
 @dataclass
@@ -93,6 +132,8 @@ class FinParams:
     def validate(self):
         for f in fields(self):
             value = getattr(self, f.name)
+            if not fits_kind(value, type(f.default)):
+                raise ParamError(translate("FinSnap", WRONG_KIND) % f.name)
             if isinstance(value, float) and not math.isfinite(value):
                 raise ParamError(translate("FinSnap", "%s is not a finite number") % f.name)
 
