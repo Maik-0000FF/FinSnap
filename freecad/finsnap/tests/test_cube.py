@@ -178,6 +178,7 @@ WIDE_CHAMFER = 15.0    # a chamfer that leaves 5 mm of the sides of a 20 mm box 
 PLATE_SIDE = 20.0      # a thin plate, square
 PLATE_THICKNESS = 2.0
 STRIP_CHAMFER = 0.8    # on both edges of a side of the plate, leaving a strip of 0.4 mm
+SIDE_TILT = 0.01       # degrees a side of the plate leans out, as a part from a STEP file stands
 WEDGE_BASE, WEDGE_HEIGHT = 40.0, 20.0  # a prism with a sharp edge, its base a right triangle
 WEDGE_ANGLE = 60.0     # the angle at the base, leaving 30 degrees at the sharp edge
 ACUTE_EVEN = (2.0, 2.0)     # an even chamfer on the sharp edge
@@ -2178,6 +2179,19 @@ def check_quick_plan():
     expect(len(slopes) == 2 and quick_stands.is_chamfer(both, strip[0])
            and not any(quick_stands.is_chamfer(both, f) for f in slopes),
            "a strip between two chamfers, narrower than they are, counts as the chamfer instead")
+
+    # The plate with the side below the chamfer tilted out a little at the top,
+    # as a part from a STEP file or a mesh stands: still square to the bottom.
+    rise = PLATE_THICKNESS / 2
+    out = rise * math.tan(math.radians(SIDE_TILT))
+    outline = [V(0, 0, 0), V(0, -out, rise), V(0, rise - out, PLATE_THICKNESS), V(0, PLATE_SIDE, PLATE_THICKNESS),
+               V(0, PLATE_SIDE, 0), V(0, 0, 0)]
+    tilted_plate = Part.Face(Part.makePolygon(outline)).extrude(V(PLATE_SIDE, 0, 0))
+    tilted_bevel = [f for f in tilted_plate.Faces if f.normalAt(0, 0).z > 0.5 and f.normalAt(0, 0).y < -0.5]
+    tilted_side = [f for f in tilted_plate.Faces if f.normalAt(0, 0).y < -1 + 1e-3]
+    expect(len(tilted_bevel) == 1 and len(tilted_side) == 1 and quick_stands.is_chamfer(tilted_plate, tilted_bevel[0])
+           and not quick_stands.is_chamfer(tilted_plate, tilted_side[0]),
+           "a side tilted %.2f degrees below a chamfer is still no chamfer, the chamfer is one" % SIDE_TILT)
 
     # The sharp edge of a prism of 30 degrees: an even chamfer on it is one,
     # one turned past a right angle from a face beside it is taken as a plain face.

@@ -30,6 +30,10 @@ NO_STAND_FOR_FACE = QT_TRANSLATE_NOOP("FinSnap", "the part cannot stand so that 
 # radians; for an angle this small it also bounds the sine and the cosine that
 # stand for it. Solids converted from a mesh or a STEP file are rarely exact.
 PRISM_ANGLE_TOLERANCE = math.radians(d.RIGHT_ANGLE_TOLERANCE)
+# A face turned within this of a right angle from a neighbour counts as square
+# to it, and so as no chamfer beside it (is_chamfer()), in radians: the side of
+# a part from a STEP file or a mesh is rarely exactly square to the bottom.
+SQUARE_TOLERANCE = math.radians(d.RIGHT_ANGLE_TOLERANCE)
 # Points each edge of a face is sampled at to measure how wide the face is
 # (is_chamfer()): the ends and enough between them for the bulge of an arc.
 ACROSS_SAMPLES = 9
@@ -559,6 +563,9 @@ def is_chamfer(shape, face):
                                                  with one of its edges
       chamfer turned a right angle or more
         from one neighbour                   ->  False: taken as a plain face
+      side beside a chamfer tilted a little,
+        as from a STEP file or a mesh, within
+        SQUARE_TOLERANCE of square           ->  False: still square, the chamfer True
       rounded face                           ->  False
       an edge of no length                   ->  passed over
     """
@@ -587,7 +594,8 @@ def _neighbours(by_edge, face):
 def _chamfer_pairs(by_edge, face):
     """The pairs of neighbours (_neighbours()) `face` lies between like a
     chamfer: its normal in the plane of theirs, the two angles to it adding up
-    to the angle between them, each above zero and below a right angle."""
+    to the angle between them, each above zero and below a right angle by more
+    than SQUARE_TOLERANCE."""
     normal = middle_normal(face)
     beside = [(other, along, middle_normal(other)) for other, along in _neighbours(by_edge, face)]
     pairs = []
@@ -596,7 +604,8 @@ def _chamfer_pairs(by_edge, face):
             apart = first_normal.getAngle(second_normal)
             to_first, to_second = first_normal.getAngle(normal), normal.getAngle(second_normal)
             if (d.TOLERANCE < apart < math.pi - d.TOLERANCE and abs(to_first + to_second - apart) < d.TOLERANCE
-                    and d.TOLERANCE < min(to_first, to_second) and max(to_first, to_second) < math.pi / 2):
+                    and d.TOLERANCE < min(to_first, to_second)
+                    and max(to_first, to_second) < math.pi / 2 - SQUARE_TOLERANCE):
                 pairs.append(((first, first_along), (second, second_along)))
     return pairs
 
