@@ -31,6 +31,8 @@ COMMANDS = ("FinSnap_QuickFins", "FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_Add
             "FinSnap_CheckStability", "FinSnap_CheckPart", "FinSnap_IslandsWhileEditing",
             "FinSnap_Export3MF", "FinSnap_ExportSTEP", "FinSnap_CheckLimits", "FinSnap_CheckBridges")
 DIALOG_ACCEPTED = 1
+# FreeCAD's edit modes Transform and Color per face, see Std_UserEditMode.
+EDIT_MODE_TRANSFORM, EDIT_MODE_COLOR = 1, 3
 # Answers to the questions commands ask, taken in order by answer_dialogs().
 ANSWERS = []
 # Put into an exported file to see whether a later export replaces it.
@@ -701,6 +703,49 @@ def panel_with_another_document_active(doc):
     expect(App.ActiveDocument is doc and Gui.ActiveDocument.Document is doc and not Gui.Control.activeDialog(),
            "afterwards the document of the tests is active again, no panel open: %s, %s, %s"
            % (App.ActiveDocument.Name, Gui.ActiveDocument.Document.Name, Gui.Control.activeDialog()))
+
+
+def other_edit_modes(doc):
+    """Transform and Color per face from the context menu are FreeCAD's own
+    edits of the fins: no panel of the fins opens, and leaving them closes
+    FreeCAD's dialog. The default mode opens the panel."""
+    from freecad.finsnap import commands, feature
+    box = doc.addObject("Part::Feature", "EditModesBox")
+    box.Shape = tilted_cube()
+    fins = feature.create(box, face_name(box, lower_left_face(box.Shape)))
+    commands.ViewProviderFinSnap(fins.ViewObject)
+    doc.recompute()
+    gui_doc = Gui.getDocument(doc.Name)
+    proxy = fins.ViewObject.Proxy
+    def left_open(obj, mode):
+        """Whether a task dialog is still open once `obj` left edit `mode`;
+        FreeCAD's dialog of the colours per face stays, also for a plain part.
+        The dialog is closed afterwards."""
+        gui_doc.setEdit(obj, mode)
+        gui_doc.resetEdit()
+        still = Gui.Control.activeDialog()
+        if still:
+            Gui.Control.closeDialog()
+        return still
+    for mode in (EDIT_MODE_TRANSFORM, EDIT_MODE_COLOR):
+        gui_doc.setEdit(fins, mode)
+        editing = gui_doc.getInEdit()
+        expect(getattr(proxy, "panel", None) is None and editing is not None and editing.Object is fins,
+               "edit mode %d is FreeCAD's own: the fins are in edit, no panel of theirs open" % mode)
+        gui_doc.resetEdit()
+        fins_left = Gui.Control.activeDialog()
+        if fins_left:
+            Gui.Control.closeDialog()
+        plain_left = left_open(box, mode)
+        expect(gui_doc.getInEdit() is None and fins_left == plain_left,
+               "leaving edit mode %d leaves FreeCAD's dialog as it does for a plain part: %s" % (mode, fins_left))
+    gui_doc.setEdit(fins, commands.EDIT_MODE_DEFAULT)
+    panel = getattr(proxy, "panel", None)
+    expect(panel is not None, "the default edit mode opens the panel of the fins")
+    if panel is not None:
+        panel.reject()
+    for name in (fins.Name, box.Name):
+        doc.removeObject(name)
 
 
 def commands_on_a_link(doc, messages, written):
@@ -2965,6 +3010,7 @@ def main():
     stands_reopened(doc, quick, facing)
     quick_on_pad(doc)
     panel_with_another_document_active(doc)
+    other_edit_modes(doc)
     commands_on_a_link(doc, messages, os.path.join(folder, "link.3mf"))
     undo_and_cancel(messages)
     commands_wait_for_the_panel(messages)
