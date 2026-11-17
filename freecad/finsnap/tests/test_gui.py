@@ -530,6 +530,7 @@ def profile_choices(doc):
     expect(panel.notes.text() != refused or not panel.notes.isVisibleTo(panel.form),
            "so does choosing a profile")
     panel.new_profile()
+    ANSWERS.append(QtWidgets.QMessageBox.StandardButton.Yes)
     panel.factory_settings()
     expect(panel.notes.text() != refused or not panel.notes.isVisibleTo(panel.form),
            "and Factory settings")
@@ -3102,6 +3103,7 @@ def main():
     marking.save_to_profile()
     expect(abs(presets.standard().fin_thickness - STANDARD_THICKNESS) < d.TOLERANCE and reset.isHidden(),
            "Save to profile makes the value the standard for new fins and clears the mark")
+    answer_questions = QtWidgets.QMessageBox.question
     QtWidgets.QMessageBox.question = staticmethod(lambda *a, **k: QtWidgets.QMessageBox.StandardButton.Yes)
     marking.factory_settings()
     expect(presets.standard() == FinParams() and abs(thickness.value() - built_in) < d.TOLERANCE
@@ -3138,6 +3140,7 @@ def main():
     expect(profiles.count() == 1 and presets.active_profile() is None and not reset.isHidden()
            and abs(thickness.value() - STANDARD_THICKNESS) < d.TOLERANCE,
            "Delete leaves the fields as they are, what differs from the standard profile marked")
+    QtWidgets.QMessageBox.question = staticmethod(answer_questions)
     thickness.setValue(built_in)
     marking.reject()
     profile_choices(doc)
@@ -3606,20 +3609,15 @@ def main():
         starts.append(start)
         return names.pop(0), ""
     QtWidgets.QFileDialog.getSaveFileName = staticmethod(save_dialog)
-    question = QtWidgets.QMessageBox.question
-    QtWidgets.QMessageBox.question = staticmethod(lambda *a, **k: ANSWERS.pop(0))
-    try:
-        ANSWERS.append(QtWidgets.QMessageBox.No)
-        Gui.runCommand("FinSnap_Export3MF")
-        with open(written, "rb") as kept:
-            expect(kept.read() == OLD_CONTENT and starts == ["", written] and not ANSWERS,
-                   "No keeps the file and opens the dialog again at it: %s" % starts)
-        names[:] = [target]
-        ANSWERS.append(QtWidgets.QMessageBox.Yes)
-        Gui.runCommand("FinSnap_Export3MF")
-        expect(zipfile.is_zipfile(written) and not ANSWERS and not messages, "Yes replaces the file")
-    finally:
-        QtWidgets.QMessageBox.question = staticmethod(question)
+    ANSWERS.append(QtWidgets.QMessageBox.No)
+    Gui.runCommand("FinSnap_Export3MF")
+    with open(written, "rb") as kept:
+        expect(kept.read() == OLD_CONTENT and starts == ["", written] and not ANSWERS,
+               "No keeps the file and opens the dialog again at it: %s" % starts)
+    names[:] = [target]
+    ANSWERS.append(QtWidgets.QMessageBox.Yes)
+    Gui.runCommand("FinSnap_Export3MF")
+    expect(zipfile.is_zipfile(written) and not ANSWERS and not messages, "Yes replaces the file")
 
     # STEP: the same selection, exact surfaces, part and fins under their names.
     QtWidgets.QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: (target, ""))
