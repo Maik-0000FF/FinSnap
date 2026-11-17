@@ -33,6 +33,8 @@ COMMANDS = ("FinSnap_QuickFins", "FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_Add
 DIALOG_ACCEPTED = 1
 # Answers to the questions commands ask, taken in order by answer_dialogs().
 ANSWERS = []
+# Put into an exported file to see whether a later export replaces it.
+OLD_CONTENT = b"not yet replaced"
 FLAT_TILT = 30.0  # flatter than the overhang limit
 # Up on the screen, in the coordinates of the camera.
 SCREEN_UP = App.Vector(0, 1, 0)
@@ -3592,6 +3594,32 @@ def main():
     with zipfile.ZipFile(written) as archive:
         model = archive.read("3D/3dmodel.model").decode()
     expect(model.count("<object ") == 2, "the file holds part and fins as two objects")
+
+    # The name without its extension again: the file with it exists, so it is
+    # asked first. No opens the dialog again at that file, Yes replaces it.
+    with open(written, "wb") as old:
+        old.write(OLD_CONTENT)
+    starts = []
+    names = [target, ""]
+
+    def save_dialog(parent, title, start, file_filter):
+        starts.append(start)
+        return names.pop(0), ""
+    QtWidgets.QFileDialog.getSaveFileName = staticmethod(save_dialog)
+    question = QtWidgets.QMessageBox.question
+    QtWidgets.QMessageBox.question = staticmethod(lambda *a, **k: ANSWERS.pop(0))
+    try:
+        ANSWERS.append(QtWidgets.QMessageBox.No)
+        Gui.runCommand("FinSnap_Export3MF")
+        with open(written, "rb") as kept:
+            expect(kept.read() == OLD_CONTENT and starts == ["", written] and not ANSWERS,
+                   "No keeps the file and opens the dialog again at it: %s" % starts)
+        names[:] = [target]
+        ANSWERS.append(QtWidgets.QMessageBox.Yes)
+        Gui.runCommand("FinSnap_Export3MF")
+        expect(zipfile.is_zipfile(written) and not ANSWERS and not messages, "Yes replaces the file")
+    finally:
+        QtWidgets.QMessageBox.question = staticmethod(question)
 
     # STEP: the same selection, exact surfaces, part and fins under their names.
     QtWidgets.QFileDialog.getSaveFileName = staticmethod(lambda *a, **k: (target, ""))

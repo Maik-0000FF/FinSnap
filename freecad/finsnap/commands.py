@@ -5,6 +5,7 @@
 
 import dataclasses
 import functools
+import os
 from collections import namedtuple
 
 import FreeCAD as App
@@ -48,6 +49,8 @@ ISOMETRIC = App.Vector(-1, 1, -1).normalize()
 FILTER_3MF = QT_TRANSLATE_NOOP("FinSnap", "3MF files (*.3mf)")
 EXTENSIONS_3MF = (".3mf",)
 FILTER_STEP = QT_TRANSLATE_NOOP("FinSnap", "STEP files (*.step *.stp)")
+# Asked when the name with its ending added is a file that exists already.
+NOTE_OVERWRITE = QT_TRANSLATE_NOOP("FinSnap", "%s already exists. Replace it?")
 # Said when Check stability has no part to check.
 NOTE_SELECT_PART = QT_TRANSLATE_NOOP("FinSnap", "Select a part, or its fins, to check whether it stays standing "
                                                 "while it is printed.")
@@ -1196,12 +1199,39 @@ def _shapes_to_export():
 
 
 def _save_path(title, file_filter, extensions):
-    """The file to write, ending in one of `extensions`; empty if the dialog was cancelled."""
-    path, _ = QtWidgets.QFileDialog.getSaveFileName(
-        Gui.getMainWindow(), title, "", translate("FinSnap", file_filter))
-    if path and not path.lower().endswith(extensions):
+    """The file to write, ending in one of `extensions`; empty if the dialog was cancelled.
+
+    The dialog itself asks before a name it returns is overwritten, but not for
+    the name with the extension added here, so that one is asked here.
+
+    NAMES this has to withstand:
+      cancelled                            ->  ""
+      "a.3mf", "a.STP"                     ->  unchanged, the dialog has asked already
+      "a", no "a.3mf"                      ->  "a.3mf"
+      "a.txt", no "a.txt.3mf"              ->  "a.txt.3mf"
+      "a", "a.3mf" exists, overwrite: Yes  ->  "a.3mf"
+      "a", "a.3mf" exists, overwrite: No   ->  the dialog again, opened at "a.3mf"
+      "a", "a.3mf" is a folder             ->  asked the same; on Yes writing fails
+                                               and says why
+    """
+    start = ""
+    while True:
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            Gui.getMainWindow(), title, start, translate("FinSnap", file_filter))
+        if not path or path.lower().endswith(extensions):
+            return path
         path += extensions[0]
-    return path
+        if not os.path.exists(path) or _ask_overwrite(path):
+            return path
+        start = path
+
+
+def _ask_overwrite(path):
+    """Whether the existing file at `path` is replaced; No is the default."""
+    buttons = QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+    return QtWidgets.QMessageBox.question(
+        Gui.getMainWindow(), NAME, translate("FinSnap", NOTE_OVERWRITE) % os.path.basename(path),
+        buttons, QtWidgets.QMessageBox.No) == QtWidgets.QMessageBox.Yes
 
 
 def _write(writer, path, export, *settings):
