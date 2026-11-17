@@ -67,9 +67,9 @@ MESH_LINEAR_DECIMALS = 3
 MESH_ANGULAR_DECIMALS = 1
 FINS_SUFFIX = "_fins"
 STATUS_TIMEOUT_MS = 10000
-# FreeCAD's default edit mode, the one a double click starts; the others
-# (Transform 1, Cutting 2, Color 3, see Std_UserEditMode) are FreeCAD's own.
-EDIT_MODE_DEFAULT = 0
+# FreeCAD's edit modes, see Std_UserEditMode: the default one, which a double
+# click starts and which opens the panel of the fins; the others are FreeCAD's own.
+EDIT_MODE_DEFAULT, EDIT_MODE_TRANSFORM, EDIT_MODE_CUTTING, EDIT_MODE_COLOR = range(4)
 # What an export writes, and the fins it leaves out because their part lies flat.
 Export = namedtuple("Export", "shapes left_out")
 

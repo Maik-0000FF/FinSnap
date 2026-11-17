@@ -31,8 +31,6 @@ COMMANDS = ("FinSnap_QuickFins", "FinSnap_Tilt", "FinSnap_LayFlat", "FinSnap_Add
             "FinSnap_CheckStability", "FinSnap_CheckPart", "FinSnap_IslandsWhileEditing",
             "FinSnap_Export3MF", "FinSnap_ExportSTEP", "FinSnap_CheckLimits", "FinSnap_CheckBridges")
 DIALOG_ACCEPTED = 1
-# FreeCAD's edit modes Transform and Color per face, see Std_UserEditMode.
-EDIT_MODE_TRANSFORM, EDIT_MODE_COLOR = 1, 3
 # Answers to the questions commands ask, taken in order by answer_dialogs().
 ANSWERS = []
 # Put into an exported file to see whether a later export replaces it.
@@ -727,7 +725,7 @@ def other_edit_modes(doc):
         if still:
             Gui.Control.closeDialog()
         return still
-    for mode in (EDIT_MODE_TRANSFORM, EDIT_MODE_COLOR):
+    for mode in (commands.EDIT_MODE_TRANSFORM, commands.EDIT_MODE_COLOR):
         gui_doc.setEdit(fins, mode)
         editing = gui_doc.getInEdit()
         expect(getattr(proxy, "panel", None) is None and editing is not None and editing.Object is fins,
