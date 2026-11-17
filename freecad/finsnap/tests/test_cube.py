@@ -162,6 +162,7 @@ GROOVE_WIDTH = 2.0
 GROOVE_FROM = 8.0
 WIDE_BOX = 60.0          # long enough for a U profile with legs of a third each
 SHIFT = 1.5           # how far a fin is moved along the face by hand, in mm
+CLEARANCE_CHANGE = 0.02  # a tine clearance this much off the one asked is another parameter, in mm
 TOO_THICK = 30.0      # a fin too thick for one on each corner of the cube, in mm
 # As many fins built as FinSnap keeps; these tests keep none but where the keeping is tested.
 BUILT_KEPT_IN_USE = geometry.BUILT_KEPT
@@ -292,6 +293,13 @@ FLANK_OUT_LITTLE = 0.2 # how far out a foot may make a side fin stand on a plain
 MATRIX_CASES = ((d.ROUND_FINS_TWO, 30.0, 0.0), (d.ROUND_FINS_THREE, 45.0, 0.0), (d.ROUND_FINS_THREE, 30.0, 3.0),
                 (d.ROUND_FINS_THREE, 45.0, 3.0))
 MATRIX_FIN_COUNTS = {d.ROUND_FINS_TWO: 2, d.ROUND_FINS_THREE: 3}
+# The gap and tine clearance built in before (mm), tines ending short of the part.
+PREVIOUS_GAP, PREVIOUS_CLEARANCE = 0.3, 0.05
+# A wide gap with long tines (mm).
+LONG_TINES_GAP, LONG_TINES_CLEARANCE = 1.0, 0.1
+# The gaps and tine clearances every shape is built with: the built-in ones,
+# tines touching the part, then the two above.
+GAP_PAIRS = ((d.GAP, d.TINE_CLEARANCE), (PREVIOUS_GAP, PREVIOUS_CLEARANCE), (LONG_TINES_GAP, LONG_TINES_CLEARANCE))
 # Cases with a fin height set, above what the side fins can reach on some shapes.
 MATRIX_HIGH_CASES = {"rod": ((d.ROUND_FINS_THREE, 45.0, 0.0, 35.0), (d.ROUND_FINS_THREE, 30.0, 3.0, 35.0),
                              (d.ROUND_FINS_THREE, 30.0, 0.0, 30.0), (d.ROUND_FINS_THREE, 45.0, 2.0, 32.0)),
@@ -335,6 +343,7 @@ APART_ROUND_TURNS = (0.0, 90.0, 180.0, 270.0)
 APART_ROUND_CUT = 0.9
 MESHED_VOLUME_APART = 0.5  # mm3: found on the mesh and exactly, the fins stand within a resolution
 FLANK_OUT_MOVED = 0.05  # mm: a blade moved out by more than this has really moved
+MESHED_GAP = PREVIOUS_GAP  # the side fins searched on a mesh were measured with it
 SETTLE_RESOLUTION, SETTLE_MOST = 0.01, 2.0  # what check_settled_clear() searches to and up to
 GROOVE_WIDTH = 4.0     # a groove round a shaft
 TINE_NEAR_START = 6.0  # the first tine above a groove starts within this of the side (mm)
@@ -3180,6 +3189,12 @@ def check_stability():
     expect(stability.check(Part.Shape(), [], first, layer, {}) is None, "an empty part has no result")
 
 
+def only_touches(result, part, p):
+    """Whether the fins of `result` hold no more of `part` than tines touching
+    it along a contour do (geometry.touching_volume())."""
+    return result.fins.common(part).Volume < geometry.touching_volume(p, len(result.tines), d.CONTOUR_TOLERANCE)
+
+
 def round_side_of(shape, radius=ROD_RADIUS):
     """The number of the curved side of `shape` with `radius`."""
     return [i for i, f in enumerate(shape.Faces)
@@ -3488,15 +3503,18 @@ def matrix_shapes():
             "large fillet": rod.makeFillet(LARGE_FILLET_RADIUS, free_end)}
 
 
-def fin_matrix_faults(name, stood, number, kind, degrees, thickness, side_tines, height=0.0):
-    """What is wrong with the fins of `kind` under face `number` of `stood`, as
-    lines of text: refused, overlapping or too close to the part, invalid, higher
-    than they say or than asked of the rod, hanging over, fewer fins than asked
-    for, with fewer tines than the fin alone, or side fins with other than
-    `side_tines`: what a change costs them shows here."""
+def fin_matrix_faults(name, stood, number, kind, degrees, thickness, side_tines, height=0.0,
+                      gap=d.GAP, clearance=d.TINE_CLEARANCE):
+    """What is wrong with the fins of `kind` under face `number` of `stood`, at
+    `gap` and tine `clearance`, as lines of text: refused, reaching into or too
+    close to the part, invalid, higher than they say or than asked of the rod,
+    hanging over, fewer fins than asked for, with fewer tines than the fin
+    alone, or side fins with other than `side_tines`, where that is not None:
+    what a change costs them shows here."""
     asked = FinParams(placement=d.PLACEMENT_CENTER, round_fins=kind, round_fin_angle=degrees,
-                      fin_thickness=thickness, fin_height=height)
-    case = "%s, %s, %g degrees, %g mm thick, %g mm high: " % (name, kind, degrees, thickness, height)
+                      fin_thickness=thickness, fin_height=height, gap=gap, tine_clearance=clearance)
+    case = "%s, %s, %g degrees, %g mm thick, %g mm high, gap %g, clearance %g: " % (
+        name, kind, degrees, thickness, height, gap, clearance)
     try:
         built = geometry.build(stood, stood.Faces[number], asked)
     except face_frame.FinError as error:
@@ -3506,11 +3524,11 @@ def fin_matrix_faults(name, stood, number, kind, degrees, thickness, side_tines,
     if len(built.numbers) != planned:
         faults.append(case + "%d fins, %d asked for" % (len(built.numbers), planned))
     for fin in built.frames:
-        if fin in built.numbers and len(built.touching_z[fin]) != side_tines:
+        if side_tines is not None and fin in built.numbers and len(built.touching_z[fin]) != side_tines:
             faults.append(case + "fin %d has %d tines, not %d" % (fin, len(built.touching_z[fin]), side_tines))
         if name == "rod" and height and abs(built.heights.get(fin, height) - height) > d.TOLERANCE:
             faults.append(case + "fin %d only %.1f mm high" % (fin, built.heights[fin]))
-    if geometry.overlap_of(built.fins, stood) > d.TOLERANCE:
+    if geometry.overlap_of(built.fins, stood) > geometry.touching_volume(asked, len(built.tines), d.CONTOUR_TOLERANCE):
         faults.append(case + "reaches into the part")
     for position, fin in enumerate(built.numbers):
         body = built.bodies[position]
@@ -3528,7 +3546,7 @@ def fin_matrix_faults(name, stood, number, kind, degrees, thickness, side_tines,
             if steep > OVERHANG_LAYER + GAP_ACROSS_FIN:
                 faults.append(case + "fin %d hangs over by %.3f" % (fin, steep))
     alone = geometry.build(stood, stood.Faces[number], FinParams(placement=d.PLACEMENT_CENTER, fin_thickness=thickness,
-                                                                 fin_height=height))
+                                                                 fin_height=height, gap=gap, tine_clearance=clearance))
     middle = built.numbers.index(2) if kind == d.ROUND_FINS_THREE and 2 in built.numbers else None
     if middle is not None and len(built.touching_z[2]) < len(alone.touching_z[1]):
         faults.append(case + "the middle fin has %d tines, %d alone" % (len(built.touching_z[2]),
@@ -3556,9 +3574,13 @@ def check_side_fin_matrix():
         plan = quick_stands.quick_plan(shape, [], [(shape.Faces[number], number)], FinParams(), d.TILT_ANGLE)
         stood = moved(shape, plan.change)
         cases = [(*case, 0.0) for case in MATRIX_CASES] + list(MATRIX_HIGH_CASES.get(name, ()))
-        for (kind, degrees, thickness, height), side_tines in zip(cases, MATRIX_SIDE_TINES[name], strict=True):
-            faults += fin_matrix_faults(name, stood, number, kind, degrees, thickness, side_tines, height)
-    expect(not faults, "the matrix of side fins holds: %s" % "; ".join(faults))
+        for gap, clearance in GAP_PAIRS:
+            # The tines of the side fins are pinned for the built-in gap and clearance.
+            built_in = (gap, clearance) == GAP_PAIRS[0]
+            for (kind, degrees, thickness, height), side_tines in zip(cases, MATRIX_SIDE_TINES[name], strict=True):
+                faults += fin_matrix_faults(name, stood, number, kind, degrees, thickness,
+                                            side_tines if built_in else None, height, gap, clearance)
+    expect(not faults, "the matrix of side fins holds at every gap and clearance: %s" % "; ".join(faults))
 
     # A groove: the side above it, then below it, on one shaft, and the other way round.
     rod = Part.makeCylinder(ROD_RADIUS, 2 * ROD_HEIGHT)
@@ -3585,6 +3607,55 @@ def check_side_fin_matrix():
            and min(full.touching_z[1]) < start + TINE_NEAR_START,
            "above a groove the fin holds right from the start of the side: %s from %.1f"
            % (sorted(full.touching_z[1])[:2], start))
+
+
+def check_gap_pairs_flat():
+    """Fins under flat faces and the half round end of a slot at every gap and
+    tine clearance of GAP_PAIRS: built, every tine ending the clearance off the
+    face, the body at the gap, nothing in the part beyond touching it.
+
+    INPUTS this has to withstand:
+      the face of a tilted cube              ->  as said, at every pair
+      that face with a groove up it          ->  the same, the groove bridged
+      the half round end of a slot           ->  the same along its curve
+    """
+    cube = tilted_cube()
+    face = lower_left_face(cube)
+    centre = face_frame.frame_of(cube, face)
+    groove_cube = grooved(cube, face, (centre.along_min + centre.along_max) / 2)
+    slot = slot_on_end()
+    half = next(i for i, f in enumerate(slot.Faces) if orient.is_curved_side(f) and _takes_fins(slot, f))
+    cases = (("tilted cube", cube, face), ("groove up the face", groove_cube, lower_left_face(groove_cube)),
+             ("half round end of a slot", slot, slot.Faces[half]))
+    faults = []
+    for gap, clearance in GAP_PAIRS:
+        asked = FinParams(gap=gap, tine_clearance=clearance)
+        for name, part, under in cases:
+            case = "%s, gap %g, clearance %g: " % (name, gap, clearance)
+            try:
+                built = geometry.build(part, under, asked)
+            except face_frame.FinError as error:
+                faults.append(case + "refused: %s" % error)
+                continue
+            off = max(abs(tine.distToShape(part)[0] - asked.clearance) for tine in built.tines)
+            if off > d.TINE_END_TOLERANCE:
+                faults.append(case + "a tine ends %.4f off the clearance" % off)
+            closest = min(body.distToShape(part)[0] for body in built.bodies)
+            if closest < gap - GAP_ACROSS_FIN:
+                faults.append(case + "a fin %.3f off the part" % closest)
+            if geometry.overlap_of(built.fins, part) > geometry.touching_volume(asked, len(built.tines),
+                                                                                 d.CONTOUR_TOLERANCE):
+                faults.append(case + "reaches into the part")
+    expect(not faults, "fins under flat faces hold at every gap and clearance: %s" % "; ".join(faults))
+
+
+def _takes_fins(shape, face):
+    """Whether `face` of `shape` leans over the bed so that fins go under it."""
+    try:
+        face_frame.frame_of(shape, face)
+    except face_frame.FinError:
+        return False
+    return True
 
 
 def check_known_clear():
@@ -3630,6 +3701,29 @@ def check_known_clear():
     expect(all(found == (expected, expected) for _, found, expected in told),
            "a fin by its body and its tine is told clear of the part as the fin whole: %s"
            % ", ".join("%s %s" % (name, "not clear" if found[0] else "clear") for name, found, _ in told))
+    # What a fin not clear holds of the part: its body clear, the tine alone is
+    # cut, once for the shape; its body in the part, the fin whole.
+    reaching, reaching_shapes = fin(body_at, MESHED_BOX - APART_TINE_IN)
+    geometry._kept_clear.clear()
+    geometry._kept_overlap.clear()
+    held = geometry._overlap_of_unsure([reaching], [reaching], [reaching_shapes], part)
+    by_tine = reaching_shapes[1].common(part).Volume
+    expect(abs(held - by_tine) < d.TOLERANCE and len(geometry._kept_overlap) == 1,
+           "a fin with its body clear holds what its tine alone holds: %.4f, %.4f" % (held, by_tine))
+    real_overlap = geometry.overlap_of
+
+    def no_cut(*_args, **_kwargs):
+        raise AssertionError("cut again")
+    geometry.overlap_of = no_cut
+    try:
+        again = geometry._overlap_of_unsure([reaching], [reaching], [reaching_shapes], part)
+    finally:
+        geometry.overlap_of = real_overlap
+    expect(again == held and len(geometry._kept_overlap) == 1, "the same fin asked again is not cut again")
+    inside, inside_shapes = fin(1.0, 1.0 - APART_TINE_IN)
+    whole = geometry._overlap_of_unsure([inside], [inside], [inside_shapes], part)
+    expect(abs(whole - inside.common(part).Volume) < d.TOLERANCE,
+           "a fin with its body in the part holds what the fin whole holds: %.4f" % whole)
     far_body = Part.makeBox(1, 1, 1, V(3 * MESHED_BOX, 0, 0))
     far_tine = Part.makeBox(1, 0.5, 0.5, V(3 * MESHED_BOX - 1, 0.25, 0.25))
     geometry._kept_clear.clear()
@@ -3818,8 +3912,10 @@ def check_meshed_distance():
             geometry.meshed_of = kept
 
     def of_case(kind, degrees, thickness):
+        # At the gap these were measured with: what is checked is how the mesh
+        # moves the blade, which a smaller gap leaves closer to FLANK_OUT_MOVED.
         return FinParams(placement=d.PLACEMENT_CENTER, round_fins=kind, round_fin_angle=degrees,
-                         fin_thickness=thickness)
+                         fin_thickness=thickness, gap=MESHED_GAP)
 
     side_fins(cylinder(), of_case(*MATRIX_CASES[0]), no_mesh)
 
@@ -3961,7 +4057,7 @@ def check_three_round_fins():
             aim = (s_to - s_from) * (middle - t_from) - (t_to - t_from) * (axis_s - s_from)
             expect(t_to < t_from and s_to < s_from and abs(aim) < AIM_TOLERANCE,
                    "%s: a tine of a side fin runs level straight at the axis, off by %.5f" % (name, aim))
-        expect(result.fins.common(stood).Volume < d.TOLERANCE, "%s: no fin reaches into the part" % name)
+        expect(only_touches(result, stood, three), "%s: no fin reaches into the part" % name)
         steep = max(steepest_step(result.bodies[k], result.frames[n]) for k, n in ((0, 1), (2, 3)))
         expect(steep <= OVERHANG_LAYER + GAP_ACROSS_FIN,
                "%s: no layer of a side fin hangs past the one below by more than 45 degrees: %.3f" % (name, steep))
@@ -3991,7 +4087,7 @@ def check_three_round_fins():
                and moved_fin.positions[2] == result.positions[2],
                "%s: a side fin moved by hand stands there, the one under the lowest line stays" % name)
         off = max(abs(tine.distToShape(stood)[0] - three.clearance) for tine in moved_fin.tines)
-        expect(off < d.TINE_END_TOLERANCE and moved_fin.fins.common(stood).Volume < d.TOLERANCE,
+        expect(off < d.TINE_END_TOLERANCE and only_touches(moved_fin, stood, three),
                "%s: moved, its tines end the clearance off the part, off by %.4f" % (name, off))
         too_far = face_frame.beside_lowest(ROD_RADIUS, d.ROUND_FIN_ANGLE_MAX) - pitch + SIDE_FIN_MOVE
         try:
@@ -4011,13 +4107,13 @@ def check_three_round_fins():
                and abs(result.positions[1] - alone.positions[0] - pitch) < d.TOLERANCE,
                "%s: two fins, one on each side of the lowest line, none under it" % name)
         off = max(abs(tine.distToShape(stood)[0] - two.clearance) for tine in result.tines)
-        expect(off < d.TINE_END_TOLERANCE and result.fins.common(stood).Volume < d.TOLERANCE,
+        expect(off < d.TINE_END_TOLERANCE and only_touches(result, stood, two),
                "%s: two fins, every tine ends the clearance off the part, off by %.4f" % (name, off))
         expect(min(result.touching_z[1]) > min(alone.touching_z[1]),
                "%s: two fins start to hold higher up than the one under the lowest line" % name)
         over = geometry.build(stood, stood.Faces[side], two, shifts={1: pitch})
         expect(over.numbers == [1, 2] and abs(over.positions[0] - alone.positions[0]) < d.TOLERANCE
-               and over.fins.common(stood).Volume < d.TOLERANCE,
+               and only_touches(over, stood, two),
                "%s: of two fins one moved under the lowest line stands there, clear of the part" % name)
     # Thick fins and thin rods: the flank stays at the gap between its planes too.
     for radius, thickness, degrees, kind in ((10.0, 3.0, 30.0, d.ROUND_FINS_THREE),
@@ -4134,9 +4230,10 @@ def check_three_round_fins():
     rectangle = geometry.build(stood, stood.Faces[side],
                                FinParams(placement=d.PLACEMENT_CENTER, round_fins=d.ROUND_FINS_THREE,
                                          foot_shape=d.FOOT_RECTANGLE))
-    expect(rectangle.fins.common(stood).Volume < d.TOLERANCE
+    expect(only_touches(rectangle, stood, FinParams())
            and rectangle.frames[3].flank_out < FLANK_OUT_LITTLE,
-           "a rectangular foot beside the lowest line clears the part, the flank at most a little further out")
+           "a rectangular foot beside the lowest line clears the part, the flank at most a little further out: %.4f"
+           % rectangle.frames[3].flank_out)
     whole = geometry.build(stood, stood.Faces[side], three).fins
     joined = geometry.joined(whole)
     overlap = sum(a.common(b).Volume for k, a in enumerate(whole.Solids) for b in whole.Solids[k + 1:])
@@ -5379,7 +5476,8 @@ def check_built_kept():
         other, built = asked(copy, copy.Faces[number])
         expect(not built and other.carried[0].isSame(copy.Faces[number]) and not other.carried[0].isSame(face),
                "another shape of the part as it stands gets the fins kept, carrying its own faces")
-        for name, params, edits in (("another parameter", dataclasses.replace(p, tine_clearance=0.0), {}),
+        other_clearance = dataclasses.replace(p, tine_clearance=p.tine_clearance + CLEARANCE_CHANGE)
+        for name, params, edits in (("another parameter", other_clearance, {}),
                                     ("a fin moved by hand", p, {"shifts": {first.numbers[0]: SHIFT}})):
             _, built = asked(cube, face, params, **edits)
             _, built_again = asked(cube, face, params, **edits)
@@ -5434,7 +5532,7 @@ def check_built_kept():
         geometry.forget_built()
         geometry.BUILT_KEPT = 1
         asked(cube, face)
-        asked(cube, face, dataclasses.replace(p, tine_clearance=0.0))
+        asked(cube, face, other_clearance)
         _, built = asked(cube, face)
         expect(built, "past as many as are kept the oldest goes, and is built again")
         geometry.BUILT_KEPT = BUILT_KEPT_IN_USE
@@ -5594,6 +5692,7 @@ def main():
     check_cut_at_height()
     check_three_round_fins()
     check_side_fin_matrix()
+    check_gap_pairs_flat()
     check_part_of_side()
     check_split_side()
     check_left_out(cube, face)
