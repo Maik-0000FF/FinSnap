@@ -173,6 +173,16 @@ WIDE_LAYER = 1.0
 UP = V(0, 0, 1)
 BOX_SIDE = 20.0
 EDGE_ROUND = 3.0       # size of the chamfer or radius of the fillet on a box edge
+BOTTOM_CHAMFER = 2.0   # a chamfer on every edge of the bottom of a box
+WIDE_CHAMFER = 15.0    # a chamfer that leaves 5 mm of the sides of a 20 mm box beside it
+PLATE_SIDE = 20.0      # a thin plate, square
+PLATE_THICKNESS = 2.0
+STRIP_CHAMFER = 0.8    # on both edges of a side of the plate, leaving a strip of 0.4 mm
+SIDE_TILT = 0.01       # degrees a side of the plate leans out, as a part from a STEP file stands
+WEDGE_BASE, WEDGE_HEIGHT = 40.0, 20.0  # a prism with a sharp edge, its base a right triangle
+WEDGE_ANGLE = 60.0     # the angle at the base, leaving 30 degrees at the sharp edge
+ACUTE_EVEN = (2.0, 2.0)     # an even chamfer on the sharp edge
+ACUTE_UNEVEN = (1.0, 10.0)  # one turned past a right angle from one face beside it
 CHAMFER_LONG = 3.0     # the long leg of a chamfer of unequal widths on a rim, in mm
 CHAMFER_SHORT = 1.0    # its short leg
 # Bosses on the face of the tilted cube (bossed_cube()): how high they stand
@@ -2125,13 +2135,76 @@ def check_quick_plan():
     alone = quick_stands.quick_plan(chamfered, [], [(chamfered.Faces[bevel], bevel)], p, d.TILT_ANGLE)
     expect(quick_stands.is_chamfer(chamfered, chamfered.Faces[bevel]) and alone.number != bevel
            and abs(moved(chamfered, alone.change).Faces[bevel].normalAt(0, 0).z + 1) < 1e-6,
-           "a chamfer alone, however wide, carries the part instead of taking the fins")
+           "a chamfer alone carries the part instead of taking the fins")
     expect(not quick_stands.is_chamfer(box, box.Faces[front]), "a side of a box is no chamfer")
     uneven = box.makeChamfer(EDGE_ROUND, 2 * EDGE_ROUND, bottom_front)
     slope = [f for f in uneven.Faces if f.findPlane() is not None and -0.99 < f.normalAt(0, 0).z < -0.01
              and -0.99 < f.normalAt(0, 0).y < -0.01]
     expect(len(slope) == 1 and quick_stands.is_chamfer(uneven, slope[0]),
            "a chamfer of unequal widths, not at 45 degrees, is a chamfer too")
+    bottom = [i for i, f in enumerate(chamfered.Faces) if abs(f.normalAt(0, 0).z + 1) < 1e-6][0]
+    expect(not quick_stands.is_chamfer(chamfered, chamfered.Faces[side])
+           and not quick_stands.is_chamfer(chamfered, chamfered.Faces[bottom]),
+           "the side and the bottom beside a chamfer are no chamfers, though their normals lie between others")
+
+    # Every edge of the bottom chamfered: a side selected alone takes the fins.
+    rim = box.makeChamfer(BOTTOM_CHAMFER, [e for e in box.Edges if e.BoundBox.ZMax < d.TOLERANCE])
+    bevels = [i for i, f in enumerate(rim.Faces) if quick_stands.is_chamfer(rim, f)]
+    expect(len(bevels) == 4 and all(abs(rim.Faces[i].normalAt(0, 0).z + math.sqrt(0.5)) < 1e-6 for i in bevels),
+           "with the whole bottom chamfered only the four chamfers are chamfers: %s" % bevels)
+    largest = max(range(len(rim.Faces)), key=lambda i: rim.Faces[i].Area)
+    plan = quick_stands.quick_plan(rim, [], [(rim.Faces[largest], largest)], p, d.TILT_ANGLE)
+    expect(plan.number == largest, "a side above a chamfer, selected alone, takes the fins itself, not the chamfer")
+
+    wide = box.makeChamfer(WIDE_CHAMFER, bottom_front)
+    slant = [i for i, f in enumerate(wide.Faces) if abs(f.normalAt(0, 0).z + math.sqrt(0.5)) < 1e-6][0]
+    rest = [i for i, f in enumerate(wide.Faces) if abs(f.normalAt(0, 0).y + 1) < 1e-6][0]
+    expect(quick_stands.is_chamfer(wide, wide.Faces[slant]) and not quick_stands.is_chamfer(wide, wide.Faces[rest]),
+           "a chamfer wider than the rest of the side beside it stays the chamfer, the rest square to the bottom")
+
+    # A thin plate: a chamfer of half its thickness on a top edge, then one on
+    # either edge of the same side, leaving a strip narrower than they are.
+    plate = Part.makeBox(PLATE_SIDE, PLATE_SIDE, PLATE_THICKNESS)
+    front_top = [e for e in plate.Edges if e.BoundBox.ZMin > PLATE_THICKNESS - d.TOLERANCE
+                 and e.BoundBox.YMax < d.TOLERANCE]
+    front_bottom = [e for e in plate.Edges if e.BoundBox.ZMax < d.TOLERANCE and e.BoundBox.YMax < d.TOLERANCE]
+    half = plate.makeChamfer(PLATE_THICKNESS / 2, front_top)
+    bevel = [f for f in half.Faces if abs(f.normalAt(0, 0).z - math.sqrt(0.5)) < 1e-6]
+    front = [f for f in half.Faces if abs(f.normalAt(0, 0).y + 1) < 1e-6]
+    expect(len(bevel) == 1 and quick_stands.is_chamfer(half, bevel[0]) and not quick_stands.is_chamfer(half, front[0]),
+           "a chamfer of half a thin plate is the chamfer, the rest of the side beside it is none")
+    both = plate.makeChamfer(STRIP_CHAMFER, front_top + front_bottom)
+    slopes = [f for f in both.Faces if abs(abs(f.normalAt(0, 0).z) - math.sqrt(0.5)) < 1e-6]
+    strip = [f for f in both.Faces if abs(f.normalAt(0, 0).y + 1) < 1e-6]
+    expect(len(slopes) == 2 and quick_stands.is_chamfer(both, strip[0])
+           and not any(quick_stands.is_chamfer(both, f) for f in slopes),
+           "a strip between two chamfers, narrower than they are, counts as the chamfer instead")
+
+    # The plate with the side below the chamfer tilted out a little at the top,
+    # as a part from a STEP file or a mesh stands: still square to the bottom.
+    rise = PLATE_THICKNESS / 2
+    out = rise * math.tan(math.radians(SIDE_TILT))
+    outline = [V(0, 0, 0), V(0, -out, rise), V(0, rise - out, PLATE_THICKNESS), V(0, PLATE_SIDE, PLATE_THICKNESS),
+               V(0, PLATE_SIDE, 0), V(0, 0, 0)]
+    tilted_plate = Part.Face(Part.makePolygon(outline)).extrude(V(PLATE_SIDE, 0, 0))
+    tilted_bevel = [f for f in tilted_plate.Faces if f.normalAt(0, 0).z > 0.5 and f.normalAt(0, 0).y < -0.5]
+    tilted_side = [f for f in tilted_plate.Faces if f.normalAt(0, 0).y < -1 + 1e-3]
+    expect(len(tilted_bevel) == 1 and len(tilted_side) == 1 and quick_stands.is_chamfer(tilted_plate, tilted_bevel[0])
+           and not quick_stands.is_chamfer(tilted_plate, tilted_side[0]),
+           "a side tilted %.2f degrees below a chamfer is still no chamfer, the chamfer is one" % SIDE_TILT)
+
+    # The sharp edge of a prism of 30 degrees: an even chamfer on it is one,
+    # one turned past a right angle from a face beside it is taken as a plain face.
+    wedge = Part.Face(Part.makePolygon([V(0, 0, 0), V(WEDGE_BASE, 0, 0),
+                                        V(0, WEDGE_BASE * math.tan(math.radians(WEDGE_ANGLE)), 0), V(0, 0, 0)])
+                      ).extrude(V(0, 0, WEDGE_HEIGHT))
+    sharp = max((e for e in wedge.Edges if e.BoundBox.ZLength > 1), key=lambda e: e.BoundBox.YMax)
+    sides = [f.normalAt(0, 0) for f in wedge.Faces]
+    for widths, wanted in ((ACUTE_EVEN, True), (ACUTE_UNEVEN, False)):
+        cut = wedge.makeChamfer(*widths, [sharp])
+        made = [f for f in cut.Faces if not any(f.normalAt(0, 0).isEqual(n, 1e-6) for n in sides)]
+        expect(len(made) == 1 and quick_stands.is_chamfer(cut, made[0]) == wanted,
+               "a chamfer %s on a sharp edge is %s" % (widths, "one" if wanted else "a plain face"))
 
     filleted = box.makeFillet(EDGE_ROUND, bottom_front)
     fillet = [i for i, f in enumerate(filleted.Faces) if f.findPlane() is None][0]
