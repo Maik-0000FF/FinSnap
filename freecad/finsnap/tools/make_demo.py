@@ -105,12 +105,12 @@ def steps(start, end, count_of):
 def drag(panel, kind, targets):
     """Drag the arrow of `kind` through the values `targets`, a frame at each, then let go."""
     base = panel.built_value(kind)
-    panel.handle_started(kind)
+    panel.drag.started(kind)
     for value in targets:
-        panel.handle_moved(kind, value - base)
-        panel.drag_step()
+        panel.drag.moved(kind, value - base)
+        panel.drag.step()
         frame()
-    panel.finish_drag(kind, targets[-1] - base)
+    panel.drag.finish(kind, targets[-1] - base)
 
 
 def main():
