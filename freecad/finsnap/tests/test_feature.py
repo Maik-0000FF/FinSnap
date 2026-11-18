@@ -1019,7 +1019,7 @@ def stood_again_after_laid_flat(doc):
         """Whether the fins stand on the bed, their tines the clearance from the part."""
         p = feature.params_of(fins)
         apart = fins.Shape.distToShape(global_shape(part))[0]
-        return (abs(apart - p.clearance) < d.TOLERANCE
+        return (abs(apart - p.tine_clearance) < d.TOLERANCE
                 and abs(fins.Shape.BoundBox.ZMin - global_shape(part).BoundBox.ZMin) < d.TOLERANCE)
 
     stand_up()
@@ -1684,11 +1684,10 @@ def main():
     expect(fins.ResultFinCount == 1, "result shows one fin")
     expect(abs(fins.ResultHeight.Value - 11.2) < d.TOLERANCE, "result shows the fin height")
 
-    fins.Connection = d.CONNECTION_MERGED
-    doc.recompute()
-    expect(len(fins.Shape.Solids) == 1, "merged connection gives one solid")
-    fins.Connection = d.CONNECTION_SEPARATE
-    doc.recompute()
+    # A file saved when fins could also be merged into the part: the property goes as it is read.
+    fins.addProperty("App::PropertyEnumeration", feature.CONNECTION_OF_OLD)
+    fins.Proxy.onDocumentRestored(fins)
+    expect(feature.CONNECTION_OF_OLD not in fins.PropertiesList, "the connection of an old file is dropped")
 
     path = os.path.join(tempfile.mkdtemp(), "finsnap.3mf")
     export_3mf.write(path, [("cube", cube.Shape), ("cube_fins", fins.Shape)])

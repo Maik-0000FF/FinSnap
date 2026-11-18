@@ -8,12 +8,9 @@ INPUTS this has to withstand (validate()):
   any length <= 0 where a size is meant ->  ParamError naming the field
   gap <= 0                              ->  ParamError: fin and part would fuse
   tine_clearance < 0                    ->  ParamError; 0 means touching
-  tine_clearance >= gap, separate fins  ->  ParamError: no tine would be left; merged
-                                            fins apply none
+  tine_clearance >= gap                 ->  ParamError: no tine would be left
   gap > GAP_MAX                         ->  ParamError: the tines would be too long
   contour_gap < gap                     ->  valid; the gap is kept there instead
-  tine_clearance > 0, merged fins       ->  valid; not applied (clearance is 0), merged
-                                            fins need their tines on the face
   bead_width < nozzle_diameter / 2      ->  ParamError: not a printable bead
   layer_height > nozzle_diameter        ->  ParamError: not printable
   tine_layers or tine_width_beads < 1   ->  ParamError
@@ -32,7 +29,7 @@ INPUTS this has to withstand (validate()):
   round_fin_angle below ROUND_FIN_ANGLE_MIN
     or above ROUND_FIN_ANGLE_MAX        ->  ParamError naming the range
   fin_count < 1 with "distributed"      ->  ParamError
-  unknown connection / placement / foot ->  ParamError listing the choices
+  unknown placement / foot              ->  ParamError listing the choices
   tine wider than a manual fin_thickness ->  ParamError: tine would stick out
   NaN or infinity in any number         ->  ParamError naming the field
   a value of another kind than its
@@ -96,7 +93,6 @@ class FinParams:
     first_layer_height: float = d.FIRST_LAYER_HEIGHT
     brim_width: float = d.BRIM_WIDTH
     # Connection
-    connection: str = d.CONNECTION
     gap: float = d.GAP
     tine_clearance: float = d.TINE_CLEARANCE
     # Tines
@@ -155,7 +151,7 @@ class FinParams:
         if self.gap > d.GAP_MAX:
             raise ParamError(translate("FinSnap", "gap must be at most %.1f mm, longer tines do not print straight")
                              % d.GAP_MAX)
-        if self.clearance >= self.gap:
+        if self.tine_clearance >= self.gap:
             raise ParamError(translate("FinSnap", "tine_clearance must be smaller than the gap"))
         if self.foot_overhang < 0:
             raise ParamError(translate("FinSnap", "foot_overhang must be 0 or greater"))
@@ -178,8 +174,7 @@ class FinParams:
             raise ParamError(translate("FinSnap", "tine_spacing %.2f mm leaves no free layer between the tines; "
                                        "it needs at least %.2f mm") % (self.tine_spacing, self.least_tine_spacing))
 
-        choices = (("connection", d.CONNECTIONS), ("placement", d.PLACEMENTS),
-                   ("foot_shape", d.FOOT_SHAPES), ("round_fins", d.ROUND_FINS_CHOICES))
+        choices = (("placement", d.PLACEMENTS), ("foot_shape", d.FOOT_SHAPES), ("round_fins", d.ROUND_FINS_CHOICES))
         for name, allowed in choices:
             if getattr(self, name) not in allowed:
                 raise ParamError(translate("FinSnap", "%s must be one of %s") % (name, ", ".join(allowed)))
@@ -201,17 +196,10 @@ class FinParams:
 
     # Derived sizes, so no caller repeats the arithmetic.
     @property
-    def clearance(self):
-        """The tine clearance applied: none for fins merged into the part,
-        which reach it through their tines; short of the face, they would be
-        loose bodies in the merged shape."""
-        return 0.0 if self.connection == d.CONNECTION_MERGED else self.tine_clearance
-
-    @property
     def tine_length(self):
         """How far a tine reaches across, along the face normal: the gap, the
         tine clearance short of it."""
-        return self.gap - self.clearance
+        return self.gap - self.tine_clearance
 
     @property
     def tine_width(self):

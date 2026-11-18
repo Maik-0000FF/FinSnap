@@ -87,6 +87,8 @@ HEIGHTS = {"main": "FinHeights", "counter": "CounterFinHeights"}
 # and the name earlier versions kept it under, when fins could only be removed.
 EDITED_OF = {"main": "EditedFinsOf", "counter": "EditedCounterFinsOf"}
 REMOVED_OF = {"main": "RemovedFinsOf", "counter": "RemovedCounterFinsOf"}
+# Saved when fins could also be merged into the part; dropped as a file is read.
+CONNECTION_OF_OLD = "Connection"
 # The tine grid (FinParams.tine_grid) the fin heights of their own were set on.
 HEIGHTS_GRID = {"main": "FinHeightsGrid", "counter": "CounterFinHeightsGrid"}
 NOTE_EDITS_DROPPED = QT_TRANSLATE_NOOP(
@@ -109,10 +111,6 @@ SIDE_LINK = {MAIN: "Base", COUNTER: "CounterFace"}
 # selected, as tines left out or the first layer of an island; and points to
 # mark, the lowest points of islands whose first layer could not be cut out.
 NoteTarget = namedtuple("NoteTarget", "which fins faces marks points")
-# Said when a single fin is to be removed from fins merged into the part.
-NOTE_MERGED_SINGLE = QT_TRANSLATE_NOOP(
-    "FinSnap", "Single fins can be removed with the separate connection only; merged into the part they "
-    "have no body of their own. To delete all of them, select the fins in the tree.")
 # Said when a face chosen for the counter fin cannot take fins; %s says why.
 NOTE_NO_COUNTER_ON_FACE = QT_TRANSLATE_NOOP("FinSnap", "No counter fin on this face: %s")
 # Said when no face leans the other way and takes a counter fin.
@@ -189,9 +187,8 @@ GROUP_INFO = {
         "FinSnap", "Enter the values of the print profile you will slice with. Tines and fin "
         "are sized in beads and layers of this profile."),
     GROUP_CONNECTION: QT_TRANSLATE_NOOP(
-        "FinSnap", "Separate keeps the fins a separate object that only touches the part and "
-        "breaks off cleanly. Merged prints fins and part as one body. A tine clearance keeps the "
-        "ends of the tines that far from the face."),
+        "FinSnap", "The fins are a separate object that only touches the part and breaks off "
+        "cleanly. A tine clearance keeps the ends of the tines that far from the face."),
     GROUP_TINES: QT_TRANSLATE_NOOP(
         "FinSnap", "Tines are the small horizontal contacts between fin and part. The highest "
         "tine sets the height of the fin."),
@@ -219,8 +216,6 @@ MARKS = {
 
 # Labels for the values of enumerations, as the task panel shows them.
 CHOICE_LABELS = {
-    d.CONNECTION_SEPARATE: QT_TRANSLATE_NOOP("FinSnap", "separate, touching only"),
-    d.CONNECTION_MERGED: QT_TRANSLATE_NOOP("FinSnap", "merged into the part"),
     d.PLACEMENT_AUTO: QT_TRANSLATE_NOOP("FinSnap", "automatic"),
     d.PLACEMENT_CENTER: QT_TRANSLATE_NOOP("FinSnap", "one in the centre"),
     d.PLACEMENT_ENDS: QT_TRANSLATE_NOOP("FinSnap", "two at the ends"),
@@ -259,12 +254,6 @@ PROPERTIES = (
          QT_TRANSLATE_NOOP("App::Property", "Width of the brim the slicer prints round the part and the fins on "
                            "the bed, 0 without. Check stability counts it as part of the footprint."),
          "brim_width", None),
-    Prop("Connection", CHOICE, GROUP_CONNECTION,
-         QT_TRANSLATE_NOOP("FinSnap", "Connection"),
-         QT_TRANSLATE_NOOP("App::Property",
-                           "separate: fins are their own object and only touch the part; "
-                           "merged: fins and part become one body"),
-         "connection", d.CONNECTIONS),
     Prop("Gap", LENGTH, GROUP_CONNECTION,
          QT_TRANSLATE_NOOP("FinSnap", "Gap"),
          QT_TRANSLATE_NOOP("App::Property", "Gap between fin and face that the tines reach across, along the face "
@@ -430,9 +419,6 @@ DEPENDS = (
             QT_TRANSLATE_NOOP("FinSnap", "Only used while Foot half width is 0.")),
     Depends("CounterTineCount", "CounterFace", (True,),
             QT_TRANSLATE_NOOP("FinSnap", "Only used with a counter fin.")),
-    Depends("TineClearance", "Connection", (d.CONNECTION_SEPARATE,),
-            QT_TRANSLATE_NOOP("FinSnap", "Not used with fins merged into the part: they need their tines on the "
-                              "face, or they would be loose bodies.")),
 )
 
 
@@ -1044,11 +1030,7 @@ class FinSnapFeature:
         tags = [fin_tag(MAIN, n) for n in result.numbers]
         if counter is not None:
             tags += [fin_tag(COUNTER, n) for n in counter.numbers]
-        if p.connection == d.CONNECTION_MERGED:
-            obj.Shape = geometry.merged(part, *shapes)
-            tags = []
-        else:
-            obj.Shape = Part.makeCompound(shapes)
+        obj.Shape = Part.makeCompound(shapes)
         # One solid per fin, in the order built; otherwise picking cannot tell them apart.
         hidden_property(obj, FIN_TAGS, "App::PropertyStringList")
         setattr(obj, FIN_TAGS, tags if len(tags) == len(obj.Shape.Solids) else [])
@@ -1093,6 +1075,8 @@ class FinSnapFeature:
                     hidden_property(obj, EDITED_OF[which], "App::PropertyInteger")
                     setattr(obj, EDITED_OF[which], getattr(obj, old))
                 obj.removeProperty(old)
+        if CONNECTION_OF_OLD in obj.PropertiesList:
+            obj.removeProperty(CONNECTION_OF_OLD)
         # Saved when the turn of the part was noted as a shift of its one fin.
         if ROUND_TURN not in obj.PropertiesList:
             turn = edits(obj, MAIN)[1].get(1)
@@ -1667,7 +1651,6 @@ def fin_at(obj, sub):
 
     INPUTS this has to withstand:
       face or edge of one fin               ->  that fin
-      fins merged into the part             ->  None: the fins are no solids of their own
       name the shape does not have          ->  None
     """
     tags = list(getattr(obj, FIN_TAGS, []))
@@ -1694,8 +1677,7 @@ def tag_fin(tag):
 
 def fin_faces(obj, which, number):
     """The indices among the faces of `obj`, from 0, of fin `number` of
-    `which`; empty for a fin not built, or for fins merged into the part,
-    which have no solids of their own."""
+    `which`; empty for a fin not built."""
     tags = list(getattr(obj, FIN_TAGS, []))
     tag = fin_tag(which, number)
     if tag not in tags:
