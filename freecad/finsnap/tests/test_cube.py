@@ -19,6 +19,7 @@ import numpy
 
 import Part
 
+from freecad.finsnap.tests.parts import CUBE_OTHERS, MATRIX_PARTS, TEST_PART_ENV
 from freecad.finsnap.tests.support import (BEYOND_FLOAT, CHAMFER, EDGE, HALF_TURN, RECESS_RADIUS, TILT, expect, grooved,
                                            largest_facing, lower_left_face, run, slot_on_end, split_cylinder, tilted,
                                            tilted_cube)
@@ -3569,12 +3570,13 @@ def fin_matrix_faults(name, stood, number, kind, degrees, thickness, side_tines,
     return faults
 
 
-def check_side_fin_matrix():
+def check_side_fin_matrix(pairs=MATRIX_GAP_PAIRS, groove=True):
     """Two and three fins under a round side, over shapes, angles and thicknesses
     at once, so what one change does to the others shows here: every one is
     built or says why, keeps the gap, is no higher than it says and hangs over
-    nowhere. One fin under a part of a side above a groove keeps its tines
-    whatever was built before.
+    nowhere, at each gap and tine clearance of `pairs`. With `groove`, one fin
+    under a part of a side above a groove keeps its tines whatever was built
+    before.
 
     INPUTS this has to withstand:
       plain rod and tube                    ->  fins at the gap
@@ -3589,14 +3591,16 @@ def check_side_fin_matrix():
         plan = quick_stands.quick_plan(shape, [], [(shape.Faces[number], number)], FinParams(), d.TILT_ANGLE)
         stood = moved(shape, plan.change)
         cases = [(*case, 0.0) for case in MATRIX_CASES] + list(MATRIX_HIGH_CASES.get(name, ()))
-        for gap, clearance in MATRIX_GAP_PAIRS:
+        for gap, clearance in pairs:
             # The tines of the side fins are pinned for the built-in gap and clearance.
             built_in = (gap, clearance) == GAP_PAIRS[0]
             for (kind, degrees, thickness, height), side_tines in zip(cases, MATRIX_SIDE_TINES[name], strict=True):
                 faults += fin_matrix_faults(name, stood, number, kind, degrees, thickness,
                                             side_tines if built_in else None, height, gap, clearance)
-    expect(not faults, "the matrix of side fins holds with tines touching the part and ending short of it: %s"
-           % "; ".join(faults))
+    expect(not faults, "the matrix of side fins holds at gap and tine clearance %s: %s"
+           % (", ".join("%g/%g" % pair for pair in pairs), "; ".join(faults)))
+    if not groove:
+        return
 
     # A groove: the side above it, then below it, on one shaft, and the other way round.
     rod = Part.makeCylinder(ROD_RADIUS, 2 * ROD_HEIGHT)
@@ -5581,11 +5585,42 @@ def check_built_kept():
         geometry.forget_built()
 
 
+def test_part():
+    """The part of the checks this run makes, as TEST_PART_ENV names it: None
+    for every check.
+
+    INPUTS this has to withstand:
+      not set, empty or blank               ->  None: every check
+      CUBE_OTHERS                           ->  it: every check but the matrix of side fins
+      a name of MATRIX_PARTS, with blanks
+        round it                            ->  that name
+      any other name, or a wrong case       ->  AssertionError naming the parts there are
+      MATRIX_PARTS not one part per pair
+        of MATRIX_GAP_PAIRS                 ->  AssertionError: a pair would run nowhere
+    """
+    if sorted(MATRIX_PARTS.values()) != list(range(len(MATRIX_GAP_PAIRS))):
+        raise AssertionError("MATRIX_PARTS has to name each pair of MATRIX_GAP_PAIRS once: %s" % MATRIX_PARTS)
+    part = os.environ.get(TEST_PART_ENV, "").strip()
+    if not part:
+        return None
+    known = [CUBE_OTHERS, *MATRIX_PARTS]
+    if part not in known:
+        raise AssertionError("%s=%r is no part of this test; the parts are %s"
+                             % (TEST_PART_ENV, part, ", ".join(known)))
+    return part
+
+
 def main():
     # What is built is tested here: every build is made, none taken from the
     # fins kept, or a test that swaps a part of the build would get the fins
     # built before it. check_built_kept() tests the keeping itself.
     geometry.BUILT_KEPT = 0
+    part = test_part()
+    if part in MATRIX_PARTS:
+        index = MATRIX_PARTS[part]
+        check_side_fin_matrix(MATRIX_GAP_PAIRS[index:index + 1], groove=index == 0)
+        print("all checks passed", file=sys.__stdout__)
+        return
     cube = tilted_cube()
     face = lower_left_face(cube)
 
@@ -5723,7 +5758,8 @@ def main():
     check_settled_clear()
     check_cut_at_height()
     check_three_round_fins()
-    check_side_fin_matrix()
+    if part is None:
+        check_side_fin_matrix()
     check_gap_pairs_flat()
     check_part_of_side()
     check_split_side()
