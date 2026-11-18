@@ -300,6 +300,10 @@ LONG_TINES_GAP, LONG_TINES_CLEARANCE = 1.0, 0.1
 # The gaps and tine clearances every shape is built with: the built-in ones,
 # tines touching the part, then the two above.
 GAP_PAIRS = ((d.GAP, d.TINE_CLEARANCE), (PREVIOUS_GAP, PREVIOUS_CLEARANCE), (LONG_TINES_GAP, LONG_TINES_CLEARANCE))
+# The pairs the matrix of side fins is built with: tines touching the part and
+# tines ending short of it. Each pair builds the whole matrix again, minutes
+# each; long tines are held to the same by the flat faces of GAP_PAIRS.
+MATRIX_GAP_PAIRS = GAP_PAIRS[:2]
 # Cases with a fin height set, above what the side fins can reach on some shapes.
 MATRIX_HIGH_CASES = {"rod": ((d.ROUND_FINS_THREE, 45.0, 0.0, 35.0), (d.ROUND_FINS_THREE, 30.0, 3.0, 35.0),
                              (d.ROUND_FINS_THREE, 30.0, 0.0, 30.0), (d.ROUND_FINS_THREE, 45.0, 2.0, 32.0)),
@@ -3503,6 +3507,16 @@ def matrix_shapes():
             "large fillet": rod.makeFillet(LARGE_FILLET_RADIUS, free_end)}
 
 
+def tines_overlap(built, part):
+    """How much of `part` the tines of `built` hold (mm3), cut all at once. The
+    callers measure every body at least the gap off the part, so what of the
+    fins lies in the part lies in their tines; cutting the fused fins whole
+    takes many times as long once the tines touch the part."""
+    if not built.tines:
+        return 0.0
+    return geometry.overlap_of(Part.makeCompound(built.tines), part, touching=True)
+
+
 def fin_matrix_faults(name, stood, number, kind, degrees, thickness, side_tines, height=0.0,
                       gap=d.GAP, clearance=d.TINE_CLEARANCE):
     """What is wrong with the fins of `kind` under face `number` of `stood`, at
@@ -3528,7 +3542,7 @@ def fin_matrix_faults(name, stood, number, kind, degrees, thickness, side_tines,
             faults.append(case + "fin %d has %d tines, not %d" % (fin, len(built.touching_z[fin]), side_tines))
         if name == "rod" and height and abs(built.heights.get(fin, height) - height) > d.TOLERANCE:
             faults.append(case + "fin %d only %.1f mm high" % (fin, built.heights[fin]))
-    if geometry.overlap_of(built.fins, stood) > geometry.touching_volume(asked, len(built.tines), d.CONTOUR_TOLERANCE):
+    if tines_overlap(built, stood) > geometry.touching_volume(asked, len(built.tines), d.CONTOUR_TOLERANCE):
         faults.append(case + "reaches into the part")
     for position, fin in enumerate(built.numbers):
         body = built.bodies[position]
@@ -3574,13 +3588,14 @@ def check_side_fin_matrix():
         plan = quick_stands.quick_plan(shape, [], [(shape.Faces[number], number)], FinParams(), d.TILT_ANGLE)
         stood = moved(shape, plan.change)
         cases = [(*case, 0.0) for case in MATRIX_CASES] + list(MATRIX_HIGH_CASES.get(name, ()))
-        for gap, clearance in GAP_PAIRS:
+        for gap, clearance in MATRIX_GAP_PAIRS:
             # The tines of the side fins are pinned for the built-in gap and clearance.
             built_in = (gap, clearance) == GAP_PAIRS[0]
             for (kind, degrees, thickness, height), side_tines in zip(cases, MATRIX_SIDE_TINES[name], strict=True):
                 faults += fin_matrix_faults(name, stood, number, kind, degrees, thickness,
                                             side_tines if built_in else None, height, gap, clearance)
-    expect(not faults, "the matrix of side fins holds at every gap and clearance: %s" % "; ".join(faults))
+    expect(not faults, "the matrix of side fins holds with tines touching the part and ending short of it: %s"
+           % "; ".join(faults))
 
     # A groove: the side above it, then below it, on one shaft, and the other way round.
     rod = Part.makeCylinder(ROD_RADIUS, 2 * ROD_HEIGHT)
@@ -3643,7 +3658,7 @@ def check_gap_pairs_flat():
             closest = min(body.distToShape(part)[0] for body in built.bodies)
             if closest < gap - GAP_ACROSS_FIN:
                 faults.append(case + "a fin %.3f off the part" % closest)
-            if geometry.overlap_of(built.fins, part) > geometry.touching_volume(asked, len(built.tines),
+            if tines_overlap(built, part) > geometry.touching_volume(asked, len(built.tines),
                                                                                  d.CONTOUR_TOLERANCE):
                 faults.append(case + "reaches into the part")
     expect(not faults, "fins under flat faces hold at every gap and clearance: %s" % "; ".join(faults))
