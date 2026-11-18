@@ -1055,7 +1055,7 @@ class _Clearance:
         self.part_hash = hash(part_key(part))
         self.boxed = None
         # Each shape asked once, by the object: check() asks _not_known_clear()
-        # and then _overlap_of_unsure() of the same bodies and tines.
+        # and then _overlap_of_unsure() of the same bodies.
         self.answers = {}
 
     def body_clear(self, body):

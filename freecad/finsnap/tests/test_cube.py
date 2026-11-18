@@ -3720,14 +3720,23 @@ def check_known_clear():
     finally:
         geometry.overlap_of = real_overlap
     expect(again == held and len(geometry._kept_overlap) == 1, "the same fin asked again is not cut again")
-    # A second tine beside the first, ending short of the part: cut with it, it holds nothing.
+    # A second tine beside the first, ending short of the part: cut with it, it
+    # holds nothing; the tines are cut at once, none measured off by itself.
     short_tine = Part.makeBox(body_at - MESHED_BOX - APART_TINE_OFF, 0.2, 0.2, V(MESHED_BOX + APART_TINE_OFF, 0.0, 0.7))
     mixed_shapes = reaching_shapes + [short_tine]
     mixed = reaching.fuse(short_tine).removeSplitter()
-    geometry._kept_clear.clear()
-    mixed_held = geometry._overlap_of_unsure([mixed], [mixed], [mixed_shapes], part)
+    real_tine_clear = geometry._Clearance.tine_clear
+
+    def no_tine_measured(*_args, **_kwargs):
+        raise AssertionError("a tine measured off by itself")
+    geometry._Clearance.tine_clear = no_tine_measured
+    try:
+        mixed_held = geometry._overlap_of_unsure([mixed], [mixed], [mixed_shapes], part)
+    finally:
+        geometry._Clearance.tine_clear = real_tine_clear
     expect(abs(mixed_held - by_tine) < d.TOLERANCE,
-           "a fin with one tine clear holds what its other tine holds: %.4f, %.4f" % (mixed_held, by_tine))
+           "a fin with one tine clear holds what its other tine holds, its tines cut at once: %.4f, %.4f"
+           % (mixed_held, by_tine))
     inside, inside_shapes = fin(1.0, 1.0 - APART_TINE_IN)
     whole = geometry._overlap_of_unsure([inside], [inside], [inside_shapes], part)
     expect(abs(whole - inside.common(part).Volume) < d.TOLERANCE,
