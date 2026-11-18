@@ -19,6 +19,7 @@ import numpy
 
 import Part
 
+from freecad.finsnap.tests.parts import CUBE_OTHERS, MATRIX_PARTS, TEST_PART_ENV
 from freecad.finsnap.tests.support import (BEYOND_FLOAT, CHAMFER, EDGE, HALF_TURN, RECESS_RADIUS, TILT, expect, grooved,
                                            largest_facing, lower_left_face, run, slot_on_end, split_cylinder, tilted,
                                            tilted_cube)
@@ -305,13 +306,6 @@ GAP_PAIRS = ((d.GAP, d.TINE_CLEARANCE), (PREVIOUS_GAP, PREVIOUS_CLEARANCE), (LON
 # each; long tines are held to the same by check_gap_pairs_flat(), on flat
 # faces and the half round end of a slot, at every pair of GAP_PAIRS.
 MATRIX_GAP_PAIRS = GAP_PAIRS[:2]
-# The parts this test runs in side by side, named by TEST_PART_ENV (test_part()):
-# the matrix of side fins takes longer than all other checks together, so each
-# of its pairs is a part of its own, by its index in MATRIX_GAP_PAIRS, the
-# groove with the first; TEST_PART_OTHERS is every other check.
-TEST_PART_ENV = "FINSNAP_TEST_PART"
-TEST_PART_OTHERS = "others"
-MATRIX_PARTS = {"side-fins-touching": 0, "side-fins-short": 1}
 # Cases with a fin height set, above what the side fins can reach on some shapes.
 MATRIX_HIGH_CASES = {"rod": ((d.ROUND_FINS_THREE, 45.0, 0.0, 35.0), (d.ROUND_FINS_THREE, 30.0, 3.0, 35.0),
                              (d.ROUND_FINS_THREE, 30.0, 0.0, 30.0), (d.ROUND_FINS_THREE, 45.0, 2.0, 32.0)),
@@ -5597,7 +5591,7 @@ def test_part():
 
     INPUTS this has to withstand:
       not set, empty or blank               ->  None: every check
-      TEST_PART_OTHERS                      ->  it: every check but the matrix of side fins
+      CUBE_OTHERS                           ->  it: every check but the matrix of side fins
       a name of MATRIX_PARTS, with blanks
         round it                            ->  that name
       any other name, or a wrong case       ->  AssertionError naming the parts there are
@@ -5609,7 +5603,7 @@ def test_part():
     part = os.environ.get(TEST_PART_ENV, "").strip()
     if not part:
         return None
-    known = [TEST_PART_OTHERS, *MATRIX_PARTS]
+    known = [CUBE_OTHERS, *MATRIX_PARTS]
     if part not in known:
         raise AssertionError("%s=%r is no part of this test; the parts are %s"
                              % (TEST_PART_ENV, part, ", ".join(known)))

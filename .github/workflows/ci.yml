@@ -106,17 +106,30 @@ jobs:
             exit 1
           fi
 
+  test-parts:
+    # The parts the tests run in side by side, from the one place their names
+    # are written (freecad/finsnap/tests/parts.py), for the matrix of tests.
+    runs-on: ubuntu-24.04
+    outputs:
+      parts: ${{ steps.parts.outputs.parts }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
+      - id: parts
+        run: echo "parts=$(python -m freecad.finsnap.tests.parts)" >> "$GITHUB_OUTPUT"
+
   tests:
     name: tests (${{ matrix.part }})
+    needs: test-parts
     runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
-        # test_cube.py in parts side by side, as its FINSNAP_TEST_PART names
-        # them (TEST_PART_ENV there): each pair of the matrix of side fins on
-        # its own, then every other check; "commands" runs the parametric
-        # object and the commands as a user runs them.
-        part: [side-fins-touching, side-fins-short, others, commands]
+        # Each part of test_cube.py, and the job of the parametric object and
+        # the commands as a user runs them.
+        include: ${{ fromJSON(needs.test-parts.outputs.parts).jobs }}
     steps:
       - uses: actions/checkout@v4
       # The AppImage is kept in the cache by its file name, which holds the
@@ -174,18 +187,22 @@ jobs:
           mkdir -p "$data/Mod"
           ln -s "$GITHUB_WORKSPACE" "$data/Mod/FinSnap"
           echo "FREECAD_USER_DATA=$data" >> "$GITHUB_ENV"
-      - name: Fins on the reference cube
-        if: matrix.part != 'commands'
+      - name: Name the part of test_cube.py to run
+        if: matrix.cube
         env:
-          FINSNAP_TEST_PART: ${{ matrix.part }}
+          PART_ENV: ${{ fromJSON(needs.test-parts.outputs.parts).env }}
+          PART: ${{ matrix.part }}
+        run: echo "$PART_ENV=$PART" >> "$GITHUB_ENV"
+      - name: Fins on the reference cube
+        if: matrix.cube
         run: |
           "$RUNNER_TEMP/squashfs-root/AppRun" freecadcmd freecad/finsnap/tests/test_cube.py
       - name: Parametric object and 3MF export
-        if: matrix.part == 'commands'
+        if: '!matrix.cube'
         run: |
           "$RUNNER_TEMP/squashfs-root/AppRun" freecadcmd freecad/finsnap/tests/test_feature.py
       - name: Commands as a user runs them
-        if: matrix.part == 'commands'
+        if: '!matrix.cube'
         # The AppImage forces the xcb platform, so the GUI runs on a virtual display.
         run: |
           sudo apt-get install -y --no-install-recommends xvfb
