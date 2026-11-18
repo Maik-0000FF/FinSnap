@@ -368,7 +368,7 @@ class ViewProviderFinSnap:
             if panel is not None:
                 # The panel may delete this very object; not while its own
                 # onDelete still runs.
-                panel.once_free(functools.partial(panel.remove_fins, fins))
+                panel.waiting.once_free(functools.partial(panel.remove_fins, fins))
                 return False
             # Asked first: the last fins of all take the object with them, in
             # the step of FreeCAD's Delete. A step opened here and ended

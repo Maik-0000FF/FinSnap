@@ -547,17 +547,17 @@ def profile_choices(doc):
     done, all_documents = [], App.listDocuments
     panel.ends_timer.stop()
     App.listDocuments = lambda: {doc.Name: doc, "other": types.SimpleNamespace(Recomputing=True)}
-    panel.when_built(panel.ends_timer, lambda: done.append(True))
+    panel.waiting.when_built(panel.ends_timer, lambda: done.append(True))
     expect(not done and panel.ends_timer.isActive(),
            "a timer firing during a recompute, also of another document, puts its action off")
     panel.ends_timer.stop()
     App.listDocuments = all_documents
     from freecad.finsnap import shapes
     with shapes.working():
-        panel.when_built(panel.ends_timer, lambda: done.append(True))
+        panel.waiting.when_built(panel.ends_timer, lambda: done.append(True))
     expect(not done and panel.ends_timer.isActive(), "so does one firing while FinSnap builds fins or checks a part")
     panel.ends_timer.stop()
-    panel.when_built(panel.ends_timer, lambda: done.append(True))
+    panel.waiting.when_built(panel.ends_timer, lambda: done.append(True))
     expect(done == [True] and not panel.ends_timer.isActive(), "with no recompute running it is done")
 
     panel.reject()
@@ -1686,7 +1686,7 @@ def timers_wait_for_builds(panel):
     starts a build of its own: a build inside one under way can stop in the
     kernel for good."""
     import time
-    from freecad.finsnap import geometry, handles, shapes, taskpanel
+    from freecad.finsnap import geometry, handles, kernel_wait, shapes
 
     def wait(ms):
         end = time.monotonic() + ms / handles.MS_PER_SECOND
@@ -1701,7 +1701,7 @@ def timers_wait_for_builds(panel):
         """What a timer firing now does: its action, or nothing but start again."""
         del done[:]
         timer.stop()
-        panel.when_built(timer, lambda: done.append(what))
+        panel.waiting.when_built(timer, lambda: done.append(what))
         put_off = timer.isActive()
         timer.stop()
         return list(done), put_off
@@ -1730,7 +1730,7 @@ def timers_wait_for_builds(panel):
 
     def firing(*args, **kwargs):
         builds.append(shapes.at_work())
-        panel.when_built(timer, panel.update_ends)
+        panel.waiting.when_built(timer, panel.update_ends)
         return real_build(*args, **kwargs)
 
     value = panel.next_values(handles.UP, panel.built_value(handles.UP))
@@ -1750,53 +1750,53 @@ def timers_wait_for_builds(panel):
            "%d builds" % len(builds))
 
     # An operation of FreeCAD showing its progress: told by the probe.
-    free = taskpanel.operation_runs()
+    free = kernel_wait.operation_runs()
     progress = App.Base.ProgressIndicator()
     progress.start("at work", 0)
     try:
-        running, during = taskpanel.operation_runs(), asked()
+        running, during = kernel_wait.operation_runs(), asked()
     finally:
         progress.stop()
-    expect(not free and running and during == ([], True) and not taskpanel.operation_runs()
+    expect(not free and running and during == ([], True) and not kernel_wait.operation_runs()
            and asked() == (["done"], False),
            "while FreeCAD shows the progress of an operation the probe says one runs and a timer puts its "
            "action off; before and after, it says none runs and the action is done")
 
     # A probe that goes on saying an operation runs, with nothing else saying so, is not believed for ever.
     probes = []
-    real_probe = taskpanel.operation_runs
-    taskpanel.operation_runs = lambda: probes.append(True) or True
+    real_probe = kernel_wait.operation_runs
+    kernel_wait.operation_runs = lambda: probes.append(True) or True
     try:
         first = asked()
-        panel.probe_alone_since = time.monotonic() - taskpanel.PROBE_BELIEVED_S - 1
+        panel.waiting.probe_alone_since = time.monotonic() - kernel_wait.PROBE_BELIEVED_S - 1
         late = asked()
         count = len(probes)
         after = asked()
     finally:
-        taskpanel.operation_runs = real_probe
+        kernel_wait.operation_runs = real_probe
     expect(first == ([], True) and late == (["done"], False) and after == (["done"], False)
-           and len(probes) == count and not panel.probe_believed,
+           and len(probes) == count and not panel.waiting.probe_believed,
            "a probe saying an operation runs for longer than it is believed, nothing else saying so: the "
            "action is done, and the probe is not asked again for this panel")
-    panel.probe_believed, panel.probe_alone_since = True, None
+    panel.waiting.probe_believed, panel.waiting.probe_alone_since = True, None
 
     # What is to be done later waits as the timers do, and keeps its order.
     with shapes.working():
-        panel.once_free(lambda: done.append("first"))
-        panel.once_free(lambda: done.append("second"))
+        panel.waiting.once_free(lambda: done.append("first"))
+        panel.waiting.once_free(lambda: done.append("second"))
         del done[:]
-        wait(4 * taskpanel.BUSY_RETRY_MS)
+        wait(4 * kernel_wait.BUSY_RETRY_MS)
         waiting = list(done)
-    wait(4 * taskpanel.BUSY_RETRY_MS)
+    wait(4 * kernel_wait.BUSY_RETRY_MS)
     in_order = list(done)
-    panel.released = True
+    panel.waiting.close()
     try:
         del done[:]
-        panel.once_free(lambda: done.append("closed"))
-        wait(4 * taskpanel.BUSY_RETRY_MS)
+        panel.waiting.once_free(lambda: done.append("closed"))
+        wait(4 * kernel_wait.BUSY_RETRY_MS)
     finally:
-        panel.released = False
-    expect(waiting == [] and in_order == ["first", "second"] and done == [] and panel.to_do == [],
+        panel.waiting.closed = False
+    expect(waiting == [] and in_order == ["first", "second"] and done == [] and panel.waiting.to_do == [],
            "what is to be done later is not done while FinSnap is at work, then in its order, and not once "
            "the panel is closed: %s, %s" % (waiting, in_order))
 
@@ -1804,16 +1804,16 @@ def timers_wait_for_builds(panel):
         raise ValueError("an action failing")
 
     del done[:]
-    panel.free_timer.stop()
-    panel.to_do = [lambda: done.append("before"), failing, lambda: done.append("after")]
+    panel.waiting.free_timer.stop()
+    panel.waiting.to_do = [lambda: done.append("before"), failing, lambda: done.append("after")]
     try:
-        panel.do_waiting()
+        panel.waiting.do_waiting()
         raised = False
     except ValueError:
         raised = True
-    kept = len(panel.to_do)
-    wait(4 * taskpanel.BUSY_RETRY_MS)
-    expect(raised and kept == 1 and done == ["before", "after"] and panel.to_do == [],
+    kept = len(panel.waiting.to_do)
+    wait(4 * kernel_wait.BUSY_RETRY_MS)
+    expect(raised and kept == 1 and done == ["before", "after"] and panel.waiting.to_do == [],
            "one of what is to be done later raising: its error passes on, and what came after it is kept "
            "and done next: %s" % done)
 
