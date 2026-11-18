@@ -302,7 +302,8 @@ LONG_TINES_GAP, LONG_TINES_CLEARANCE = 1.0, 0.1
 GAP_PAIRS = ((d.GAP, d.TINE_CLEARANCE), (PREVIOUS_GAP, PREVIOUS_CLEARANCE), (LONG_TINES_GAP, LONG_TINES_CLEARANCE))
 # The pairs the matrix of side fins is built with: tines touching the part and
 # tines ending short of it. Each pair builds the whole matrix again, minutes
-# each; long tines are held to the same by the flat faces of GAP_PAIRS.
+# each; long tines are held to the same by check_gap_pairs_flat(), on flat
+# faces and the half round end of a slot, at every pair of GAP_PAIRS.
 MATRIX_GAP_PAIRS = GAP_PAIRS[:2]
 # Cases with a fin height set, above what the side fins can reach on some shapes.
 MATRIX_HIGH_CASES = {"rod": ((d.ROUND_FINS_THREE, 45.0, 0.0, 35.0), (d.ROUND_FINS_THREE, 30.0, 3.0, 35.0),
@@ -3658,8 +3659,7 @@ def check_gap_pairs_flat():
             closest = min(body.distToShape(part)[0] for body in built.bodies)
             if closest < gap - GAP_ACROSS_FIN:
                 faults.append(case + "a fin %.3f off the part" % closest)
-            if tines_overlap(built, part) > geometry.touching_volume(asked, len(built.tines),
-                                                                                 d.CONTOUR_TOLERANCE):
+            if tines_overlap(built, part) > geometry.touching_volume(asked, len(built.tines), d.CONTOUR_TOLERANCE):
                 faults.append(case + "reaches into the part")
     expect(not faults, "fins under flat faces hold at every gap and clearance: %s" % "; ".join(faults))
 
