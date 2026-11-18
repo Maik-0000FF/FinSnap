@@ -2478,6 +2478,7 @@ class FinSnapTaskPanel:
         if self.released:
             return
         self.released = True
+        self.waiting.close()
         try:
             self.close_arrow_field()
         except RuntimeError:
@@ -2488,7 +2489,6 @@ class FinSnapTaskPanel:
                 timer.stop()
             except RuntimeError:
                 pass
-        self.waiting.close()
         Gui.Selection.removeObserver(self)
         for widget in self.key_widgets:
             try:
