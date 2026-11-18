@@ -1055,7 +1055,7 @@ class _Clearance:
         self.part_hash = hash(part_key(part))
         self.boxed = None
         # Each shape asked once, by the object: check() asks _not_known_clear()
-        # and then _overlap_of_unsure() of the same bodies and tines.
+        # and then _overlap_of_unsure() of the same bodies.
         self.answers = {}
 
     def body_clear(self, body):
@@ -1082,14 +1082,17 @@ class _Clearance:
 def _overlap_of_unsure(unsure, pieces, made_of, part, near=None):
     """How much of `part` the `unsure` of `pieces` hold together (mm3), each
     piece cut once for its shape. Where the body of a piece stands clear,
-    only its tines that do not are cut: the rest of it lies outside the part,
-    and a tine alone cuts in a fraction of the time the fused piece takes.
-    `near`, the _Clearance _not_known_clear() measured with, answers again
-    what it measured.
+    only its tines are cut: the rest of it lies outside the part, and the
+    tines alone cut in a fraction of the time the fused piece takes. They are
+    cut all at once, not first measured off one by one: with no tine
+    clearance most touch the part, and measuring each takes longer than the
+    cut. `near`, the _Clearance _not_known_clear() measured with, answers
+    again what it measured.
 
     INPUTS this has to withstand:
       none unsure                           ->  0, nothing cut
       a body clear, tines touching the part ->  what those tines hold
+      a body clear, some tines clear        ->  the same: a clear one holds nothing
       a body touching or in the part        ->  what the whole piece holds
       no `made_of`                          ->  each piece cut whole
       a piece asked again, the same shape   ->  not cut again
@@ -1103,8 +1106,7 @@ def _overlap_of_unsure(unsure, pieces, made_of, part, near=None):
         body, tines = shapes[0], shapes[1:]
         if not tines or not near.body_clear(body):
             return overlap_of(piece, part)
-        cut = [tine for tine in tines if not near.tine_clear(tine)]
-        return overlap_of(Part.makeCompound(cut), part, touching=True) if cut else 0.0
+        return overlap_of(Part.makeCompound(tines), part, touching=True)
 
     return sum(keep(_kept_overlap, (near.part_hash, shape_key(piece)), lambda: held(piece, shapes), CLEAR_KEPT)
                for piece, shapes in zip(pieces, made_of) if any(piece.isSame(other) for other in unsure))
