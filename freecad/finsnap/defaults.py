@@ -22,15 +22,9 @@ FIRST_LAYER_HEIGHT = 0.2
 BRIM_WIDTH = 0.0
 
 # --- Connection ---------------------------------------------------------------
-# "separate": the fin is its own object, tines only touch the part, no
-#             extrusion path runs from one into the other.
-# "merged":   fin and part are fused into one body, the tines are printed as
-#             one continuous path with the part.
-CONNECTION_SEPARATE = "separate"
-CONNECTION_MERGED = "merged"
-CONNECTIONS = (CONNECTION_SEPARATE, CONNECTION_MERGED)
-CONNECTION = CONNECTION_SEPARATE
-
+# The fins are an object of their own, apart from the part; their tines reach
+# across the gap to it, and only the slicer joins a tine touching the part to it.
+#
 # Gap, tine width and tine height were chosen by a test print: of touching and
 # merged fins with tines one to three layers high, separate fins with tines one
 # bead wide and one layer high came off cleanest, leaving only faint contact points.

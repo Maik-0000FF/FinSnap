@@ -167,7 +167,6 @@ CLEARANCE_CHANGE = 0.02  # a tine clearance this much off the one asked is anoth
 TOO_THICK = 30.0      # a fin too thick for one on each corner of the cube, in mm
 # As many fins built as FinSnap keeps; these tests keep none but where the keeping is tested.
 BUILT_KEPT_IN_USE = geometry.BUILT_KEPT
-MERGED_CLEARANCE = 0.3  # a tine clearance that merged fins must not take
 # A nozzle and bead so wide that no gap up to GAP_MAX makes the tines long
 # enough, and a layer it prints, in mm.
 WIDE_NOZZLE = 4.0
@@ -3278,7 +3277,7 @@ def check_round_side():
                    and abs(resting_height(stood)) < d.TOLERANCE,
                    "%s, %s chosen: it stands on the rim, the side leaning 45 degrees" % (name, chosen))
             expect(len(result.positions) == 1 and len(result.tines) > 1
-                   and max(abs(t.distToShape(stood)[0] - p.clearance) for t in result.tines) < d.TOLERANCE
+                   and max(abs(t.distToShape(stood)[0] - p.tine_clearance) for t in result.tines) < d.TOLERANCE
                    and result.fins.common(stood).Volume < d.TOLERANCE,
                    "%s, %s chosen: one fin, every tine ends on the side, none in it" % (name, chosen))
             expect(any("rim" in w for w in result.warnings),
@@ -3442,7 +3441,7 @@ def check_round_side():
     spanned = geometry.build(bored, bored.Faces[round_side_of(bored)], p)
     hole_low, hole_high = middle_tine - RECESS_RADIUS, middle_tine + RECESS_RADIUS
     over = [t for t in spanned.tines if t.BoundBox.ZMax > hole_low and t.BoundBox.ZMin < hole_high
-            and t.distToShape(bored)[0] > p.clearance + d.TINE_END_TOLERANCE]
+            and t.distToShape(bored)[0] > p.tine_clearance + d.TINE_END_TOLERANCE]
     above = min(z for z in spanned.tine_z if frame.bed_z + z > hole_high - RECESS_RADIUS)
     expect(not over and not any("hole" in w for w in spanned.warnings)
            and frame.bed_z + above < hole_high + p.tine_spacing / 2,
@@ -3657,7 +3656,7 @@ def check_gap_pairs_flat():
             except face_frame.FinError as error:
                 faults.append(case + "refused: %s" % error)
                 continue
-            off = max(abs(tine.distToShape(part)[0] - asked.clearance) for tine in built.tines)
+            off = max(abs(tine.distToShape(part)[0] - asked.tine_clearance) for tine in built.tines)
             if off > d.TINE_END_TOLERANCE:
                 faults.append(case + "a tine ends %.4f off the clearance" % off)
             closest = min(body.distToShape(part)[0] for body in built.bodies)
@@ -3820,11 +3819,11 @@ def check_known_clear():
     expect(shapes.shape_key(right) == shapes.shape_key(right.copy()), "the same shape: the same key")
     expect(shapes.shape_key(Part.Compound([])), "an empty shape has a key too")
     block = Part.makeBox(1, 2, 1, V(MESHED_BOX + MESHED_OFF, MESHED_BOX / 2 - 1, 0))
-    separate = FinParams(connection=d.CONNECTION_SEPARATE)
+    asked = FinParams()
     geometry._kept_clear.clear()
-    geometry.check(separate, block, [left], [])
+    geometry.check(asked, block, [left], [])
     try:
-        geometry.check(separate, block, [right], [])
+        geometry.check(asked, block, [right], [])
         refused = False
     except face_frame.FinError:
         refused = True
@@ -4072,7 +4071,7 @@ def check_three_round_fins():
                "%s: the middle fin of three is the fin alone" % name)
         expect(all(tine.isValid() and tine.Volume > 0 for tine in result.tines),
                "%s: every tine is a valid solid, also with a slanted end" % name)
-        off = max(abs(tine.distToShape(stood)[0] - three.clearance) for tine in result.tines)
+        off = max(abs(tine.distToShape(stood)[0] - three.tine_clearance) for tine in result.tines)
         expect(off < d.TINE_END_TOLERANCE, "%s: every tine ends the clearance off the part, off by %.4f" % (name, off))
         if shape is not step:
             own = result.frames[3]
@@ -4122,7 +4121,7 @@ def check_three_round_fins():
                and abs(moved_fin.positions[1] - result.positions[1]) < d.TOLERANCE
                and moved_fin.positions[2] == result.positions[2],
                "%s: a side fin moved by hand stands there, the one under the lowest line stays" % name)
-        off = max(abs(tine.distToShape(stood)[0] - three.clearance) for tine in moved_fin.tines)
+        off = max(abs(tine.distToShape(stood)[0] - three.tine_clearance) for tine in moved_fin.tines)
         expect(off < d.TINE_END_TOLERANCE and only_touches(moved_fin, stood, three),
                "%s: moved, its tines end the clearance off the part, off by %.4f" % (name, off))
         too_far = face_frame.beside_lowest(ROD_RADIUS, d.ROUND_FIN_ANGLE_MAX) - pitch + SIDE_FIN_MOVE
@@ -4142,7 +4141,7 @@ def check_three_round_fins():
                and abs(result.positions[0] - alone.positions[0] + pitch) < d.TOLERANCE
                and abs(result.positions[1] - alone.positions[0] - pitch) < d.TOLERANCE,
                "%s: two fins, one on each side of the lowest line, none under it" % name)
-        off = max(abs(tine.distToShape(stood)[0] - two.clearance) for tine in result.tines)
+        off = max(abs(tine.distToShape(stood)[0] - two.tine_clearance) for tine in result.tines)
         expect(off < d.TINE_END_TOLERANCE and only_touches(result, stood, two),
                "%s: two fins, every tine ends the clearance off the part, off by %.4f" % (name, off))
         expect(min(result.touching_z[1]) > min(alone.touching_z[1]),
@@ -4490,8 +4489,8 @@ def check_contour():
            "tines")
     expect(flank_slopes(tall, p) <= inward + d.TOLERANCE,
            "the flank follows the step, inward no steeper than %g degrees allow" % d.FIN_FLANK_ANGLE)
-    expect(all(abs(tine.distToShape(stood)[0] - p.clearance) < d.TINE_END_TOLERANCE for tine in tall.tines) and not [
-        w for w in tall.warnings if "rim" not in w],
+    resting = all(abs(tine.distToShape(stood)[0] - p.tine_clearance) < d.TINE_END_TOLERANCE for tine in tall.tines)
+    expect(resting and not [w for w in tall.warnings if "rim" not in w],
            "every tine rests on the part, none on the end face of the step looking up: %s" % tall.warnings)
     # The end face of the step, looking up: the larger gap kept from its
     # middle, under the fin.
@@ -4720,7 +4719,7 @@ def check_part_of_side():
     frame = face_frame.frame_of(slot, slot.Faces[half])
     result = geometry.build(slot, slot.Faces[half], FinParams(placement=d.PLACEMENT_ENDS))
     expect(frame.round_side and not frame.whole_side and len(result.positions) == 1 and len(result.tines) > 1
-           and max(abs(t.distToShape(slot)[0] - p.clearance) for t in result.tines) < d.TOLERANCE
+           and max(abs(t.distToShape(slot)[0] - p.tine_clearance) for t in result.tines) < d.TOLERANCE
            and result.fins.common(slot).Volume < d.TOLERANCE,
            "the half round end takes one fin, whatever the placement, every tine ends on it, none in it")
     expect(not any("rim" in w for w in result.warnings), "a slot does not stand on a rim: no note on one")
@@ -4803,16 +4802,6 @@ def check_fin_at(cube, face):
                and abs(low.BoundBox.ZMax - (cube.BoundBox.ZMin + p.foot_height)) < d.TOLERANCE,
                "drawn %.2f mm high, below the top of its foot, the fin is a whole solid as high as its foot"
                % height)
-
-
-def check_merged_clearance(cube, face):
-    """Fins merged into the part reach it through their tines: a tine
-    clearance would leave them loose, so it is not applied."""
-    merged = FinParams(connection=d.CONNECTION_MERGED, tine_clearance=MERGED_CLEARANCE)
-    result = geometry.build(cube, face, merged)
-    expect(merged.clearance == 0 and merged.tine_length == merged.gap
-           and min(t.distToShape(cube)[0] for t in result.tines) < d.TOLERANCE,
-           "merged fins keep their tines on the face, whatever the tine clearance")
 
 
 def check_moved_fins(cube, face):
@@ -5644,10 +5633,6 @@ def main():
     two = geometry.build(cube, face, FinParams(placement=d.PLACEMENT_ENDS))
     expect(len(two.positions) == 2, "end placement gives two fins")
 
-    # Merged fins have no tine clearance: their tines reach the part.
-    joined = geometry.merged(cube, geometry.build(cube, face, FinParams(connection=d.CONNECTION_MERGED)).fins)
-    expect(len(joined.Solids) == 1, "merged mode gives one solid")
-
     try:
         geometry.build(cube, face, FinParams(tine_count=4))
     except face_frame.FinError as error:
@@ -5765,7 +5750,6 @@ def main():
     check_split_side()
     check_left_out(cube, face)
     check_moved_fins(cube, face)
-    check_merged_clearance(cube, face)
     check_fin_at(cube, face)
     check_boss_on_face()
     check_straight_faces()

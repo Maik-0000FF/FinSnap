@@ -354,16 +354,11 @@ class ViewProviderFinSnap:
           the last fins of all selected         ->  the object deleted, as from the tree
           fins selected, task panel open        ->  the panel removes them; FreeCAD
                                                     deletes nothing in edit mode
-          sub-elements of merged fins           ->  message, nothing deleted
           fins and other sub-elements mixed     ->  nothing deleted
           object selected in the tree           ->  deleted; the last fins lay the part flat;
                                                     an open task panel on it closes first
         """
         obj = vobj.Object
-        if subelements and obj.Connection == d.CONNECTION_MERGED:
-            # Merged into the part, the fins are no solids of their own to pick.
-            _message(translate("FinSnap", feature.NOTE_MERGED_SINGLE))
-            return False
         fins = [feature.fin_at(obj, sub) for sub in subelements or ()]
         if fins and not all(fins):
             # Something picked that is no fin: the object as a whole is not meant.
@@ -1095,9 +1090,9 @@ def _export_list(objects):
     """What to export: named shapes, and the fins left out because their part lies flat.
 
     SELECTIONS this has to withstand:
-      separate fins                         ->  their part, then the fins, those that
+      fins                                  ->  their part, then the fins, those that
                                                 overlap joined (geometry.joined())
-      merged fins, or any other body        ->  that body
+      any other body                        ->  that body
       fins whose part lies flat             ->  left out and named; their part
                                                 only if it was selected itself
       nothing left after that               ->  ValueError saying why
@@ -1108,7 +1103,7 @@ def _export_list(objects):
     for obj in objects:
         if feature.is_fins(obj) and feature.is_laid_flat(obj):
             left_out.append(obj.Label)
-        elif feature.is_fins(obj) and obj.Connection == d.CONNECTION_SEPARATE:
+        elif feature.is_fins(obj):
             base = obj.Base[0]
             if base.Name not in seen:
                 shapes.append((base.Label, global_shape(base)))

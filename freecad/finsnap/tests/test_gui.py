@@ -770,7 +770,7 @@ def commands_on_a_link(doc, messages, written):
     fins = [o for o in doc.Objects if feature.is_fins(o) and o.Base and o.Base[0] is link]
     expect(not messages and len(fins) == 1 and fins[0].isValid() and fins[0].Shape.Solids
            and outermost(link) is group and not group.Placement.isSame(lying, d.TOLERANCE)
-           and abs(fins[0].Shape.distToShape(global_shape(link))[0] - feature.params_of(fins[0]).clearance)
+           and abs(fins[0].Shape.distToShape(global_shape(link))[0] - feature.params_of(fins[0]).tine_clearance)
            < d.TOLERANCE,
            "Quick fins on a face of a link stands its container and puts the fins under the link: %s" % messages)
     fins = fins[0]
@@ -807,7 +807,7 @@ def commands_on_a_link(doc, messages, written):
     Gui.runCommand("FinSnap_LayFlat")
     doc.recompute()
     expect(not messages and group.Placement.isSame(lying, d.TOLERANCE) and feature.is_laid_flat(fins)
-           and abs(fins.Shape.distToShape(global_shape(link))[0] - feature.params_of(fins).clearance)
+           and abs(fins.Shape.distToShape(global_shape(link))[0] - feature.params_of(fins).tine_clearance)
            < d.TOLERANCE,
            "Lay flat again brings the container of a link back, its fins kept with it: %s" % messages)
     for obj in (whole, fins, link, group, box):
@@ -2924,7 +2924,7 @@ def main():
            and translate("FinSnap", feature.NOTE_LAID_FLAT) in marked.Warnings,
            "No lays the part flat and keeps its fins, marked as laid flat, without overhang marks")
     # The tines end the tine clearance short of the part, wherever it lies.
-    expect(abs(marked.Shape.distToShape(box.Shape)[0] - feature.params_of(marked).clearance) < d.TOLERANCE,
+    expect(abs(marked.Shape.distToShape(box.Shape)[0] - feature.params_of(marked).tine_clearance) < d.TOLERANCE,
            "the kept fins moved along with the part")
     select(marked)
     Gui.runCommand("FinSnap_Export3MF")
@@ -3314,15 +3314,6 @@ def main():
     doc.recompute()
     expect(removed_by_key == 2 and lined.ResultFinCount == 3,
            "Delete on a fin removes it, and Undo brings it back in one step")
-    # Merged into the part, single fins cannot be picked: a message, nothing deleted.
-    lined.Connection = d.CONNECTION_MERGED
-    doc.recompute()
-    kept = lined.ViewObject.Proxy.onDelete(lined.ViewObject, ["Face1"])
-    expect(kept is False and len(messages) == 1 and lined.Name in [o.Name for o in doc.Objects],
-           "merged fins refuse to lose a single fin, with a message: %s" % messages)
-    del messages[:]
-    lined.Connection = d.CONNECTION_SEPARATE
-    doc.recompute()
     # Removed for the first time in the panel, then Cancel: nothing stays removed.
     feature.reset_fins(lined)
     lined.removeProperty(feature.REMOVED[feature.MAIN])

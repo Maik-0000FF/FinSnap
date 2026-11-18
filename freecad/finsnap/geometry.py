@@ -30,7 +30,6 @@ INPUTS this has to withstand (build()):
   tine_clearance > 0                    ->  tines end that far short of the face,
                                             measured along its normal; the fin stays
                                             at the gap, the tines as much shorter
-  tine_clearance > 0, merged fins       ->  tines on the face, as with 0
   no tine fits below the top of the face ->  FinError
   hand-set first tine half a layer off
     the grid, rounding two tines closer
@@ -668,7 +667,7 @@ def _tine_faults(p, surface, frame, fin, thickness, kept):
     the part itself, as (fault, height, tine)."""
     found = []
     for z, tine in zip([z for z, whole in zip(fin.candidate_z, fin.on_face) if whole], kept):
-        fault = tine_end_fault(surface, tine_end_points(p, frame, fin.t0, thickness, z), p.clearance)
+        fault = tine_end_fault(surface, tine_end_points(p, frame, fin.t0, thickness, z), p.tine_clearance)
         if fault is not None:
             found.append((fault, z, tine))
     return found
@@ -1130,12 +1129,11 @@ def check(p, part, pieces, bodies, slack=0.0, made_of=None):
       a fin cutting into the part deeper    ->  FinError naming the volume
       no `made_of`, or no `slack`           ->  TOLERANCE allowed, as before
     """
-    if p.connection == d.CONNECTION_SEPARATE:
-        near = _Clearance(part)
-        unsure = _not_known_clear(pieces, part, made_of, near)
-        overlap = _overlap_of_unsure(unsure, pieces, made_of, part, near)
-        if overlap > _touching_overlap(p, pieces, unsure, made_of, slack):
-            raise FinError(translate("FinSnap", "the fins overlap the part by %.4f mm³") % overlap)
+    near = _Clearance(part)
+    unsure = _not_known_clear(pieces, part, made_of, near)
+    overlap = _overlap_of_unsure(unsure, pieces, made_of, part, near)
+    if overlap > _touching_overlap(p, pieces, unsure, made_of, slack):
+        raise FinError(translate("FinSnap", "the fins overlap the part by %.4f mm³") % overlap)
 
     for body in bodies:
         distance = body.distToShape(part)[0]
@@ -2006,7 +2004,8 @@ def _warnings(p, frame, plan, findings):
     if tine_length < shortest:
         # The gap that makes them as long, along the face normal, the
         # clearance on top; rounded up to GAP_HINT_STEP.
-        enough = math.ceil((shortest * frame.n_out + p.clearance) / d.GAP_HINT_STEP - d.TOLERANCE) * d.GAP_HINT_STEP
+        along_normal = shortest * frame.n_out + p.tine_clearance
+        enough = math.ceil(along_normal / d.GAP_HINT_STEP - d.TOLERANCE) * d.GAP_HINT_STEP
         if enough <= d.GAP_MAX + d.TOLERANCE:
             warnings.append(translate("FinSnap", NOTE_TINES_SHORT) % (tine_length, d.TINE_MIN_LENGTH_BEADS, enough))
         else:
@@ -2175,14 +2174,6 @@ def joined(fins):
     except Part.OCCError:
         return fins
     return Part.makeCompound(pieces) if all(piece.Solids for piece in pieces) else fins
-
-
-def merged(part, *fin_shapes):
-    """Part and fins as one body, for the connected mode."""
-    result = part
-    for shape in fin_shapes:
-        result = result.fuse(shape)
-    return result.removeSplitter()
 
 
 def opposite_faces(part, face):

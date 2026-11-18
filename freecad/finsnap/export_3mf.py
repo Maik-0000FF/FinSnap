@@ -4,8 +4,8 @@
 """Write shapes to a 3MF file, one named object per shape.
 
 Written by hand instead of through the mesh exporter so that every shape is
-certain to arrive in the slicer as its own object. The separate connection
-mode depends on that: fin and part must be sliced as two objects.
+certain to arrive in the slicer as its own object: fin and part must be
+sliced as two objects.
 
 INPUTS this has to withstand (write()):
   list of (name, shape)                 ->  3MF with one object each, unit millimetre

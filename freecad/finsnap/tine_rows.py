@@ -525,7 +525,7 @@ def tine_end(p, frame, z):
     top = bottom + p.tine_height
     if frame.contour is not None:
         return (bottom, top, *frame.contour.tine_ends(z, z + p.tine_height))
-    return bottom, top, frame.s_flank(bottom, p.clearance), frame.s_flank(top, p.clearance)
+    return bottom, top, frame.s_flank(bottom, p.tine_clearance), frame.s_flank(top, p.tine_clearance)
 
 
 def flank_bend(frame, t):

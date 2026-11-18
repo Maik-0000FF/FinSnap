@@ -34,9 +34,7 @@ How much each effect matters depends on the material, the printer and the part.
 **Features:**
 - Quick fins: select an edge or a face, and the part is stood up with one fin in one step
 - Fins generated automatically under a selected face that leans over the bed
-- Two connection modes:
-  - **separate**: fins are their own object, the tines only touch the part, no extrusion path runs from fin to part
-  - **merged**: fins and part become one body, the tines are printed as one path with the part
+- Fins are their own object; the tines only touch the part and break off cleanly
 - Tine height and width in layers and beads, so the design follows the print profile
 - Fin height set by the highest tine that finds the face, 1 mm thick up to 100 mm of height and thicker above
 - Under the round side of a part standing on its rim, the fin follows the contour of the part up to its top, over steps, fillets and curves; small recesses are bridged
@@ -179,13 +177,12 @@ Where the original model exists, as a STEP or FreeCAD file, use it instead.
 - Keep supports off; the fins are the support.
 - The tine height should be a whole number of layers of the print profile, otherwise a tine falls between two layers.
 - Tines shorter than about three quarters of the bead width, the gap less the tine clearance, are not printed to their end. FinSnap warns about this.
-- In the merged mode, set the seam position of the print profile to rear or random. Otherwise the slicer tends to place the seam where the tines join the part, which shows as a vertical line along the tines.
 
 ### STEP instead of 3MF
 
 **Export STEP** is the second way into the slicer. It writes the exact surfaces instead of a triangle mesh, each body under its own name.
 
-PrusaSlicer loads a STEP file as **one object with a part per body**. In that state the slicer joins part and fins as in the merged mode. Split it before slicing: select the object and click **Split to objects** in the top toolbar (right-click menu: **Split → To objects**). Part and fins are then separate objects again, and the result is the same as with 3MF.
+PrusaSlicer loads a STEP file as **one object with a part per body**. In that state the slicer joins part and fins into one body. Split it before slicing: select the object and click **Split to objects** in the top toolbar (right-click menu: **Split → To objects**). Part and fins are then separate objects again, and the result is the same as with 3MF.
 
 Both ways were sliced and compared on a test part with a main fin and a counter fin: the same layers, the tines touching the part in the same layers, the same amount of filament to within 0.01 %. Which one to use:
 
@@ -222,7 +219,7 @@ This holds as long as part and fins reach the slicer as separate objects or part
 
 Whether a tine still holds the part across that distance depends on how far the bead swells while printing, which depends on material, temperature and speed. **Find the value with a test print:**
 
-1. Tilt a small test part, for example a 20 mm cube, add fins with the separate connection and the default gap.
+1. Tilt a small test part, for example a 20 mm cube, add fins with the default gap.
 2. Make copies of fins and part with tine clearances of **0, 0.03, 0.05 and 0.08 mm** and print them with the profile you will use.
 3. For each one check: does the part stand without wobbling, and does the fin come off without force? Look at the marks the tines left on the face.
 4. Take the largest clearance that still holds the part. A bead swells by a few hundredths of a millimetre while printing; once the clearance is wider than that, the tine no longer reaches the face and the fin stops holding. In test prints, tines touching the face (the built-in clearance of 0, the slicer joining tine and part) did better than fins merged into the part; ending 0.04 or 0.05 mm short of the face they held too. Check it with your own profile.
@@ -232,7 +229,7 @@ Whether a tine still holds the part across that distance depends on how far the 
 
 **Export 3MF** writes a plain 3MF file (core specification, no slicer project):
 
-- **One object per body**, named after it: the part as `<part>`, its fins as `<part>_fins`. In the merged mode, part and fins are one object.
+- **One object per body**, named after it: the part as `<part>`, its fins as `<part>_fins`.
 - **Triangle meshes in millimetres.** Planar faces are exact; curved surfaces follow the mesh fineness chosen in the export dialog (surface deviation, default 0.01 mm, and angular deviation, default 1 degree).
 - **Metadata** `Application` with the name and version that wrote the file, `FinSnap <version>`, and `CreationDate` with the date of the export.
 - **No print settings, supports or colours.** The slicer opens the file with its own print profile.
@@ -244,8 +241,7 @@ The file is a ZIP archive; the content above sits in `3D/3dmodel.model`. A slice
 | Group | Parameter | Automatic | Meaning |
 |---|---|---|---|
 | Slicer | Nozzle diameter, bead width, layer height, first layer height | | Values of the print profile |
-| Connection | Connection | separate | separate or merged |
-| | Gap | 0.25 mm | Distance between fin and face, along the face normal, at most 2 mm; the tines reach across it |
+| Connection | Gap | 0.25 mm | Distance between fin and face, along the face normal, at most 2 mm; the tines reach across it |
 | | Tine clearance | 0 mm | Distance from the end of the tines to the face, along the face normal, smaller than the gap; the tines are as much shorter, 0 = touching. See [Tine clearance](#tine-clearance) |
 | Tines | Tine spacing | 5 mm | Vertical distance between tines, at least the tine height plus one layer |
 | | Restart tines after an interruption | on | Start the tines of each fin anew at the lower edge of the face and above every interruption it reaches over, spread evenly up to the top of the face; off, one grid counts from the bed for every fin |

@@ -1504,10 +1504,6 @@ class FinSnapTaskPanel:
         button or the Delete key. With the last main fins the counter fin
         becomes the main fin; the last fins of all take the whole object with
         them, once the user agrees."""
-        if self.obj.Connection == d.CONNECTION_MERGED:
-            self.show_notes(translate("FinSnap", "Nothing removed"),
-                            [translate("FinSnap", feature.NOTE_MERGED_SINGLE)], WARNING_COLOR)
-            return
         if not fins:
             self.show_notes(translate("FinSnap", "Nothing removed"),
                             [translate("FinSnap", NOTE_CLICK_FIN)], WARNING_COLOR)
@@ -1644,8 +1640,8 @@ class FinSnapTaskPanel:
             islands                             ->  marked, as they are no faces of any object;
                                                     an island without its first layer as a
                                                     ball at its lowest point
-          a note naming a fin merged into the
-            part                                ->  its body marked, as it has no faces of its own
+          a note naming a fin whose faces are
+            not known (fin_faces())             ->  its body marked
           a fin named no longer built           ->  passed over
           an index the last build has no target
             for, or not a number                ->  selection and marks cleared, the view kept
@@ -2375,7 +2371,7 @@ class FinSnapTaskPanel:
 
     def tint_handled(self, color):
         """The handled fin in `color`, the other fins green; the whole object
-        for merged fins, which have no faces of their own."""
+        where the faces of the fin are not known (fin_faces())."""
         faces = feature.fin_faces(self.obj, *self.handled)
         if faces:
             self.handles.tint_faces(set(faces), color)
