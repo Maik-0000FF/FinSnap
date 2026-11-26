@@ -68,7 +68,7 @@ def settle():
     """Draw the view as it is now. The timers of the panel would build again
     in between, as the demo builds each step itself; they are stopped."""
     for panel in panels:
-        for timer in (panel.timer, panel.drag_timer, panel.ends_timer):
+        for timer in (panel.timer, panel.drag.timer, panel.ends_timer):
             timer.stop()
     Gui.updateGui()
 

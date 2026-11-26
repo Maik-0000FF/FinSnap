@@ -3539,7 +3539,7 @@ def main():
            "the arrow ends are tried once for each place, again after a parameter changed: %d, %d, %d"
            % (first_ends, same_ends, changed_ends))
     # A drag that fails on letting go still ends: every later build is made afresh.
-    real_drag_to = moving.drag.move_to
+    real_move_to = moving.drag.move_to
 
     def failing(*args):
         raise RuntimeError("a drag failing on purpose")
@@ -3550,7 +3550,7 @@ def main():
         moving.drag.finish(handles.ALONG, BUILD_STEP)
     except RuntimeError:
         pass
-    moving.drag.move_to = real_drag_to
+    moving.drag.move_to = real_move_to
     expect(lined.Proxy.reuse is None, "a drag that fails on letting go still ends, nothing is kept")
     # A value typed just before an arrow is grabbed is built first.
     tines = moving.widgets["TineCount"]
