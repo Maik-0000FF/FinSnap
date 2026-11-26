@@ -11,6 +11,14 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+- A security policy, SECURITY.md: a security problem is reported privately on GitHub, not as a public issue (#211)
+
+### Changed
+
+- The Addon Manager finds FinSnap by seven tags instead of two: 3d-printing, fdm, support, support-fins, slicer, 3mf and step (#211)
+
 ## [0.19.0] - 2026-11-26
 
 ### Changed
