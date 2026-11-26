@@ -11,6 +11,8 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.19.1] - 2026-11-26
+
 ### Added
 
 - A security policy, SECURITY.md: a security problem is reported privately on GitHub, not as a public issue (#211)
@@ -427,7 +429,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.19.0...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.19.1...HEAD
+[0.19.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.19.1
 [0.19.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.19.0
 [0.18.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.18.1
 [0.18.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.18.0
