@@ -28,6 +28,7 @@ from . import handles
 from . import limits
 from . import presets
 from . import stability
+from .fin_drag import FinDrag
 from .i18n import QT_TRANSLATE_NOOP, translate
 from .kernel_wait import KernelWait
 from .params import FinParams
@@ -79,15 +80,9 @@ HEIGHT_KEYS = {QtCore.Qt.Key_Down: -1, QtCore.Qt.Key_Up: 1}
 # How far the direction along the face has to point sideways on the screen
 # (cosine to the screen's right) before left and right follow the screen.
 SIDEWAYS_LEAST = 0.25
-# Pause after the last move of a handle before the preview for it is built.
-DRAG_PREVIEW_MS = 150
 # Places of fins whose arrow ends are kept while the panel is open; beyond
 # these the oldest goes.
 ENDS_KEPT = 32
-# How near a tine a fin dragged up or down goes to it (mm); farther from
-# every tine, it is shown yellow where it is dragged and goes to the nearest
-# when let go.
-HEIGHT_REACH = 1.0
 # Rows the list of fins shows at most; more fins scroll.
 FIN_LIST_ROWS = 6
 # Pause after the arrows are put on a fin before trying where it can go, so a
@@ -96,9 +91,6 @@ ENDS_DELAY_MS = 300
 # How close a fin let go beyond where it can stand comes to that limit, and
 # how far an arrow end looks ahead before it is left out (mm).
 SNAP_RESOLUTION = 0.1
-# The lowest a fin dragged down is previewed, so the preview never flattens
-# to nothing or turns over (mm).
-MIN_PREVIEW_HEIGHT = 0.1
 NOTE_CLICK_FIN = QT_TRANSLATE_NOOP("FinSnap", "Click a fin of these fins in the 3D view first.")
 # The fields of the fin with the arrows, as (label, tooltip, suffix, decimals,
 # lowest, highest, whether it wraps round, the step of its arrows, its mouse
@@ -840,13 +832,6 @@ def _read(prop, widget):
     return widget.value()
 
 
-def _same_mm(a, b):
-    """Whether two lengths in mm, each possibly None, are the same."""
-    if a is None or b is None:
-        return a is b
-    return abs(a - b) < d.TOLERANCE
-
-
 class FinSnapTaskPanel:
     def __init__(self, obj, created=False, on_cancel=None, stands=None, later=None, step=None):
         self.obj = obj
@@ -888,16 +873,14 @@ class FinSnapTaskPanel:
         # Holds the timeouts below off while the kernel is at work, and what
         # is to be done once the events under way are through.
         self.waiting = KernelWait(self.form)
+        # The drag of the fin with the arrows; the arrows below call it.
+        self.drag = FinDrag(self, self.form, self.waiting, ANGLE_TOLERANCE)
         # A child of the form, so it goes with the panel and never fires on a
         # closed document.
         self.timer = QtCore.QTimer(self.form)
         self.timer.setSingleShot(True)
         self.timer.setInterval(PREVIEW_DELAY_MS)
         self.timer.timeout.connect(functools.partial(self.waiting.when_built, self.timer, self.preview))
-        self.drag_timer = QtCore.QTimer(self.form)
-        self.drag_timer.setSingleShot(True)
-        self.drag_timer.setInterval(DRAG_PREVIEW_MS)
-        self.drag_timer.timeout.connect(functools.partial(self.waiting.when_built, self.drag_timer, self.drag_step))
         # Steps of the arrow keys held, by ALONG or UP, built once their repeats pause.
         self.key_steps = {}
         self.key_timer = QtCore.QTimer(self.form)
@@ -920,19 +903,14 @@ class FinSnapTaskPanel:
         self.arrow_field_timer = QtCore.QTimer(self.form)
         self.arrow_field_timer.setInterval(handles.ZOOM_POLL_MS)
         self.arrow_field_timer.timeout.connect(self.place_arrow_field)
-        # The fin with the handles on it, as (MAIN or COUNTER, number); the
-        # arrow being dragged with how far, as (kind, mm); and the shift and
-        # height of the fin, and the values in its fields, when it was grabbed.
+        # The fin with the handles on it, as (MAIN or COUNTER, number).
         self.handled = None
         # The arrow ends found, by what they depend on (ends_key).
         self.known_ends = {}
-        self.dragged = None
-        self.drag_base, self.drag_own, self.drag_values = {}, {}, {}
-        self.drag_mm_per_degree = None
         self.released = False
         # True while the panel fills the fields of the fin, not the user.
         self.filling_fields = False
-        self.handles = handles.Handles(obj.ViewObject, self.handle_started, self.handle_moved, self.handle_done,
+        self.handles = handles.Handles(obj.ViewObject, self.drag.started, self.drag.moved, self.drag.done,
                                        self.arrow_double_clicked)
         # The arrow keys in the 3D view move the fin with the arrows; the
         # widget that has the focus there is the view or its viewport.
@@ -1059,8 +1037,6 @@ class FinSnapTaskPanel:
             self.set_field(kind, FIN_FIELD_PLACE if kind == handles.ALONG else FIN_FIELD_HEIGHT)
         # Whether the field along the face takes the angle on a round side.
         self.angle_field = False
-        # Whether a drag of a side fin moves both side fins.
-        self.drag_together = False
         # The angle on the part, while a fin beside the lowest line has the
         # arrows, which moves itself: a part with two fins has no other way.
         self.turn_label = QtWidgets.QLabel(translate("FinSnap", FIN_FIELD_ANGLE[0]))
@@ -1845,7 +1821,7 @@ class FinSnapTaskPanel:
         """While a side fin is dragged with Shift held, both move, mirrored: the
         number of the other one and its shift for the handled one at `value`;
         None otherwise, as with the other one removed."""
-        if not self.drag_together:
+        if not self.drag.together:
             return None
         which, number = self.handled
         numbers = geometry.side_numbers(self.obj.RoundFins)
@@ -1939,7 +1915,7 @@ class FinSnapTaskPanel:
         """Move the fin with the arrows `count` steps of its field along the
         face, to the right on the screen where `count` is positive, as
         set_fin() does; where it cannot stand there, as far as it can, as an
-        arrow let go (finish_drag()). Under a round side a step is a degree
+        arrow let go (FinDrag.finish()). Under a round side a step is a degree
         the part turns."""
         result = self.handled_result()[0]
         step = self.fin_fields[handles.ALONG].singleStep()
@@ -1956,7 +1932,7 @@ class FinSnapTaskPanel:
         it that finds the face, below it where `count` is negative, as
         set_fin() does; with fewer tines that way, the last of them, and none
         leaves it as it is. Where it cannot stand at that tine, the nearest
-        tine on the way it can, as an arrow let go (finish_drag())."""
+        tine on the way it can, as an arrow let go (FinDrag.finish())."""
         result, number = self.handled_result()[0], self.handled[1]
         current = result.heights[number]
         tine = feature.params_of(self.obj).tine_height
@@ -2128,35 +2104,6 @@ class FinSnapTaskPanel:
         for kind, ends in self.known_ends[key].items():
             self.handles.show_ends(kind, ends)
 
-    def handle_started(self, kind):
-        """An arrow grabbed: note where the fin stands and what it has by hand;
-        the drag starts from there."""
-        self.ends_timer.stop()
-        # A field at an arrow is taken, as a click elsewhere takes it.
-        self.take_arrow_field()
-        # A value typed just before is built first, taken or not, as grabbing
-        # an arrow leaves its field; or the drag would keep the parameters from
-        # before it, or the value would come in the middle of it.
-        if self.timer.isActive() or self.differs():
-            self.preview()
-        self.take_typed()
-        # While the drag lasts, builds with the same changes by hand are made once;
-        # not while the part turns about a round side, as the builds keep the part.
-        self.obj.Proxy.reuse = None if kind == handles.ALONG and self.turns_part() else {}
-        # Nothing of an earlier drag carries over; without a fin the drag is passed over.
-        self.drag_base, self.drag_own, self.drag_values = {}, {}, {}
-        self.drag_mm_per_degree = None
-        self.drag_together = bool(QtWidgets.QApplication.keyboardModifiers() & QtCore.Qt.ShiftModifier)
-        if self.handled_result() is None:
-            return
-        which, number = self.handled
-        self.drag_base = {handles.ALONG: self.built_value(handles.ALONG),
-                          handles.UP: self.handled_result()[0].heights[number]}
-        self.drag_own = {one: self.own_value(one) for one in handles.KINDS}
-        self.drag_values = self.fin_values()
-        # Under a round side, the mm the fin moves for every degree the part turns.
-        self.drag_mm_per_degree = self.turn_of_handles()[2] if self.turns_part() else None
-
     def tine_tops(self):
         """The heights of the handled fin that end with a tine on top, from
         the bed, lowest first: no fin stands above its last tine there. Only
@@ -2165,21 +2112,6 @@ class FinSnapTaskPanel:
         result, _ = self.handled_result()
         tine_height = feature.params_of(self.obj).tine_height
         return [z + tine_height for z in result.touching_z.get(self.handled[1], [])]
-
-    def dragged_mm(self, kind, mm, reach=None):
-        """Where the fin goes for an arrow dragged `mm` from where it was
-        grabbed, as (mm, True), or (mm, False) where it goes nowhere yet:
-        along the face as dragged; up to the nearest height that ends with a
-        tine, if one lies within `reach` (any, without). A click without a
-        move goes nowhere: a height typed by hand is kept."""
-        tops = self.tine_tops() if kind == handles.UP else []
-        if not tops or abs(mm) < d.TOLERANCE:
-            return mm, True
-        wanted = self.drag_base[kind] + mm
-        nearest = min(tops, key=lambda top: abs(top - wanted))
-        if reach is not None and abs(nearest - wanted) > reach:
-            return mm, False
-        return nearest - self.drag_base[kind], True
 
     def standing_step(self, last, limit):
         """The height that ends with a tine nearest to `limit` on the way from
@@ -2203,53 +2135,6 @@ class FinSnapTaskPanel:
         higher = [top for top in tops if top > value + d.TOLERANCE]
         return ([(handles.BACK, lower[-1])] if lower else []) + ([(handles.FORTH, higher[0])] if higher else [])
 
-    def handle_moved(self, kind, mm):
-        if kind not in self.drag_base:
-            return
-        self.dragged = (kind, mm)
-        if kind == handles.ALONG and self.drag_mm_per_degree:
-            # The angle of the fin on the part goes the other way round than the part turns.
-            shown = face_frame.round_angle(self.drag_values[kind] - mm / self.drag_mm_per_degree, ANGLE_TOLERANCE)
-        else:
-            shown = self.drag_values[kind] + mm
-        self.show_fin_values({kind: shown})
-        # The value at the arrow as well, as the field shows it, in mm or degrees.
-        self.handles.show_value(kind, self.fin_fields[kind].text())
-        self.drag_timer.start()
-
-    def drag_to(self, kind, mm):
-        """Build the fins with the handled fin `mm` from where it was grabbed.
-        A move too small to count gives it back what it had when grabbed, so a
-        click on an arrow alone changes nothing."""
-        if abs(mm) >= d.TOLERANCE:
-            return self.set_fin(kind, self.drag_base[kind] + mm)
-        if not _same_mm(self.own_value(kind), self.drag_own[kind]):
-            self.write_fin(kind, self.drag_own[kind])
-            self.edited()
-        return True
-
-    def drag_step(self):
-        """While an arrow is held, the fins are built with the fin where the
-        arrow is. Up, near a tine the fin is built ending with it, green;
-        between tines, also over a recess, it is built as high as the arrow
-        and shown yellow, as it goes to the nearest tine when let go. Where it
-        cannot stand, it stays at its last place, red, with a red preview."""
-        if self.dragged is None or self.handled_result() is None or self.dragged[0] not in self.drag_base:
-            return
-        kind, raw = self.dragged
-        mm, on_step = self.dragged_mm(kind, raw, HEIGHT_REACH)
-        # With fins beside a lowest line a build takes too long for every step:
-        # the fin is shown where it would go, and built once let go.
-        if self.side_fins_built():
-            self.show_dragged(kind, mm, handles.BETWEEN_COLOR)
-            return
-        if self.drag_to(kind, mm):
-            self.handles.clear_preview()
-            if not on_step:
-                self.tint_handled(handles.BETWEEN_COLOR)
-            return
-        self.show_dragged(kind, mm, handles.INVALID_COLOR)
-
     def tint_handled(self, color):
         """The handled fin in `color`, the other fins green; the whole object
         where the faces of the fin are not known (fin_faces())."""
@@ -2258,69 +2143,6 @@ class FinSnapTaskPanel:
             self.handles.tint_faces(set(faces), color)
         else:
             self.handles.tint_all(color)
-
-    def show_dragged(self, kind, mm, color):
-        """Show the handled fin `mm` from where its arrow was grabbed as a
-        preview, and the fin itself, in `color`; the other fins stay green."""
-        result, index = self.handled_result()
-        wanted = self.drag_base[kind] + mm
-        if kind == handles.UP:
-            # The fin as it would be at the height dragged to, its flank on
-            # along the face, rather than stretched, which would tilt it.
-            shapes = geometry.fin_at(feature.params_of(self.obj), result, self.handled[1],
-                                     max(wanted, MIN_PREVIEW_HEIGHT))
-        else:
-            fin = result.fins.childShapes()[index].copy()
-            # Under a round side the fin stays and the part turns instead.
-            if not self.turns_part():
-                fin.translate(result.along * (wanted - self.built_value(kind)))
-            shapes = [fin]
-        # The fin in the colour as well: a preview over a green fin would mix
-        # to neither.
-        self.tint_handled(color)
-        self.handles.show_preview(shapes, color)
-
-    def handle_done(self, kind, mm):
-        # Coin still handles the drag here; rebuilding would move the arrow
-        # under it, so the last step is made once the event is through.
-        self.drag_timer.stop()
-        self.dragged = None
-        self.waiting.once_free(functools.partial(self.finish_drag, kind, mm))
-
-    def finish_drag(self, kind, mm):
-        """An arrow let go: the fin goes where it is, or, where it cannot stand
-        there, as far towards it as it can; the arrows return onto it, and its
-        field takes the keyboard, so a value can be typed right away. Called
-        once the arrow is let go: a panel closed meanwhile has let go of the
-        3D view, and nothing is done."""
-        if self.released:
-            return
-        try:
-            if self.handled_result() is None or kind not in self.drag_base:
-                self.place_handles()
-                return
-            # Let go between tines, the fin goes to the nearest.
-            mm = self.dragged_mm(kind, mm)[0]
-            if not self.drag_to(kind, mm) and self.handled_result() is not None:
-                last = self.built_value(kind)
-                limit = self.nearest_standing(kind, last, self.drag_base[kind] + mm)
-                if kind == handles.UP:
-                    limit = self.standing_step(last, limit)
-                if abs(limit - last) >= d.TOLERANCE:
-                    self.set_fin(kind, limit)
-        finally:
-            # The drag is over, also after an error: every build is made afresh,
-            # and nothing failing was built into the object, so the colours of
-            # the drag go.
-            self.obj.Proxy.reuse = None
-            self.drag_together = False
-            self.handles.tint(True)
-            self.handles.clear_preview()
-            self.handles.hide_value()
-        self.place_handles()
-        box = self.fin_fields[kind]
-        box.setFocus()
-        box.selectAll()
 
     def field_typed(self, kind, _value):
         """A field of the handled fin changed, typed into or stepped: noted, and
@@ -2479,12 +2301,13 @@ class FinSnapTaskPanel:
             return
         self.released = True
         self.waiting.close()
+        self.drag.close()
         try:
             self.close_arrow_field()
         except RuntimeError:
             pass
         # Closed by FreeCAD first, the panel's form and its timers are gone already.
-        for timer in (self.timer, self.drag_timer, self.ends_timer, self.key_timer):
+        for timer in (self.timer, self.ends_timer, self.key_timer):
             try:
                 timer.stop()
             except RuntimeError:

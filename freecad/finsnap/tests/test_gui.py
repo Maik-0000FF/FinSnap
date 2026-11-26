@@ -163,8 +163,8 @@ def moved_beside_groove(doc):
     panel.fin_fields[handles.ALONG].setValue(stood + step)
     panel.field_entered(handles.ALONG)
     typed = panel.fin_values()[handles.ALONG]
-    panel.handle_started(handles.ALONG)
-    panel.finish_drag(handles.ALONG, step)
+    panel.drag.started(handles.ALONG)
+    panel.drag.finish(handles.ALONG, step)
     dragged = panel.fin_values()[handles.ALONG]
     expect(abs(typed - stood - step) < d.TOLERANCE and abs(dragged - typed - step) < d.TOLERANCE,
            "typed and dragged, a fin moved beside a groove moves on from where it stands: %.3f, %.3f, %.3f"
@@ -254,7 +254,7 @@ def side_fins_on_tube(doc):
            "a side fin moved by its arrow stands there, the part stays")
     far = face_frame.beside_lowest(TUBE_RADIUS, d.ROUND_FIN_ANGLE_MAX)
     expect(not panel.set_fin(handles.ALONG, far), "a side fin does not go past the furthest angle")
-    panel.drag_together = True
+    panel.drag.together = True
     # The other side fin left out for lack of room: the move is refused.
     side_builder = fins.Proxy.side_builder
 
@@ -272,7 +272,7 @@ def side_fins_on_tube(doc):
     del fins.Proxy.side_builder
     expect(refused is not None, "with Shift held a move that leaves out the other side fin is refused")
     panel.set_fin(handles.ALONG, 2 * SIDE_FIN_MOVE)
-    panel.drag_together = False
+    panel.drag.together = False
     shifts = feature.edits(fins, feature.MAIN)[1]
     expect(abs(shifts[3] - 2 * SIDE_FIN_MOVE) < d.TOLERANCE and abs(shifts[1] + SIDE_FIN_MOVE) < d.TOLERANCE,
            "with Shift held both side fins move, mirrored: %s" % shifts)
@@ -413,7 +413,7 @@ def turned_tube(doc):
     expect(abs(panel.fin_fields[handles.ALONG].value() - 2 * TUBE_ANGLE) < d.TOLERANCE,
            "while the arc is dragged, the field shows the angle the fin goes to")
     arc.held = False
-    panel.finish_drag(handles.ALONG, arc._mm(handles.ALONG))
+    panel.drag.finish(handles.ALONG, arc._mm(handles.ALONG))
     expect(abs(turned() - 2 * TUBE_ANGLE) < d.TOLERANCE and abs(angle() - 2 * TUBE_ANGLE) < d.TOLERANCE,
            "dragging the arc turns the tube further, as near as Coin reads its turn")
     released_without_button(arc, "a tube")
@@ -2465,10 +2465,10 @@ def check_typed_fields(panel, fins, place):
            and not panel.notes.isHidden(),
            "taken where the fin cannot stand: nothing moves, the reason shows, the field shows where it stands")
     box.setValue(place + FIN_SHIFT)
-    panel.handle_started(handles.ALONG)
+    panel.drag.started(handles.ALONG)
     expect(feature.edits(fins, feature.MAIN)[1] and panel.typed_field is None,
            "a place not taken yet is taken before an arrow is grabbed")
-    panel.finish_drag(handles.ALONG, 0.0)
+    panel.drag.finish(handles.ALONG, 0.0)
     box.setValue(place)
     panel.field_entered(handles.ALONG)
 
@@ -2649,10 +2649,10 @@ def panel_outlives_document():
         # An arrow grabbed, the panel closed, then what letting go of the
         # arrow calls after the next pass of the event loop.
         panel.pick_fin(0)
-        panel.handle_started(handles.ALONG)
+        panel.drag.started(handles.ALONG)
         panel.release_handles()
         Gui.Control.closeDialog()
-        panel.finish_drag(handles.ALONG, 0.0)
+        panel.drag.finish(handles.ALONG, 0.0)
         kept.append(panel)
         App.closeDocument(doc.Name)
     expect(all(not panel.key_widgets and panel.fin_keys is None and panel.handles.view is None
@@ -3327,7 +3327,7 @@ def main():
            "Cancel also forgets a fin removed for the first time in the panel")
     # Handles: on the first fin from the start, on a fin clicked after; dragged,
     # the fin is previewed and then moved.
-    from freecad.finsnap import handles
+    from freecad.finsnap import fin_drag, handles
     select(lined)
     look = (lined.ViewObject.ShapeAppearance[0].DiffuseColor, lined.ViewObject.Transparency)
     moving = FinSnapTaskPanel(lined)
@@ -3351,18 +3351,18 @@ def main():
     before = lined.Shape.Solids[0].BoundBox.Center
     held = dict(moving.handles.draggers)
     place = moving.fin_fields[handles.ALONG].value()
-    moving.handle_started(handles.ALONG)
-    moving.handle_moved(handles.ALONG, FIN_SHIFT)
+    moving.drag.started(handles.ALONG)
+    moving.drag.moved(handles.ALONG, FIN_SHIFT)
     expect(abs(moving.fin_fields[handles.ALONG].value() - (place + FIN_SHIFT)) < d.TOLERANCE,
            "the field follows the arrow while it is dragged")
     expect(_value_shown(moving.handles) == moving.fin_fields[handles.ALONG].text(),
            "the value stands at the arrow while it is dragged, as the field shows it: %s"
            % _value_shown(moving.handles))
-    moving.drag_step()
+    moving.drag.step()
     expect(abs(lined.Shape.Solids[0].BoundBox.Center.sub(before).Length - FIN_SHIFT) < d.TOLERANCE
            and feature.edits(lined, feature.MAIN)[1] == {1: FIN_SHIFT},
            "a dragged fin is built where the arrow is, while it is held")
-    moving.finish_drag(handles.ALONG, FIN_SHIFT)
+    moving.drag.finish(handles.ALONG, FIN_SHIFT)
     expect(feature.edits(lined, feature.MAIN)[1] == {1: FIN_SHIFT}
            and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_NONE,
            "a fin let go stays there")
@@ -3378,9 +3378,9 @@ def main():
            "the arrow up has the colour of the z axis: %s" % (handles.axis_color("z"),))
     result = lined.Proxy.results[feature.MAIN]
     onto_neighbour = result.starts[2] - result.starts[1]
-    moving.handle_started(handles.ALONG)
-    moving.handle_moved(handles.ALONG, onto_neighbour)
-    moving.drag_step()
+    moving.drag.started(handles.ALONG)
+    moving.drag.moved(handles.ALONG, onto_neighbour)
+    moving.drag.step()
     expect(feature.edits(lined, feature.MAIN)[1] == {1: FIN_SHIFT}
            and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_ALL
            and taskpanel.ERROR_COLOR in moving.notes.styleSheet(),
@@ -3395,8 +3395,8 @@ def main():
     moving.handles.tint(True)
     expect(len(red_once) == 1 and rgb_close(red_once[0].DiffuseColor, handles.INVALID_COLOR)
            and len(lined.ViewObject.ShapeAppearance) == 1, "after one fin alone was red, the whole object can turn red")
-    moving.drag_step()
-    moving.finish_drag(handles.ALONG, onto_neighbour)
+    moving.drag.step()
+    moving.drag.finish(handles.ALONG, onto_neighbour)
     snapped = feature.edits(lined, feature.MAIN)[1].get(1, 0.0)
     # The drag started with the fin moved by FIN_SHIFT already.
     nearest = FIN_SHIFT + onto_neighbour - result.thickness - d.FOOT_CLEARANCE
@@ -3419,25 +3419,25 @@ def main():
     high = moving.built_value(handles.UP)
     pitch = tops[-1] - tops[-2]
     between = tops[-2] + pitch / 2
-    moving.handle_started(handles.UP)
-    moving.handle_moved(handles.UP, between - high)
-    moving.drag_step()
+    moving.drag.started(handles.UP)
+    moving.drag.moved(handles.UP, between - high)
+    moving.drag.step()
     expect(len(tops) > 1 and fin_tinted(lined, moving.handled, handles.BETWEEN_COLOR)
            and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_NONE
            and abs(moving.built_value(handles.UP) - between) < d.TOLERANCE,
            "dragged between two tines, the fin is built as high as the arrow, yellow, alone: %s" % tops)
-    moving.handle_moved(handles.UP, tops[-2] + taskpanel.HEIGHT_REACH / 2 - high)
-    moving.drag_step()
+    moving.drag.moved(handles.UP, tops[-2] + fin_drag.HEIGHT_REACH / 2 - high)
+    moving.drag.step()
     expect(abs(moving.built_value(handles.UP) - tops[-2]) < d.TOLERANCE
            and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_NONE
            and len(lined.ViewObject.ShapeAppearance) == 1,
            "dragged near a tine, the fin is built ending with it, green")
-    moving.handle_moved(handles.UP, TOO_HIGH)
-    moving.drag_step()
+    moving.drag.moved(handles.UP, TOO_HIGH)
+    moving.drag.step()
     expect(fin_tinted(lined, moving.handled) and moving.handles.preview.whichChild.getValue() == coin.SO_SWITCH_ALL
            and abs(moving.built_value(handles.UP) - tops[-2]) < d.TOLERANCE,
            "dragged far above the face, the fin stays at its last place, red")
-    moving.finish_drag(handles.UP, TOO_HIGH)
+    moving.drag.finish(handles.UP, TOO_HIGH)
     tallest = moving.built_value(handles.UP)
     expect(abs(tallest - tops[-1]) < d.TOLERANCE and len(lined.ViewObject.ShapeAppearance) == 1,
            "let go far above the face, the fin ends with its highest tine, green: %.3f mm" % tallest)
@@ -3445,20 +3445,20 @@ def main():
            "at its highest tine, the arrow up shows no end up even before the ends are tried, so none flashes")
     moving.update_ends()
     expect(moving.handles.ends[handles.UP] == (handles.BACK,), "at its highest tine, the arrow up shows no end up")
-    moving.handle_started(handles.UP)
-    moving.finish_drag(handles.UP, -SHORT_OF_HALF_STEP * pitch)
+    moving.drag.started(handles.UP)
+    moving.drag.finish(handles.UP, -SHORT_OF_HALF_STEP * pitch)
     kept = moving.built_value(handles.UP)
-    moving.handle_started(handles.UP)
-    moving.finish_drag(handles.UP, -PAST_HALF_STEP * pitch)
+    moving.drag.started(handles.UP)
+    moving.drag.finish(handles.UP, -PAST_HALF_STEP * pitch)
     expect(abs(kept - tops[-1]) < d.TOLERANCE and abs(moving.built_value(handles.UP) - tops[-2]) < d.TOLERANCE,
            "let go less than half a step down the height stays, more than half it ends with the tine below")
     moving.update_ends()
     expect(moving.handles.ends[handles.UP] == ((handles.BACK, handles.FORTH) if len(tops) > 2 else (handles.FORTH,)),
            "between its tines, the arrow up shows both ends")
     # Dragged over the corner of the face, let go it stands at the corner.
-    moving.handle_started(handles.ALONG)
-    moving.handle_moved(handles.ALONG, -TOO_HIGH)
-    moving.finish_drag(handles.ALONG, -TOO_HIGH)
+    moving.drag.started(handles.ALONG)
+    moving.drag.moved(handles.ALONG, -TOO_HIGH)
+    moving.drag.finish(handles.ALONG, -TOO_HIGH)
     cornered = moving.built_value(handles.ALONG)
     expect(cornered < FIN_SHIFT and not moving.can_stand(handles.ALONG, cornered - taskpanel.SNAP_RESOLUTION),
            "let go beyond the corner of the face, the fin stands at the corner: %.3f mm" % cornered)
@@ -3474,8 +3474,8 @@ def main():
     moving.field_entered(handles.UP)
     lowered = lined.Proxy.results[feature.MAIN]
     expect(abs(lowered.heights[1] - lower) < d.TOLERANCE, "a height typed into the field sets the fin's height")
-    moving.handle_started(handles.UP)
-    moving.finish_drag(handles.UP, 0.0)
+    moving.drag.started(handles.UP)
+    moving.drag.finish(handles.UP, 0.0)
     expect(abs(moving.built_value(handles.UP) - lower) < d.TOLERANCE,
            "a click on the arrow up keeps a height typed by hand, off the tines")
     moving.fin_fields[handles.ALONG].setValue(place)
@@ -3508,14 +3508,14 @@ def main():
 
     geometry.build, geometry._build_reaching = counting, making
     try:
-        moving.handle_started(handles.ALONG)
+        moving.drag.started(handles.ALONG)
         steps = []
         for step in (1, 2):
-            moving.handle_moved(handles.ALONG, step * BUILD_STEP)
+            moving.drag.moved(handles.ALONG, step * BUILD_STEP)
             del made[:]
-            moving.drag_step()
+            moving.drag.step()
             steps.append(len(made))
-        moving.finish_drag(handles.ALONG, 2 * BUILD_STEP)
+        moving.drag.finish(handles.ALONG, 2 * BUILD_STEP)
         reuse_after = lined.Proxy.reuse
         del builds[:]
         moving.update_ends()
@@ -3539,25 +3539,25 @@ def main():
            "the arrow ends are tried once for each place, again after a parameter changed: %d, %d, %d"
            % (first_ends, same_ends, changed_ends))
     # A drag that fails on letting go still ends: every later build is made afresh.
-    real_drag_to = moving.drag_to
+    real_move_to = moving.drag.move_to
 
     def failing(*args):
         raise RuntimeError("a drag failing on purpose")
 
-    moving.drag_to = failing
-    moving.handle_started(handles.ALONG)
+    moving.drag.move_to = failing
+    moving.drag.started(handles.ALONG)
     try:
-        moving.finish_drag(handles.ALONG, BUILD_STEP)
+        moving.drag.finish(handles.ALONG, BUILD_STEP)
     except RuntimeError:
         pass
-    moving.drag_to = real_drag_to
+    moving.drag.move_to = real_move_to
     expect(lined.Proxy.reuse is None, "a drag that fails on letting go still ends, nothing is kept")
     # A value typed just before an arrow is grabbed is built first.
     tines = moving.widgets["TineCount"]
     typed = tines.value() + 1
     tines.setValue(typed)
-    moving.handle_started(handles.ALONG)
-    moving.finish_drag(handles.ALONG, 0.0)
+    moving.drag.started(handles.ALONG)
+    moving.drag.finish(handles.ALONG, 0.0)
     expect(lined.TineCount == typed, "a value typed just before an arrow is grabbed is built first")
     tines.setValue(typed - 1)
     moving.preview()
@@ -3565,17 +3565,17 @@ def main():
     feature.reset_fins(lined)
     lined.recompute()
     moving.place_handles()
-    moving.handle_started(handles.UP)
-    moving.finish_drag(handles.UP, 0.0)
+    moving.drag.started(handles.UP)
+    moving.drag.finish(handles.UP, 0.0)
     expect(feature.edits(lined, feature.MAIN) == ([], {}, {}), "a click on an arrow alone changes nothing")
     shown = moving.fin_fields[handles.ALONG].value()
     moving.fin_fields[handles.ALONG].setValue(shown)
     moving.field_entered(handles.ALONG)
     expect(feature.edits(lined, feature.MAIN) == ([], {}, {}), "a field left as it is shows, changes nothing")
     # A drag that started on no fin is passed over, without a jump or an error.
-    moving.drag_base = {}
-    moving.handle_moved(handles.UP, FIN_SHIFT)
-    moving.finish_drag(handles.UP, FIN_SHIFT)
+    moving.drag.base = {}
+    moving.drag.moved(handles.UP, FIN_SHIFT)
+    moving.drag.finish(handles.UP, FIN_SHIFT)
     expect(feature.edits(lined, feature.MAIN) == ([], {}, {}), "a drag that never started on a fin changes nothing")
     # A build that fails leaves no old result for the arrows.
     lined.FinCount = TOO_MANY_FINS
