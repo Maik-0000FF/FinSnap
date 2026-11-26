@@ -5,8 +5,8 @@
 
 The other way into the slicer, beside 3MF: STEP keeps the exact surfaces
 instead of a mesh. PrusaSlicer loads a STEP file as one object with a part per
-shape; Split to objects then makes part and fins two objects again, which the
-separate connection mode needs.
+shape; Split to objects then makes part and fins two objects again, as the
+fins need.
 
 INPUTS this has to withstand (write()):
   list of (name, shape)                 ->  STEP with one named object each

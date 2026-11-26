@@ -23,6 +23,8 @@ TEST_PROFILES_GROUP = "ProfilesUnderTest"
 TEST_LIMITS_GROUP = "LimitsUnderTest"
 # A thin fin, as a saved standard for new fins might ask for.
 STANDARD_THICKNESS = 0.9
+# A whole number past the largest float, which no float can stand for.
+BEYOND_FLOAT = 10 ** 400
 CHAMFER = 1.0
 TILT = 45.0
 HALF_TURN = 180.0  # degrees

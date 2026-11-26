@@ -8,12 +8,9 @@ INPUTS this has to withstand (validate()):
   any length <= 0 where a size is meant ->  ParamError naming the field
   gap <= 0                              ->  ParamError: fin and part would fuse
   tine_clearance < 0                    ->  ParamError; 0 means touching
-  tine_clearance >= gap, separate fins  ->  ParamError: no tine would be left; merged
-                                            fins apply none
+  tine_clearance >= gap                 ->  ParamError: no tine would be left
   gap > GAP_MAX                         ->  ParamError: the tines would be too long
   contour_gap < gap                     ->  valid; the gap is kept there instead
-  tine_clearance > 0, merged fins       ->  valid; not applied (clearance is 0), merged
-                                            fins need their tines on the face
   bead_width < nozzle_diameter / 2      ->  ParamError: not a printable bead
   layer_height > nozzle_diameter        ->  ParamError: not printable
   tine_layers or tine_width_beads < 1   ->  ParamError
@@ -32,20 +29,59 @@ INPUTS this has to withstand (validate()):
   round_fin_angle below ROUND_FIN_ANGLE_MIN
     or above ROUND_FIN_ANGLE_MAX        ->  ParamError naming the range
   fin_count < 1 with "distributed"      ->  ParamError
-  unknown connection / placement / foot ->  ParamError listing the choices
+  unknown placement / foot              ->  ParamError listing the choices
   tine wider than a manual fin_thickness ->  ParamError: tine would stick out
   NaN or infinity in any number         ->  ParamError naming the field
+  a value of another kind than its
+    field, see fits_kind()              ->  ParamError naming the field
 """
 
 import math
+import sys
 from dataclasses import dataclass, fields
 
 from . import defaults as d
-from .i18n import translate
+from .i18n import QT_TRANSLATE_NOOP, translate
+
+# The whole numbers FreeCAD's user parameters can hold: SetInt refuses any
+# past a signed 32-bit integer.
+PARAMETER_INT_MIN, PARAMETER_INT_MAX = -2 ** 31, 2 ** 31 - 1
+# Said when a field holds a value of another kind than it takes.
+WRONG_KIND = QT_TRANSLATE_NOOP("FinSnap", "%s holds a value of the wrong kind")
 
 
 class ParamError(ValueError):
     """The parameters cannot produce a printable fin."""
+
+
+def fits_kind(value, kind):
+    """Whether `value` can stand in a field of type `kind`, and be stored in
+    FreeCAD's user parameters as one.
+
+    VALUES this has to withstand:
+      float field: 2.5, 2, NaN              ->  True; a whole number is a number too,
+                                                NaN is refused as not finite elsewhere
+      float field: True, "2", None          ->  False
+      float field: a whole number past the
+        largest float, 10 ** 400            ->  False: no float can hold it
+      int field: 2, -3                      ->  True
+      int field: 2.0, 2.5, True, "2", None  ->  False
+      int field: below PARAMETER_INT_MIN
+        or past PARAMETER_INT_MAX           ->  False: FreeCAD cannot store it
+      bool field: True, False               ->  True
+      bool field: 1, 0, "yes", None         ->  False
+      str field: "", "x"                    ->  True
+      str field: 2, None                    ->  False
+    """
+    # A bool is an int to Python, so it is told apart first.
+    if isinstance(value, bool) or kind is bool:
+        return isinstance(value, bool) and kind is bool
+    if kind is float:
+        # A whole number past the largest float has no float to stand for it.
+        return isinstance(value, float) or (isinstance(value, int) and abs(value) <= sys.float_info.max)
+    if kind is int:
+        return isinstance(value, int) and PARAMETER_INT_MIN <= value <= PARAMETER_INT_MAX
+    return isinstance(value, kind)
 
 
 @dataclass
@@ -57,7 +93,6 @@ class FinParams:
     first_layer_height: float = d.FIRST_LAYER_HEIGHT
     brim_width: float = d.BRIM_WIDTH
     # Connection
-    connection: str = d.CONNECTION
     gap: float = d.GAP
     tine_clearance: float = d.TINE_CLEARANCE
     # Tines
@@ -93,6 +128,8 @@ class FinParams:
     def validate(self):
         for f in fields(self):
             value = getattr(self, f.name)
+            if not fits_kind(value, type(f.default)):
+                raise ParamError(translate("FinSnap", WRONG_KIND) % f.name)
             if isinstance(value, float) and not math.isfinite(value):
                 raise ParamError(translate("FinSnap", "%s is not a finite number") % f.name)
 
@@ -114,7 +151,7 @@ class FinParams:
         if self.gap > d.GAP_MAX:
             raise ParamError(translate("FinSnap", "gap must be at most %.1f mm, longer tines do not print straight")
                              % d.GAP_MAX)
-        if self.clearance >= self.gap:
+        if self.tine_clearance >= self.gap:
             raise ParamError(translate("FinSnap", "tine_clearance must be smaller than the gap"))
         if self.foot_overhang < 0:
             raise ParamError(translate("FinSnap", "foot_overhang must be 0 or greater"))
@@ -137,8 +174,7 @@ class FinParams:
             raise ParamError(translate("FinSnap", "tine_spacing %.2f mm leaves no free layer between the tines; "
                                        "it needs at least %.2f mm") % (self.tine_spacing, self.least_tine_spacing))
 
-        choices = (("connection", d.CONNECTIONS), ("placement", d.PLACEMENTS),
-                   ("foot_shape", d.FOOT_SHAPES), ("round_fins", d.ROUND_FINS_CHOICES))
+        choices = (("placement", d.PLACEMENTS), ("foot_shape", d.FOOT_SHAPES), ("round_fins", d.ROUND_FINS_CHOICES))
         for name, allowed in choices:
             if getattr(self, name) not in allowed:
                 raise ParamError(translate("FinSnap", "%s must be one of %s") % (name, ", ".join(allowed)))
@@ -160,17 +196,10 @@ class FinParams:
 
     # Derived sizes, so no caller repeats the arithmetic.
     @property
-    def clearance(self):
-        """The tine clearance applied: none for fins merged into the part,
-        which reach it through their tines; short of the face, they would be
-        loose bodies in the merged shape."""
-        return 0.0 if self.connection == d.CONNECTION_MERGED else self.tine_clearance
-
-    @property
     def tine_length(self):
         """How far a tine reaches across, along the face normal: the gap, the
         tine clearance short of it."""
-        return self.gap - self.clearance
+        return self.gap - self.tine_clearance
 
     @property
     def tine_width(self):

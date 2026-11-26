@@ -525,7 +525,7 @@ def tine_end(p, frame, z):
     top = bottom + p.tine_height
     if frame.contour is not None:
         return (bottom, top, *frame.contour.tine_ends(z, z + p.tine_height))
-    return bottom, top, frame.s_flank(bottom, p.clearance), frame.s_flank(top, p.clearance)
+    return bottom, top, frame.s_flank(bottom, p.tine_clearance), frame.s_flank(top, p.tine_clearance)
 
 
 def flank_bend(frame, t):
@@ -623,15 +623,19 @@ def side_tine(p, frame, t0, thickness, z):
     per_plane = [line_at.tine_ends(z, z + p.tine_height) for line_at in ends]
 
     def part_at(t, which):
-        """How far out the end of the tine lies at place t, at its bottom or top."""
-        if t <= planes[0]:
-            k = 0
-        elif t >= planes[-1]:
-            k = len(planes) - 2
-        else:
-            k = next(k for k in range(len(planes) - 1) if planes[k] <= t <= planes[k + 1])
-        share = (t - planes[k]) / (planes[k + 1] - planes[k])
-        return per_plane[k][which] + (per_plane[k + 1][which] - per_plane[k][which]) * share
+        """How far out the end of the tine lies at place t, at its bottom or top:
+        through the three planes nearest t, as the part curves between them; a
+        straight line would cut into a round side between two planes."""
+        values = [ends_of[which] for ends_of in per_plane]
+        if len(planes) < 3:
+            share = (t - planes[0]) / (planes[1] - planes[0])
+            return values[0] + (values[1] - values[0]) * share
+        nearest = min(range(len(planes)), key=lambda k: abs(planes[k] - t))
+        first = min(max(nearest - 1, 0), len(planes) - 3)
+        through = range(first, first + 3)
+        # Lagrange's polynomial through the three.
+        return sum(values[k] * math.prod((t - planes[j]) / (planes[k] - planes[j]) for j in through if j != k)
+                   for k in through)
 
     def end_of(offset, which):
         """Where the ray `offset` to the side of the middle of the tine meets the part."""
@@ -651,9 +655,18 @@ def side_tine(p, frame, t0, thickness, z):
 
     rings = []
     for which in (0, 1):
+        right, centre, left = end_of(width, which), end_of(0.0, which), end_of(-width, which)
+        # The end runs straight from each corner to the middle, all three on the
+        # part: on a side curving away from the fin, the middle lies short of
+        # the line between the corners, and each straight half cuts into the
+        # part by about a quarter of that, as an arc does. The end goes back
+        # as far, so it touches the part and reaches into it nowhere.
+        def along(point):
+            return point[0] * along_t + point[1] * along_s
+        back_end = max(0.0, (along(right) + along(left)) / 2 - along(centre)) / 4
         rings.append([(t_middle - width * across_t, start - width * across_s),
-                      (t_middle + width * across_t, start + width * across_s),
-                      end_of(width, which), end_of(0.0, which), end_of(-width, which)])
+                      (t_middle + width * across_t, start + width * across_s)]
+                     + [(t - back_end * along_t, s - back_end * along_s) for t, s in (right, centre, left)])
     return rings
 
 

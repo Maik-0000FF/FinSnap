@@ -46,6 +46,7 @@ INPUTS this has to withstand (Limits.validate()):
     critical one                        ->  LimitError
   equal spans                           ->  valid, no critical bridges
   NaN or infinity in any value          ->  LimitError naming it
+  a value that is no number, or True    ->  LimitError naming it
 
 INPUTS this has to withstand (strictness_of()):
   the built-in limits                   ->  NORMAL
@@ -56,7 +57,7 @@ INPUTS this has to withstand (save()):
   the limits of a strictness            ->  its name stored, no values
   any other valid limits                ->  CUSTOM and every value stored
   either                                ->  what was saved before replaced
-  invalid limits                        ->  LimitError, nothing stored
+  invalid limits                        ->  LimitError, what was saved kept
 
 INPUTS this has to withstand (reset()):
   anything saved                        ->  all of it removed, current() is built-in
@@ -69,6 +70,7 @@ import FreeCAD as App
 
 from . import defaults as d
 from .i18n import translate
+from .params import WRONG_KIND, fits_kind
 from .presets import PREFERENCES
 
 # Subgroup of FinSnap's preferences holding the limits. Tests point it
@@ -106,7 +108,10 @@ class Limits:
 
     def validate(self):
         for f in fields(self):
-            if not math.isfinite(getattr(self, f.name)):
+            value = getattr(self, f.name)
+            if not fits_kind(value, type(f.default)):
+                raise LimitError(translate("FinSnap", WRONG_KIND) % f.name)
+            if not math.isfinite(value):
                 raise LimitError(translate("FinSnap", "%s is not a finite number") % f.name)
         for name in ("overhang_critical", "overhang_unprintable", "tipping_angle"):
             if not ANGLE_MIN <= getattr(self, name) <= ANGLE_MAX:
@@ -170,12 +175,14 @@ def save(chosen):
     their strictness, or as values where they are custom."""
     chosen.validate()
     name = strictness_of(chosen)
+    # Everything to write is taken first and checked by validate(), so no
+    # write fails once the group is cleared and loses what was saved.
+    values = [(f.name, float(getattr(chosen, f.name))) for f in fields(Limits)] if name == CUSTOM else []
     group = _group()
     group.Clear()
     group.SetString(STRICTNESS_KEY, name)
-    if name == CUSTOM:
-        for f in fields(Limits):
-            group.SetFloat(f.name, getattr(chosen, f.name))
+    for key, value in values:
+        group.SetFloat(key, value)
 
 
 def reset():

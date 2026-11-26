@@ -11,6 +11,24 @@ All notable changes to FinSnap are listed here. The format follows
 
 ## [Unreleased]
 
+## [0.19.0] - 2026-11-26
+
+### Changed
+
+- The tines touch the part by default: the built-in gap is 0.25 mm and the tine clearance 0, so the slicer joins the tines to the face, which held better in test prints than a clearance. The ends of the tines of a side fin under a round side follow the side more closely and no longer reach into it
+
+### Fixed
+
+- The export asks before it replaces a file: the extension is added after the save dialog, so a file of that name was overwritten without a question. No opens the dialog again at that file (#205)
+- Saving a profile or the check limits no longer loses what was saved when a value cannot be stored: a fraction or a switch in a field of whole numbers, text in a number field or a whole number past 32 bits is refused before anything is cleared (#204)
+- OK in the panel and choosing a way to stand act on the document of the fins, not the active one: with another document in front, that one was recomputed and its view turned (#201)
+- Quick fins on a side beside a chamfer stands the part on that side: the side was taken for a chamfer, and the fins went under the chamfer (#272)
+- Transform and the colours per face from the context menu of the fins no longer open the panel of the fins (#200)
+
+### Removed
+
+- The merged connection: fins merged into the part were prone to faults, and tines touching the face are joined to the part by the slicer. The Connection property and its choice are gone; a file saved with one drops it as it is read (#275)
+
 ## [0.18.1] - 2026-11-15
 
 ### Fixed
@@ -401,7 +419,8 @@ All notable changes to FinSnap are listed here. The format follows
 - English and German user interface
 - Version read from package.xml, shown in the task panel and the workbench tooltip and written into exported 3MF files
 
-[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.18.1...HEAD
+[Unreleased]: https://github.com/Maik-0000FF/FinSnap/compare/v0.19.0...HEAD
+[0.19.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.19.0
 [0.18.1]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.18.1
 [0.18.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.18.0
 [0.17.0]: https://github.com/Maik-0000FF/FinSnap/releases/tag/v0.17.0

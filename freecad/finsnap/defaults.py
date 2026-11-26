@@ -22,21 +22,16 @@ FIRST_LAYER_HEIGHT = 0.2
 BRIM_WIDTH = 0.0
 
 # --- Connection ---------------------------------------------------------------
-# "separate": the fin is its own object, tines only touch the part, no
-#             extrusion path runs from one into the other.
-# "merged":   fin and part are fused into one body, the tines are printed as
-#             one continuous path with the part.
-CONNECTION_SEPARATE = "separate"
-CONNECTION_MERGED = "merged"
-CONNECTIONS = (CONNECTION_SEPARATE, CONNECTION_MERGED)
-CONNECTION = CONNECTION_SEPARATE
-
+# The fins are an object of their own, apart from the part; their tines reach
+# across the gap to it, and only the slicer joins a tine touching the part to it.
+#
 # Gap, tine width and tine height were chosen by a test print: of touching and
 # merged fins with tines one to three layers high, separate fins with tines one
 # bead wide and one layer high came off cleanest, leaving only faint contact points.
 #
-# Clearance between fin and supported face, measured along the face normal.
-GAP = 0.3
+# Clearance between fin and supported face, measured along the face normal;
+# with no tine clearance it is the length of the tines.
+GAP = 0.25
 # The largest gap taken (mm), and so the longest tines: longer, a tine hangs
 # out from the fin too far to print straight.
 GAP_MAX = 2.0
@@ -44,11 +39,12 @@ GAP_MAX = 2.0
 GAP_HINT_STEP = 0.01
 # Clearance between the end of a tine and the face, along the face normal; the
 # tines are as much shorter than the gap. 0: the tine touches the face, and the
-# slicer joins tine and part into one bead. Test prints with 0.25 mm tines
-# held with 0.04 mm and with this clearance, tine and part printed as separate
-# beads; a bead swells a few hundredths of a millimetre, so too much and the
-# tine no longer holds. Find it by a test print.
-TINE_CLEARANCE = 0.05
+# slicer joins tine and part into one bead. In test prints this did better
+# than fins merged into the part. Tines ending 0.04 or 0.05 mm short of the
+# face held too, tine and part printed as separate beads; a bead swells a few
+# hundredths of a millimetre, so too much clearance and the tine no longer
+# holds. Find it by a test print.
+TINE_CLEARANCE = 0.0
 
 # --- Tines --------------------------------------------------------------------
 # Tines are horizontal, so each one is printed within its own layers.

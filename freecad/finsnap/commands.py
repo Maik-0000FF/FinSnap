@@ -5,6 +5,7 @@
 
 import dataclasses
 import functools
+import os
 from collections import namedtuple
 
 import FreeCAD as App
@@ -31,7 +32,7 @@ from .paths import (ICON_ADD, ICON_COUNTER, ICON_EXPORT, ICON_EXPORT_STEP, ICON_
 from .presets import PREFERENCES
 from .shapes import FACE_PREFIX, global_shape, moved, outermost, part_of
 from .taskpanel import (DEGREE_SUFFIX, EDIT_STEP, LENGTH_SUFFIX, FinSnapTaskPanel, check_bridges, check_params,
-                        check_part, check_stability, check_step, discard_created)
+                        check_part, check_stability, check_step, close_dialog_of, discard_created)
 from .version import NAME
 
 EDGE_PREFIX = "Edge"
@@ -48,6 +49,8 @@ ISOMETRIC = App.Vector(-1, 1, -1).normalize()
 FILTER_3MF = QT_TRANSLATE_NOOP("FinSnap", "3MF files (*.3mf)")
 EXTENSIONS_3MF = (".3mf",)
 FILTER_STEP = QT_TRANSLATE_NOOP("FinSnap", "STEP files (*.step *.stp)")
+# Asked when the name with its ending added is a file that exists already.
+NOTE_OVERWRITE = QT_TRANSLATE_NOOP("FinSnap", "%s already exists. Replace it?")
 # Said when Check stability has no part to check.
 NOTE_SELECT_PART = QT_TRANSLATE_NOOP("FinSnap", "Select a part, or its fins, to check whether it stays standing "
                                                 "while it is printed.")
@@ -64,6 +67,9 @@ MESH_LINEAR_DECIMALS = 3
 MESH_ANGULAR_DECIMALS = 1
 FINS_SUFFIX = "_fins"
 STATUS_TIMEOUT_MS = 10000
+# FreeCAD's edit modes, see Std_UserEditMode: the default one, which a double
+# click starts and which opens the panel of the fins; the others are FreeCAD's own.
+EDIT_MODE_DEFAULT, EDIT_MODE_TRANSFORM, EDIT_MODE_CUTTING, EDIT_MODE_COLOR = range(4)
 # What an export writes, and the fins it leaves out because their part lies flat.
 Export = namedtuple("Export", "shapes left_out")
 
@@ -248,7 +254,18 @@ class ViewProviderFinSnap:
         return [handles.overhang_faces([shape.getElement(name) for name in chosen], level)
                 for level, chosen in levels if chosen]
 
-    def setEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API
+    def setEdit(self, vobj, mode=EDIT_MODE_DEFAULT):  # noqa: N802 - FreeCAD API
+        """Open the panel of the fins in the default edit mode.
+
+        MODES this has to withstand:
+          default, by a double click or a command  ->  the panel, True
+          Transform, Cutting, Color per face, from
+            the context menu                       ->  None: FreeCAD's own edit
+          default, another task panel open         ->  False, that one kept
+          default, no 3D view                      ->  said so, False
+        """
+        if mode != EDIT_MODE_DEFAULT:
+            return None
         # Fins just made by a command are deleted again by Cancel.
         # Another task dialog is open: FreeCAD keeps that one.
         if Gui.Control.activeDialog():
@@ -309,13 +326,17 @@ class ViewProviderFinSnap:
                 doc.abortTransaction()
         return True
 
-    def unsetEdit(self, vobj, mode=0):  # noqa: N802 - FreeCAD API
+    def unsetEdit(self, vobj, mode=EDIT_MODE_DEFAULT):  # noqa: N802 - FreeCAD API
+        # Another edit mode is FreeCAD's own, as setEdit() left it: so is
+        # closing its dialog, which is no panel of the fins.
+        if mode != EDIT_MODE_DEFAULT:
+            return None
         # Edit mode can end without OK or Cancel; the arrows, the see-through
         # look and the listeners of the panel go with it all the same.
         panel, self.panel = getattr(self, "panel", None), None
         if panel is not None:
             panel.release_handles()
-        Gui.Control.closeDialog()
+        close_dialog_of(vobj.Object.Document)
         return True
 
     def claimChildren(self):  # noqa: N802 - FreeCAD API
@@ -333,16 +354,11 @@ class ViewProviderFinSnap:
           the last fins of all selected         ->  the object deleted, as from the tree
           fins selected, task panel open        ->  the panel removes them; FreeCAD
                                                     deletes nothing in edit mode
-          sub-elements of merged fins           ->  message, nothing deleted
           fins and other sub-elements mixed     ->  nothing deleted
           object selected in the tree           ->  deleted; the last fins lay the part flat;
                                                     an open task panel on it closes first
         """
         obj = vobj.Object
-        if subelements and obj.Connection == d.CONNECTION_MERGED:
-            # Merged into the part, the fins are no solids of their own to pick.
-            _message(translate("FinSnap", feature.NOTE_MERGED_SINGLE))
-            return False
         fins = [feature.fin_at(obj, sub) for sub in subelements or ()]
         if fins and not all(fins):
             # Something picked that is no fin: the object as a whole is not meant.
@@ -352,7 +368,7 @@ class ViewProviderFinSnap:
             if panel is not None:
                 # The panel may delete this very object; not while its own
                 # onDelete still runs.
-                panel.once_free(functools.partial(panel.remove_fins, fins))
+                panel.waiting.once_free(functools.partial(panel.remove_fins, fins))
                 return False
             # Asked first: the last fins of all take the object with them, in
             # the step of FreeCAD's Delete. A step opened here and ended
@@ -497,7 +513,7 @@ class TiltOntoEdge:
         with feature.transaction(doc, translate("FinSnap", "Stand on edge")):
             _stand(obj, change)
         doc.recompute()
-        _show_on_bed(orient.side_direction(change, edge, chosen if len(chosen) == 2 else ()))
+        _show_on_bed(doc, orient.side_direction(change, edge, chosen if len(chosen) == 2 else ()))
         _report_overhangs(obj)
 
 
@@ -519,8 +535,9 @@ def _stand(obj, change):
         feature.forget_turn(fins)
 
 
-def _show_on_bed(direction=None):
-    """Look at the turned part with the bed below, all of it in view.
+def _show_on_bed(doc, direction=None):
+    """Look at the turned part with the bed below, all of it in view, in the
+    3D view of `doc`, the document of the part, which need not be active.
 
     Along `direction`, the line the part stands on, the view shows the tilt
     angle in profile; without one it is isometric. The camera does not follow a
@@ -530,9 +547,8 @@ def _show_on_bed(direction=None):
     and viewIsometric() only start an animation when navigation animations are
     on, and fitAll() would then fit the part to where the camera started from.
     """
-    view = Gui.ActiveDocument.ActiveView if Gui.ActiveDocument else None
-    # The active view may be a spreadsheet or a drawing, which has no camera.
-    if view is None or not hasattr(view, "getCameraNode"):
+    view = handles.view_3d(doc)
+    if view is None:
         return
     # The camera looks along its -Z with +Y up: -Z onto the line of sight, +Y
     # towards the vertical, +X to the right of both.
@@ -620,7 +636,7 @@ class LayFlat:
                         feature.keep_laid_flat(fins, change)
                 orient.lay_back(owner)
         doc.recompute()
-        _show_on_bed()
+        _show_on_bed(doc)
 
 
 def _ask_delete_fins():
@@ -711,7 +727,7 @@ class QuickFins:
         # Built once: the panel opened below shows this build.
         feature.keep_build(fins, True)
         doc.recompute()
-        _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside, plan.line))
+        _show_on_bed(doc, orient.side_direction(plan.change, plan.edge, plan.beside, plan.line))
         # Cancel deletes the fins and stands the part as it stood before.
         _edit_new(fins, functools.partial(_put_back_quick, owner, before, laid_flat, turns),
                   QuickStands(obj, owner, before, plans))
@@ -872,7 +888,7 @@ class QuickStands:
         part, name = feature.on_part(self.obj, face)
         fins.Base = (part, [name])
         self.current = index
-        _show_on_bed(orient.side_direction(plan.change, plan.edge, plan.beside, plan.line))
+        _show_on_bed(self.obj.Document, orient.side_direction(plan.change, plan.edge, plan.beside, plan.line))
 
     def keep_opened(self, fins):
         """Note how the part and `fins` stand when the ways are unfolded in
@@ -1074,9 +1090,9 @@ def _export_list(objects):
     """What to export: named shapes, and the fins left out because their part lies flat.
 
     SELECTIONS this has to withstand:
-      separate fins                         ->  their part, then the fins, those that
+      fins                                  ->  their part, then the fins, those that
                                                 overlap joined (geometry.joined())
-      merged fins, or any other body        ->  that body
+      any other body                        ->  that body
       fins whose part lies flat             ->  left out and named; their part
                                                 only if it was selected itself
       nothing left after that               ->  ValueError saying why
@@ -1087,7 +1103,7 @@ def _export_list(objects):
     for obj in objects:
         if feature.is_fins(obj) and feature.is_laid_flat(obj):
             left_out.append(obj.Label)
-        elif feature.is_fins(obj) and obj.Connection == d.CONNECTION_SEPARATE:
+        elif feature.is_fins(obj):
             base = obj.Base[0]
             if base.Name not in seen:
                 shapes.append((base.Label, global_shape(base)))
@@ -1196,12 +1212,39 @@ def _shapes_to_export():
 
 
 def _save_path(title, file_filter, extensions):
-    """The file to write, ending in one of `extensions`; empty if the dialog was cancelled."""
-    path, _ = QtWidgets.QFileDialog.getSaveFileName(
-        Gui.getMainWindow(), title, "", translate("FinSnap", file_filter))
-    if path and not path.lower().endswith(extensions):
+    """The file to write, ending in one of `extensions`; empty if the dialog was cancelled.
+
+    The dialog itself asks before a name it returns is overwritten, but not for
+    the name with the extension added here, so that one is asked here.
+
+    NAMES this has to withstand:
+      cancelled                            ->  ""
+      "a.3mf", "a.STP"                     ->  unchanged, the dialog has asked already
+      "a", no "a.3mf"                      ->  "a.3mf"
+      "a.txt", no "a.txt.3mf"              ->  "a.txt.3mf"
+      "a", "a.3mf" exists, overwrite: Yes  ->  "a.3mf"
+      "a", "a.3mf" exists, overwrite: No   ->  the dialog again, opened at "a.3mf"
+      "a", "a.3mf" is a folder             ->  asked the same; on Yes writing fails
+                                               and says why
+    """
+    start = ""
+    while True:
+        path, _ = QtWidgets.QFileDialog.getSaveFileName(
+            Gui.getMainWindow(), title, start, translate("FinSnap", file_filter))
+        if not path or path.lower().endswith(extensions):
+            return path
         path += extensions[0]
-    return path
+        if not os.path.exists(path) or _ask_overwrite(path):
+            return path
+        start = path
+
+
+def _ask_overwrite(path):
+    """Whether the existing file at `path` is replaced; No is the default."""
+    buttons = QtWidgets.QMessageBox.Yes | QtWidgets.QMessageBox.No
+    return QtWidgets.QMessageBox.question(
+        Gui.getMainWindow(), NAME, translate("FinSnap", NOTE_OVERWRITE) % os.path.basename(path),
+        buttons, QtWidgets.QMessageBox.No) == QtWidgets.QMessageBox.Yes
 
 
 def _write(writer, path, export, *settings):

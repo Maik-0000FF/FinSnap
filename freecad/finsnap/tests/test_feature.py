@@ -9,6 +9,7 @@ Run in FreeCAD, with this checkout installed as an addon (see CONTRIBUTING.md):
 
 import dataclasses
 import os
+import reprlib
 import sys
 import tempfile
 # Audited: Parses package.xml and files the tests wrote.
@@ -17,13 +18,13 @@ import zipfile
 
 import FreeCAD as App
 import Part
-from freecad.finsnap.tests.support import (STANDARD_THICKNESS, expect, lower_left_face, run, slot_on_end,
+from freecad.finsnap.tests.support import (BEYOND_FLOAT, STANDARD_THICKNESS, expect, lower_left_face, run, slot_on_end,
                                            split_cylinder, tilted_cube)
 from freecad.finsnap import defaults as d
 from freecad.finsnap import (analysis, check, export_3mf, export_step, face_frame, feature, geometry, orient, overhang,
                              quick_stands, stability, tine_rows)
 from freecad.finsnap import limits, presets
-from freecad.finsnap.params import FinParams, ParamError
+from freecad.finsnap.params import PARAMETER_INT_MAX, PARAMETER_INT_MIN, FinParams, ParamError
 from freecad.finsnap.paths import PACKAGE_XML
 from freecad.finsnap.shapes import KEPT, bounds, global_placement, global_shape, moved, outermost
 
@@ -375,6 +376,20 @@ def saved_standard(doc):
         pass
     else:
         raise AssertionError("an invalid standard was saved")
+    presets.save(thin)
+    for wrong in (dict(tine_count=2.5), dict(tine_count=True), dict(tine_count=PARAMETER_INT_MAX + 1),
+                  dict(tine_count=PARAMETER_INT_MIN - 1), dict(follow_contour=1),
+                  dict(placement=None), dict(gap="1"), dict(contour_bridge=BEYOND_FLOAT)):
+        try:
+            presets.save(dataclasses.replace(thin, **wrong))
+        except ParamError:
+            expect(presets.standard() == thin, "%s is refused, the saved standard stays" % reprlib.repr(wrong))
+        else:
+            raise AssertionError("%s was saved" % reprlib.repr(wrong))
+    whole = dataclasses.replace(thin, gap=1)
+    presets.save(whole)
+    expect(presets.standard() == whole and isinstance(presets.standard().gap, float),
+           "a whole number in a field of numbers with a fraction is saved as one")
     presets.reset()
     expect(presets.standard() == FinParams(), "factory settings bring back the built-in standard")
     named_profiles()
@@ -1004,7 +1019,7 @@ def stood_again_after_laid_flat(doc):
         """Whether the fins stand on the bed, their tines the clearance from the part."""
         p = feature.params_of(fins)
         apart = fins.Shape.distToShape(global_shape(part))[0]
-        return (abs(apart - p.clearance) < d.TOLERANCE
+        return (abs(apart - p.tine_clearance) < d.TOLERANCE
                 and abs(fins.Shape.BoundBox.ZMin - global_shape(part).BoundBox.ZMin) < d.TOLERANCE)
 
     stand_up()
@@ -1669,11 +1684,10 @@ def main():
     expect(fins.ResultFinCount == 1, "result shows one fin")
     expect(abs(fins.ResultHeight.Value - 11.2) < d.TOLERANCE, "result shows the fin height")
 
-    fins.Connection = d.CONNECTION_MERGED
-    doc.recompute()
-    expect(len(fins.Shape.Solids) == 1, "merged connection gives one solid")
-    fins.Connection = d.CONNECTION_SEPARATE
-    doc.recompute()
+    # A file saved when fins could also be merged into the part: the property goes as it is read.
+    fins.addProperty("App::PropertyEnumeration", feature.CONNECTION_OF_OLD)
+    fins.Proxy.onDocumentRestored(fins)
+    expect(feature.CONNECTION_OF_OLD not in fins.PropertiesList, "the connection of an old file is dropped")
 
     path = os.path.join(tempfile.mkdtemp(), "finsnap.3mf")
     export_3mf.write(path, [("cube", cube.Shape), ("cube_fins", fins.Shape)])
