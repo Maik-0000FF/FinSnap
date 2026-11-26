@@ -72,7 +72,7 @@ INPUTS this has to withstand (build()):
   every tine of every fin over a recess ->  FinError
   fins removed by hand (left_out)       ->  not built, the others where they were
   every fin removed by hand             ->  FinError
-  fin overlaps the part (separate mode) ->  FinError
+  fin overlaps the part                 ->  FinError
   tine shorter than TINE_MIN_LENGTH_BEADS
     beads                               ->  warning in FinResult, no error
   face inclined outside FACE_ANGLE_MIN
