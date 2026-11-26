@@ -276,7 +276,7 @@ Tests and tools live in the package, under `freecad/finsnap/tests/` and `freecad
 ```bash
 freecad --console freecad/finsnap/tests/test_cube.py
 freecad --console freecad/finsnap/tests/test_feature.py
-QT_QPA_PLATFORM=offscreen freecad freecad/finsnap/tests/test_gui.py
+xvfb-run -a freecad freecad/finsnap/tests/test_gui.py
 python3 -m freecad.finsnap.tests.test_version
 ```
 

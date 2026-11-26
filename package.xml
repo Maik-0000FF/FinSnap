@@ -29,8 +29,13 @@
 
   <icon>freecad/finsnap/icons/finsnap.svg</icon>
 
-  <tag>3D printing</tag>
+  <tag>3d-printing</tag>
+  <tag>fdm</tag>
   <tag>support</tag>
+  <tag>support-fins</tag>
+  <tag>slicer</tag>
+  <tag>3mf</tag>
+  <tag>step</tag>
 
   <content>
     <workbench>
