@@ -52,7 +52,7 @@ How much each effect matters depends on the material, the printer and the part.
 
 ## How it works
 
-The fin's inner edge runs parallel to the supported face. Horizontal tines span the gap between them and end on the face, or the tine clearance short of it (see [Tine clearance](#tine-clearance)). In the separate mode the slicer prints the fin and the part as two objects: the tine lies against the part and sticks to it, without an extrusion path crossing over.
+The fin's inner edge runs parallel to the supported face. Horizontal tines span the gap between them and end on the face, or the tine clearance short of it (see [Tine clearance](#tine-clearance)). The slicer prints the fin and the part as two objects: the tine lies against the part and sticks to it, without an extrusion path crossing over.
 
 ![Fin with foot and tines under a tilted part](https://raw.githubusercontent.com/Maik-0000FF/FinSnap/main/docs/assets/fin_detail.png)
 
@@ -172,7 +172,7 @@ Where the original model exists, as a STEP or FreeCAD file, use it instead.
 > **Multi-part object detected**
 > *"This file contains several objects positioned at multiple heights. Instead of considering them as multiple objects, should the file be loaded as a single object having multiple parts?"*
 >
-> Answer **No**. With **Yes**, part and fins become parts of one object, and the slicer joins them with a continuous path, which is exactly what the separate mode avoids.
+> Answer **No**. With **Yes**, part and fins become parts of one object, and the slicer joins them with a continuous path, which is exactly what exporting them as separate objects avoids.
 
 - Keep supports off; the fins are the support.
 - The tine height should be a whole number of layers of the print profile, otherwise a tine falls between two layers.
