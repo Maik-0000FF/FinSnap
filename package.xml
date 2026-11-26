@@ -9,7 +9,7 @@
 
   <description>Breakaway fins for parts printed standing on an edge. The fins hold the tilted part on the bed and touch it only with small horizontal tines.</description>
 
-  <version>0.19.0</version>
+  <version>0.19.1</version>
 
   <date>2026-11-26</date>
 
@@ -29,8 +29,13 @@
 
   <icon>freecad/finsnap/icons/finsnap.svg</icon>
 
-  <tag>3D printing</tag>
+  <tag>3d-printing</tag>
+  <tag>fdm</tag>
   <tag>support</tag>
+  <tag>support-fins</tag>
+  <tag>slicer</tag>
+  <tag>3mf</tag>
+  <tag>step</tag>
 
   <content>
     <workbench>
